@@ -3,6 +3,7 @@
 import React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Plus, Monitor, Users, Save, ArrowLeft, X } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
 const isValidHttpUrl = (value: string) => {
@@ -92,7 +93,7 @@ export default function EditOutletPage() {
       });
       setDevices(Array.isArray(data?.devices) ? data.devices.map((d: any) => ({ id: String(d.id), code: String(d.code) })) : []);
     } catch (e: any) {
-      setError(String(e?.message || e || "Не удалось загрузить точку"));
+      setError(normalizeErrorMessage(e, "Не удалось загрузить точку"));
     } finally {
       setLoading(false);
     }
@@ -175,14 +176,14 @@ export default function EditOutletPage() {
       }
       router.push("/outlets");
     } catch (e: any) {
-      setError(String(e?.message || e || "Не удалось сохранить точку"));
+      setError(normalizeErrorMessage(e, "Не удалось сохранить точку"));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="p-8 max-w-[1200px] mx-auto animate-fade-in">
+    <div className="p-8 max-w-[1200px] mx-auto ">
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center space-x-4">
           <button

@@ -3,6 +3,7 @@
 import React from "react";
 import "./staff.css";
 import { Calendar, Store, Users, Medal, TrendingUp, UserPlus, BadgeCheck, Star } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type ApiStaffRow = {
   id: string;
@@ -93,7 +94,7 @@ export default function StaffActivityPage() {
         setOutletOptions([{ value: "all", label: "Все точки" }, ...dynamic]);
       })
       .catch((err: any) => {
-        if (!cancelled) setOutletsError(String(err?.message || err));
+        if (!cancelled) setOutletsError(normalizeErrorMessage(err, "Не удалось загрузить точки"));
       })
       .finally(() => {
         if (!cancelled) setOutletsLoading(false);
@@ -128,7 +129,7 @@ export default function StaffActivityPage() {
       })
       .catch((err: any) => {
         if (cancelled || err?.name === "AbortError") return;
-        setError(String(err?.message || err));
+        setError(normalizeErrorMessage(err, "Не удалось загрузить аналитику персонала"));
         setItems([]);
       })
       .finally(() => {
@@ -289,7 +290,7 @@ export default function StaffActivityPage() {
   };
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Активность персонала</h2>

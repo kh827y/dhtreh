@@ -14,6 +14,7 @@ import {
 import { SubscriptionService } from '../subscription/subscription.service';
 import { Reflector } from '@nestjs/core';
 import { ALLOW_INACTIVE_SUBSCRIPTION_KEY } from '../guards/subscription.guard';
+import { hasPortalPermission } from './portal-permissions.util';
 
 @Injectable()
 export class PortalGuard implements CanActivate {
@@ -24,10 +25,11 @@ export class PortalGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req: any =
-      context.getType<'http' | 'graphql'>() === 'http'
-        ? context.switchToHttp().getRequest()
-        : GqlExecutionContext.create(context).getContext()?.req;
+    const contextType = context.getType<'http' | 'graphql'>();
+    const isHttp = contextType === 'http';
+    const req: any = isHttp
+      ? context.switchToHttp().getRequest()
+      : GqlExecutionContext.create(context).getContext()?.req;
     if (!req) return false;
     const allowInactive =
       this.reflector.get<boolean>(
@@ -120,9 +122,142 @@ export class PortalGuard implements CanActivate {
       req.portalTimezone = timezone.code;
       req.portalTimezoneOffsetMinutes = timezone.utcOffsetMinutes;
       req.portalTimezoneIana = timezone.iana;
+      this.enforcePortalPermissions(req, isHttp);
       return true;
-    } catch {
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
       return false;
+    }
+  }
+
+  private normalizePath(raw?: string) {
+    const base = String(raw || '').split('?')[0] || '';
+    if (!base) return '';
+    return base.endsWith('/') && base !== '/' ? base.slice(0, -1) : base;
+  }
+
+  private resolvePermissionTarget(req: any) {
+    const method = String(req?.method || 'GET').toUpperCase();
+    const action = method === 'GET' || method === 'HEAD' ? 'read' : 'manage';
+    const path = this.normalizePath(req?.originalUrl || req?.url);
+    if (!path.startsWith('/portal')) return null;
+    if (path === '/portal/me') return null;
+    if (path.startsWith('/portal/loyalty/promotions')) return null;
+    if (path.startsWith('/portal/loyalty/mechanics')) return null;
+    if (path.startsWith('/portal/loyalty/redeem-limits')) return null;
+    if (path === '/portal/settings') return null;
+    if (path.startsWith('/portal/settings/telegram-notify')) {
+      return { resources: ['telegram_notifications'], action };
+    }
+    if (
+      path.startsWith('/portal/settings/name') ||
+      path.startsWith('/portal/settings/timezone') ||
+      path.startsWith('/portal/settings/support')
+    ) {
+      return { resources: ['system_settings'], action };
+    }
+    if (path.startsWith('/portal/catalog/import')) {
+      return { resources: ['import'], action };
+    }
+    if (path.startsWith('/portal/customers/import')) {
+      return { resources: ['import'], action };
+    }
+    if (path.startsWith('/portal/catalog/products')) {
+      return { resources: ['products'], action };
+    }
+    if (path.startsWith('/portal/catalog/categories')) {
+      return { resources: ['categories'], action };
+    }
+    if (path.startsWith('/portal/customer')) {
+      return { resources: ['customers'], action };
+    }
+    if (path.startsWith('/portal/customers')) {
+      return { resources: ['customers'], action };
+    }
+    if (path.startsWith('/portal/audiences')) {
+      return { resources: ['audiences'], action };
+    }
+    if (path.startsWith('/portal/loyalty/operations')) {
+      return { resources: ['customers'], action };
+    }
+    if (path.startsWith('/portal/operations/log')) {
+      return { resources: ['customers'], action };
+    }
+    if (path.startsWith('/portal/transactions')) {
+      return { resources: ['customers'], action };
+    }
+    if (path.startsWith('/portal/loyalty/tiers')) {
+      return { resources: ['mechanic_levels'], action };
+    }
+    if (path.startsWith('/portal/promocodes')) {
+      return { resources: ['promocodes'], action };
+    }
+    if (path.startsWith('/portal/notifications/broadcast')) {
+      return { resources: ['broadcasts'], action };
+    }
+    if (path.startsWith('/portal/push-campaigns')) {
+      return { resources: ['broadcasts'], action };
+    }
+    if (path.startsWith('/portal/telegram-campaigns')) {
+      return { resources: ['broadcasts'], action };
+    }
+    if (path.startsWith('/portal/communications')) {
+      return { resources: ['broadcasts'], action };
+    }
+    if (path.startsWith('/portal/staff-motivation')) {
+      return { resources: ['staff_motivation'], action };
+    }
+    if (path.startsWith('/portal/reviews')) {
+      return { resources: ['feedback'], action };
+    }
+    if (path.startsWith('/portal/referrals')) {
+      return { resources: ['mechanic_referral'], action };
+    }
+    if (path.startsWith('/portal/integrations')) {
+      return { resources: ['integrations'], action };
+    }
+    if (path.startsWith('/portal/analytics/rfm/settings')) {
+      return { resources: ['rfm_analysis'], action };
+    }
+    if (path.startsWith('/portal/analytics/rfm-heatmap')) {
+      return { resources: ['rfm_analysis'], action };
+    }
+    if (path.startsWith('/portal/analytics/rfm')) {
+      return { resources: ['rfm_analysis'], action };
+    }
+    if (path.startsWith('/portal/analytics')) {
+      return { resources: ['analytics'], action };
+    }
+    if (path.startsWith('/portal/outlets')) {
+      return { resources: ['outlets'], action };
+    }
+    if (path.startsWith('/portal/staff')) {
+      return { resources: ['staff'], action };
+    }
+    if (path.startsWith('/portal/access-groups')) {
+      return { resources: ['access_groups'], action };
+    }
+    if (path.startsWith('/portal/cashier')) {
+      return { resources: ['cashier_panel'], action };
+    }
+    return null;
+  }
+
+  private enforcePortalPermissions(req: any, isHttp: boolean) {
+    if (!isHttp) return;
+    if (!req || req.portalActor !== 'STAFF') return;
+    const permissions = req.portalPermissions;
+    if (!permissions || permissions.allowAll) return;
+    const target = this.resolvePermissionTarget(req);
+    if (!target) return;
+    const { resources, action } = target;
+    const allowed = resources.every((resource) =>
+      hasPortalPermission(permissions, resource, action),
+    );
+    if (!allowed) {
+      throw new ForbiddenException('Недостаточно прав');
     }
   }
 }

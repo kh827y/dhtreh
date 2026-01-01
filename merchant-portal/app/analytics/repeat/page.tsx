@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { BarChart2, Calendar, EyeOff, Store, TrendingUp, User, Wallet } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type HistogramPoint = { purchases: number; customers: number };
 type Resp = { uniqueBuyers: number; newBuyers: number; repeatBuyers: number; histogram: HistogramPoint[] };
@@ -94,7 +95,7 @@ export default function AnalyticsRepeatPage() {
         if (cancelled || error?.name === "AbortError") return;
         setOutletOptions([defaultOutletOption]);
         setOutletValue(defaultOutletOption.value);
-        setOutletsError(String(error?.message || "Не удалось загрузить торговые точки"));
+        setOutletsError(normalizeErrorMessage(error, "Не удалось загрузить торговые точки"));
       })
       .finally(() => {
         if (!cancelled) setOutletsLoading(false);
@@ -141,7 +142,7 @@ export default function AnalyticsRepeatPage() {
       })
       .catch((error: any) => {
         if (cancelled || error?.name === "AbortError") return;
-        setMsg(String(error?.message || error));
+        setMsg(normalizeErrorMessage(error, "Ошибка загрузки"));
         setData(null);
       })
       .finally(() => {
@@ -192,7 +193,7 @@ export default function AnalyticsRepeatPage() {
   }, [filteredHistogram]);
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center space-y-4 xl:space-y-0">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Повторные продажи</h2>

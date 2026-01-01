@@ -18,6 +18,7 @@ import {
 import { ArrowDownRight, ArrowUpRight, Calendar, Coins, MinusCircle } from "lucide-react";
 import { useTimezone } from "../../../components/TimezoneProvider";
 import { formatRangeLabel, TimeGrouping } from "../../../lib/format-range";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type DetailGrouping = "day" | "week" | "month";
 type PeriodPreset = "yesterday" | "week" | "month" | "quarter" | "year";
@@ -127,7 +128,7 @@ export default function AnalyticsDynamicsPage() {
         if (cancelled || err?.name === "AbortError") return;
         setRevenue(null);
         setLoyalty(null);
-        setError(String(err?.message || "Не удалось загрузить данные"));
+        setError(normalizeErrorMessage(err, "Не удалось загрузить данные"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -190,7 +191,7 @@ export default function AnalyticsDynamicsPage() {
   );
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center space-y-4 xl:space-y-0">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Динамика</h2>

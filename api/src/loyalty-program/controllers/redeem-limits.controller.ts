@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Put, Req, UseGuards } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
+import { assertPortalPermissions } from '../../portal-auth/portal-permissions.util';
 import { PrismaService } from '../../prisma.service';
 
 function ensureObject(input: any): Record<string, any> {
@@ -19,6 +20,12 @@ export class RedeemLimitsController {
 
   @Get()
   async getSettings(@Req() req: any) {
+    assertPortalPermissions(
+      req,
+      ['mechanic_redeem_limits', 'mechanic_ttl'],
+      'read',
+      'any',
+    );
     const merchantId = this.merchantId(req);
     const s = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
@@ -53,6 +60,9 @@ export class RedeemLimitsController {
       where: { merchantId },
     });
     const rules = ensureObject(s?.rulesJson ?? null);
+    const currentAllowSame = Boolean((rules as any).allowEarnRedeemSameReceipt);
+    const currentTtlDays = Number(s?.pointsTtlDays ?? 0) || 0;
+    const currentDelayDays = Number(s?.earnDelayDays ?? 0) || 0;
 
     const ttlEnabled = Boolean(body?.ttlEnabled);
     const ttlDaysRaw = Number(body?.ttlDays ?? 0) || 0;
@@ -77,6 +87,24 @@ export class RedeemLimitsController {
       ) {
         allowSame = Boolean(rules.allowEarnRedeemSameReceipt);
       }
+    }
+
+    const ttlChanged = pointsTtlDays !== currentTtlDays;
+    const delayChanged = earnDelayDays !== currentDelayDays;
+    const allowSameChanged = allowSame !== currentAllowSame;
+    if (ttlChanged) {
+      assertPortalPermissions(req, ['mechanic_ttl'], 'manage');
+    }
+    if (delayChanged || allowSameChanged) {
+      assertPortalPermissions(req, ['mechanic_redeem_limits'], 'manage');
+    }
+    if (!ttlChanged && !delayChanged && !allowSameChanged) {
+      assertPortalPermissions(
+        req,
+        ['mechanic_redeem_limits', 'mechanic_ttl'],
+        'read',
+        'any',
+      );
     }
 
     // Обновляем rulesJson: используем allowEarnRedeemSameReceipt

@@ -20,6 +20,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { isAllCustomersAudience } from "../../../lib/audience-utils";
+import { readApiError } from "lib/portal-errors";
 
 type PromotionStatus = "active" | "disabled" | "ended";
 
@@ -54,18 +55,6 @@ const formatCurrency = (val: number) => `₽${val.toLocaleString()}`;
 function safeNumber(value: unknown): number {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
-}
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") return payload.trim() || null;
-  if (typeof payload === "object" && payload) {
-    const anyPayload = payload as any;
-    if (typeof anyPayload.message === "string") return anyPayload.message;
-    if (Array.isArray(anyPayload.message) && typeof anyPayload.message[0] === "string") return anyPayload.message[0];
-    if (typeof anyPayload.error === "string") return anyPayload.error;
-  }
-  return null;
 }
 
 function formatDateRu(value: unknown, fallback: string) {
@@ -562,7 +551,7 @@ export default function ActionsEarnPage() {
             </div>
 
             {formData.accruePoints && (
-              <div className="animate-fade-in space-y-6">
+              <div className=" space-y-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Количество баллов</label>
                   <div className="relative w-full sm:w-1/2">
@@ -678,7 +667,7 @@ export default function ActionsEarnPage() {
                 </label>
 
                 {formData.pushAtStart && (
-                  <div className="animate-fade-in pl-7">
+                  <div className=" pl-7">
                     <div className="relative">
                       <textarea
                         maxLength={300}
@@ -711,7 +700,7 @@ export default function ActionsEarnPage() {
                 </label>
 
                 {formData.pushBeforeEnd && !formData.isIndefinite && (
-                  <div className="animate-fade-in pl-7 mt-3">
+                  <div className=" pl-7 mt-3">
                     <div className="relative">
                       <textarea
                         maxLength={300}
@@ -744,11 +733,11 @@ export default function ActionsEarnPage() {
   );
 
   if (view === "create") {
-    return <div className="p-8 max-w-[1600px] mx-auto animate-fade-in">{renderCreateForm()}</div>;
+    return <div className="p-8 max-w-[1600px] mx-auto ">{renderCreateForm()}</div>;
   }
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>

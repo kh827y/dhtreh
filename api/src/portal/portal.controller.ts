@@ -23,6 +23,10 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { PortalGuard } from '../portal-auth/portal.guard';
+import {
+  assertPortalPermissions,
+  hasPortalPermission,
+} from '../portal-auth/portal-permissions.util';
 import { MerchantsService } from '../merchants/merchants.service';
 import {
   LedgerEntryDto,
@@ -537,6 +541,178 @@ export class PortalController {
       if (normalized.length) result[resource.toLowerCase()] = normalized;
     }
     return result;
+  }
+
+  private stableStringify(value: any): string {
+    if (value === undefined) return 'undefined';
+    if (value === null || typeof value !== 'object') {
+      return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => this.stableStringify(item)).join(',')}]`;
+    }
+    const entries = Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${this.stableStringify(value[key])}`);
+    return `{${entries.join(',')}}`;
+  }
+
+  private assertSettingsReadAccess(req: any) {
+    assertPortalPermissions(
+      req,
+      [
+        'system_settings',
+        'mechanic_birthday',
+        'mechanic_auto_return',
+        'mechanic_registration_bonus',
+        'mechanic_redeem_limits',
+        'mechanic_ttl',
+        'antifraud',
+        'integrations',
+      ],
+      'read',
+      'any',
+    );
+  }
+
+  private resolveSettingsUpdateResources(
+    current: any,
+    dto: UpdateMerchantSettingsDto,
+  ) {
+    const required = new Set<string>();
+    const currentSettings = current || {};
+    const setSystemIfDifferent = (next: any, currentValue: any) => {
+      if (next === undefined) return;
+      if (this.stableStringify(next) !== this.stableStringify(currentValue)) {
+        required.add('system_settings');
+      }
+    };
+
+    if (Number(dto.earnBps ?? 0) !== Number(currentSettings.earnBps ?? 0)) {
+      required.add('system_settings');
+    }
+    if (
+      Number(dto.redeemLimitBps ?? 0) !==
+      Number(currentSettings.redeemLimitBps ?? 0)
+    ) {
+      required.add('system_settings');
+    }
+
+    setSystemIfDifferent(dto.qrTtlSec, currentSettings.qrTtlSec);
+    setSystemIfDifferent(dto.webhookUrl, currentSettings.webhookUrl);
+    setSystemIfDifferent(dto.webhookSecret, currentSettings.webhookSecret);
+    setSystemIfDifferent(dto.webhookKeyId, currentSettings.webhookKeyId);
+    setSystemIfDifferent(dto.webhookSecretNext, currentSettings.webhookSecretNext);
+    setSystemIfDifferent(dto.webhookKeyIdNext, currentSettings.webhookKeyIdNext);
+    setSystemIfDifferent(dto.useWebhookNext, currentSettings.useWebhookNext);
+    setSystemIfDifferent(dto.redeemCooldownSec, currentSettings.redeemCooldownSec);
+    setSystemIfDifferent(dto.earnCooldownSec, currentSettings.earnCooldownSec);
+    setSystemIfDifferent(dto.redeemDailyCap, currentSettings.redeemDailyCap);
+    setSystemIfDifferent(dto.earnDailyCap, currentSettings.earnDailyCap);
+    setSystemIfDifferent(dto.requireJwtForQuote, currentSettings.requireJwtForQuote);
+    setSystemIfDifferent(dto.requireBridgeSig, currentSettings.requireBridgeSig);
+    setSystemIfDifferent(dto.bridgeSecret, currentSettings.bridgeSecret);
+    setSystemIfDifferent(dto.bridgeSecretNext, currentSettings.bridgeSecretNext);
+    setSystemIfDifferent(dto.requireStaffKey, currentSettings.requireStaffKey);
+    setSystemIfDifferent(dto.telegramBotToken, currentSettings.telegramBotToken);
+    setSystemIfDifferent(
+      dto.telegramBotUsername,
+      currentSettings.telegramBotUsername,
+    );
+    setSystemIfDifferent(
+      dto.telegramStartParamRequired,
+      currentSettings.telegramStartParamRequired,
+    );
+    setSystemIfDifferent(dto.miniappBaseUrl, currentSettings.miniappBaseUrl);
+    setSystemIfDifferent(
+      dto.miniappThemePrimary,
+      currentSettings.miniappThemePrimary,
+    );
+    setSystemIfDifferent(dto.miniappThemeBg, currentSettings.miniappThemeBg);
+    setSystemIfDifferent(dto.miniappLogoUrl, currentSettings.miniappLogoUrl);
+    setSystemIfDifferent(dto.timezone, currentSettings.timezone);
+
+    if (
+      dto.pointsTtlDays !== undefined &&
+      Number(dto.pointsTtlDays ?? 0) !==
+        Number(currentSettings.pointsTtlDays ?? 0)
+    ) {
+      required.add('mechanic_ttl');
+    }
+    if (
+      dto.earnDelayDays !== undefined &&
+      Number(dto.earnDelayDays ?? 0) !==
+        Number(currentSettings.earnDelayDays ?? 0)
+    ) {
+      required.add('mechanic_redeem_limits');
+    }
+
+    if (dto.rulesJson !== undefined) {
+      const currentRules =
+        currentSettings.rulesJson &&
+        typeof currentSettings.rulesJson === 'object' &&
+        !Array.isArray(currentSettings.rulesJson)
+          ? (currentSettings.rulesJson as Record<string, any>)
+          : null;
+      const nextRules =
+        dto.rulesJson && typeof dto.rulesJson === 'object' && !Array.isArray(dto.rulesJson)
+          ? (dto.rulesJson as Record<string, any>)
+          : null;
+      if (!currentRules || !nextRules) {
+        if (
+          this.stableStringify(currentSettings.rulesJson) !==
+          this.stableStringify(dto.rulesJson)
+        ) {
+          required.add('system_settings');
+        }
+      } else {
+        const rulesKeys = new Set([
+          ...Object.keys(currentRules),
+          ...Object.keys(nextRules),
+        ]);
+        const rulesMap: Record<string, string> = {
+          birthday: 'mechanic_birthday',
+          autoReturn: 'mechanic_auto_return',
+          registration: 'mechanic_registration_bonus',
+          burnReminder: 'mechanic_ttl',
+          af: 'antifraud',
+          allowEarnRedeemSameReceipt: 'mechanic_redeem_limits',
+          disallowEarnRedeemSameReceipt: 'mechanic_redeem_limits',
+        };
+        for (const key of rulesKeys) {
+          const before = currentRules[key];
+          const after = nextRules[key];
+          if (this.stableStringify(before) === this.stableStringify(after)) {
+            continue;
+          }
+          const resource = rulesMap[key];
+          required.add(resource || 'system_settings');
+        }
+      }
+    }
+
+    return required;
+  }
+
+  private assertSettingsUpdateAccess(
+    req: any,
+    current: any,
+    dto: UpdateMerchantSettingsDto,
+  ) {
+    if (req.portalActor !== 'STAFF' || req.portalPermissions?.allowAll) {
+      return;
+    }
+    if (hasPortalPermission(req.portalPermissions, 'system_settings', 'manage')) {
+      return;
+    }
+    const required = this.resolveSettingsUpdateResources(current, dto);
+    if (required.size === 0) {
+      this.assertSettingsReadAccess(req);
+      return;
+    }
+    for (const resource of required) {
+      assertPortalPermissions(req, [resource], 'manage');
+    }
   }
 
   @Get('me')
@@ -1767,14 +1943,22 @@ export class PortalController {
   @ApiOkResponse({ type: MerchantSettingsRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   getSettings(@Req() req: any) {
+    this.assertSettingsReadAccess(req);
     return this.service.getSettings(this.getMerchantId(req));
   }
 
   @Put('settings')
   @ApiOkResponse({ type: MerchantSettingsRespDto })
   @ApiBadRequestResponse({ type: ErrorDto })
-  updateSettings(@Req() req: any, @Body() dto: UpdateMerchantSettingsDto) {
+  async updateSettings(
+    @Req() req: any,
+    @Body() dto: UpdateMerchantSettingsDto,
+  ) {
     const id = this.getMerchantId(req);
+    const current = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId: id },
+    });
+    this.assertSettingsUpdateAccess(req, current, dto);
     return this.service.updateSettings(
       id,
       dto.earnBps,

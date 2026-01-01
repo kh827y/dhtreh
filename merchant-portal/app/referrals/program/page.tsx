@@ -23,6 +23,7 @@ import {
   type ReferralProgramFormState,
   type ReferralProgramSettingsApi,
 } from "./referral-program-model";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type RegistrationBonusState = { loaded: boolean; enabled: boolean; points: number };
 
@@ -57,7 +58,7 @@ export default function ReferralProgramSettingsPage() {
         setRegistrationBonus({ loaded: true, enabled, points });
       }
     } catch (e: any) {
-      alert(String(e?.message || e || "Не удалось загрузить настройки"));
+      alert(normalizeErrorMessage(e, "Не удалось загрузить настройки"));
       setRegistrationBonus({ loaded: true, enabled: false, points: 0 });
     } finally {
       setLoading(false);
@@ -89,7 +90,7 @@ export default function ReferralProgramSettingsPage() {
       alert("Настройки реферальной программы сохранены!");
       setSettings(mapReferralProgramApiToForm(json, settings));
     } catch (e: any) {
-      alert(String(e?.message || e || "Не удалось сохранить настройки"));
+      alert(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
     } finally {
       setSaving(false);
     }
@@ -114,7 +115,7 @@ export default function ReferralProgramSettingsPage() {
   }, []);
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -290,7 +291,7 @@ export default function ReferralProgramSettingsPage() {
                       settings.levels.map((lvl, index) => (
                         <div
                           key={lvl.level}
-                          className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-100 animate-fade-in"
+                          className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-100 "
                         >
                           <div className="flex items-center space-x-3">
                             <div className="w-6 h-6 rounded-full bg-white border border-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">

@@ -16,6 +16,7 @@ import {
   Save,
   Power,
 } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type SelectOption = { value: string; label: string };
 
@@ -187,7 +188,7 @@ export default function ReviewsPage() {
         await persistSettings(rulesBase);
       } catch (err: any) {
         setIsEnabled(prev);
-        setSettingsError(String(err?.message || err || "Не удалось сохранить настройки"));
+        setSettingsError(normalizeErrorMessage(err, "Не удалось сохранить настройки"));
       } finally {
         setSettingsSaving(false);
       }
@@ -228,7 +229,7 @@ export default function ReviewsPage() {
       rulesBase.reviews = reviewRules;
       await persistSettings(rulesBase);
     } catch (err: any) {
-      setSettingsError(String(err?.message || err || "Не удалось сохранить настройки"));
+      setSettingsError(normalizeErrorMessage(err, "Не удалось сохранить настройки"));
     } finally {
       setSettingsSaving(false);
     }
@@ -246,7 +247,7 @@ export default function ReviewsPage() {
         applyShareSettings(data);
       } catch (err: any) {
         if (!cancelled) {
-          setSettingsError(String(err?.message || err || "Не удалось загрузить настройки"));
+          setSettingsError(normalizeErrorMessage(err, "Не удалось загрузить настройки"));
         }
       }
     })();
@@ -373,7 +374,7 @@ export default function ReviewsPage() {
         setReviews([]);
         setTotalCount(0);
         setAverageRating(0);
-        setError(String(err?.message || err || "Не удалось загрузить отзывы"));
+        setError(normalizeErrorMessage(err, "Не удалось загрузить отзывы"));
       } finally {
         if (cancelled) return;
         setLoading(false);
@@ -392,7 +393,7 @@ export default function ReviewsPage() {
   const statsAverage = totalCount > 0 ? averageRating.toFixed(1) : "0.0";
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Отзывы</h2>
         <p className="text-gray-500 mt-1">Мониторинг обратной связи от клиентов и управление репутацией.</p>

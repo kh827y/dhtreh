@@ -7,6 +7,7 @@ import {
   getCombinationBadgeClass,
   sumCombinations,
 } from "./utils";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type RfmRange = { min: number | null; max: number | null; count: number };
 type RfmGroup = {
@@ -236,7 +237,7 @@ export default function AnalyticsRfmPage() {
       setDraft(normalizedSettings);
     } catch (error) {
       console.error("Не удалось сохранить настройки RFM", error);
-      setError(String((error as any)?.message || "Не удалось сохранить настройки"));
+      setError(normalizeErrorMessage(error, "Не удалось сохранить настройки"));
     } finally {
       setSaving(false);
     }
@@ -266,7 +267,7 @@ export default function AnalyticsRfmPage() {
       : "Auto";
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-6 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-6 ">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">RFM Анализ</h2>
         <p className="text-gray-500">

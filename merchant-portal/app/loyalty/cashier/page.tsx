@@ -12,6 +12,7 @@ import {
   Store,
   X,
 } from "lucide-react";
+import { readApiError, readErrorMessage } from "lib/portal-errors";
 
 type CashierCreds = {
   login: string;
@@ -37,32 +38,6 @@ type CashierActivationCode = {
   revokedAt: string | null;
   status: string;
 };
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") return payload.trim() || null;
-  if (typeof payload === "object") {
-    const anyPayload = payload as any;
-    if (typeof anyPayload.message === "string") return anyPayload.message;
-    if (
-      Array.isArray(anyPayload.message) &&
-      typeof anyPayload.message[0] === "string"
-    ) {
-      return anyPayload.message[0];
-    }
-    if (typeof anyPayload.error === "string") return anyPayload.error;
-  }
-  return null;
-}
-
-async function readErrorMessage(res: Response, fallback: string) {
-  const text = await res.text().catch(() => "");
-  let json: any = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {}
-  return readApiError(json || text) || fallback;
-}
 
 function extractInitials(source: string) {
   const parts = String(source || "")
@@ -325,7 +300,7 @@ export default function CashierPanelPage() {
   }, []);
 
   return (
-    <div className="p-8 max-w-[1200px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1200px] mx-auto space-y-8 ">
       {/* Header */}
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Панель кассира</h2>

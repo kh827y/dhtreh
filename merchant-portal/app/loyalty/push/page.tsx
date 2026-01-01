@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useTimezone } from "../../../components/TimezoneProvider";
 import { isAllCustomersAudience } from "../../../lib/audience-utils";
+import { readApiError } from "lib/portal-errors";
 
 type TabKey = "active" | "archived";
 
@@ -60,27 +61,6 @@ const MAX_TEXT_HINT = "Длина текста не должна превыша�
 const DEFAULT_SCOPE_STATE: CampaignScopeState = { active: [], archived: [] };
 const ACTIVE_STATUSES = new Set(["SCHEDULED", "RUNNING", "PAUSED"]);
 const ARCHIVED_STATUSES = new Set(["COMPLETED", "FAILED"]);
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") {
-    const trimmed = payload.trim();
-    if (!trimmed) return null;
-    try {
-      const parsed = JSON.parse(trimmed);
-      return readApiError(parsed);
-    } catch {
-      return trimmed;
-    }
-  }
-  if (typeof payload === "object") {
-    const anyPayload = payload as any;
-    if (typeof anyPayload.message === "string") return anyPayload.message;
-    if (Array.isArray(anyPayload.message) && typeof anyPayload.message[0] === "string") return anyPayload.message[0];
-    if (typeof anyPayload.error === "string") return anyPayload.error;
-  }
-  return null;
-}
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { cache: "no-store", ...init });
@@ -419,7 +399,7 @@ export default function PushPage() {
 
   if (view === "create") {
     return (
-      <div className="p-8 max-w-[1600px] mx-auto animate-fade-in">
+      <div className="p-8 max-w-[1600px] mx-auto ">
         <div className="max-w-3xl mx-auto">
           <div className="flex items-center space-x-4 mb-8">
             <button
@@ -565,7 +545,7 @@ export default function PushPage() {
   }
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Push-рассылки</h2>

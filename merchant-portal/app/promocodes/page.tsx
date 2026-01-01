@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   MapPin,
 } from "lucide-react";
+import { readApiError } from "lib/portal-errors";
 
 type PromocodeStatus = "active" | "archived";
 
@@ -73,18 +74,6 @@ function formatDateInput(value: unknown): string {
   const date = new Date(String(value));
   if (Number.isNaN(date.getTime())) return new Date().toISOString().split("T")[0];
   return date.toISOString().split("T")[0];
-}
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") return payload.trim() || null;
-  if (typeof payload === "object" && payload) {
-    const anyPayload = payload as any;
-    if (typeof anyPayload.message === "string") return anyPayload.message;
-    if (Array.isArray(anyPayload.message) && typeof anyPayload.message[0] === "string") return anyPayload.message[0];
-    if (typeof anyPayload.error === "string") return anyPayload.error;
-  }
-  return null;
 }
 
 function safeInt(value: unknown, fallback: number): number {
@@ -414,7 +403,7 @@ const PromocodesPage: React.FC = () => {
 
   if (view === "create") {
     return (
-      <div className="p-8 max-w-[1600px] mx-auto animate-fade-in">
+      <div className="p-8 max-w-[1600px] mx-auto ">
         <div className="max-w-3xl mx-auto">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
@@ -546,7 +535,7 @@ const PromocodesPage: React.FC = () => {
 
                   {/* Points Expiration */}
                   {formData.hasPoints && (
-                    <div className="ml-7 pt-4 border-t border-gray-200 animate-fade-in">
+                    <div className="ml-7 pt-4 border-t border-gray-200 ">
                       <span className="block text-sm font-medium text-gray-800 mb-2">Срок действия баллов</span>
                       <div className="space-y-2">
                         <label className="flex items-center space-x-2 cursor-pointer">
@@ -648,7 +637,7 @@ const PromocodesPage: React.FC = () => {
                   </label>
 
                   {formData.isLimited && (
-                    <div className="relative w-32 animate-fade-in">
+                    <div className="relative w-32 ">
                       <input
                         type="number"
                         value={formData.limitValue}
@@ -697,7 +686,7 @@ const PromocodesPage: React.FC = () => {
                   </label>
 
                   {formData.hasFrequencyLimit && (
-                    <div className="relative w-32 animate-fade-in">
+                    <div className="relative w-32 ">
                       <input
                         type="number"
                         min={1}
@@ -739,7 +728,7 @@ const PromocodesPage: React.FC = () => {
 
   // --- List View ---
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>

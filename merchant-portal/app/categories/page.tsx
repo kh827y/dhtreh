@@ -14,6 +14,7 @@ import {
   ShoppingBag,
   Minus,
 } from "lucide-react";
+import { readErrorMessage } from "lib/portal-errors";
 
 type CategoryStatus = "active" | "archived";
 
@@ -44,33 +45,6 @@ type PortalProductRow = {
   name: string;
   categoryId?: string | null;
 };
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") return payload.trim() || null;
-  if (typeof payload === "object" && payload) {
-    const anyPayload = payload as any;
-    if (typeof anyPayload.message === "string") return anyPayload.message;
-    if (Array.isArray(anyPayload.message) && typeof anyPayload.message[0] === "string") {
-      return anyPayload.message[0];
-    }
-    if (typeof anyPayload.error === "string") return anyPayload.error;
-  }
-  return null;
-}
-
-async function readErrorMessage(res: Response, fallback: string) {
-  const text = await res.text().catch(() => "");
-  let parsed: unknown = null;
-  if (text) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = text;
-    }
-  }
-  return readApiError(parsed) || fallback;
-}
 
 function normalizeStatus(raw: unknown): CategoryStatus {
   return String(raw || "").toUpperCase() === "ARCHIVED" ? "archived" : "active";
@@ -373,7 +347,7 @@ const CategoriesPage: React.FC = () => {
 
   if (view === "create" || view === "edit") {
     return (
-      <div className="p-8 max-w-[1600px] mx-auto animate-fade-in h-[calc(100vh-64px)] flex flex-col">
+      <div className="p-8 max-w-[1600px] mx-auto  h-[calc(100vh-64px)] flex flex-col">
         <div className="flex items-center justify-between mb-6 flex-shrink-0">
           <div className="flex items-center space-x-4">
             <button
@@ -598,7 +572,7 @@ const CategoriesPage: React.FC = () => {
   }
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1400px] mx-auto space-y-8 ">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Категории товаров</h2>

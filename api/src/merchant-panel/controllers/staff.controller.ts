@@ -85,6 +85,11 @@ export class StaffController {
       this.getMerchantId(req),
       id,
       body,
+      {
+        actor: req.portalActor,
+        staffId: req.portalStaffId ?? null,
+        role: req.portalStaffRole ?? null,
+      },
     );
     return staff as StaffDetailDto;
   }

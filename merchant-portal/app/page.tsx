@@ -66,7 +66,7 @@ export default function Page() {
   // Ошибка загрузки
   if (!loading && error) {
     return (
-      <div className="p-8 max-w-[1200px] mx-auto animate-fade-in">
+      <div className="p-8 max-w-[1200px] mx-auto ">
         <div className="bg-white p-6 rounded-xl border border-red-200 shadow-sm">
           <div className="flex items-start space-x-4">
             <div className="p-3 bg-red-50 text-red-600 rounded-lg">
@@ -95,7 +95,7 @@ export default function Page() {
   // Скелетон загрузки
   if (loading) {
     return (
-      <div className="p-8 max-w-[1200px] mx-auto space-y-8 animate-fade-in">
+      <div className="p-8 max-w-[1200px] mx-auto space-y-8 ">
         <div>
           <div className="h-8 w-64 bg-gray-200 rounded animate-pulse" />
           <div className="h-4 w-96 bg-gray-100 rounded mt-2 animate-pulse" />
@@ -124,7 +124,7 @@ export default function Page() {
   }
 
   return (
-    <div className="p-8 max-w-[1200px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1200px] mx-auto space-y-8 ">
       {/* Header */}
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Основные настройки</h2>
@@ -220,7 +220,7 @@ export default function Page() {
           </div>
 
           <Link
-            href="/loyalty/mechanics/redeem-limits"
+            href="/loyalty/mechanics/bonus-settings"
             className="w-full flex items-center justify-center space-x-2 bg-white border border-gray-200 text-gray-700 py-2.5 rounded-lg font-medium hover:bg-gray-50 hover:border-purple-200 hover:text-purple-700 transition-colors"
           >
             <span>Настроить бонусы</span>

@@ -36,6 +36,7 @@ import {
   formatPeriodLabel,
   hasTimelineData,
 } from "./summary-utils";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type TimeFilter = "yesterday" | "week" | "month" | "quarter" | "year" | "custom";
 
@@ -93,7 +94,7 @@ export default function AnalyticsDashboardPage() {
         setData(json as DashboardResponse);
       } catch (err: any) {
         if (err?.name === "AbortError") return;
-        setError(String(err?.message || err || "Не удалось загрузить отчёт"));
+        setError(normalizeErrorMessage(err, "Не удалось загрузить отчёт"));
         setData(null);
       } finally {
         setLoading(false);
@@ -194,7 +195,7 @@ export default function AnalyticsDashboardPage() {
     (data?.previousMetrics.averagePurchasesPerCustomer ?? 0);
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center space-y-4 xl:space-y-0">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Сводный отчет</h2>
@@ -238,7 +239,7 @@ export default function AnalyticsDashboardPage() {
           </div>
 
           {activeFilter === "custom" && (
-            <div className="flex items-center space-x-2 bg-white p-1.5 rounded-xl border border-purple-200 shadow-sm animate-fade-in ring-2 ring-purple-50">
+            <div className="flex items-center space-x-2 bg-white p-1.5 rounded-xl border border-purple-200 shadow-sm  ring-2 ring-purple-50">
               <div className="flex items-center px-2 py-1 bg-gray-50 rounded-lg border border-gray-200">
                 <span className="text-xs text-gray-400 mr-2">От</span>
                 <input

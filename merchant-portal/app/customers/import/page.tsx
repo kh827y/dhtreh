@@ -10,6 +10,7 @@ import {
   FileText,
   X,
 } from "lucide-react";
+import { readApiError } from "lib/portal-errors";
 
 type ImportResult = {
   total: number;
@@ -21,25 +22,6 @@ type ImportResult = {
   balancesSet: number;
   errors?: Array<{ row: number; error: string }>;
 };
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") {
-    const trimmed = payload.trim();
-    if (!trimmed) return null;
-    try {
-      return readApiError(JSON.parse(trimmed));
-    } catch {
-      return trimmed;
-    }
-  }
-  if (typeof payload === "object") {
-    const message = (payload as { message?: unknown }).message;
-    if (Array.isArray(message)) return message.filter(Boolean).join(", ");
-    if (typeof message === "string" && message.trim()) return message.trim();
-  }
-  return null;
-}
 
 type TableRow = {
   col: string;
@@ -279,7 +261,7 @@ export default function ImportCustomersPage() {
   };
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Импорт данных</h2>
         <p className="text-gray-500 mt-1">

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { TierMembersModal } from "../../../../components/TierMembersModal";
 import { createPortal } from "react-dom";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type TierRow = {
   id: string;
@@ -74,9 +75,7 @@ function parseDecimal(value: string): number | null {
 }
 
 function readableError(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === "string" && error.trim()) return error.trim();
-  return fallback;
+  return normalizeErrorMessage(error, fallback);
 }
 
 function formatCurrency(value: number | null): string {
@@ -413,7 +412,7 @@ export default function LevelsPage() {
   const showEmpty = !loading && !rows.length;
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto space-y-6 animate-fade-in">
+    <div className="p-8 max-w-[1400px] mx-auto space-y-6 ">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <button

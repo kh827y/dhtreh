@@ -23,6 +23,7 @@ import {
   toRecencyChartData,
   weekDayLabels,
 } from "./utils";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 const recencyUnits: Array<{ value: RecencyGrouping; label: string }> = [
   { value: "day", label: "дни" },
@@ -184,7 +185,7 @@ export default function AnalyticsTimePage() {
         if (cancelled || error?.name === "AbortError") return;
         setRecency(null);
         setRecencyError(
-          String(error?.message || "Не удалось загрузить распределение"),
+          normalizeErrorMessage(error, "Не удалось загрузить распределение"),
         );
       })
       .finally(() => {
@@ -221,7 +222,7 @@ export default function AnalyticsTimePage() {
         if (cancelled || error?.name === "AbortError") return;
         setActivity(null);
         setActivityError(
-          String(error?.message || "Не удалось загрузить активность"),
+          normalizeErrorMessage(error, "Не удалось загрузить активность"),
         );
       })
       .finally(() => {
@@ -267,7 +268,7 @@ export default function AnalyticsTimePage() {
     "";
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       <div className="flex flex-col space-y-2">
         <h2 className="text-2xl font-bold text-gray-900">
           Аналитика по времени

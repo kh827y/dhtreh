@@ -11,6 +11,7 @@ import {
   ExternalLink,
   ChevronRight,
 } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type TelegramSummary = {
   enabled: boolean;
@@ -68,7 +69,7 @@ export default function IntegrationsPage() {
       }
     } catch (error: any) {
       setTelegram(null);
-      setTelegramError(String(error?.message || error));
+      setTelegramError(normalizeErrorMessage(error, "Не удалось загрузить Telegram-интеграцию"));
     }
   }
 
@@ -90,7 +91,7 @@ export default function IntegrationsPage() {
       );
     } catch (error: any) {
       setRestApi(null);
-      setRestError(String(error?.message || error));
+      setRestError(normalizeErrorMessage(error, "Не удалось загрузить REST API"));
     }
   }
 
@@ -146,7 +147,7 @@ export default function IntegrationsPage() {
   };
 
   return (
-    <div className="p-8 max-w-[1200px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1200px] mx-auto space-y-8 ">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Интеграции</h2>
         <p className="text-gray-500 mt-1">

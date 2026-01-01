@@ -2,6 +2,7 @@
 import React, { Suspense } from "react";
 import { ArrowRight, Eye, EyeOff, KeyRound, Loader2, Lock, Mail } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 function safeRedirectPath(input?: string | null): string {
   if (!input) return "/";
@@ -99,7 +100,7 @@ function LoginForm() {
       }
       window.location.href = redirectPath;
     } catch (e: any) {
-      setMsg(String(e?.message || e));
+      setMsg(normalizeErrorMessage(e, "Ошибка входа"));
     } finally {
       setLoading(false);
     }

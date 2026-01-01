@@ -1,6 +1,7 @@
 import { Args, Context, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
+import { assertPortalPermissions } from '../../portal-auth/portal-permissions.util';
 import { MerchantPanelService, OutletFilters } from '../merchant-panel.service';
 import {
   OutletDto,
@@ -19,11 +20,16 @@ export class OutletsResolver {
     return String(ctx.req?.portalMerchantId ?? ctx.portalMerchantId ?? '');
   }
 
+  private assertAccess(ctx: any, action: 'read' | 'manage') {
+    assertPortalPermissions(ctx.req ?? ctx, ['outlets'], action);
+  }
+
   @Query(() => OutletListResponseDto, { name: 'portalOutlets' })
   async list(
     @Context() ctx: any,
     @Args() args: OutletListQueryDto,
   ): Promise<OutletListResponseDto> {
+    this.assertAccess(ctx, 'read');
     const { page, pageSize, ...rest } = args;
     const filters: OutletFilters = {
       status: rest.status ? (rest.status as any) : undefined,
@@ -45,6 +51,7 @@ export class OutletsResolver {
     @Context() ctx: any,
     @Args('id', { type: () => ID }) id: string,
   ): Promise<OutletDto> {
+    this.assertAccess(ctx, 'read');
     const outlet = await this.service.getOutlet(this.merchantId(ctx), id);
     return plainToInstance(OutletDto, outlet, {
       enableImplicitConversion: true,
@@ -56,6 +63,7 @@ export class OutletsResolver {
     @Context() ctx: any,
     @Args('input') input: UpsertOutletInput,
   ): Promise<OutletDto> {
+    this.assertAccess(ctx, 'manage');
     const outlet = await this.service.createOutlet(this.merchantId(ctx), input);
     return plainToInstance(OutletDto, outlet, {
       enableImplicitConversion: true,
@@ -68,6 +76,7 @@ export class OutletsResolver {
     @Args('id', { type: () => ID }) id: string,
     @Args('input') input: UpsertOutletInput,
   ): Promise<OutletDto> {
+    this.assertAccess(ctx, 'manage');
     const outlet = await this.service.updateOutlet(
       this.merchantId(ctx),
       id,

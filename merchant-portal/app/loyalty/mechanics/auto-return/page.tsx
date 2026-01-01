@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, CardBody, Skeleton, Chart } from "@loyalty/ui";
 import Toggle from "../../../../components/Toggle";
 import { ChartGroup, formatBucketLabel, groupAttemptsTimeline, groupRevenueTimeline, groupRfmReturnsTimeline } from "./stats-utils";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 const quickRanges = [
   { label: "Вчера", value: "day" },
@@ -158,7 +159,7 @@ function SettingsTab() {
         repeatDays: String(Number(json?.repeatDays ?? 0) || 0),
       }));
     } catch (error: any) {
-      setState(prev => ({ ...prev, loading: false, error: String(error?.message || error || "Ошибка загрузки") }));
+      setState(prev => ({ ...prev, loading: false, error: normalizeErrorMessage(error, "Ошибка загрузки") }));
     }
   }, []);
 
@@ -201,7 +202,7 @@ function SettingsTab() {
       setState(prev => ({
         ...prev,
         saving: false,
-        error: String(error?.message || error || "Не удалось сохранить настройки"),
+        error: normalizeErrorMessage(error, "Не удалось сохранить настройки"),
       }));
     }
   }
@@ -430,7 +431,7 @@ function StatisticsTab() {
       }
       setStats(json as AutoReturnStats);
     } catch (err: any) {
-      setError(String(err?.message || err || "Ошибка загрузки"));
+      setError(normalizeErrorMessage(err, "Ошибка загрузки"));
       setStats(null);
     } finally {
       setLoading(false);

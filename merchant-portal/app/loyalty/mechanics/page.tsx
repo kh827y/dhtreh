@@ -14,6 +14,7 @@ import {
   Settings,
   Power,
 } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type MechanicCard = {
   id: string;
@@ -35,11 +36,11 @@ const cards: MechanicCard[] = [
     color: "bg-yellow-50 text-yellow-600",
   },
   {
-    id: "redeem-limits",
+    id: "bonus-settings",
     title: "Настройки бонусов",
     description: "Срок жизни, запреты и задержки начисления баллов",
     icon: <Ban size={28} />,
-    href: "/loyalty/mechanics/redeem-limits",
+    href: "/loyalty/mechanics/bonus-settings",
     color: "bg-red-50 text-red-600",
   },
   {
@@ -139,7 +140,7 @@ export default function MechanicsPage() {
       const count = await tiersPromise;
       setTiersCount(count);
     } catch (e: any) {
-      setError(String(e?.message || e || "Ошибка загрузки механик"));
+      setError(normalizeErrorMessage(e, "Ошибка загрузки механик"));
       setTiersCount(null);
     }
   }, []);
@@ -250,7 +251,7 @@ export default function MechanicsPage() {
       setEnabled((prev) => ({ ...prev, [id]: value }));
       setSettings((prev) => ({ ...prev, [id]: { ...current, enabled: value } }));
     } catch (e: any) {
-      setError(String(e?.message || e || "Ошибка сохранения"));
+      setError(normalizeErrorMessage(e, "Ошибка сохранения"));
     } finally {
       setSaving((prev) => ({ ...prev, [id]: false }));
     }
@@ -269,12 +270,12 @@ export default function MechanicsPage() {
         <h3 className="text-lg font-bold text-gray-800">Базовые настройки</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {cards
-            .filter((card) => card.id === "levels" || card.id === "redeem-limits")
+            .filter((card) => card.id === "levels" || card.id === "bonus-settings")
             .map((card) => {
               const isLevels = card.id === "levels";
               const iconHoverClass = isLevels
                 ? "group-hover:bg-yellow-100"
-                : card.id === "redeem-limits"
+                : card.id === "bonus-settings"
                   ? "group-hover:bg-red-100"
                   : "";
 

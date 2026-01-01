@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { isAllCustomersAudience } from "../../../lib/audience-utils";
+import { readApiError } from "lib/portal-errors";
 
 type PromotionStatus = "active" | "disabled" | "ended";
 type PromotionType = "double_points" | "buy_x_get_y" | "promo_price";
@@ -101,20 +102,6 @@ const calculateROI = (revenue: number, cost: number): number => {
 function safeNumber(value: unknown): number {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
-}
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") return payload.trim() || null;
-  if (typeof payload === "object" && payload) {
-    const anyPayload = payload as any;
-    if (typeof anyPayload.message === "string") return anyPayload.message;
-    if (Array.isArray(anyPayload.message) && typeof anyPayload.message[0] === "string") {
-      return anyPayload.message[0];
-    }
-    if (typeof anyPayload.error === "string") return anyPayload.error;
-  }
-  return null;
 }
 
 function formatDateRu(value: unknown, fallback: string) {

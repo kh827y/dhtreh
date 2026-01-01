@@ -32,6 +32,7 @@ import {
   normalizeTimeline,
   type ReferralTimelinePoint,
 } from "./utils";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type PeriodPreset = "yesterday" | "week" | "month" | "quarter" | "year";
 type TopRef = {
@@ -106,7 +107,7 @@ export default function AnalyticsReferralsPage() {
         if (!cancelled) setData(json);
       } catch (err: any) {
         if (cancelled || err?.name === "AbortError") return;
-        setError(String(err?.message || err));
+        setError(normalizeErrorMessage(err, "Не удалось загрузить реферальную аналитику"));
         setData(null);
       } finally {
         if (!cancelled) setLoading(false);
@@ -171,7 +172,7 @@ export default function AnalyticsReferralsPage() {
   );
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>
           <div className="flex items-center space-x-2">
@@ -454,7 +455,7 @@ export default function AnalyticsReferralsPage() {
 
       {mounted && isModalOpen && data?.topReferrers
         ? createPortal(
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in">
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4 ">
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col relative z-[101]">
                 <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
                   <div>

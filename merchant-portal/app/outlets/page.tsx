@@ -3,6 +3,7 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { Store, Plus, MapPin, Monitor, Users, Edit, Trash2 } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type OutletItem = {
   id: string;
@@ -45,7 +46,7 @@ export default function OutletsPage() {
       setActiveOutlets(Array.isArray(activeData.items) ? activeData.items : []);
       setInactiveOutlets(Array.isArray(inactiveData.items) ? inactiveData.items : []);
     } catch (e: any) {
-      setError(String(e?.message || e || "Не удалось загрузить торговые точки"));
+      setError(normalizeErrorMessage(e, "Не удалось загрузить торговые точки"));
       setActiveOutlets([]);
       setInactiveOutlets([]);
     } finally {
@@ -69,12 +70,12 @@ export default function OutletsPage() {
       }
       await fetchOutlets();
     } catch (e: any) {
-      setError(String(e?.message || e || "Не удалось удалить точку"));
+      setError(normalizeErrorMessage(e, "Не удалось удалить точку"));
     }
   };
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Торговые точки</h2>

@@ -14,6 +14,7 @@ import {
   Star,
   FileText,
 } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type Subscriber = {
   id: string;
@@ -123,7 +124,7 @@ export default function TelegramSettingsPage() {
       }
 
     } catch (e: any) {
-      setErr(String(e?.message || e || "Не удалось загрузить настройки"));
+      setErr(normalizeErrorMessage(e, "Не удалось загрузить настройки"));
       setState(null);
       setInvite(null);
       setSubs([]);
@@ -156,7 +157,7 @@ export default function TelegramSettingsPage() {
         setInvite(payload as TelegramInvite);
       }
     } catch (e: any) {
-      setErr(String(e?.message || e || "Не удалось сгенерировать новый инвайт"));
+      setErr(normalizeErrorMessage(e, "Не удалось сгенерировать новый инвайт"));
     } finally {
       setBusy(false);
     }
@@ -180,7 +181,7 @@ export default function TelegramSettingsPage() {
       }
       setSubs((prev) => (Array.isArray(prev) ? prev.filter((item) => item.id !== id) : prev));
     } catch (e: any) {
-      setErr(String(e?.message || e || "Не удалось отключить уведомления"));
+      setErr(normalizeErrorMessage(e, "Не удалось отключить уведомления"));
     } finally {
       setDeactivatingId(null);
     }
@@ -205,7 +206,7 @@ export default function TelegramSettingsPage() {
         throw new Error((next && next.message) || "Не удалось сохранить настройки уведомлений");
       }
     } catch (e: any) {
-      setErr(String(e?.message || e));
+      setErr(normalizeErrorMessage(e, "Не удалось сохранить настройки уведомлений"));
       setPrefs((prevState) => ({ ...prevState, [field]: previous }));
     } finally {
       setPrefsSaving(false);
@@ -218,7 +219,7 @@ export default function TelegramSettingsPage() {
   const dailyReportTime = formatTimeLabel(state?.digestHourLocal);
 
   return (
-    <div className="p-8 max-w-[1200px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1200px] mx-auto space-y-8 ">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Уведомления в Telegram</h2>
         <p className="text-gray-500 mt-1">Настройка оповещений о важных событиях в мессенджер.</p>
@@ -349,7 +350,7 @@ export default function TelegramSettingsPage() {
             </div>
 
             {prefs.notifyReviews && (
-              <div className="pl-12 animate-fade-in">
+              <div className="pl-12 ">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Порог оценки (включительно и ниже)</label>
                 <div className="flex gap-2">
                   {reviewThresholdValues.map((val) => (

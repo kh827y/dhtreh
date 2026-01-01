@@ -3,6 +3,7 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Monitor, Users, Save, ArrowLeft, X } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
 const isValidHttpUrl = (value: string) => {
@@ -110,14 +111,14 @@ export default function CreateOutletPage() {
       }
       router.push("/outlets");
     } catch (e: any) {
-      setFormError(String(e?.message || e || "Не удалось создать торговую точку"));
+      setFormError(normalizeErrorMessage(e, "Не удалось создать торговую точку"));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="p-8 max-w-[1200px] mx-auto animate-fade-in">
+    <div className="p-8 max-w-[1200px] mx-auto ">
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center space-x-4">
           <button

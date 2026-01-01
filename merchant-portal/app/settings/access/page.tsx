@@ -1,126 +1,329 @@
 "use client";
 import React from "react";
-import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
+import {
+  Shield,
+  Plus,
+  Users,
+  Edit,
+  Trash2,
+  CheckCircle2,
+  X,
+  Save,
+  Lock,
+  ArrowLeft,
+} from "lucide-react";
+import { createPortal } from "react-dom";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
-// Данные берём из бэкенда; локальное хранилище больше не используется
-
-const MODULES = [
-  { id: "staff", label: "Сотрудники" },
-  { id: "outlets", label: "Торговые точки" },
-  { id: "loyalty", label: "Программа лояльности" },
-  { id: "analytics", label: "Аналитика" },
-];
-
-const CRUD_ACTIONS = ['create', 'read', 'update', 'delete'] as const;
-
-type CrudMatrix = {
-  create: boolean;
-  read: boolean;
-  update: boolean;
-  delete: boolean;
+type PermissionEntry = {
+  resource: string;
+  action: string;
+  conditions?: string | null;
 };
 
-type ModulePermissions = Record<string, CrudMatrix>;
+type SectionPermission = {
+  view: boolean;
+  edit: boolean;
+};
+
+type SectionPermissions = Record<string, SectionPermission>;
+
+type PermissionSection = {
+  id: string;
+  label: string;
+  allowEdit?: boolean;
+};
 
 type AccessGroupRow = {
   id: string;
   name: string;
+  description?: string | null;
   membersCount: number;
   staffIds: string[];
-  permissions: ModulePermissions;
+  permissions: SectionPermissions;
+  fullAccess: boolean;
+  isSystem?: boolean;
+  isDefault?: boolean;
 };
 
 type StaffOption = { id: string; name: string; email?: string | null };
 
-function defaultPermissions(): ModulePermissions {
-  return MODULES.reduce((acc, module) => {
-    acc[module.id] = { create: true, read: true, update: true, delete: true };
+type MemberPreview = { id: string; name: string; avatar: string };
+
+type ModalState = {
+  name: string;
+  members: MemberPreview[];
+};
+
+const ACCESS_GROUPS_CACHE_TTL_MS = 2000;
+let accessGroupsCache: { ts: number; groupsPayload: any; staffPayload: any } | null =
+  null;
+let accessGroupsLoadPromise:
+  | Promise<{ groupsPayload: any; staffPayload: any }>
+  | null = null;
+
+const SECTIONS: PermissionSection[] = [
+  { id: "products", label: "Товары" },
+  { id: "categories", label: "Категории" },
+  { id: "audiences", label: "Аудитории" },
+  { id: "customers", label: "Клиенты" },
+  { id: "points_promotions", label: "Акции с баллами" },
+  { id: "product_promotions", label: "Акции с товарами" },
+  { id: "promocodes", label: "Промокоды" },
+  { id: "staff", label: "Сотрудники" },
+  { id: "telegram_notifications", label: "Уведомления в Telegram" },
+  { id: "outlets", label: "Торговые точки" },
+  { id: "broadcasts", label: "Рассылки (push и Telegram)" },
+  { id: "access_groups", label: "Группы доступа" },
+  { id: "system_settings", label: "Системные настройки" },
+  { id: "feedback", label: "Обратная связь" },
+  { id: "staff_motivation", label: "Мотивация персонала" },
+  { id: "mechanic_birthday", label: "Механика: День рождения" },
+  { id: "mechanic_auto_return", label: "Механика: Автовозврат" },
+  { id: "mechanic_levels", label: "Механика: Уровни" },
+  { id: "mechanic_redeem_limits", label: "Механика: Настройки бонусов" },
+  { id: "mechanic_registration_bonus", label: "Механика: Бонус за регистрацию" },
+  { id: "mechanic_ttl", label: "Механика: Срок действия" },
+  { id: "mechanic_referral", label: "Механика: Реферальная программа" },
+  { id: "cashier_panel", label: "Панель кассира" },
+  { id: "import", label: "Импорт" },
+  { id: "antifraud", label: "Защита от мошенничества" },
+  { id: "integrations", label: "Интеграции" },
+  { id: "rfm_analysis", label: "RFM анализ" },
+  { id: "analytics", label: "Аналитика", allowEdit: false },
+];
+
+function isOwnerGroupName(name?: string | null) {
+  if (!name) return false;
+  const nameLower = name.trim().toLowerCase();
+  return (
+    nameLower === "владелец" || nameLower === "owner" || nameLower === "merchant"
+  );
+}
+
+async function fetchAccessGroupsAndStaff(force = false) {
+  if (force) {
+    accessGroupsCache = null;
+  }
+  const now = Date.now();
+  if (!force && accessGroupsCache && now - accessGroupsCache.ts < ACCESS_GROUPS_CACHE_TTL_MS) {
+    return accessGroupsCache;
+  }
+  if (accessGroupsLoadPromise) {
+    return accessGroupsLoadPromise;
+  }
+  const task = (async () => {
+    const [groupsRes, staffRes] = await Promise.all([
+      fetch("/api/portal/access-groups"),
+      fetch("/api/portal/staff"),
+    ]);
+    if (!groupsRes.ok) {
+      const errText = await groupsRes.text().catch(() => "");
+      throw new Error(errText || "Не удалось получить группы доступа");
+    }
+    if (!staffRes.ok) {
+      const errText = await staffRes.text().catch(() => "");
+      throw new Error(errText || "Не удалось получить сотрудников");
+    }
+    const groupsPayload = await groupsRes.json().catch(() => ({}));
+    const staffPayload = await staffRes.json().catch(() => ({}));
+    return { groupsPayload, staffPayload };
+  })();
+  accessGroupsLoadPromise = task;
+  try {
+    const data = await task;
+    accessGroupsCache = { ts: Date.now(), ...data };
+    return accessGroupsCache;
+  } finally {
+    if (accessGroupsLoadPromise === task) {
+      accessGroupsLoadPromise = null;
+    }
+  }
+}
+
+const LEGACY_RESOURCE_ALIASES: Record<string, string[]> = {
+  products: ["loyalty"],
+  categories: ["loyalty"],
+  audiences: ["loyalty"],
+  customers: ["loyalty"],
+  points_promotions: ["loyalty"],
+  product_promotions: ["loyalty"],
+  promocodes: ["loyalty"],
+  telegram_notifications: ["loyalty"],
+  broadcasts: ["loyalty"],
+  system_settings: ["loyalty"],
+  feedback: ["loyalty"],
+  staff_motivation: ["loyalty"],
+  antifraud: ["loyalty"],
+  cashier_panel: ["loyalty"],
+  import: ["loyalty"],
+  integrations: ["loyalty"],
+  rfm_analysis: ["analytics"],
+  analytics: ["analytics"],
+  staff: ["staff"],
+  access_groups: ["staff"],
+  outlets: ["outlets"],
+  mechanic_birthday: ["loyalty"],
+  mechanic_auto_return: ["loyalty"],
+  mechanic_levels: ["loyalty"],
+  mechanic_redeem_limits: ["loyalty"],
+  mechanic_registration_bonus: ["loyalty"],
+  mechanic_ttl: ["loyalty"],
+  mechanic_referral: ["loyalty"],
+};
+
+const EDIT_ACTIONS = new Set(["create", "update", "delete", "manage", "*"]);
+
+function blankPermissions(): SectionPermissions {
+  return SECTIONS.reduce((acc, section) => {
+    acc[section.id] = { view: false, edit: false };
     return acc;
-  }, {} as ModulePermissions);
+  }, {} as SectionPermissions);
 }
 
-function mergeGroups(_base: AccessGroupRow[], remote: any[]): AccessGroupRow[] {
-  const normalized: AccessGroupRow[] = (remote || [])
-    .map((g: any, idx: number) => {
-      const scope = String(g?.scope ?? "").toUpperCase();
-      const isSystem = Boolean(g?.isSystem);
-      if (isSystem) return null;
-      if (scope && scope !== "PORTAL") return null;
-      const rawId = g?.id ?? g?.code ?? g?.role ?? "";
-      const id = String(rawId).trim();
-      const rawName = (g?.name ?? g?.label ?? g?.role ?? id) || `Группа ${idx + 1}`;
-      const name = String(rawName).trim();
-      if (!id || !name) return null;
-      return {
-        id,
-        name,
-        membersCount: Number(g?.memberCount ?? g?.membersCount ?? 0) || 0,
-        staffIds: [],
-        permissions: defaultPermissions(),
-      } as AccessGroupRow;
-    })
-    .filter(Boolean) as AccessGroupRow[];
-  // deduplicate by id
-  const map = new Map<string, AccessGroupRow>();
-  for (const g of normalized) {
-    if (!map.has(g.id)) map.set(g.id, g);
-  }
-  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+function normalizePermissionMap(list: PermissionEntry[]) {
+  const map = new Map<string, Set<string>>();
+  (list || []).forEach((entry) => {
+    const resource = String(entry?.resource || "").toLowerCase().trim();
+    const action = String(entry?.action || "").toLowerCase().trim();
+    if (!resource || !action) return;
+    if (!map.has(resource)) map.set(resource, new Set());
+    map.get(resource)!.add(action);
+  });
+  return map;
 }
 
-function permissionsToList(perm: ModulePermissions) {
-  const list: Array<{ resource: string; action: string; conditions?: string | null }> = [];
-  for (const module of MODULES) {
-    const p: CrudMatrix = perm[module.id] ?? ({ create: false, read: true, update: false, delete: false } as CrudMatrix);
-    CRUD_ACTIONS.forEach((action) => {
-      if (p[action]) list.push({ resource: module.id, action });
-    });
+function flagsFromActions(actions?: Set<string>): SectionPermission {
+  if (!actions || actions.size === 0) return { view: false, edit: false };
+  const actionList = Array.from(actions);
+  const canEdit = actionList.some((action) => EDIT_ACTIONS.has(action));
+  const canView = actionList.includes("read") || canEdit;
+  return { view: canView, edit: canEdit };
+}
+
+function resolveSectionPermissions(
+  map: Map<string, Set<string>>,
+  section: PermissionSection,
+): SectionPermission {
+  const direct = flagsFromActions(map.get(section.id));
+  let view = direct.view;
+  let edit = direct.edit;
+  const aliases = LEGACY_RESOURCE_ALIASES[section.id] || [];
+  for (const alias of aliases) {
+    const legacy = flagsFromActions(map.get(alias));
+    view = view || legacy.view;
+    edit = edit || legacy.edit;
   }
+  if (section.allowEdit === false) {
+    return { view: view || edit, edit: false };
+  }
+  return { view, edit };
+}
+
+function listToPermissions(list: PermissionEntry[]): {
+  permissions: SectionPermissions;
+  fullAccess: boolean;
+} {
+  const map = normalizePermissionMap(list || []);
+  const fullAccessActions = map.get("__all__");
+  const fullAccess =
+    !!fullAccessActions &&
+    Array.from(fullAccessActions).some((action) =>
+      ["manage", "*"].includes(action),
+    );
+  const permissions = blankPermissions();
+  SECTIONS.forEach((section) => {
+    permissions[section.id] = resolveSectionPermissions(map, section);
+  });
+  return { permissions, fullAccess };
+}
+
+function permissionsToList(
+  permissions: SectionPermissions,
+  fullAccess: boolean,
+): PermissionEntry[] {
+  if (fullAccess) {
+    return [{ resource: "__all__", action: "manage" }];
+  }
+  const list: PermissionEntry[] = [];
+  SECTIONS.forEach((section) => {
+    const perm = permissions[section.id] || { view: false, edit: false };
+    const allowEdit = section.allowEdit !== false;
+    if (allowEdit && perm.edit) {
+      list.push({ resource: section.id, action: "manage" });
+      return;
+    }
+    if (perm.view) {
+      list.push({ resource: section.id, action: "read" });
+    }
+  });
   return list;
 }
 
-function listToPermissions(list: Array<{ resource: string; action: string }>): ModulePermissions {
-  const base = MODULES.reduce((acc, m) => { acc[m.id] = { create: false, read: false, update: false, delete: false }; return acc; }, {} as ModulePermissions);
-  for (const row of (list || [])) {
-    if (!row?.resource || !base[row.resource]) continue;
-    const actions = row.action === 'manage' ? [...CRUD_ACTIONS] : [row.action];
-    actions.forEach((action) => {
-      if (CRUD_ACTIONS.includes(action as (typeof CRUD_ACTIONS)[number])) {
-        (base[row.resource] as any)[action] = true;
-      }
-    });
-  }
-  return base;
+function mergeGroups(remote: any[], staffRows: any[]): AccessGroupRow[] {
+  const normalized = (remote || [])
+    .map((group: any, idx: number) => {
+      const scope = String(group?.scope ?? "").toUpperCase();
+      if (scope && scope !== "PORTAL") return null;
+      const rawId = group?.id ?? group?.code ?? group?.role ?? "";
+      const id = String(rawId).trim();
+      const rawName =
+        (group?.name ?? group?.label ?? group?.role ?? id) || `Группа ${idx + 1}`;
+      const name = String(rawName).trim();
+      if (isOwnerGroupName(name)) return null;
+      if (!id || !name) return null;
+      const mapped = listToPermissions(group?.permissions || []);
+      const staffIds = staffRows
+        .filter(
+          (member: any) =>
+            Array.isArray(member?.groups) &&
+            member.groups.some((gr: any) => String(gr?.id) === id),
+        )
+        .map((member: any) => String(member?.id ?? ""))
+        .filter((value: string) => Boolean(value));
+      return {
+        id,
+        name,
+        description:
+          typeof group?.description === "string" ? group.description : null,
+        membersCount: Number(group?.memberCount ?? group?.membersCount ?? 0) || 0,
+        staffIds,
+        permissions: mapped.permissions,
+        fullAccess: mapped.fullAccess,
+        isSystem: Boolean(group?.isSystem),
+        isDefault: Boolean(group?.isDefault),
+      } as AccessGroupRow;
+    })
+    .filter(Boolean) as AccessGroupRow[];
+  const map = new Map<string, AccessGroupRow>();
+  normalized.forEach((group) => {
+    if (!map.has(group.id)) map.set(group.id, group);
+  });
+  return Array.from(map.values()).sort((a, b) =>
+    a.name.localeCompare(b.name, "ru"),
+  );
 }
 
 export default function AccessSettingsPage() {
   const [loading, setLoading] = React.useState(true);
   const [groups, setGroups] = React.useState<AccessGroupRow[]>([]);
   const [staff, setStaff] = React.useState<StaffOption[]>([]);
-  const [banner, setBanner] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [banner, setBanner] = React.useState<
+    { type: "success" | "error"; text: string } | null
+  >(null);
 
-  const [modalMode, setModalMode] = React.useState<"view" | "edit" | "create" | null>(null);
+  const [view, setView] = React.useState<"list" | "create" | "edit">("list");
+  const [editingId, setEditingId] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState<AccessGroupRow | null>(null);
   const [staffToAdd, setStaffToAdd] = React.useState<string>("");
   const [busy, setBusy] = React.useState(false);
-  const load = React.useCallback(async () => {
+
+  const [membersModal, setMembersModal] = React.useState<ModalState | null>(null);
+
+  const load = React.useCallback(async (force = false) => {
     setLoading(true);
     try {
-      const [groupsRes, staffRes] = await Promise.all([
-        fetch("/api/portal/access-groups"),
-        fetch("/api/portal/staff"),
-      ]);
-      if (!groupsRes.ok) {
-        const errText = await groupsRes.text().catch(() => "");
-        throw new Error(errText || "Не удалось получить группы доступа");
-      }
-      if (!staffRes.ok) {
-        const errText = await staffRes.text().catch(() => "");
-        throw new Error(errText || "Не удалось получить сотрудников");
-      }
-
-      const groupsPayload = await groupsRes.json().catch(() => ({}));
-      const staffPayload = await staffRes.json().catch(() => ({}));
+      const { groupsPayload, staffPayload } = await fetchAccessGroupsAndStaff(force);
 
       const remoteGroups: any[] = Array.isArray(groupsPayload?.items)
         ? groupsPayload.items
@@ -143,25 +346,12 @@ export default function AccessSettingsPage() {
         email: row?.email || null,
       }));
 
-      const groupsWithMembers = mergeGroups([], remoteGroups).map((group) => ({
-        ...group,
-        staffIds: staffRows
-          .filter(
-            (member: any) =>
-              Array.isArray(member?.groups) && member.groups.some((gr: any) => String(gr?.id) === group.id),
-          )
-          .map((member: any) => String(member?.id ?? ""))
-          .filter((value: string) => Boolean(value)),
-        permissions: listToPermissions(
-          (remoteGroups.find((candidate) => String(candidate?.id) === group.id)?.permissions) || [],
-        ),
-      }));
-
-      setGroups(groupsWithMembers);
+      const mergedGroups = mergeGroups(remoteGroups, staffRows);
+      setGroups(mergedGroups);
       setStaff(staffList);
       setBanner((prev) => (prev?.type === "error" ? null : prev));
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Неизвестная ошибка загрузки";
+      const message = normalizeErrorMessage(err, "Неизвестная ошибка загрузки");
       setGroups([]);
       setStaff([]);
       setBanner({ type: "error", text: message });
@@ -175,45 +365,59 @@ export default function AccessSettingsPage() {
   }, [load]);
 
   const openCreate = () => {
-    setDraft({ id: "", name: "", membersCount: 0, staffIds: [], permissions: defaultPermissions() });
+    setDraft({
+      id: "",
+      name: "",
+      description: "",
+      membersCount: 0,
+      staffIds: [],
+      permissions: blankPermissions(),
+      fullAccess: false,
+    });
     setStaffToAdd("");
-    setModalMode("create");
-  };
-
-  const openView = (group: AccessGroupRow) => {
-    setDraft(group);
-    setStaffToAdd("");
-    setModalMode("view");
+    setEditingId(null);
+    setView("create");
   };
 
   const openEdit = (group: AccessGroupRow) => {
-    setDraft({ ...group, membersCount: group.staffIds.length || group.membersCount });
+    setDraft({
+      ...group,
+      membersCount: group.staffIds.length || group.membersCount,
+      permissions: { ...group.permissions },
+      fullAccess: group.fullAccess,
+    });
     setStaffToAdd("");
-    setModalMode("edit");
+    setEditingId(group.id);
+    setView("edit");
   };
 
-  const closeModal = () => {
-    setModalMode(null);
+  const closeEditor = () => {
+    setView("list");
+    setEditingId(null);
     setDraft(null);
     setStaffToAdd("");
   };
 
-  function updateDraftPermissions(moduleId: string, key: keyof CrudMatrix, value: boolean) {
+  function updateDraftPermissions(sectionId: string, key: "view" | "edit", value: boolean) {
     if (!draft) return;
-    const existing = draft.permissions[moduleId] ?? { create: false, read: false, update: false, delete: false };
-    setDraft({
-      ...draft,
-      permissions: {
-        ...draft.permissions,
-        [moduleId]: { ...existing, [key]: value },
-      } as ModulePermissions,
-    });
+    const nextPermissions = { ...draft.permissions };
+    const current = nextPermissions[sectionId] || { view: false, edit: false };
+    let nextView = key === "view" ? value : current.view;
+    let nextEdit = key === "edit" ? value : current.edit;
+    if (key === "edit" && value) nextView = true;
+    if (key === "view" && !value) nextEdit = false;
+    nextPermissions[sectionId] = { view: nextView, edit: nextEdit };
+    setDraft({ ...draft, permissions: nextPermissions });
   }
 
   function addStaffToDraft() {
     if (!draft || !staffToAdd) return;
     if (draft.staffIds.includes(staffToAdd)) return;
-    setDraft({ ...draft, staffIds: [...draft.staffIds, staffToAdd], membersCount: draft.staffIds.length + 1 });
+    setDraft({
+      ...draft,
+      staffIds: [...draft.staffIds, staffToAdd],
+      membersCount: draft.staffIds.length + 1,
+    });
     setStaffToAdd("");
   }
 
@@ -229,16 +433,17 @@ export default function AccessSettingsPage() {
   async function handleDelete(id: string) {
     if (!window.confirm("Удалить группу доступа?")) return;
     try {
-      const res = await fetch(`/api/portal/access-groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const res = await fetch(`/api/portal/access-groups/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
         throw new Error(errText || "Не удалось удалить группу");
       }
       setBanner({ type: "success", text: "Группа удалена" });
-      await load();
+      await load(true);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Ошибка удаления группы";
-      setBanner({ type: "error", text: message });
+      setBanner({ type: "error", text: normalizeErrorMessage(err, "Ошибка удаления группы") });
     }
   }
 
@@ -250,28 +455,52 @@ export default function AccessSettingsPage() {
     }
     setBusy(true);
     try {
-      if (modalMode === "create") {
-        const payload = { name: draft.name.trim(), permissions: permissionsToList(draft.permissions) };
-        const r = await fetch(`/api/portal/access-groups`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+      const payload = {
+        name: draft.name.trim(),
+        description: draft.description?.trim() || null,
+        permissions: permissionsToList(draft.permissions, draft.fullAccess),
+      };
+      if (view === "create") {
+        const r = await fetch(`/api/portal/access-groups`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
         if (!r.ok) throw new Error(await r.text());
         const created = await r.json();
         const gid = created?.id || draft.id;
-        const membersRes = await fetch(`/api/portal/access-groups/${encodeURIComponent(gid)}/members`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ staffIds: draft.staffIds }) });
+        const membersRes = await fetch(
+          `/api/portal/access-groups/${encodeURIComponent(gid)}/members`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ staffIds: draft.staffIds }),
+          },
+        );
         if (!membersRes.ok) throw new Error(await membersRes.text());
         setBanner({ type: "success", text: "Группа создана" });
-      } else if (modalMode === "edit") {
-        const payload = { name: draft.name.trim(), permissions: permissionsToList(draft.permissions) };
-        const r = await fetch(`/api/portal/access-groups/${encodeURIComponent(draft.id)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+      } else if (view === "edit" && editingId) {
+        const r = await fetch(`/api/portal/access-groups/${encodeURIComponent(editingId)}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
         if (!r.ok) throw new Error(await r.text());
-        const membersRes = await fetch(`/api/portal/access-groups/${encodeURIComponent(draft.id)}/members`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ staffIds: draft.staffIds }) });
+        const membersRes = await fetch(
+          `/api/portal/access-groups/${encodeURIComponent(editingId)}/members`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ staffIds: draft.staffIds }),
+          },
+        );
         if (!membersRes.ok) throw new Error(await membersRes.text());
         setBanner({ type: "success", text: "Группа обновлена" });
       }
-      closeModal();
-      await load();
+      closeEditor();
+      await load(true);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Ошибка сохранения";
-      setBanner({ type: "error", text: message });
+      setBanner({ type: "error", text: normalizeErrorMessage(err, "Ошибка сохранения") });
     } finally {
       setBusy(false);
     }
@@ -282,229 +511,419 @@ export default function AccessSettingsPage() {
     return row ? `${row.name}${row.email ? ` (${row.email})` : ""}` : id;
   };
 
+  const openMembersModal = (group: AccessGroupRow) => {
+    const members = staff
+      .filter((member) => group.staffIds.includes(member.id))
+      .map((member) => ({
+        id: member.id,
+        name: member.name,
+        avatar: member.name.slice(0, 1).toUpperCase(),
+      }));
+    setMembersModal({ name: group.name, members });
+  };
+
+  if (view === "create" || view === "edit") {
+    const locked = Boolean(draft && isOwnerGroupName(draft.name));
+    return (
+      <div className="p-8 max-w-[1200px] mx-auto ">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={closeEditor}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500"
+            >
+              <ArrowLeft size={24} />
+            </button>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {view === "edit" ? "Редактирование группы" : "Новая группа"}
+              </h2>
+              <p className="text-sm text-gray-500">Настройка названия и прав доступа.</p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleSave}
+            disabled={busy}
+            className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors shadow-sm disabled:opacity-60"
+          >
+            <Save size={18} />
+            <span>{busy ? "Сохраняем…" : "Сохранить"}</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-4">
+              <h3 className="font-bold text-gray-900 text-lg">Общая информация</h3>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Название группы <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={draft?.name || ""}
+                  onChange={(e) =>
+                    setDraft((prev) =>
+                      prev ? { ...prev, name: e.target.value } : prev,
+                    )
+                  }
+                  placeholder="Например: Маркетолог"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  disabled={locked}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Описание</label>
+                <textarea
+                  rows={4}
+                  value={draft?.description || ""}
+                  onChange={(e) =>
+                    setDraft((prev) =>
+                      prev ? { ...prev, description: e.target.value } : prev,
+                    )
+                  }
+                  placeholder="Краткое описание обязанностей и прав..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                  disabled={locked}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                <h3 className="font-bold text-gray-900 text-lg">Права доступа</h3>
+                <div className="flex items-center space-x-2">
+                  <Shield size={18} className="text-purple-600" />
+                  <span className="text-sm text-gray-500">Настройка ролей</span>
+                </div>
+              </div>
+
+              <div className="bg-purple-50 p-5 rounded-lg border border-purple-100">
+                <div className="flex items-start justify-between">
+                  <div className="mr-4">
+                    <label className="text-base font-bold text-purple-900 block mb-1">
+                      Полный доступ (суперпользователь)
+                    </label>
+                    <p className="text-sm text-purple-700">
+                      Группа получит права администратора. Все ограничения ниже будут игнорироваться.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(draft?.fullAccess)}
+                      onChange={(e) =>
+                        setDraft((prev) =>
+                          prev ? { ...prev, fullAccess: e.target.checked } : prev,
+                        )
+                      }
+                      className="sr-only peer"
+                      disabled={locked}
+                    />
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600" />
+                  </label>
+                </div>
+              </div>
+
+              <div
+                className={`space-y-3 transition-opacity duration-300 ${
+                  draft?.fullAccess ? "opacity-50 pointer-events-none grayscale" : "opacity-100"
+                }`}
+              >
+                {SECTIONS.map((section) => {
+                  const perm = draft?.permissions?.[section.id] || {
+                    view: false,
+                    edit: false,
+                  };
+                  const allowEdit = section.allowEdit !== false;
+                  return (
+                    <div
+                      key={section.id}
+                      className="flex flex-wrap items-center justify-between gap-4 p-3 rounded-lg border border-gray-100 bg-gray-50"
+                    >
+                      <div className="text-sm font-medium text-gray-900">
+                        {section.label}
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <label className="flex items-center gap-2 text-xs text-gray-500">
+                          <input
+                            type="checkbox"
+                            checked={perm.view}
+                            onChange={(e) =>
+                              updateDraftPermissions(section.id, "view", e.target.checked)
+                            }
+                            className="rounded text-purple-600 focus:ring-purple-500"
+                            disabled={locked}
+                          />
+                          Просмотр
+                        </label>
+                        {allowEdit ? (
+                          <label className="flex items-center gap-2 text-xs text-gray-500">
+                            <input
+                              type="checkbox"
+                              checked={perm.edit}
+                              onChange={(e) =>
+                                updateDraftPermissions(section.id, "edit", e.target.checked)
+                              }
+                              className="rounded text-purple-600 focus:ring-purple-500"
+                              disabled={locked}
+                            />
+                            Изменение
+                          </label>
+                        ) : (
+                          <span className="text-xs text-gray-400">Только просмотр</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-gray-900 text-lg">Участники группы</h3>
+                {!locked && (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={staffToAdd}
+                      onChange={(e) => setStaffToAdd(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="">Выберите сотрудника…</option>
+                      {staff
+                        .filter((member) => !draft?.staffIds.includes(member.id))
+                        .map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      onClick={addStaffToDraft}
+                      disabled={!staffToAdd}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-60"
+                    >
+                      Добавить
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                {draft?.staffIds.length ? (
+                  draft.staffIds.map((id) => (
+                    <div
+                      key={id}
+                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 border border-gray-100"
+                    >
+                      <span className="text-sm text-gray-700">{staffLabel(id)}</span>
+                      {!locked && (
+                        <button
+                          onClick={() => removeStaffFromDraft(id)}
+                          className="text-xs text-red-600 hover:text-red-700"
+                        >
+                          Удалить
+                        </button>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-gray-500">Пока никто не добавлен</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ display: "grid", gap: 20 }}>
+    <div className="p-8 max-w-[1200px] mx-auto space-y-8 ">
       {banner && (
         <div
-          style={{
-            borderRadius: 12,
-            padding: "12px 16px",
-            background: banner.type === "success" ? "rgba(34,197,94,.15)" : "rgba(248,113,113,.16)",
-            border: `1px solid ${banner.type === "success" ? "rgba(34,197,94,.35)" : "rgba(248,113,113,.35)"}`,
-            color: banner.type === "success" ? "#4ade80" : "#fca5a5",
-          }}
+          className={`rounded-xl px-4 py-3 text-sm border ${
+            banner.type === "success"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+              : "bg-red-50 border-red-200 text-red-700"
+          }`}
         >
           {banner.text}
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>Группы доступа</div>
-          <div style={{ fontSize: 14, opacity: 0.75 }}>Управляйте ролями и разрешениями сотрудников</div>
+          <h2 className="text-2xl font-bold text-gray-900">Группы доступа</h2>
+          <p className="text-gray-500 mt-1">
+            Управление ролями сотрудников и ограничение прав доступа.
+          </p>
         </div>
-        <Button variant="primary" onClick={openCreate}>
-          Создать группу доступа
-        </Button>
+
+        <button
+          onClick={openCreate}
+          className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm"
+        >
+          <Plus size={18} />
+          <span>Создать группу</span>
+        </button>
       </div>
 
-      <Card>
-        <CardHeader title="Список групп" subtitle="Название, участники и действия" />
-        <CardBody>
-          {loading ? (
-            <Skeleton height={220} />
-          ) : groups.length ? (
-            <div style={{ display: "grid", gap: 8 }}>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "60px minmax(220px, 2fr) 160px 160px",
-                  fontSize: 12,
-                  textTransform: "uppercase",
-                  opacity: 0.6,
-                  padding: "4px 12px",
-                }}
-              >
-                <div>№</div>
-                <div>Название</div>
-                <div>Участников</div>
-                <div>Действия</div>
-              </div>
-              {groups.map((group, index) => (
-                <div
-                  key={group.id}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "60px minmax(220px, 2fr) 160px 160px",
-                    alignItems: "center",
-                    gap: 12,
-                    padding: "10px 12px",
-                    borderRadius: 12,
-                    background: "rgba(10,14,24,.45)",
-                    border: "1px solid rgba(255,255,255,.06)",
-                  }}
-                >
-                  <div>{index + 1}</div>
-                  <div>{group.name}</div>
-                  <div>{group.staffIds.length || group.membersCount}</div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn" title="Просмотреть" onClick={() => openView(group)}>
-                      R
-                    </button>
-                    <button className="btn" title="Редактировать" onClick={() => openEdit(group)}>
-                      U
-                    </button>
-                    <button className="btn" title="Удалить" onClick={() => handleDelete(group.id)}>
-                      D
-                    </button>
+      {loading ? (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-8 text-gray-500">
+          Загрузка…
+        </div>
+      ) : groups.length ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {groups.map((group) => (
+            <div
+              key={group.id}
+              className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow flex flex-col h-full"
+            >
+              <div className="p-6 pb-4 flex justify-between items-start">
+                <div className="flex items-center space-x-3">
+                  <div
+                    className={`p-2.5 rounded-lg ${
+                      group.fullAccess ? "bg-purple-50 text-purple-600" : "bg-gray-100 text-gray-500"
+                    }`}
+                  >
+                    {group.fullAccess ? <Shield size={24} /> : <Lock size={24} />}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-lg leading-tight">
+                      {group.name}
+                    </h3>
+                    {group.isSystem && (
+                      <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wide">
+                        Системная
+                      </span>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ opacity: 0.7, padding: "12px" }}>Группы доступа не найдены</div>
-          )}
-        </CardBody>
-      </Card>
 
-      {modalMode && draft && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(5,8,16,0.75)",
-            backdropFilter: "blur(8px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            zIndex: 80,
-          }}
-        >
-          <div
-            style={{
-              width: "min(720px, 96vw)",
-              background: "rgba(12,16,26,0.96)",
-              borderRadius: 18,
-              border: "1px solid rgba(255,255,255,.08)",
-              display: "grid",
-              gridTemplateRows: "auto 1fr auto",
-              maxHeight: "92vh",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 24px", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>
-                  {modalMode === "create" ? "Новая группа доступа" : modalMode === "edit" ? "Редактировать группу" : "Просмотр группы"}
-                </div>
-                <div style={{ fontSize: 13, opacity: 0.7 }}>Настройте разрешения и участников</div>
-              </div>
-              <button className="btn btn-ghost" onClick={closeModal}>✕</button>
-            </div>
-            <div style={{ padding: 24, display: "grid", gap: 20, overflowY: "auto" }}>
-              <div style={{ display: "grid", gap: 6 }}>
-                <label style={{ fontSize: 13, opacity: 0.75 }}>Название группы</label>
-                <input
-                  value={draft.name}
-                  disabled={modalMode === "view"}
-                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                  style={{ padding: "10px 12px", borderRadius: 8 }}
-                />
-              </div>
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ fontSize: 13, opacity: 0.75 }}>Права доступа (CRUD по разделам)</div>
-                <div style={{ display: "grid", gap: 10 }}>
-                  {MODULES.map((module) => (
-                    <div
-                      key={module.id}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "minmax(180px, 1fr) repeat(4, 80px)",
-                        alignItems: "center",
-                        gap: 12,
-                        padding: "10px 12px",
-                        border: "1px solid rgba(255,255,255,.08)",
-                        borderRadius: 12,
-                      }}
+                <div className="flex space-x-1">
+                  <button
+                    onClick={() => openEdit(group)}
+                    className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                    title="Редактировать"
+                  >
+                    <Edit size={18} />
+                  </button>
+                  {!group.isSystem && (
+                    <button
+                      onClick={() => handleDelete(group.id)}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Удалить"
                     >
-                      <div>{module.label}</div>
-                      {(["create", "read", "update", "delete"] as Array<keyof CrudMatrix>).map((action) => (
-                        <label key={action} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                          <input
-                            type="checkbox"
-                            checked={draft.permissions[module.id]?.[action] ?? false}
-                            disabled={modalMode === "view"}
-                            onChange={(e) => updateDraftPermissions(module.id, action, e.target.checked)}
-                          />
-                          {action.toUpperCase()}
-                        </label>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ fontSize: 13, opacity: 0.75 }}>Участники группы</div>
-                  {modalMode !== "view" && (
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <select value={staffToAdd} onChange={(e) => setStaffToAdd(e.target.value)} style={{ padding: "8px 12px", borderRadius: 8 }}>
-                        <option value="">Выберите сотрудника…</option>
-                        {staff
-                          .filter((member) => !draft.staffIds.includes(member.id))
-                          .map((member) => (
-                            <option key={member.id} value={member.id}>
-                              {member.name}
-                            </option>
-                          ))}
-                      </select>
-                      <Button variant="primary" onClick={addStaffToDraft} disabled={!staffToAdd}>
-                        Добавить
-                      </Button>
-                    </div>
+                      <Trash2 size={18} />
+                    </button>
                   )}
                 </div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  {draft.staffIds.length ? (
-                    draft.staffIds.map((id) => (
-                      <div
-                        key={id}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          padding: "8px 12px",
-                          borderRadius: 10,
-                          background: "rgba(255,255,255,.04)",
-                        }}
-                      >
-                        <span>{staffLabel(id)}</span>
-                        {modalMode !== "view" && (
-                          <button className="btn" onClick={() => removeStaffFromDraft(id)}>
-                            Удалить
-                          </button>
-                        )}
-                      </div>
-                    ))
+              </div>
+
+              <div className="px-6 flex-1">
+                <p className="text-sm text-gray-600 line-clamp-3">
+                  {group.description || "Нет описания"}
+                </p>
+              </div>
+
+              <div className="p-6 pt-4 mt-2">
+                <div className="flex items-center space-x-2 mb-4">
+                  {group.fullAccess ? (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                      <CheckCircle2 size={12} className="mr-1" />
+                      Полный доступ
+                    </span>
                   ) : (
-                    <div style={{ opacity: 0.7 }}>Пока никто не добавлен</div>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                      <Lock size={12} className="mr-1" />
+                      Ограниченный доступ
+                    </span>
                   )}
+                </div>
+
+                <div className="pt-4 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
+                  <div className="flex items-center space-x-2">
+                    <Users size={16} />
+                    <span>{group.staffIds.length || group.membersCount} сотр.</span>
+                  </div>
+                  <button
+                    onClick={() => openMembersModal(group)}
+                    className="text-purple-600 hover:text-purple-700 font-medium text-xs"
+                  >
+                    Посмотреть состав
+                  </button>
                 </div>
               </div>
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, padding: "16px 24px", borderTop: "1px solid rgba(255,255,255,.06)" }}>
-              <button className="btn" onClick={closeModal} disabled={busy}>
-                Закрыть
-              </button>
-              {modalMode !== "view" && (
-                <Button variant="primary" onClick={handleSave} disabled={busy}>
-                  {busy ? "Сохраняем…" : "Сохранить"}
-                </Button>
-              )}
-            </div>
-          </div>
+          ))}
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-8 text-gray-500">
+          Группы доступа не найдены.
         </div>
       )}
+
+      {membersModal &&
+        createPortal(
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-[4px] z-[150] flex items-center justify-center p-4 ">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md relative z-[101]">
+              <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Состав группы</h3>
+                  <p className="text-sm text-gray-500">{membersModal.name}</p>
+                </div>
+                <button
+                  onClick={() => setMembersModal(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="p-0 max-h-[60vh] overflow-y-auto">
+                {membersModal.members.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    <Users size={48} className="mx-auto text-gray-300 mb-3" />
+                    <p>В этой группе пока нет сотрудников.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {membersModal.members.map((member) => (
+                      <div
+                        key={member.id}
+                        className="p-4 flex items-center space-x-4 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                          {member.avatar}
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900">{member.name}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex justify-end">
+                <button
+                  onClick={() => setMembersModal(null)}
+                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 font-medium"
+                >
+                  Закрыть
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

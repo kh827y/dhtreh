@@ -9,6 +9,7 @@ import CustomerFormModal, { type CustomerFormPayload } from "./customer-form-mod
 import ComplimentaryModal from "./complimentary-modal";
 import { buildLevelLookups, getAvatarClass, getCustomerLevelRank } from "./level-utils";
 import CustomerCard from "./customer-card";
+import { readApiError } from "lib/portal-errors";
 
 type LevelOption = {
   id: string;
@@ -47,25 +48,6 @@ function calculateAge(value?: string | null): number | null {
     age -= 1;
   }
   return age >= 0 ? age : null;
-}
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") {
-    const trimmed = payload.trim();
-    if (!trimmed) return null;
-    try {
-      return readApiError(JSON.parse(trimmed));
-    } catch {
-      return trimmed;
-    }
-  }
-  if (typeof payload === "object") {
-    const message = (payload as { message?: unknown }).message;
-    if (Array.isArray(message)) return message.filter(Boolean).join(", ");
-    if (typeof message === "string" && message.trim()) return message.trim();
-  }
-  return null;
 }
 
 export default function CustomersPage() {

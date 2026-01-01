@@ -44,7 +44,7 @@ describe("bonus settings page (new design)", () => {
   });
 
   it("загружает настройки и сохраняет без изменений", async () => {
-    const { default: BonusSettingsPage } = await import("../app/loyalty/mechanics/redeem-limits/page");
+    const { default: BonusSettingsPage } = await import("../app/loyalty/mechanics/bonus-settings/page");
     render(React.createElement(BonusSettingsPage));
 
     await screen.findByText("Настройки бонусов");
@@ -61,7 +61,7 @@ describe("bonus settings page (new design)", () => {
   });
 
   it("меняет TTL, смешанную оплату и задержку", async () => {
-    const { default: BonusSettingsPage } = await import("../app/loyalty/mechanics/redeem-limits/page");
+    const { default: BonusSettingsPage } = await import("../app/loyalty/mechanics/bonus-settings/page");
     render(React.createElement(BonusSettingsPage));
 
     await screen.findByText("Настройки бонусов");

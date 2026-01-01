@@ -288,6 +288,7 @@ export class UpsertStaffInput {
   @IsOptional()
   @IsString()
   @MaxLength(100)
+  @IsEmail()
   login?: string | null;
 
   @Field(() => String, { nullable: true })

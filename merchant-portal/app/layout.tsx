@@ -132,45 +132,94 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+const MECHANIC_PERMISSION_IDS = [
+  "mechanic_birthday",
+  "mechanic_auto_return",
+  "mechanic_levels",
+  "mechanic_redeem_limits",
+  "mechanic_registration_bonus",
+  "mechanic_ttl",
+  "mechanic_referral",
+];
+
+const LEGACY_RESOURCE_ALIASES: Record<string, string[]> = {
+  products: ["loyalty"],
+  categories: ["loyalty"],
+  audiences: ["loyalty"],
+  customers: ["loyalty"],
+  points_promotions: ["loyalty"],
+  product_promotions: ["loyalty"],
+  promocodes: ["loyalty"],
+  telegram_notifications: ["loyalty"],
+  broadcasts: ["loyalty"],
+  system_settings: ["loyalty"],
+  feedback: ["loyalty"],
+  staff_motivation: ["loyalty"],
+  antifraud: ["loyalty"],
+  cashier_panel: ["loyalty"],
+  import: ["loyalty"],
+  integrations: ["loyalty"],
+  rfm_analysis: ["analytics"],
+  analytics: ["analytics"],
+  staff: ["staff"],
+  access_groups: ["staff"],
+  outlets: ["outlets"],
+  wallet: ["loyalty"],
+  mechanic_birthday: ["loyalty"],
+  mechanic_auto_return: ["loyalty"],
+  mechanic_levels: ["loyalty"],
+  mechanic_redeem_limits: ["loyalty"],
+  mechanic_registration_bonus: ["loyalty"],
+  mechanic_ttl: ["loyalty"],
+  mechanic_referral: ["loyalty"],
+};
+
 const ITEM_PERMISSION_REQUIREMENTS: Record<
   string,
   Array<{ resource: string; action?: string }>
 > = {
-  "/": [{ resource: "loyalty", action: "read" }],
+  "/": [{ resource: "system_settings", action: "read" }],
   "/analytics": [{ resource: "analytics", action: "read" }],
   "/analytics/time": [{ resource: "analytics", action: "read" }],
   "/analytics/portrait": [{ resource: "analytics", action: "read" }],
   "/analytics/repeat": [{ resource: "analytics", action: "read" }],
   "/analytics/dynamics": [{ resource: "analytics", action: "read" }],
-  "/analytics/rfm": [{ resource: "analytics", action: "read" }],
+  "/analytics/rfm": [{ resource: "rfm_analysis", action: "read" }],
   "/analytics/outlets": [{ resource: "analytics", action: "read" }],
   "/analytics/staff": [{ resource: "analytics", action: "read" }],
   "/analytics/referrals": [{ resource: "analytics", action: "read" }],
-  "/loyalty/mechanics": [{ resource: "loyalty", action: "read" }],
-  "/loyalty/mechanics/birthday": [{ resource: "loyalty", action: "read" }],
-  "/loyalty/mechanics/auto-return": [{ resource: "loyalty", action: "read" }],
-  "/loyalty/actions": [{ resource: "loyalty", action: "read" }],
-  "/loyalty/actions-earn": [{ resource: "loyalty", action: "read" }],
-  "/operations": [{ resource: "loyalty", action: "read" }],
-  "/loyalty/push": [{ resource: "loyalty", action: "read" }],
-  "/loyalty/telegram": [{ resource: "loyalty", action: "read" }],
-  "/promocodes": [{ resource: "loyalty", action: "read" }],
-  "/loyalty/staff-motivation": [{ resource: "loyalty", action: "read" }],
-  "/loyalty/antifraud": [{ resource: "loyalty", action: "read" }],
-  "/loyalty/cashier": [{ resource: "loyalty", action: "read" }],
-  "/reviews": [{ resource: "loyalty", action: "read" }],
-  "/customers": [{ resource: "loyalty", action: "read" }],
-  "/customers/import": [{ resource: "loyalty", action: "read" }],
-  "/audiences": [{ resource: "loyalty", action: "read" }],
-  "/products": [{ resource: "loyalty", action: "read" }],
-  "/categories": [{ resource: "loyalty", action: "read" }],
-  "/wallet": [{ resource: "loyalty", action: "read" }],
+  "/loyalty/mechanics": [{ resource: "mechanic_birthday", action: "read" }],
+  "/loyalty/mechanics/birthday": [{ resource: "mechanic_birthday", action: "read" }],
+  "/loyalty/mechanics/auto-return": [{ resource: "mechanic_auto_return", action: "read" }],
+  "/loyalty/mechanics/levels": [{ resource: "mechanic_levels", action: "read" }],
+  "/loyalty/mechanics/bonus-settings": [{ resource: "mechanic_redeem_limits", action: "read" }],
+  "/loyalty/mechanics/registration-bonus": [{ resource: "mechanic_registration_bonus", action: "read" }],
+  "/loyalty/mechanics/ttl": [{ resource: "mechanic_ttl", action: "read" }],
+  "/referrals/program": [{ resource: "mechanic_referral", action: "read" }],
+  "/loyalty/actions": [{ resource: "product_promotions", action: "read" }],
+  "/loyalty/actions-earn": [{ resource: "points_promotions", action: "read" }],
+  "/operations": [{ resource: "customers", action: "read" }],
+  "/loyalty/push": [{ resource: "broadcasts", action: "read" }],
+  "/loyalty/telegram": [{ resource: "broadcasts", action: "read" }],
+  "/promocodes": [{ resource: "promocodes", action: "read" }],
+  "/loyalty/staff-motivation": [{ resource: "staff_motivation", action: "read" }],
+  "/loyalty/antifraud": [{ resource: "antifraud", action: "read" }],
+  "/loyalty/cashier": [{ resource: "cashier_panel", action: "read" }],
+  "/reviews": [{ resource: "feedback", action: "read" }],
+  "/customers": [{ resource: "customers", action: "read" }],
+  "/customers/import": [{ resource: "import", action: "read" }],
+  "/audiences": [{ resource: "audiences", action: "read" }],
+  "/products": [{ resource: "products", action: "read" }],
+  "/categories": [{ resource: "categories", action: "read" }],
+  "/wallet": [{ resource: "wallet", action: "read" }],
   "/settings/outlets": [{ resource: "outlets", action: "read" }],
+  "/outlets": [{ resource: "outlets", action: "read" }],
   "/settings/staff": [{ resource: "staff", action: "read" }],
-  "/settings/access": [{ resource: "staff", action: "read" }],
-  "/settings/integrations": [{ resource: "loyalty", action: "read" }],
-  "/settings/telegram": [{ resource: "loyalty", action: "read" }],
-  "/settings/system": [{ resource: "loyalty", action: "read" }],
+  "/staff": [{ resource: "staff", action: "read" }],
+  "/settings/access": [{ resource: "access_groups", action: "read" }],
+  "/settings/integrations": [{ resource: "integrations", action: "read" }],
+  "/settings/telegram": [{ resource: "telegram_notifications", action: "read" }],
+  "/settings/system": [{ resource: "system_settings", action: "read" }],
 };
 
 function normalizePermissions(payload: unknown): PortalPermissions {
@@ -325,6 +374,8 @@ async function fetchPortalSubscription(): Promise<PortalSubscription | null> {
   }
 }
 
+const READ_IMPLIED_ACTIONS = new Set(["create", "update", "delete", "manage", "*"]);
+
 function hasPermission(
   permissions: PortalPermissions,
   resource: string,
@@ -335,11 +386,22 @@ function hasPermission(
   if (Array.isArray(all) && (all.includes("*") || all.includes("manage"))) {
     return true;
   }
-  const actions = permissions[resource];
-  if (!actions || !actions.length) return false;
-  if (actions.includes("*") || actions.includes("manage")) return true;
-  if (action === "read") return actions.includes("read");
-  return actions.includes(action);
+  const resourcesToCheck = [
+    resource,
+    ...(LEGACY_RESOURCE_ALIASES[resource] || []),
+  ];
+  for (const key of resourcesToCheck) {
+    const actions = permissions[key];
+    if (!actions || !actions.length) continue;
+    if (actions.includes("*") || actions.includes("manage")) return true;
+    if (action === "read") {
+      if (actions.includes("read")) return true;
+      if (actions.some((value) => READ_IMPLIED_ACTIONS.has(value))) return true;
+      continue;
+    }
+    if (actions.includes(action)) return true;
+  }
+  return false;
 }
 
 function normalizeHref(href: string) {
@@ -349,10 +411,15 @@ function normalizeHref(href: string) {
 
 function canAccessRoute(permissions: PortalPermissions, href: string) {
   if (!permissions) return false;
-  const rules =
-    ITEM_PERMISSION_REQUIREMENTS[normalizeHref(href)] ?? [
-      { resource: "loyalty", action: "read" },
-    ];
+  const normalized = normalizeHref(href);
+  if (normalized === "/loyalty/mechanics") {
+    return MECHANIC_PERMISSION_IDS.some((resource) =>
+      hasPermission(permissions, resource, "read"),
+    );
+  }
+  const rules = ITEM_PERMISSION_REQUIREMENTS[normalized] ?? [
+    { resource: "customers", action: "read" },
+  ];
   return rules.every((rule) =>
     hasPermission(permissions, rule.resource, rule.action ?? "read"),
   );

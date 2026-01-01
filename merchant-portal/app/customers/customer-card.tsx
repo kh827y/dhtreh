@@ -40,6 +40,7 @@ import {
   getCustomerLevelLabel,
   getCustomerLevelRank,
 } from "./level-utils";
+import { readApiError } from "lib/portal-errors";
 
 type OutletOption = {
   id: string;
@@ -57,25 +58,6 @@ type LevelOption = {
 const ITEMS_PER_PAGE = 5;
 
 type TabKey = "expiration" | "history" | "reviews" | "referrals";
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") {
-    const trimmed = payload.trim();
-    if (!trimmed) return null;
-    try {
-      return readApiError(JSON.parse(trimmed));
-    } catch {
-      return trimmed;
-    }
-  }
-  if (typeof payload === "object") {
-    const message = (payload as { message?: unknown }).message;
-    if (Array.isArray(message)) return message.filter(Boolean).join(", ");
-    if (typeof message === "string" && message.trim()) return message.trim();
-  }
-  return null;
-}
 
 function formatCurrency(value?: number | null): string {
   if (value == null || Number.isNaN(Number(value))) return "—";
@@ -1391,7 +1373,7 @@ const AccrueModal: React.FC<AccrueModalProps> = ({
           </div>
 
           {!autoCalc && (
-            <div className="animate-fade-in">
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Количество баллов</label>
               <input
                 type="number"

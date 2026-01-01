@@ -1,21 +1,19 @@
 "use client";
 import React from "react";
-import { Card, CardHeader, CardBody, Button, Skeleton, Badge } from "@loyalty/ui";
 import { useRouter } from "next/navigation";
-import Toggle from "../../components/Toggle";
+import { createPortal } from "react-dom";
 import { 
-  Users, 
-  Plus, 
-  Search, 
-  MapPin, 
-  UserCog, 
-  ShieldCheck, 
-  Clock, 
+  Plus,
+  Search,
+  MapPin,
+  UserCog,
+  Shield,
+  Clock,
   ChevronRight,
-  Filter,
-  X,
-  Store
+  Info,
+  X
 } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type StaffOutletAccess = {
   id: string;
@@ -61,6 +59,14 @@ type AccessGroup = {
   isDefault?: boolean;
 };
 
+function isCashierGroup(group?: { id?: string; name?: string; scope?: string | null }) {
+  if (!group) return false;
+  const id = String(group.id ?? "").trim().toLowerCase();
+  const name = String(group.name ?? "").trim().toLowerCase();
+  const scope = String(group.scope ?? "").trim().toUpperCase();
+  return scope === "CASHIER" || id === "cashier" || name === "кассир";
+}
+
 function formatActivityDate(value?: string | null): string {
   if (!value) return "—";
   try {
@@ -94,18 +100,30 @@ function getDisplayName(staff: Staff): string {
   return (composed || staff.login || staff.email || staff.phone || staff.position || staff.id || "?") as string;
 }
 
-function getRoleLabel(role?: string | null): string {
-  if (!role) return "—";
-  const upper = role.toUpperCase();
-  if (upper === "MERCHANT") return "Владелец";
-  if (upper === "MANAGER") return "Менеджер";
-  if (upper === "ANALYST") return "Аналитик";
-  if (upper === "CASHIER") return "Кассир";
-  return upper;
+function getPortalGroupLabel(staff: Staff): string | null {
+  const groups = Array.isArray(staff.groups) ? staff.groups : [];
+  const portalGroup =
+    groups.find((group) => {
+      const scope = String(group?.scope ?? "").toUpperCase();
+      return !scope || scope === "PORTAL";
+    }) || groups[0];
+  if (portalGroup?.name) return portalGroup.name;
+  if (staff.isOwner || (staff.role || "").toUpperCase() === "MERCHANT") {
+    return "Владелец";
+  }
+  return null;
 }
 
 function hasPortalAccess(staff: Staff): boolean {
   return Boolean(staff.isOwner || staff.portalAccessEnabled || staff.canAccessPortal);
+}
+
+function getGroupBadgeStyle(groupName: string) {
+  const upper = groupName.toUpperCase();
+  if (upper === "ВЛАДЕЛЕЦ" || upper === "АДМИНИСТРАТОР") {
+    return "bg-green-50 text-green-700 border-green-200";
+  }
+  return "bg-blue-50 text-blue-700 border-blue-200";
 }
 
 export default function StaffPage() {
@@ -113,7 +131,6 @@ export default function StaffPage() {
   const [items, setItems] = React.useState<Staff[]>([]);
   const [outlets, setOutlets] = React.useState<Outlet[]>([]);
   const [groups, setGroups] = React.useState<AccessGroup[]>([]);
-  const [meta, setMeta] = React.useState({ page: 1, pageSize: 20, total: 0, totalPages: 1 });
   const [counters, setCounters] = React.useState({
     active: 0,
     pending: 0,
@@ -130,10 +147,11 @@ export default function StaffPage() {
   const [groupsLoading, setGroupsLoading] = React.useState(false);
 
   const [tab, setTab] = React.useState<"ACTIVE" | "FIRED">("ACTIVE");
-  const [roleFilter, setRoleFilter] = React.useState<string>("ALL");
+  const [groupFilter, setGroupFilter] = React.useState<string>("ALL");
   const [outletFilter, setOutletFilter] = React.useState<string>("ALL");
   const [onlyPortal, setOnlyPortal] = React.useState<boolean>(false);
   const [search, setSearch] = React.useState<string>("");
+  const [tooltip, setTooltip] = React.useState<{ x: number; y: number; text: string } | null>(null);
 
   const [cFirstName, setCFirstName] = React.useState("");
   const [cLastName, setCLastName] = React.useState("");
@@ -145,14 +163,6 @@ export default function StaffPage() {
   const [cEmail, setCEmail] = React.useState("");
   const [cPassword, setCPassword] = React.useState("");
 
-  const roles = React.useMemo(() => {
-    const unique = new Set<string>();
-    items.forEach((item) => {
-      if (item.role) unique.add(item.role.toUpperCase());
-    });
-    return Array.from(unique).sort();
-  }, [items]);
-
   const uniqueGroups = React.useMemo(() => {
     const map = new Map<string, AccessGroup>();
     for (const g of groups) {
@@ -160,16 +170,18 @@ export default function StaffPage() {
       const id = String((g as any).id ?? "").trim();
       const name = String((g as any).name ?? "").trim();
       const scope = String((g as any).scope ?? "").toUpperCase();
-      const isSystem = Boolean((g as any).isSystem);
       if (!id || !name) continue;
-      if (isSystem) continue;
+      const nameLower = name.toLowerCase();
+      if (nameLower === "владелец" || nameLower === "owner" || nameLower === "merchant") {
+        continue;
+      }
       if (scope && scope !== "PORTAL") continue;
       if (!map.has(id)) {
         map.set(id, {
           id,
           name,
           scope: (g as any).scope ?? null,
-          isSystem,
+          isSystem: Boolean((g as any).isSystem),
           isDefault: Boolean((g as any).isDefault),
           membersCount: Number((g as any).membersCount ?? (g as any).memberCount ?? 0) || 0,
           memberCount: Number((g as any).memberCount ?? (g as any).membersCount ?? 0) || 0,
@@ -185,7 +197,12 @@ export default function StaffPage() {
       const status = String(staff.status || '').trim().toUpperCase();
       if (tab === "ACTIVE" && (status === "FIRED" || status === "ARCHIVED")) return false;
       if (tab === "FIRED" && !(status === "FIRED" || status === "ARCHIVED")) return false;
-      if (roleFilter !== "ALL" && (staff.role || "").toUpperCase() !== roleFilter) return false;
+      if (groupFilter !== "ALL") {
+        const staffGroupIds = Array.isArray(staff.groups)
+          ? staff.groups.map((group) => String(group?.id ?? "").trim()).filter(Boolean)
+          : [];
+        if (!staffGroupIds.includes(groupFilter)) return false;
+      }
       if (outletFilter !== "ALL") {
         const accesses = Array.isArray(staff.accesses) ? staff.accesses : [];
         const hasAccess = accesses.some(
@@ -210,7 +227,7 @@ export default function StaffPage() {
       }
       return true;
     });
-  }, [items, tab, roleFilter, outletFilter, onlyPortal, search]);
+  }, [items, tab, groupFilter, outletFilter, onlyPortal, search]);
 
   const uniqueItems = React.useMemo(() => {
     const seen = new Set<string>();
@@ -222,13 +239,6 @@ export default function StaffPage() {
       return true;
     });
   }, [filteredItems]);
-
-  const recordsLabel = React.useMemo(() => {
-    if (loading) return "Показано: —";
-    const visible = uniqueItems.length;
-    const total = meta.total ?? visible;
-    return `Показано: ${visible} из ${total}`;
-  }, [uniqueItems.length, loading, meta.total]);
 
   const ensureGroupsLoaded = React.useCallback(async () => {
     if (groupsLoading) return;
@@ -253,7 +263,7 @@ export default function StaffPage() {
           membersCount: Number(g?.membersCount ?? g?.memberCount ?? 0) || 0,
           memberCount: Number(g?.memberCount ?? g?.membersCount ?? 0) || 0,
         }))
-        .filter((item) => item.id && item.name);
+        .filter((item) => item.id && item.name && !isCashierGroup(item));
       setGroups(normalized);
     } finally {
       setGroupsLoading(false);
@@ -281,6 +291,7 @@ export default function StaffPage() {
       qs.set("page", "1");
       qs.set("pageSize", "100");
       if (outletFilter !== "ALL") qs.set("outletId", outletFilter);
+      if (groupFilter !== "ALL") qs.set("groupId", groupFilter);
       if (onlyPortal) qs.set("portalOnly", "true");
       const trimmedSearch = search.trim();
       if (trimmedSearch) qs.set("search", trimmedSearch);
@@ -329,17 +340,6 @@ export default function StaffPage() {
         } as Staff;
       });
       setItems(staffItems);
-      const metaData = staffPayload?.meta;
-      setMeta(
-        metaData && typeof metaData === "object"
-          ? {
-              page: Number(metaData.page) || 1,
-              pageSize: Number(metaData.pageSize) || staffItems.length || 20,
-              total: Number(metaData.total) || staffItems.length,
-              totalPages: Number(metaData.totalPages) || 1,
-            }
-          : { page: 1, pageSize: staffItems.length || 20, total: staffItems.length, totalPages: 1 }
-      );
       const countersData = staffPayload?.counters;
       setCounters(
         countersData && typeof countersData === "object"
@@ -360,15 +360,19 @@ export default function StaffPage() {
           : [];
       setOutlets(outletItems);
     } catch (e: any) {
-      setError(String(e?.message || e || "Не удалось загрузить данных"));
+      setError(normalizeErrorMessage(e, "Не удалось загрузить данных"));
     } finally {
       setLoading(false);
     }
-  }, [tab, outletFilter, onlyPortal, search]);
+  }, [tab, outletFilter, groupFilter, onlyPortal, search]);
 
   React.useEffect(() => {
     load();
   }, [load]);
+
+  React.useEffect(() => {
+    ensureGroupsLoaded();
+  }, [ensureGroupsLoaded]);
 
   React.useEffect(() => {
     if (showCreate) {
@@ -377,11 +381,13 @@ export default function StaffPage() {
   }, [showCreate]);
 
   const canSubmitCreate = React.useMemo(() => {
+    const emailValue = cEmail.trim();
+    const emailValid = emailValue.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue);
     if (!cFirstName.trim()) return false;
     if (cPortal) {
-      return Boolean(cGroup && cEmail.trim() && cPassword.trim().length >= 6);
+      return Boolean(cGroup && emailValid && cPassword.trim().length >= 6);
     }
-    return true;
+    return Boolean(!cEmail.trim() || emailValid);
   }, [cFirstName, cPortal, cGroup, cEmail, cPassword]);
 
   async function handleCreate() {
@@ -390,18 +396,22 @@ export default function StaffPage() {
     setCreateError("");
     try {
       const normalizedGroup = cGroup.trim();
+      const emailValue = cEmail.trim().toLowerCase();
+      const hasEmail = Boolean(emailValue);
       const payload: Record<string, any> = {
         firstName: cFirstName.trim(),
         lastName: cLastName.trim() || undefined,
-        login: [cFirstName, cLastName].filter(Boolean).join(" ") || cFirstName.trim(),
         position: cPosition.trim() || undefined,
         phone: cPhone.trim() || undefined,
         comment: cComment.trim() || undefined,
         canAccessPortal: cPortal,
         portalAccessEnabled: cPortal,
-        email: cPortal ? cEmail.trim() : undefined,
+        email: hasEmail ? emailValue : undefined,
         status: 'ACTIVE',
       };
+      if (hasEmail) {
+        payload.login = emailValue;
+      }
       if (cPortal) {
         const pwd = cPassword.trim();
         if (pwd) {
@@ -430,372 +440,450 @@ export default function StaffPage() {
       resetCreateForm();
       await load();
     } catch (e: any) {
-      setCreateError(String(e?.message || e || "Не удалось создать сотрудника"));
+      setCreateError(normalizeErrorMessage(e, "Не удалось создать сотрудника"));
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
-      {/* Header */}
-      <header style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-        <div style={{
-          width: 48,
-          height: 48,
-          borderRadius: "var(--radius-lg)",
-          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--brand-primary-light)",
-        }}>
-          <Users size={24} />
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
+      {error && !loading ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
         </div>
-        <div>
-          <h1 style={{ 
-            fontSize: 28, 
-            fontWeight: 800, 
-            margin: 0,
-            letterSpacing: "-0.02em",
-          }}>
-            Сотрудники
-          </h1>
-          <div style={{ display: "flex", gap: 16, marginTop: 6 }}>
-            <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>
-              Всего: <strong style={{ color: "var(--fg)" }}>{recordsLabel}</strong>
-            </span>
-          </div>
-        </div>
-        <div style={{ marginLeft: "auto" }}>
-           <Button variant="primary" onClick={() => setShowCreate(true)} leftIcon={<Plus size={16} />}>
-            Добавить сотрудника
-          </Button>
-        </div>
-      </header>
+      ) : null}
 
-      {/* Tabs & Filters */}
-      <Card>
-        <CardBody style={{ padding: 20 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <div style={{ display: "flex", gap: 8 }}>
-               <button
-                className="btn"
-                style={{
-                  minWidth: 112,
-                  background: tab === "ACTIVE" ? "var(--brand-primary)" : "transparent",
-                  borderColor: tab === "ACTIVE" ? "transparent" : "var(--border-default)",
-                  color: tab === "ACTIVE" ? "#fff" : "var(--fg)",
-                  fontWeight: tab === "ACTIVE" ? 600 : 500,
-                  transition: "all .2s ease",
-                }}
-                onClick={() => setTab("ACTIVE")}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Сотрудники</h2>
+          <p className="text-gray-500 mt-1">Управление персоналом и правами доступа.</p>
+        </div>
+
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm"
+        >
+          <Plus size={18} />
+          <span>Добавить сотрудника</span>
+        </button>
+      </div>
+
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setTab("ACTIVE")}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              tab === "ACTIVE"
+                ? "border-purple-500 text-purple-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            Работают
+            <span
+              className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
+                tab === "ACTIVE" ? "bg-purple-100 text-purple-600" : "bg-gray-100 text-gray-500"
+              }`}
+            >
+              {counters.active}
+            </span>
+          </button>
+          <button
+            onClick={() => setTab("FIRED")}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              tab === "FIRED"
+                ? "border-purple-500 text-purple-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            Уволены
+            <span
+              className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
+                tab === "FIRED" ? "bg-purple-100 text-purple-600" : "bg-gray-100 text-gray-500"
+              }`}
+            >
+              {counters.fired}
+            </span>
+          </button>
+        </nav>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-gray-100 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
+          <div className="relative flex-1 w-full xl:max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="text"
+              placeholder="Поиск по имени или телефону..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+            <div className="flex items-center space-x-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
+              <Shield size={16} className="text-gray-400" />
+              <select
+                value={groupFilter}
+                onChange={(e) => setGroupFilter(e.target.value)}
+                className="bg-transparent text-sm text-gray-700 focus:outline-none cursor-pointer pr-4"
               >
-                Работает{` (${counters.active})`}
-              </button>
-              <button
-                className="btn"
-                style={{
-                  minWidth: 112,
-                  background: tab === "FIRED" ? "var(--brand-primary)" : "transparent",
-                  borderColor: tab === "FIRED" ? "transparent" : "var(--border-default)",
-                  color: tab === "FIRED" ? "#fff" : "var(--fg)",
-                  fontWeight: tab === "FIRED" ? 600 : 500,
-                  transition: "all .2s ease",
-                }}
-                onClick={() => setTab("FIRED")}
-              >
-                Уволен{` (${counters.fired})`}
-              </button>
+                <option value="ALL">Все группы</option>
+                {uniqueGroups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <div className="filter-grid">
-               <div className="filter-block">
-                 <span className="filter-label">Роль</span>
-                 <select
-                  value={roleFilter}
-                  onChange={(e) => setRoleFilter(e.target.value)}
-                  className="input"
-                  style={{ minWidth: 180 }}
+            <div className="flex items-center space-x-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
+              <MapPin size={16} className="text-gray-400" />
+              <select
+                value={outletFilter}
+                onChange={(e) => setOutletFilter(e.target.value)}
+                className="bg-transparent text-sm text-gray-700 focus:outline-none cursor-pointer pr-4"
+              >
+                <option value="ALL">Все точки</option>
+                {outlets.map((outlet) => (
+                  <option key={outlet.id} value={outlet.id}>
+                    {outlet.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <label className="flex items-center space-x-2 bg-white px-3 py-2 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors">
+              <input
+                type="checkbox"
+                checked={onlyPortal}
+                onChange={(e) => setOnlyPortal(e.target.checked)}
+                className="rounded text-purple-600 focus:ring-purple-500"
+              />
+              <span className="text-sm text-gray-700 whitespace-nowrap">С доступом в панель</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="px-6 py-4 font-semibold">Имя</th>
+                <th className="px-6 py-4 font-semibold">Торговые точки</th>
+                <th className="px-6 py-4 font-semibold">
+                  <div className="flex items-center gap-1 w-fit">
+                    <span>Активность</span>
+                    <div
+                      className="cursor-help text-gray-400 hover:text-gray-600 transition-colors"
+                      onMouseEnter={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setTooltip({
+                          x: rect.left + rect.width / 2,
+                          y: rect.top,
+                          text: "Время последней операции с баллами или входа в панель управления",
+                        });
+                      }}
+                      onMouseLeave={() => setTooltip(null)}
+                    >
+                      <Info size={14} />
+                    </div>
+                  </div>
+                </th>
+                <th className="px-6 py-4 font-semibold">Доступ в панель</th>
+                <th className="px-6 py-4 font-semibold text-right w-16"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    Загрузка…
+                  </td>
+                </tr>
+              ) : uniqueItems.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    <UserCog size={48} className="mx-auto text-gray-300 mb-4" />
+                    <p>Сотрудники не найдены.</p>
+                  </td>
+                </tr>
+              ) : (
+                uniqueItems.map((staff) => {
+                  const displayName = getDisplayName(staff);
+                  const portalsAccess = hasPortalAccess(staff);
+                  const groupLabel = getPortalGroupLabel(staff);
+                  const accesses = Array.isArray(staff.accesses) ? staff.accesses : [];
+                  const activeAccesses = accesses.filter((access) => access.status === "ACTIVE");
+                  const outletNames = activeAccesses
+                    .map((access) => access.outletName)
+                    .filter(Boolean) as string[];
+                  const outletFallback =
+                    outletNames.length === 0 && activeAccesses.length
+                      ? `${activeAccesses.length} точек`
+                      : null;
+
+                  return (
+                    <tr
+                      key={staff.id}
+                      className="hover:bg-gray-50 transition-colors cursor-pointer group"
+                      onClick={() => router.push(`/staff/${encodeURIComponent(staff.id)}`)}
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold text-sm">
+                            {(displayName || "?").slice(0, 1).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-900">{displayName}</div>
+                            <div className="text-xs text-gray-500">
+                              {staff.phone || staff.email || "—"}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-1">
+                          {outletNames.length > 0 ? (
+                            outletNames.map((name, idx) => (
+                              <span
+                                key={`${staff.id}-outlet-${idx}`}
+                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700"
+                              >
+                                {name}
+                              </span>
+                            ))
+                          ) : outletFallback ? (
+                            <span className="text-gray-500 text-xs">{outletFallback}</span>
+                          ) : (
+                            <span className="text-gray-400 text-xs italic">Не назначено</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <div className="flex items-center text-gray-900">
+                            <Clock size={14} className="mr-1.5 text-gray-400" />
+                            <span>{formatActivityDate(staff.lastActivityAt)}</span>
+                          </div>
+                          <span className="text-[10px] text-gray-400 mt-0.5">Последняя активность</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {portalsAccess ? (
+                          groupLabel ? (
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getGroupBadgeStyle(
+                                groupLabel,
+                              )}`}
+                            >
+                              {groupLabel}
+                            </span>
+                          ) : (
+                            <span className="text-gray-500 text-xs">Доступ</span>
+                          )
+                        ) : (
+                          <span className="text-gray-400 text-xs">Нет доступа</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <ChevronRight className="text-gray-300 group-hover:text-gray-500 transition-colors" size={20} />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showCreate &&
+        createPortal(
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-[4px] z-[150] flex items-center justify-center p-4 ">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg relative z-[101]">
+              <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
+                <h3 className="text-xl font-bold text-gray-900">Новый сотрудник</h3>
+                <button
+                  onClick={() => {
+                    setShowCreate(false);
+                    resetCreateForm();
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
                 >
-                  <option value="ALL">Все роли</option>
-                  {roles.map((role) => (
-                    <option key={role} value={role}>
-                      {getRoleLabel(role)}
-                    </option>
-                  ))}
-                </select>
-               </div>
-               <div className="filter-block">
-                 <span className="filter-label">Торговая точка</span>
-                 <select
-                  value={outletFilter}
-                  onChange={(e) => setOutletFilter(e.target.value)}
-                  className="input"
-                  style={{ minWidth: 220 }}
-                >
-                  <option value="ALL">Все торговые точки</option>
-                  {outlets.map((outlet) => (
-                    <option key={outlet.id} value={outlet.id}>
-                      {outlet.name}
-                    </option>
-                  ))}
-                </select>
-               </div>
-               <div className="filter-block">
-                 <span className="filter-label">Доступ</span>
-                 <div style={{ paddingTop: 4 }}>
-                    <Toggle
-                      checked={onlyPortal}
-                      onChange={setOnlyPortal}
-                      label="Только с доступом в панель"
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Имя <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={cFirstName}
+                      onChange={(e) => setCFirstName(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
-                 </div>
-               </div>
-               <div className="filter-block" style={{ flex: 1, minWidth: 240 }}>
-                 <span className="filter-label">Поиск</span>
-                 <div style={{ position: "relative" }}>
-                  <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--fg-muted)" }} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Фамилия</label>
+                    <input
+                      type="text"
+                      value={cLastName}
+                      onChange={(e) => setCLastName(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Телефон</label>
                   <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Поиск по имени или e-mail"
-                    className="input"
-                    style={{ paddingLeft: 38, width: "100%" }}
+                    type="text"
+                    placeholder="+7"
+                    value={cPhone}
+                    onChange={(e) => setCPhone(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>
-               </div>
-            </div>
-          </div>
-        </CardBody>
-      </Card>
 
-      <Card>
-        <CardHeader title="Команда" subtitle="Список сотрудников с правами доступа" />
-        <CardBody style={{ padding: 0 }}>
-          {loading ? (
-             <div style={{ padding: 20 }}><Skeleton height={220} /></div>
-          ) : uniqueItems.length ? (
-            <div className="data-list">
-              <div className="list-row staff-grid" style={{ background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
-                <div className="cell-label">ИМЯ</div>
-                <div className="cell-label">ТОРГОВЫЕ ТОЧКИ</div>
-                <div className="cell-label">АКТИВНОСТЬ</div>
-                <div className="cell-label">ДОСТУП В ПАНЕЛЬ</div>
-              </div>
-              {uniqueItems.map((staff, idx) => {
-                const displayName = getDisplayName(staff);
-                const secondary = staff.email || staff.phone || staff.position;
-                const portalsAccess = hasPortalAccess(staff);
-                const outletText = (() => {
-                  const accesses = Array.isArray(staff.accesses) ? staff.accesses : [];
-                  const active = accesses.filter((access) => access.status === "ACTIVE");
-                  if (active.length === 0) return "—";
-                  if (active.length === 1) {
-                    const only = active[0] as StaffOutletAccess;
-                    return only.outletName || "1 торговая точка";
-                  }
-                  return `${active.length} торговых точек`;
-                })();
-                
-                return (
-                  <a
-                    key={`${staff.id}-${idx}`}
-                    href={`/staff/${encodeURIComponent(staff.id)}`}
-                    className="list-row staff-grid"
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div
-                        style={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: "50%",
-                          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1))",
-                          border: "1px solid rgba(255,255,255,0.1)",
-                          color: "var(--brand-primary-light)",
-                          overflow: "hidden",
-                          flexShrink: 0,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontWeight: 600,
-                          fontSize: 16,
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    placeholder="example@mail.com"
+                    value={cEmail}
+                    onChange={(e) => setCEmail(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий</label>
+                  <textarea
+                    rows={2}
+                    value={cComment}
+                    onChange={(e) => setCComment(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                  />
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <label className="flex items-center space-x-3 cursor-pointer mb-4">
+                    <div
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                        cPortal ? "bg-purple-600" : "bg-gray-300"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={cPortal}
+                        onChange={(e) => {
+                          const next = e.target.checked;
+                          setCPortal(next);
+                          if (next && groups.length === 0 && !groupsLoading) ensureGroupsLoaded();
                         }}
-                      >
-                        {(displayName || "?").slice(0, 1).toUpperCase()}
-                      </div>
-                      <div style={{ display: "grid", gap: 2 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 15, fontWeight: 600, color: "var(--fg)" }}>{displayName}</span>
-                          {staff.isOwner || (staff.role || "").toUpperCase() === "MERCHANT" ? (
-                            <Badge variant="primary" className="text-xs py-0 px-1.5 h-5">Владелец</Badge>
-                          ) : null}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--fg-muted)" }}>
-                           <span>{getRoleLabel(staff.role)}</span>
-                           {secondary && (
-                             <>
-                               <span>·</span>
-                               <span>{secondary}</span>
-                             </>
-                           )}
-                        </div>
-                      </div>
+                        className="sr-only"
+                      />
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          cPortal ? "translate-x-6" : "translate-x-1"
+                        }`}
+                      />
                     </div>
-                    
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--fg-secondary)", fontSize: 14 }}>
-                      <Store size={16} className="text-muted" />
-                      {outletText}
-                    </div>
-                    
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--fg-secondary)", fontSize: 14 }}>
-                      <Clock size={16} className="text-muted" />
-                      {formatActivityDate(staff.lastActivityAt)}
-                    </div>
-                    
-                    <div>
-                      {portalsAccess ? (
-                        <Badge variant="success" dot>Да</Badge>
-                      ) : (
-                        <span style={{ color: "var(--fg-muted)", fontSize: 14 }}>Нет</span>
-                      )}
-                    </div>
-                  </a>
-                );
-              })}
-            </div>
-          ) : (
-            <div style={{ padding: "40px 20px", textAlign: "center", opacity: 0.7 }}>
-              <div style={{ marginBottom: 12, opacity: 0.5 }}><UserCog size={48} /></div>
-              Нет сотрудников, удовлетворяющих условиям фильтра
-            </div>
-          )}
-          {error && !loading ? (
-            <div style={{ color: "var(--danger)", padding: 20 }}>{error}</div>
-          ) : null}
-        </CardBody>
-      </Card>
+                    <span className="font-medium text-gray-900">Доступ в панель управления</span>
+                  </label>
 
-      {showCreate && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>Добавить сотрудника</div>
-                <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>Заполните данные и назначьте доступы</div>
-              </div>
-              <button
-                aria-label="Закрыть"
-                onClick={() => {
-                  setShowCreate(false);
-                  resetCreateForm();
-                }}
-                className="btn-ghost"
-                style={{ padding: 6, borderRadius: "50%", border: "none", cursor: "pointer", display: "flex" }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: "grid", gap: 16 }}>
-                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                    <div className="filter-block">
-                      <label className="filter-label">Имя *</label>
-                      <input
-                        value={cFirstName}
-                        onChange={(e) => setCFirstName(e.target.value)}
-                        placeholder="Например, Анна"
-                        className="input"
-                      />
-                    </div>
-                    <div className="filter-block">
-                      <label className="filter-label">Фамилия</label>
-                      <input
-                        value={cLastName}
-                        onChange={(e) => setCLastName(e.target.value)}
-                        placeholder="Опционально"
-                        className="input"
-                      />
-                    </div>
-                 </div>
-                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                    <div className="filter-block">
-                        <label className="filter-label">Должность</label>
-                        <input
-                        value={cPosition}
-                        onChange={(e) => setCPosition(e.target.value)}
-                        placeholder="Например, Старший кассир"
-                        className="input"
-                        />
-                    </div>
-                    <div className="filter-block">
-                        <label className="filter-label">Телефон</label>
-                        <input
-                        value={cPhone}
-                        onChange={(e) => setCPhone(e.target.value)}
-                        placeholder="+7 (___) ___-__-__"
-                        className="input"
-                        />
-                    </div>
-                 </div>
-                 <div className="filter-block">
-                    <label className="filter-label">Комментарий</label>
-                    <textarea
-                      value={cComment}
-                      onChange={(e) => setCComment(e.target.value)}
-                      placeholder="Дополнительная информация"
-                      className="input"
-                      style={{ minHeight: 80, resize: "vertical", paddingTop: 10 }}
-                    />
-                 </div>
-                 
-                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid var(--border-subtle)" }}>
-                    <div style={{ display: "grid", gap: 2 }}>
-                       <div style={{ fontWeight: 500, fontSize: 14 }}>Доступ в панель управления</div>
-                       <div style={{ fontSize: 12, opacity: 0.6 }}>Разрешить вход в этот портал</div>
-                    </div>
-                    <Toggle label="" checked={cPortal} onChange={(next) => {
-                        setCPortal(next);
-                        if (next && groups.length === 0 && !groupsLoading) ensureGroupsLoaded();
-                    }} />
-                 </div>
-                 
-                 {cPortal && (
-                   <div className="animate-in" style={{ display: "grid", gap: 16, paddingLeft: 12, borderLeft: "2px solid var(--border-default)" }}>
-                      <div className="filter-block">
-                        <label className="filter-label">Группа прав *</label>
-                        <select value={cGroup} onChange={(e) => setCGroup(e.target.value)} className="input">
+                  {cPortal && (
+                    <div className="space-y-4  pl-1">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1 uppercase">
+                          Группа доступа
+                        </label>
+                        <select
+                          value={cGroup}
+                          onChange={(e) => setCGroup(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
                           <option value="">Выберите роль</option>
-                          {uniqueGroups.map(g => (
-                            <option key={g.id} value={g.id}>{g.name}</option>
+                          {uniqueGroups.map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.name}
+                            </option>
                           ))}
                         </select>
                       </div>
-                      <div className="filter-block">
-                        <label className="filter-label">Email (логин) *</label>
-                        <input value={cEmail} onChange={(e) => setCEmail(e.target.value)} placeholder="employee@company.com" className="input" />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1 uppercase">
+                            Логин (email)
+                          </label>
+                          <input
+                            type="email"
+                            value={cEmail}
+                            onChange={(e) => setCEmail(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1 uppercase">Пароль</label>
+                          <input
+                            type="password"
+                            value={cPassword}
+                            onChange={(e) => setCPassword(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                        </div>
                       </div>
-                      <div className="filter-block">
-                        <label className="filter-label">Пароль *</label>
-                        <input type="password" value={cPassword} onChange={(e) => setCPassword(e.target.value)} placeholder="Минимум 6 символов" className="input" />
-                      </div>
-                   </div>
-                 )}
-                 
-                 {createError && (
-                   <div style={{ color: "var(--danger)", fontSize: 13 }}>{createError}</div>
-                 )}
+                    </div>
+                  )}
+                </div>
+
+                {createError && <div className="text-sm text-red-600">{createError}</div>}
+              </div>
+
+              <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setShowCreate(false);
+                    resetCreateForm();
+                  }}
+                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={handleCreate}
+                  disabled={!canSubmitCreate || submitting}
+                  className="px-6 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-60"
+                >
+                  {submitting ? "Создание..." : "Создать"}
+                </button>
               </div>
             </div>
-            <div className="modal-footer">
-               <Button variant="ghost" onClick={() => setShowCreate(false)}>Отмена</Button>
-               <Button variant="primary" disabled={!canSubmitCreate || submitting} onClick={handleCreate}>
-                 {submitting ? "Создание..." : "Создать сотрудника"}
-               </Button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
+
+      {tooltip &&
+        createPortal(
+          <div
+            className="fixed z-[9999] px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl pointer-events-none max-w-xs text-center"
+            style={{
+              top: tooltip.y - 8,
+              left: tooltip.x,
+              transform: "translate(-50%, -100%)",
+            }}
+          >
+            {tooltip.text}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-gray-900"></div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

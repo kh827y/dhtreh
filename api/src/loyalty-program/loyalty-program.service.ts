@@ -817,6 +817,14 @@ export class LoyaltyProgramService {
     return mechanics;
   }
 
+  async getMechanic(merchantId: string, mechanicId: string) {
+    const mechanic = await this.prisma.loyaltyMechanic.findFirst({
+      where: { merchantId, id: mechanicId },
+    });
+    if (!mechanic) throw new NotFoundException('Механика не найдена');
+    return mechanic;
+  }
+
   async createMechanic(merchantId: string, payload: MechanicPayload) {
     if (!payload.type) throw new BadRequestException('Тип механики обязателен');
     const mechanic = await this.prisma.loyaltyMechanic.create({
@@ -1042,6 +1050,17 @@ export class LoyaltyProgramService {
       this.metrics.inc('portal_loyalty_promotions_list_total');
     } catch {}
     return promotions;
+  }
+
+  async listPromotionBasics(merchantId: string, ids: string[]) {
+    const list = Array.isArray(ids)
+      ? ids.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
+    if (!list.length) return [];
+    return this.prisma.loyaltyPromotion.findMany({
+      where: { merchantId, id: { in: list } },
+      select: { id: true, rewardType: true, rewardMetadata: true },
+    });
   }
 
   private async computePromotionRedeemRevenue(

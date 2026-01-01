@@ -88,7 +88,7 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
       {
         label: "Настройки бонусов",
         type: "Настройка",
-        href: "/loyalty/mechanics/redeem-limits",
+        href: "/loyalty/mechanics/bonus-settings",
         icon: <Ban size={14} strokeWidth={1.5} />,
       },
       {
@@ -233,7 +233,7 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
 
         {/* Search Results Dropdown */}
         {isSearchFocused && searchQuery && (
-          <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden max-h-96 overflow-y-auto animate-fade-in z-50">
+          <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden max-h-96 overflow-y-auto  z-50">
             {searchResults.length > 0 ? (
               <div className="py-2">
                 <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider flex justify-between">

@@ -6,6 +6,7 @@ import {
   useTimezone,
   useTimezoneUpdater,
 } from "../../../components/TimezoneProvider";
+import { readApiError, readErrorMessage } from "lib/portal-errors";
 
 const timezones = [
   { value: "MSK-1", label: "(MSK-1) Калининград" },
@@ -20,32 +21,6 @@ const timezones = [
   { value: "MSK+8", label: "(MSK+8) Магадан" },
   { value: "MSK+9", label: "(MSK+9) Камчатка" },
 ];
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") return payload.trim() || null;
-  if (typeof payload === "object" && payload) {
-    const anyPayload = payload as any;
-    if (typeof anyPayload.message === "string") return anyPayload.message;
-    if (
-      Array.isArray(anyPayload.message) &&
-      typeof anyPayload.message[0] === "string"
-    ) {
-      return anyPayload.message[0];
-    }
-    if (typeof anyPayload.error === "string") return anyPayload.error;
-  }
-  return null;
-}
-
-async function readErrorMessage(res: Response, fallback: string) {
-  const text = await res.text().catch(() => "");
-  let json: any = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {}
-  return readApiError(json || text) || fallback;
-}
 
 export default function SettingsSystemPage() {
   const timezone = useTimezone();
@@ -238,7 +213,7 @@ export default function SettingsSystemPage() {
   ]);
 
   return (
-    <div className="p-8 max-w-[1000px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1000px] mx-auto space-y-8 ">
       {success ? (
         <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 text-sm flex items-start space-x-3">
           <div className="font-semibold">Готово</div>

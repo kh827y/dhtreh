@@ -25,6 +25,7 @@ import {
   normalizeGenderBuckets,
   SEX_LABELS,
 } from "./utils";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type AudienceOption = { value: string; label: string };
 
@@ -147,7 +148,7 @@ export default function ClientPortraitPage() {
       } catch (err: any) {
         if (!cancelled)
           setAudiencesError(
-            String(err?.message || "Не удалось загрузить аудитории"),
+            normalizeErrorMessage(err, "Не удалось загрузить аудитории"),
           );
       } finally {
         if (!cancelled) setAudiencesLoading(false);
@@ -183,7 +184,7 @@ export default function ClientPortraitPage() {
       .catch((err: any) => {
         if (cancelled || err?.name === "AbortError") return;
         setData(null);
-        setError(String(err?.message || err || "Ошибка загрузки"));
+        setError(normalizeErrorMessage(err, "Ошибка загрузки"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -260,7 +261,7 @@ export default function ClientPortraitPage() {
   const femaleKey = `female_${combinedMetricKey}`;
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Портрет клиента</h2>

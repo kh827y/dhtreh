@@ -432,7 +432,7 @@ export default function OperationsPage() {
   }, []);
 
   return (
-    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
+    <div style={{ display: "grid", gap: 24 }}>
       {/* Header code remains same ... */}
       <header style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
         <div style={{

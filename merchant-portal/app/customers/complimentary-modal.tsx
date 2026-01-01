@@ -4,6 +4,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { Gift } from "lucide-react";
 import { getFullName, type CustomerRecord } from "./data";
+import { readApiError } from "lib/portal-errors";
 
 type ComplimentaryModalProps = {
   customer: CustomerRecord;
@@ -20,25 +21,6 @@ type FormErrors = {
 function formatPoints(value?: number | null): string {
   if (value == null || Number.isNaN(Number(value))) return "0";
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(Number(value));
-}
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") {
-    const trimmed = payload.trim();
-    if (!trimmed) return null;
-    try {
-      return readApiError(JSON.parse(trimmed));
-    } catch {
-      return trimmed;
-    }
-  }
-  if (typeof payload === "object") {
-    const message = (payload as { message?: unknown }).message;
-    if (Array.isArray(message)) return message.filter(Boolean).join(", ");
-    if (typeof message === "string" && message.trim()) return message.trim();
-  }
-  return null;
 }
 
 export const ComplimentaryModal: React.FC<ComplimentaryModalProps> = ({ customer, onClose, onSuccess }) => {

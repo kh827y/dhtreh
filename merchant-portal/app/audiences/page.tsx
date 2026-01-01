@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { isAllCustomersAudience } from "../../lib/audience-utils";
+import { readApiError } from "lib/portal-errors";
 
 type Audience = {
   id: string;
@@ -122,27 +123,6 @@ const initialFormData: AudienceFormData = {
   selectedF: [],
   selectedM: [],
 };
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") {
-    const trimmed = payload.trim();
-    if (!trimmed) return null;
-    try {
-      const parsed = JSON.parse(trimmed);
-      return readApiError(parsed);
-    } catch {
-      return trimmed;
-    }
-  }
-  if (typeof payload === "object") {
-    const anyPayload = payload as any;
-    if (typeof anyPayload.message === "string") return anyPayload.message;
-    if (Array.isArray(anyPayload.message) && typeof anyPayload.message[0] === "string") return anyPayload.message[0];
-    if (typeof anyPayload.error === "string") return anyPayload.error;
-  }
-  return null;
-}
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -919,7 +899,7 @@ export default function AudiencesPage() {
 
   if (view === "create") {
     return (
-      <div className="p-8 max-w-[1200px] mx-auto animate-fade-in">
+      <div className="p-8 max-w-[1200px] mx-auto ">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-4">
             <button onClick={() => setView("list")} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
@@ -1402,7 +1382,7 @@ export default function AudiencesPage() {
   }
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Аудитории</h2>

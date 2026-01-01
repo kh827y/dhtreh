@@ -2,6 +2,7 @@
 
 import React from "react";
 import { AlertTriangle, Lock, Bell, Info, Save } from "lucide-react";
+import { readApiError, readErrorMessage } from "lib/portal-errors";
 
 type AntifraudApiPayload = {
   dailyCap?: number;
@@ -16,23 +17,6 @@ const DEFAULTS = {
   maxPoints: 5000,
   blockOnDailyLimit: false,
 };
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") return payload.trim() || null;
-  if (typeof payload === "object" && payload) {
-    const anyPayload = payload as any;
-    if (typeof anyPayload.message === "string") return anyPayload.message;
-    if (
-      Array.isArray(anyPayload.message) &&
-      typeof anyPayload.message[0] === "string"
-    ) {
-      return anyPayload.message[0];
-    }
-    if (typeof anyPayload.error === "string") return anyPayload.error;
-  }
-  return null;
-}
 
 function coerceInt(value: unknown, fallback: number): number {
   const numeric = Math.floor(Number(value));
@@ -64,15 +48,6 @@ function normalizePayload(payload: AntifraudApiPayload | null) {
     maxPoints,
     blockOnDailyLimit,
   };
-}
-
-async function readErrorMessage(res: Response, fallback: string) {
-  const text = await res.text().catch(() => "");
-  let json: any = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {}
-  return readApiError(json || text) || fallback;
 }
 
 export default function AntifraudPage() {
@@ -159,7 +134,7 @@ export default function AntifraudPage() {
   }, [saving, dailyFrequency, monthlyFrequency, maxPoints, blockOnDailyLimit]);
 
   return (
-    <div className="p-8 max-w-[1200px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1200px] mx-auto space-y-8 ">
       {success ? (
         <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 text-sm flex items-start space-x-3">
           <div className="font-semibold">Готово</div>
@@ -296,7 +271,7 @@ export default function AntifraudPage() {
             </div>
 
             {blockOnDailyLimit && (
-              <div className="bg-red-50 p-4 rounded-lg border border-red-100 flex items-start space-x-3 animate-fade-in">
+              <div className="bg-red-50 p-4 rounded-lg border border-red-100 flex items-start space-x-3 ">
                 <AlertTriangle className="text-red-600 mt-0.5 flex-shrink-0" size={18} />
                 <div className="text-sm text-red-800">
                   <p className="font-bold mb-1">Режим строгой блокировки включен</p>

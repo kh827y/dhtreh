@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Award, UserPlus, User, Clock, Save, Power, Layout } from "lucide-react";
+import { readApiError, readErrorMessage } from "lib/portal-errors";
 
 type RatingPeriod = "week" | "month" | "quarter" | "year" | "custom";
 
@@ -28,23 +29,6 @@ const DEFAULT_STATE: SettingsState = {
   ratingPeriod: "month",
   customDays: 30,
 };
-
-function readApiError(payload: unknown): string | null {
-  if (!payload) return null;
-  if (typeof payload === "string") return payload.trim() || null;
-  if (typeof payload === "object" && payload) {
-    const anyPayload = payload as any;
-    if (typeof anyPayload.message === "string") return anyPayload.message;
-    if (
-      Array.isArray(anyPayload.message) &&
-      typeof anyPayload.message[0] === "string"
-    ) {
-      return anyPayload.message[0];
-    }
-    if (typeof anyPayload.error === "string") return anyPayload.error;
-  }
-  return null;
-}
 
 function clampNonNegativeInt(value: unknown, fallback: number): number {
   const numeric = Math.round(Number(value));
@@ -88,15 +72,6 @@ function normalizeSettings(payload: StaffMotivationApiPayload | null): SettingsS
     ratingPeriod,
     customDays: clampPositiveInt(payload.customDays, DEFAULT_STATE.customDays),
   };
-}
-
-async function readErrorMessage(res: Response, fallback: string) {
-  const text = await res.text().catch(() => "");
-  let json: any = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {}
-  return readApiError(json || text) || fallback;
 }
 
 export default function StaffMotivationPage() {
@@ -175,7 +150,7 @@ export default function StaffMotivationPage() {
   }, [loading, saving, settings]);
 
   return (
-    <div className="p-8 max-w-[1200px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1200px] mx-auto space-y-8 ">
       {success ? (
         <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 text-sm flex items-start space-x-3">
           <div className="font-semibold">Готово</div>
@@ -344,7 +319,7 @@ export default function StaffMotivationPage() {
               </div>
 
               {settings.ratingPeriod === "custom" && (
-                <div className="ml-7 animate-fade-in">
+                <div className="ml-7 ">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Количество дней</label>
                   <div className="relative w-32">
                     <input

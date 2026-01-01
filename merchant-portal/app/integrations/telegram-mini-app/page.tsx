@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Bot,
 } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type TelegramState = {
   enabled: boolean;
@@ -55,7 +56,7 @@ export default function TelegramMiniAppPage() {
       }
     } catch (e: any) {
       setState(null);
-      setError(String(e?.message || e));
+      setError(normalizeErrorMessage(e, "Ошибка"));
     } finally {
       setLoading(false);
     }
@@ -96,7 +97,7 @@ export default function TelegramMiniAppPage() {
       setEditingToken(false);
       setMessage(data?.message || "Telegram Mini App подключена");
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(normalizeErrorMessage(e, "Ошибка"));
     } finally {
       setActionPending(false);
     }
@@ -125,7 +126,7 @@ export default function TelegramMiniAppPage() {
       setEditingToken(false);
       setMessage(data?.message || "Интеграция отключена");
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(normalizeErrorMessage(e, "Ошибка"));
     } finally {
       setActionPending(false);
     }
@@ -153,7 +154,7 @@ export default function TelegramMiniAppPage() {
             : "Подключение к боту не удалось"),
       );
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(normalizeErrorMessage(e, "Ошибка"));
     } finally {
       setChecking(false);
     }
@@ -167,7 +168,7 @@ export default function TelegramMiniAppPage() {
   };
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1400px] mx-auto space-y-8 ">
       <div className="flex items-center space-x-4 mb-8">
         <button
           onClick={() => router.push("/settings/integrations")}
@@ -247,7 +248,7 @@ export default function TelegramMiniAppPage() {
 
             <div className="p-6 space-y-6">
               {isConnected && !editingToken ? (
-                <div className="bg-green-50 border border-green-100 rounded-xl p-5 animate-fade-in">
+                <div className="bg-green-50 border border-green-100 rounded-xl p-5 ">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center space-x-4">
                       <div className="bg-green-100 p-3 rounded-full text-green-600">

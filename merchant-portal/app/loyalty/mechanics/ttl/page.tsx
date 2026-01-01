@@ -13,6 +13,7 @@ import {
   Info,
   CalendarDays,
 } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 export default function BurnReminderPage() {
   const [loading, setLoading] = useState(true);
@@ -41,7 +42,7 @@ export default function BurnReminderPage() {
         pushText: typeof json?.text === "string" ? json.text : prev.pushText,
       }));
     } catch (e: any) {
-      setError(String(e?.message || e || "Не удалось загрузить настройки"));
+      setError(normalizeErrorMessage(e, "Не удалось загрузить настройки"));
     } finally {
       setLoading(false);
     }
@@ -86,7 +87,7 @@ export default function BurnReminderPage() {
       setSuccess("Настройки сохранены");
       await load({ keepSuccess: true });
     } catch (e: any) {
-      setError(String(e?.message || e || "Не удалось сохранить настройки"));
+      setError(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
     } finally {
       setSaving(false);
     }
@@ -100,7 +101,7 @@ export default function BurnReminderPage() {
   };
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">
       {error ? (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-start space-x-3">
           <div className="font-semibold">Ошибка</div>

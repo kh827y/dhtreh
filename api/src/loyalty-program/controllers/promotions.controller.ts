@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Post,
@@ -12,6 +13,11 @@ import {
 } from '@nestjs/common';
 import { PromotionStatus } from '@prisma/client';
 import { PortalGuard } from '../../portal-auth/portal.guard';
+import {
+  assertPortalPermissions,
+  hasPortalPermission,
+  resolvePromotionResource,
+} from '../../portal-auth/portal-permissions.util';
 import {
   LoyaltyProgramService,
   type PromotionPayload,
@@ -94,18 +100,41 @@ export class PromotionsController {
   }
 
   @Get()
-  list(@Req() req: any, @Query('status') status?: string) {
+  async list(@Req() req: any, @Query('status') status?: string) {
     const normalized =
       status && status !== 'ALL' ? (status as PromotionStatus) : 'ALL';
-    return this.service
-      .listPromotions(this.merchantId(req), normalized as any)
-      .then((items) => items.map((item) => toPortalResponse(item)));
+    const items = await this.service.listPromotions(
+      this.merchantId(req),
+      normalized as any,
+    );
+    if (req.portalActor === 'STAFF' && !req.portalPermissions?.allowAll) {
+      const canReadAny =
+        hasPortalPermission(req.portalPermissions, 'points_promotions', 'read') ||
+        hasPortalPermission(req.portalPermissions, 'product_promotions', 'read');
+      if (!canReadAny) {
+        throw new ForbiddenException('Недостаточно прав');
+      }
+      const filtered = items.filter((item) =>
+        hasPortalPermission(
+          req.portalPermissions,
+          resolvePromotionResource(item),
+          'read',
+        ),
+      );
+      return filtered.map((item) => toPortalResponse(item));
+    }
+    return items.map((item) => toPortalResponse(item));
   }
 
   @Post()
   async create(@Req() req: any, @Body() body: PortalPromotionPayload) {
     const merchantId = this.merchantId(req);
     const payload = normalizePayload(body);
+    assertPortalPermissions(
+      req,
+      [resolvePromotionResource(payload)],
+      'manage',
+    );
     const created = await this.service.createPromotion(merchantId, payload);
     const full = await this.service.getPromotion(merchantId, created.id);
     return toPortalResponse(full);
@@ -119,6 +148,17 @@ export class PromotionsController {
   ) {
     const merchantId = this.merchantId(req);
     const payload = normalizePayload(body);
+    const current = await this.service.getPromotion(merchantId, id);
+    const currentResource = resolvePromotionResource(current);
+    const mergedPayload = {
+      rewardType: payload.rewardType ?? current.rewardType,
+      rewardMetadata: payload.rewardMetadata ?? current.rewardMetadata,
+    };
+    const nextResource = resolvePromotionResource(mergedPayload);
+    assertPortalPermissions(req, [currentResource], 'manage');
+    if (nextResource !== currentResource) {
+      assertPortalPermissions(req, [nextResource], 'manage');
+    }
     await this.service.updatePromotion(merchantId, id, payload);
     const full = await this.service.getPromotion(merchantId, id);
     return toPortalResponse(full);
@@ -131,6 +171,12 @@ export class PromotionsController {
     @Body() body: { status: PromotionStatus; actorId?: string },
   ) {
     const merchantId = this.merchantId(req);
+    const current = await this.service.getPromotion(merchantId, id);
+    assertPortalPermissions(
+      req,
+      [resolvePromotionResource(current)],
+      'manage',
+    );
     const status = normalizeStatus(String(body.status));
     const updated = await this.service.changePromotionStatus(
       merchantId,
@@ -146,19 +192,35 @@ export class PromotionsController {
     @Req() req: any,
     @Body() body: { ids: string[]; status: PromotionStatus; actorId?: string },
   ) {
-    const status = normalizeStatus(String(body.status));
-    return this.service.bulkUpdatePromotionStatus(
-      this.merchantId(req),
-      body.ids ?? [],
-      status,
-      body.actorId,
-    );
+    const merchantId = this.merchantId(req);
+    return this.service
+      .listPromotionBasics(merchantId, body.ids ?? [])
+      .then((items) => {
+        const resources = Array.from(
+          new Set(items.map((item) => resolvePromotionResource(item))),
+        );
+        if (resources.length) {
+          assertPortalPermissions(req, resources, 'manage', 'all');
+        }
+        const status = normalizeStatus(String(body.status));
+        return this.service.bulkUpdatePromotionStatus(
+          merchantId,
+          body.ids ?? [],
+          status,
+          body.actorId,
+        );
+      });
   }
 
   @Get(':id')
   async getById(@Req() req: any, @Param('id') id: string) {
     const merchantId = this.merchantId(req);
     const promotion = await this.service.getPromotion(merchantId, id);
+    assertPortalPermissions(
+      req,
+      [resolvePromotionResource(promotion)],
+      'read',
+    );
     const participants = promotion.participants ?? [];
     const totalUsage =
       promotion.metrics?.participantsCount ?? participants.length;
@@ -194,8 +256,14 @@ export class PromotionsController {
   }
 
   @Delete(':id')
-  delete(@Req() req: any, @Param('id') id: string) {
+  async delete(@Req() req: any, @Param('id') id: string) {
     const merchantId = this.merchantId(req);
+    const current = await this.service.getPromotion(merchantId, id);
+    assertPortalPermissions(
+      req,
+      [resolvePromotionResource(current)],
+      'manage',
+    );
     return this.service.deletePromotion(merchantId, id);
   }
 }

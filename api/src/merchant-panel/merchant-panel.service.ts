@@ -72,6 +72,12 @@ export interface AccessGroupFilters {
   search?: string;
 }
 
+type PortalActorContext = {
+  actor?: string | null;
+  staffId?: string | null;
+  role?: string | null;
+};
+
 interface AccessGroupPreset {
   key: string;
   name: string;
@@ -90,6 +96,55 @@ const DEFAULT_CRUD_ACTIONS: CrudAction[] = [
   'update',
   'delete',
 ];
+
+const MANAGER_EDIT_RESOURCES = [
+  'products',
+  'categories',
+  'audiences',
+  'customers',
+  'points_promotions',
+  'product_promotions',
+  'promocodes',
+  'telegram_notifications',
+  'broadcasts',
+  'feedback',
+  'staff_motivation',
+  'mechanic_birthday',
+  'mechanic_auto_return',
+  'mechanic_levels',
+  'mechanic_redeem_limits',
+  'mechanic_registration_bonus',
+  'mechanic_ttl',
+  'mechanic_referral',
+  'cashier_panel',
+  'import',
+  'wallet',
+];
+
+const MANAGER_VIEW_RESOURCES = [
+  'staff',
+  'outlets',
+  'integrations',
+  'antifraud',
+  'access_groups',
+  'system_settings',
+  'analytics',
+  'rfm_analysis',
+];
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizeEmailValue(value?: string | null) {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim().toLowerCase();
+  return trimmed ? trimmed : null;
+}
+
+function assertEmailFormat(value: string, message: string) {
+  if (!EMAIL_REGEX.test(value)) {
+    throw new BadRequestException(message);
+  }
+}
 
 function crudPermissions(
   resource: string,
@@ -168,6 +223,15 @@ export class MerchantPanelService {
       ],
     },
     {
+      key: 'admin',
+      name: 'Администратор',
+      description: 'Полный доступ ко всем разделам и настройкам системы.',
+      scope: AccessScope.PORTAL,
+      isSystem: false,
+      isDefault: false,
+      permissions: [{ resource: '__all__', action: 'manage' }],
+    },
+    {
       key: 'manager',
       name: 'Менеджер',
       description: 'Работа с сотрудниками и программой лояльности',
@@ -175,10 +239,13 @@ export class MerchantPanelService {
       isSystem: false,
       isDefault: false,
       permissions: [
-        ...crudPermissions('staff', ['read', 'update']),
-        ...crudPermissions('outlets', ['read', 'update']),
-        ...crudPermissions('loyalty', ['create', 'read', 'update']),
-        ...crudPermissions('analytics', ['read']),
+        ...MANAGER_EDIT_RESOURCES.flatMap((resource) =>
+          crudPermissions(resource, ['create', 'read', 'update']),
+        ),
+        ...MANAGER_VIEW_RESOURCES.map((resource) => ({
+          resource,
+          action: 'read',
+        })),
       ],
     },
     {
@@ -228,18 +295,47 @@ export class MerchantPanelService {
   private async ensureDefaultAccessGroups(merchantId: string) {
     const existing = await this.prisma.accessGroup.findMany({
       where: { merchantId },
-      select: { id: true, name: true, scope: true },
+      select: {
+        id: true,
+        name: true,
+        scope: true,
+        metadata: true,
+        updatedById: true,
+        isSystem: true,
+        isDefault: true,
+      },
     });
     const existingKeys = new Set(
       existing.map(
         (group) => `${group.scope}:${group.name.trim().toLowerCase()}`,
       ),
     );
+    const presetGroups = new Map<
+      string,
+      (typeof existing)[number]
+    >();
+    for (const group of existing) {
+      const metadata =
+        group.metadata && typeof group.metadata === 'object'
+          ? (group.metadata as Record<string, unknown>)
+          : null;
+      const presetKey =
+        metadata && typeof metadata.presetKey === 'string'
+          ? metadata.presetKey
+          : null;
+      if (presetKey) presetGroups.set(presetKey, group);
+    }
     const missingPresets = this.defaultAccessGroupPresets.filter((preset) => {
       const key = `${preset.scope}:${preset.name.trim().toLowerCase()}`;
       return !existingKeys.has(key);
     });
-    if (!missingPresets.length) return;
+    const updatablePresets = this.defaultAccessGroupPresets.filter((preset) => {
+      const group = presetGroups.get(preset.key);
+      if (!group) return false;
+      if (group.updatedById) return false;
+      return true;
+    });
+    if (!missingPresets.length && !updatablePresets.length) return;
 
     let created = 0;
     await this.prisma.$transaction(async (tx) => {
@@ -278,6 +374,40 @@ export class MerchantPanelService {
             continue;
           }
           throw error;
+        }
+      }
+      for (const preset of updatablePresets) {
+        const group = presetGroups.get(preset.key);
+        if (!group) continue;
+        const baseMeta =
+          group.metadata && typeof group.metadata === 'object'
+            ? (group.metadata as Prisma.JsonObject)
+            : {};
+        await tx.accessGroup.update({
+          where: { id: group.id },
+          data: {
+            name: preset.name,
+            description: preset.description ?? null,
+            scope: preset.scope,
+            isSystem: preset.isSystem,
+            isDefault: preset.isDefault,
+            metadata: {
+              ...baseMeta,
+              bootstrap: true,
+              presetKey: preset.key,
+            } as Prisma.JsonObject,
+          },
+        });
+        await tx.accessGroupPermission.deleteMany({ where: { groupId: group.id } });
+        if (preset.permissions.length) {
+          await tx.accessGroupPermission.createMany({
+            data: preset.permissions.map((permission) => ({
+              groupId: group.id,
+              resource: permission.resource,
+              action: permission.action,
+              conditions: permission.conditions ?? null,
+            })),
+          });
         }
       }
     });
@@ -943,10 +1073,21 @@ export class MerchantPanelService {
           'Пароль должен содержать минимум 6 символов',
         );
       }
+      const email = normalizeEmailValue(payload.email) ?? undefined;
+      const login = normalizeEmailValue(payload.login) ?? undefined;
+      if (email) assertEmailFormat(email, 'Некорректный формат email');
+      if (login) assertEmailFormat(login, 'Логин должен быть email');
+      const loginValue = email || login;
+      const portalRequested = Boolean(
+        payload.portalAccessEnabled || payload.canAccessPortal || trimmedPassword,
+      );
+      if (portalRequested && !email) {
+        throw new BadRequestException('Email обязателен для доступа в портал');
+      }
       const data: Prisma.StaffCreateInput = {
         merchant: { connect: { id: merchantId } },
-        login: payload.login?.trim() || undefined,
-        email: payload.email?.trim().toLowerCase() || undefined,
+        login: loginValue,
+        email,
         phone: payload.phone?.trim() || undefined,
         firstName: payload.firstName?.trim() || undefined,
         lastName: payload.lastName?.trim() || undefined,
@@ -1004,6 +1145,7 @@ export class MerchantPanelService {
     merchantId: string,
     staffId: string,
     payload: UpsertStaffPayload,
+    actor?: PortalActorContext,
   ) {
     const staff = await this.prisma.staff.findFirst({
       where: { merchantId, id: staffId },
@@ -1020,8 +1162,71 @@ export class MerchantPanelService {
         throw new ForbiddenException('Нельзя изменить статус владельца');
       }
     }
+    const actorType = actor?.actor ? String(actor.actor).toUpperCase() : 'MERCHANT';
+    const actorStaffId = actor?.staffId ? String(actor.staffId) : null;
+    const actorRole = actor?.role ? String(actor.role).toUpperCase() : null;
+    const isSelf =
+      actorType === 'STAFF' && actorStaffId && actorStaffId === staffId;
+    const isMerchantStaffActor =
+      actorType === 'STAFF' && actorRole === 'MERCHANT';
+    const canEditCredentials =
+      actorType !== 'STAFF' || isSelf || isMerchantStaffActor;
+    const emailProvided = payload.email !== undefined;
+    const loginProvided = payload.login !== undefined;
+    const normalizedEmail = emailProvided
+      ? normalizeEmailValue(payload.email)
+      : staff.email ?? null;
+    const normalizedLogin = loginProvided
+      ? normalizeEmailValue(payload.login)
+      : staff.login ?? null;
+    const emailChanged =
+      emailProvided && normalizedEmail !== (staff.email ?? null);
+    const loginChanged =
+      loginProvided && normalizedLogin !== (staff.login ?? null);
+    const passwordTouched = payload.password !== undefined;
+    if (!canEditCredentials && (emailChanged || loginChanged || passwordTouched)) {
+      throw new ForbiddenException('Недостаточно прав для смены логина или пароля');
+    }
+    if (emailChanged && normalizedEmail) {
+      assertEmailFormat(normalizedEmail, 'Некорректный формат email');
+    }
+    if (loginChanged && normalizedLogin) {
+      assertEmailFormat(normalizedLogin, 'Логин должен быть email');
+    }
+    const trimmedPassword = payload.password?.toString().trim() ?? undefined;
+    const portalRequested =
+      payload.portalAccessEnabled === true ||
+      payload.canAccessPortal === true ||
+      Boolean(trimmedPassword);
+    if (portalRequested && !(emailProvided ? normalizedEmail : staff.email)) {
+      throw new BadRequestException('Email обязателен для доступа в портал');
+    }
+    const isMerchantStaff =
+      staff.isOwner || staff.role === StaffRole.MERCHANT;
+    if (isMerchantStaff && payload.accessGroupIds) {
+      const existingGroups = await this.prisma.staffAccessGroup.findMany({
+        where: { staffId },
+        select: { groupId: true },
+      });
+      const existingIds = existingGroups
+        .map((row) => String(row.groupId || '').trim())
+        .filter(Boolean);
+      const targetIds = payload.accessGroupIds
+        .map((id) => String(id || '').trim())
+        .filter(Boolean);
+      const existingSet = new Set(existingIds);
+      const targetSet = new Set(targetIds);
+      const groupsChanged =
+        existingSet.size !== targetSet.size ||
+        Array.from(existingSet).some((id) => !targetSet.has(id));
+      if (groupsChanged) {
+        throw new ForbiddenException(
+          'Нельзя менять группу доступа сотрудника-мерчанта',
+        );
+      }
+    }
+
     await this.prisma.$transaction(async (tx) => {
-      const trimmedPassword = payload.password?.toString().trim() ?? undefined;
       if (trimmedPassword && trimmedPassword.length < 6) {
         throw new BadRequestException(
           'Пароль должен содержать минимум 6 символов',
@@ -1030,23 +1235,36 @@ export class MerchantPanelService {
 
       if (trimmedPassword) {
         const currentPassword = payload.currentPassword?.toString() ?? '';
-        if (staff.hash && !currentPassword) {
+        const hash = staff.hash;
+        const requiresCurrent = isSelf && Boolean(hash);
+        if (requiresCurrent && !currentPassword) {
           throw new BadRequestException(
             'Текущий пароль обязателен для смены пароля',
           );
         }
         if (
-          staff.hash &&
+          requiresCurrent &&
           currentPassword &&
-          !verifyPassword(currentPassword, staff.hash)
+          hash &&
+          !verifyPassword(currentPassword, hash)
         ) {
           throw new BadRequestException('Текущий пароль указан неверно');
         }
       }
 
+      const emailValue =
+        payload.email !== undefined
+          ? normalizeEmailValue(payload.email)
+          : staff.email;
+      const loginValue =
+        payload.email !== undefined
+          ? emailValue
+          : loginProvided
+            ? normalizeEmailValue(payload.login)
+            : staff.login;
       const updateData: Prisma.StaffUpdateInput = {
-        login: payload.login?.trim() ?? staff.login,
-        email: payload.email?.trim().toLowerCase() ?? staff.email,
+        login: loginValue,
+        email: emailValue,
         phone: payload.phone?.trim() ?? staff.phone,
         firstName: payload.firstName?.trim() ?? staff.firstName,
         lastName: payload.lastName?.trim() ?? staff.lastName,
@@ -1444,8 +1662,27 @@ export class MerchantPanelService {
       where: { merchantId, id: groupId },
     });
     if (!group) throw new NotFoundException('Группа не найдена');
-    if (group.isSystem)
-      throw new ForbiddenException('Нельзя редактировать системную группу');
+    if (group.isSystem) {
+      const nameLower = group.name.trim().toLowerCase();
+      const metadata =
+        group.metadata && typeof group.metadata === 'object'
+          ? (group.metadata as Record<string, unknown>)
+          : null;
+      const presetKey =
+        metadata && typeof metadata.presetKey === 'string'
+          ? metadata.presetKey
+          : null;
+      const isOwnerGroup =
+        presetKey === 'owner' ||
+        nameLower === 'владелец' ||
+        nameLower === 'owner' ||
+        nameLower === 'merchant';
+      if (isOwnerGroup) {
+        throw new ForbiddenException(
+          'Нельзя редактировать группу доступа владельца',
+        );
+      }
+    }
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.accessGroup.update({
         where: { id: groupId },
@@ -1536,11 +1773,36 @@ export class MerchantPanelService {
       where: { merchantId, id: groupId },
     });
     if (!group) throw new NotFoundException('Группа не найдена');
+    const ownerRows = await this.prisma.staff.findMany({
+      where: {
+        merchantId,
+        OR: [{ isOwner: true }, { role: StaffRole.MERCHANT }],
+      },
+      select: { id: true },
+    });
+    const ownerIds = ownerRows.map((row) => String(row.id)).filter(Boolean);
+    const ownerIdSet = new Set(ownerIds);
+    const nextMembers = staffIds.filter((id) => !ownerIdSet.has(id));
+    let finalMembers = nextMembers;
     await this.prisma.$transaction(async (tx) => {
+      if (ownerIds.length) {
+        const existingOwnerMembers = await tx.staffAccessGroup.findMany({
+          where: { groupId, staffId: { in: ownerIds } },
+          select: { staffId: true },
+        });
+        const preserved = existingOwnerMembers
+          .map((row) => String(row.staffId))
+          .filter(Boolean);
+        finalMembers = Array.from(new Set([...nextMembers, ...preserved]));
+      }
       await tx.staffAccessGroup.deleteMany({ where: { groupId } });
-      if (staffIds.length) {
+      if (finalMembers.length) {
         await tx.staffAccessGroup.createMany({
-          data: staffIds.map((staffId) => ({ merchantId, groupId, staffId })),
+          data: finalMembers.map((staffId) => ({
+            merchantId,
+            groupId,
+            staffId,
+          })),
         });
       }
     });
@@ -1550,7 +1812,7 @@ export class MerchantPanelService {
           event: 'portal.access-group.members.set',
           merchantId,
           groupId,
-          members: staffIds.length,
+          members: finalMembers.length,
         }),
       );
       this.metrics.inc('portal_access_group_write_total', {

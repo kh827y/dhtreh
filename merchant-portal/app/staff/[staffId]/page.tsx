@@ -1,7 +1,26 @@
 "use client";
 import React, { use } from "react";
-import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
-import Toggle from "../../../components/Toggle";
+import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
+import {
+  ArrowLeft,
+  Save,
+  Camera,
+  Ban,
+  Trash2,
+  Shield,
+  KeyRound,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  Store,
+  Plus,
+  X,
+  CreditCard,
+  History,
+  RefreshCw,
+} from "lucide-react";
+import { ACCESS_DENIED_MESSAGE, normalizeErrorMessage } from "lib/portal-errors";
 
 type StaffGroup = { id: string; name: string; scope?: string | null };
 
@@ -63,23 +82,6 @@ type AccessGroup = {
   isDefault?: boolean;
 };
 
-function formatActivityDate(value?: string | null) {
-  if (!value) return "—";
-  try {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "—";
-    return date.toLocaleString("ru-RU", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "—";
-  }
-}
-
 function formatDateTime(value?: string | null) {
   if (!value) return "—";
   try {
@@ -113,6 +115,26 @@ function getRoleLabel(role?: string | null): string {
   return upper;
 }
 
+function isCashierGroup(group?: { id?: string; name?: string; scope?: string | null }) {
+  if (!group) return false;
+  const id = String(group.id ?? "").trim().toLowerCase();
+  const name = String(group.name ?? "").trim().toLowerCase();
+  const scope = String(group.scope ?? "").trim().toUpperCase();
+  return scope === "CASHIER" || id === "cashier" || name === "кассир";
+}
+
+function getPortalGroupName(staff: Staff | null) {
+  if (!staff) return "—";
+  const groups = Array.isArray(staff.groups) ? staff.groups : [];
+  const portalGroup =
+    groups.find((group) => {
+      const scope = String(group?.scope ?? "").toUpperCase();
+      return !scope || scope === "PORTAL";
+    }) || groups[0];
+  if (portalGroup?.name) return portalGroup.name;
+  return getRoleLabel(staff.role);
+}
+
 function mergeGroups(options: AccessGroup[], currentRole?: string | null, currentGroups?: StaffGroup[] | null) {
   const map = new Map<string, AccessGroup>();
   for (const group of options) {
@@ -120,16 +142,19 @@ function mergeGroups(options: AccessGroup[], currentRole?: string | null, curren
     const id = String(group.id ?? "").trim();
     const name = String(group.name ?? "").trim();
     const scope = String(group.scope ?? "").toUpperCase();
-    const isSystem = Boolean(group.isSystem);
     if (!id || !name) continue;
-    if (isSystem) continue;
+    const nameLower = name.toLowerCase();
+    if (nameLower === "владелец" || nameLower === "owner" || nameLower === "merchant") {
+      continue;
+    }
     if (scope && scope !== "PORTAL") continue;
+    if (isCashierGroup({ id, name, scope })) continue;
     if (!map.has(id)) {
       map.set(id, {
         id,
         name,
         scope: group.scope ?? null,
-        isSystem,
+        isSystem: Boolean(group.isSystem),
         isDefault: Boolean(group.isDefault),
         membersCount: Number(group.membersCount ?? 0) || 0,
       });
@@ -139,12 +164,13 @@ function mergeGroups(options: AccessGroup[], currentRole?: string | null, curren
     for (const group of currentGroups) {
       if (!group) continue;
       const id = String(group.id ?? "").trim();
+      if (isCashierGroup({ id, name: group.name, scope: group.scope })) continue;
       if (!id || map.has(id)) continue;
       const name = String(group.name ?? "").trim() || (currentRole ? getRoleLabel(currentRole) : id);
       map.set(id, { id, name: name || id });
     }
   }
-  if (currentRole && !map.has(currentRole)) {
+  if (currentRole && !map.has(currentRole) && !isCashierGroup({ id: currentRole })) {
     map.set(currentRole, { id: currentRole, name: getRoleLabel(currentRole) });
   }
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
@@ -153,6 +179,7 @@ function mergeGroups(options: AccessGroup[], currentRole?: string | null, curren
 export default function StaffCardPage({ params }: { params: Promise<{ staffId: string }> }) {
   const { staffId: promisedStaffId } = use(params);
   const staffId = (typeof promisedStaffId === "string" ? promisedStaffId : "").toString();
+  const router = useRouter();
 
   const [loading, setLoading] = React.useState(true);
   const [item, setItem] = React.useState<Staff | null>(null);
@@ -162,9 +189,10 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
   const [groupsLoading, setGroupsLoading] = React.useState(false);
 
   const [newOutletId, setNewOutletId] = React.useState("");
-  const [editOpen, setEditOpen] = React.useState(false);
+  const [isAddOutletOpen, setIsAddOutletOpen] = React.useState(false);
+  const [showPassword, setShowPassword] = React.useState(false);
   const [editForm, setEditForm] = React.useState({ firstName: "", lastName: "", position: "", phone: "", comment: "" });
-  const [editSaving, setEditSaving] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
 
   const [passwordOpen, setPasswordOpen] = React.useState(false);
   const [passwordForm, setPasswordForm] = React.useState({ current: "", next: "", confirm: "" });
@@ -173,7 +201,6 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
 
   const [accessForm, setAccessForm] = React.useState({ email: "", groupId: "", canAccessPortal: false, password: "" });
   const [portalSectionOpen, setPortalSectionOpen] = React.useState(false);
-  const [accessSubmitLoading, setAccessSubmitLoading] = React.useState(false);
 
   const groupsLoadedRef = React.useRef(false);
   const groupsLoadingRef = React.useRef(false);
@@ -185,14 +212,27 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
 
   const [banner, setBanner] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
   const [error, setError] = React.useState("");
-
-  const [sessionStaffId, setSessionStaffId] = React.useState<string | null>(null);
+  const [auth, setAuth] = React.useState<{ actor: string; staffId: string | null; role: string | null } | null>(null);
 
   React.useEffect(() => {
-    try {
-      const stored = typeof window !== "undefined" ? window.localStorage.getItem("portal.staffId") : null;
-      if (stored) setSessionStaffId(stored);
-    } catch {}
+    let active = true;
+    const loadAuth = async () => {
+      try {
+        const res = await fetch("/api/portal/me");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!active) return;
+        const actor = String(data?.actor ?? "MERCHANT").toUpperCase();
+        const staffIdValue = data?.staff?.id ? String(data.staff.id) : null;
+        const staffRoleSource = data?.staff?.role ?? data?.role ?? null;
+        const staffRoleValue = staffRoleSource ? String(staffRoleSource).toUpperCase() : null;
+        setAuth({ actor, staffId: staffIdValue, role: staffRoleValue });
+      } catch {}
+    };
+    loadAuth();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const ensureGroupsLoaded = React.useCallback(async (force = false) => {
@@ -243,7 +283,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
         setAccesses(mapAccessRows(payload));
       } catch (e: any) {
         if (!options?.silent) {
-          setBanner({ type: 'error', text: String(e?.message || e || 'Не удалось обновить список точек') });
+          setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось обновить список точек") });
         }
       }
     },
@@ -298,7 +338,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       }));
       setOutlets(mappedOutlets);
     } catch (e: any) {
-      setError(String(e?.message || e || "Не удалось загрузить данные сотрудника"));
+      setError(normalizeErrorMessage(e, "Не удалось загрузить данные сотрудника"));
     } finally {
       setLoading(false);
     }
@@ -331,22 +371,40 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     setAccessForm((prev) => ({ ...prev, groupId: groupOptions[0]?.id ?? "" }));
   }, [portalSectionOpen, accessForm.groupId, groupOptions]);
   const portalCurrentlyEnabled = !!(item?.isOwner || item?.portalAccessEnabled || item?.canAccessPortal);
-  const canChangePassword = sessionStaffId === staffId;
+  const actorType = auth?.actor ?? "MERCHANT";
+  const isMerchantActor = actorType !== "STAFF";
+  const isSelf = actorType === "STAFF" && auth?.staffId === staffId;
+  const isMerchantStaffActor = actorType === "STAFF" && auth?.role === "MERCHANT";
+  const canEditCredentials = isMerchantActor || isSelf || isMerchantStaffActor;
+  const isMerchantStaff = !!(item?.isOwner || (item?.role || "").toUpperCase() === "MERCHANT");
+  const canChangeGroup = !isMerchantStaff;
   const canTogglePortal = !item?.isOwner;
+  const canChangePassword = canEditCredentials && portalCurrentlyEnabled;
   const hasTransactions = React.useMemo(() => {
     if (!item) return false;
     if (item.lastActivityAt) return true;
     return accesses.some((a) => (a.transactionsTotal || 0) > 0);
   }, [item, accesses]);
 
+  const profileChanged = React.useMemo(() => {
+    if (!item) return false;
+    return (
+      editForm.firstName.trim() !== (item.firstName || "") ||
+      editForm.lastName.trim() !== (item.lastName || "") ||
+      editForm.position.trim() !== (item.position || "") ||
+      editForm.phone.trim() !== (item.phone || "") ||
+      editForm.comment.trim() !== (item.comment || "")
+    );
+  }, [editForm, item]);
+
   const accessChanged = React.useMemo(() => {
     if (!item) return false;
     const normalizedEmail = (accessForm.email || "").trim();
-    const emailChanged = normalizedEmail !== (item.email || "");
+    const emailChanged = canEditCredentials && normalizedEmail !== (item.email || "");
     const assignedGroups = Array.isArray(item.groups) ? item.groups : [];
     const currentPortal = !!(item.portalAccessEnabled || item.canAccessPortal || item.isOwner);
     const targetPortal = portalSectionOpen || !!item.isOwner;
-    const portalChanged = currentPortal !== targetPortal;
+    const portalChanged = canTogglePortal && currentPortal !== targetPortal;
 
     const nonPortalGroupIds = assignedGroups
       .filter((group) => {
@@ -365,78 +423,116 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     if (targetPortal && selectedGroupId) desiredGroupIds.add(selectedGroupId);
     const desiredGroupIdList = Array.from(desiredGroupIds);
     const groupsChanged =
-      desiredGroupIdList.length !== currentGroupIds.size ||
-      desiredGroupIdList.some((id) => !currentGroupIds.has(id));
+      canChangeGroup &&
+      (desiredGroupIdList.length !== currentGroupIds.size ||
+        desiredGroupIdList.some((id) => !currentGroupIds.has(id)));
 
     const passwordRequired = targetPortal && !currentPortal && !item.isOwner;
     const passwordTyped = (accessForm.password || "").trim().length > 0;
-    const passwordChanged = passwordRequired && passwordTyped;
+    const passwordChanged = canEditCredentials && passwordRequired && passwordTyped;
 
     return emailChanged || portalChanged || groupsChanged || passwordChanged;
-  }, [accessForm.email, accessForm.groupId, accessForm.password, groupOptions, item, portalSectionOpen]);
+  }, [
+    accessForm.email,
+    accessForm.groupId,
+    accessForm.password,
+    canChangeGroup,
+    canEditCredentials,
+    canTogglePortal,
+    groupOptions,
+    item,
+    portalSectionOpen,
+  ]);
 
-  async function handleAccessSave() {
-    if (!item || accessSubmitLoading || !accessChanged) return;
-    setAccessSubmitLoading(true);
+  async function handleSaveAll() {
+    if (!item || saving || (!profileChanged && !accessChanged)) return;
+    setSaving(true);
     setBanner(null);
     try {
-      const normalizedEmail = accessForm.email.trim();
-      const trimmedPassword = (accessForm.password || "").trim();
-      const assignedGroups = Array.isArray(item.groups) ? item.groups : [];
-      const targetPortalEnabled = portalSectionOpen || !!item.isOwner;
-      const currentPortalEnabled = !!(item.portalAccessEnabled || item.canAccessPortal || item.isOwner);
-      const selectedGroupIdRaw = (accessForm.groupId || "").trim();
-      const fallbackGroupId = groupOptions[0]?.id ?? "";
-      const selectedGroupId = targetPortalEnabled ? selectedGroupIdRaw || fallbackGroupId : "";
-
-      if (targetPortalEnabled && !item.isOwner && !currentPortalEnabled && trimmedPassword.length < 6) {
-        setBanner({ type: "error", text: "Пароль должен содержать минимум 6 символов" });
-        return;
-      }
-
       const payload: Record<string, any> = {};
-      if (normalizedEmail) {
-        payload.email = normalizedEmail;
-      } else if (item.email) {
-        payload.email = null;
+      if (profileChanged) {
+        payload.firstName = editForm.firstName.trim() || null;
+        payload.lastName = editForm.lastName.trim() || null;
+        payload.position = editForm.position.trim() || null;
+        payload.phone = editForm.phone.trim() || null;
+        payload.comment = editForm.comment.trim() || null;
       }
 
-      if (!item.isOwner) {
-        payload.canAccessPortal = targetPortalEnabled;
-        payload.portalAccessEnabled = targetPortalEnabled;
+      if (accessChanged) {
+        const normalizedEmail = accessForm.email.trim().toLowerCase();
+        const emailValid =
+          !normalizedEmail || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
+        if (portalSectionOpen && !normalizedEmail) {
+          setBanner({ type: "error", text: "Укажите email для доступа в портал" });
+          return;
+        }
+        if (!emailValid) {
+          setBanner({ type: "error", text: "Некорректный формат email" });
+          return;
+        }
+
+        if (canEditCredentials) {
+          if (normalizedEmail) {
+            payload.email = normalizedEmail;
+            payload.login = normalizedEmail;
+          } else if (item.email) {
+            payload.email = null;
+          }
+        }
+
+        const assignedGroups = Array.isArray(item.groups) ? item.groups : [];
+        const targetPortalEnabled = portalSectionOpen || !!item.isOwner;
+        const currentPortalEnabled = !!(item.portalAccessEnabled || item.canAccessPortal || item.isOwner);
+        const selectedGroupIdRaw = (accessForm.groupId || "").trim();
+        const fallbackGroupId = groupOptions[0]?.id ?? "";
+        const selectedGroupId = targetPortalEnabled ? selectedGroupIdRaw || fallbackGroupId : "";
+
+        if (!item.isOwner && canTogglePortal) {
+          payload.canAccessPortal = targetPortalEnabled;
+          payload.portalAccessEnabled = targetPortalEnabled;
+        }
+
+        const nonPortalGroupIds = assignedGroups
+          .filter((group) => {
+            const scope = String(group?.scope ?? "").toUpperCase();
+            return scope && scope !== "PORTAL";
+          })
+          .map((group) => String(group?.id ?? "").trim())
+          .filter(Boolean);
+        const desiredGroupIds = new Set<string>(nonPortalGroupIds);
+        if (targetPortalEnabled && selectedGroupId) {
+          desiredGroupIds.add(selectedGroupId);
+        }
+
+        const currentGroupIds = new Set<string>(
+          assignedGroups.map((group) => String(group?.id ?? "").trim()).filter(Boolean),
+        );
+        const desiredGroupIdList = Array.from(desiredGroupIds);
+        const groupsChanged =
+          canChangeGroup &&
+          (desiredGroupIdList.length !== currentGroupIds.size ||
+            desiredGroupIdList.some((id) => !currentGroupIds.has(id)));
+
+        if (groupsChanged) {
+          payload.accessGroupIds = desiredGroupIdList;
+        }
+
+        const trimmedPassword = (accessForm.password || "").trim();
+        const passwordRequired = targetPortalEnabled && !currentPortalEnabled && !item.isOwner;
+        if (passwordRequired) {
+          if (!canEditCredentials) {
+            setBanner({ type: "error", text: ACCESS_DENIED_MESSAGE });
+            return;
+          }
+          if (trimmedPassword.length < 6) {
+            setBanner({ type: "error", text: "Пароль должен содержать минимум 6 символов" });
+            return;
+          }
+          payload.password = trimmedPassword;
+        }
       }
 
-      const nonPortalGroupIds = assignedGroups
-        .filter((group) => {
-          const scope = String(group?.scope ?? "").toUpperCase();
-          return scope && scope !== "PORTAL";
-        })
-        .map((group) => String(group?.id ?? "").trim())
-        .filter(Boolean);
-      const desiredGroupIds = new Set<string>(nonPortalGroupIds);
-      if (targetPortalEnabled && selectedGroupId) {
-        desiredGroupIds.add(selectedGroupId);
-      }
-
-      const currentGroupIds = new Set<string>(
-        assignedGroups.map((group) => String(group?.id ?? "").trim()).filter(Boolean),
-      );
-      const desiredGroupIdList = Array.from(desiredGroupIds);
-      const groupsChanged =
-        desiredGroupIdList.length !== currentGroupIds.size ||
-        desiredGroupIdList.some((id) => !currentGroupIds.has(id));
-
-      if (groupsChanged) {
-        payload.accessGroupIds = desiredGroupIdList;
-      }
-
-      if (targetPortalEnabled && !item.isOwner && !currentPortalEnabled) {
-        payload.password = trimmedPassword;
-      }
-
-      if (item.firstName || item.lastName) {
-        payload.login = [item.firstName, item.lastName].filter(Boolean).join(" ");
-      }
+      if (!Object.keys(payload).length) return;
 
       const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
         method: "PUT",
@@ -446,51 +542,35 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       if (!res.ok) throw new Error(await res.text());
       const updated = await res.json();
       setItem(updated);
+      setEditForm({
+        firstName: updated?.firstName || "",
+        lastName: updated?.lastName || "",
+        position: updated?.position || "",
+        phone: updated?.phone || "",
+        comment: updated?.comment || "",
+      });
       const updatedPortalEnabled = !!(
         updated?.isOwner || updated?.portalAccessEnabled || updated?.canAccessPortal
       );
+      const updatedGroups = Array.isArray(updated?.groups) ? (updated.groups as StaffGroup[]) : [];
+      const preferredGroup =
+        updatedGroups.find((group) => {
+          const scope = String(group?.scope ?? "").toUpperCase();
+          return scope === "PORTAL" || scope === "";
+        }) || updatedGroups[0];
+      const nextGroupId = updatedPortalEnabled && preferredGroup?.id ? String(preferredGroup.id) : "";
       setPortalSectionOpen(updatedPortalEnabled);
       setAccessForm({
-        email: normalizedEmail,
-        groupId: updatedPortalEnabled ? (selectedGroupId || fallbackGroupId) : "",
+        email: updated?.email || "",
+        groupId: updatedPortalEnabled ? nextGroupId : "",
         canAccessPortal: updatedPortalEnabled,
         password: "",
       });
-      setBanner({ type: "success", text: "Данные доступа сохранены" });
+      setBanner({ type: "success", text: "Изменения сохранены" });
     } catch (e: any) {
-      setBanner({ type: "error", text: String(e?.message || e || "Не удалось сохранить изменения") });
+      setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось сохранить изменения") });
     } finally {
-      setAccessSubmitLoading(false);
-    }
-  }
-
-  async function handleEditSave() {
-    if (!item) return;
-    setEditSaving(true);
-    setBanner(null);
-    try {
-      const payload = {
-        firstName: editForm.firstName.trim() || null,
-        lastName: editForm.lastName.trim() || null,
-        position: editForm.position.trim() || null,
-        phone: editForm.phone.trim() || null,
-        comment: editForm.comment.trim() || null,
-        login: [editForm.firstName.trim(), editForm.lastName.trim()].filter(Boolean).join(" ") || item.login || null,
-      };
-      const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const updated = await res.json();
-      setItem(updated);
-      setEditOpen(false);
-      setBanner({ type: "success", text: "Карточка сотрудника обновлена" });
-    } catch (e: any) {
-      setBanner({ type: "error", text: String(e?.message || e || "Не удалось сохранить карточку сотрудника") });
-    } finally {
-      setEditSaving(false);
+      setSaving(false);
     }
   }
 
@@ -500,6 +580,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     const next = passwordForm.next.trim();
     const confirm = passwordForm.confirm.trim();
     const current = passwordForm.current.trim();
+    const requiresCurrent = isSelf && portalCurrentlyEnabled;
     if (next.length < 6) {
       setPasswordError("Пароль должен содержать минимум 6 символов");
       return;
@@ -508,13 +589,20 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       setPasswordError("Пароли не совпадают");
       return;
     }
+    if (requiresCurrent && !current) {
+      setPasswordError("Введите текущий пароль");
+      return;
+    }
     setPasswordSaving(true);
     setBanner(null);
     try {
       const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: next, currentPassword: current || undefined }),
+        body: JSON.stringify({
+          password: next,
+          currentPassword: requiresCurrent ? current : undefined,
+        }),
       });
       if (!res.ok) throw new Error(await res.text());
       await res.json();
@@ -522,7 +610,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       setPasswordOpen(false);
       setBanner({ type: "success", text: "Пароль обновлён" });
     } catch (e: any) {
-      const msg = String(e?.message || e || "Не удалось сменить пароль");
+      const msg = normalizeErrorMessage(e, "Не удалось сменить пароль");
       setPasswordError(msg);
     } finally {
       setPasswordSaving(false);
@@ -542,9 +630,10 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       if (!res.ok) throw new Error(await res.text());
       await refreshAccesses({ silent: true });
       setNewOutletId("");
+      setIsAddOutletOpen(false);
       setBanner({ type: "success", text: "Точка добавлена" });
     } catch (e: any) {
-      setBanner({ type: "error", text: String(e?.message || e || "Не удалось добавить точку") });
+      setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось добавить точку") });
     } finally {
       setAddAccessLoading(false);
     }
@@ -560,7 +649,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       await refreshAccesses({ silent: true });
       setBanner({ type: "success", text: "PIN-код обновлён" });
     } catch (e: any) {
-      setBanner({ type: "error", text: String(e?.message || e || "Не удалось обновить PIN") });
+      setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось обновить PIN") });
     } finally {
       setAccessActionOutlet(null);
     }
@@ -577,7 +666,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       await refreshAccesses({ silent: true });
       setBanner({ type: "success", text: "Доступ отозван" });
     } catch (e: any) {
-      setBanner({ type: "error", text: String(e?.message || e || "Не удалось отозвать доступ") });
+      setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось отозвать доступ") });
     } finally {
       setAccessActionOutlet(null);
     }
@@ -607,7 +696,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       }));
       setBanner({ type: "success", text: "Сотрудник помечен как уволенный" });
     } catch (e: any) {
-      setBanner({ type: "error", text: String(e?.message || e || "Не удалось обновить статус") });
+      setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось обновить статус") });
     } finally {
       setFiring(false);
     }
@@ -646,196 +735,186 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       });
       setBanner({ type: "success", text: "Сотрудник восстановлен" });
     } catch (e: any) {
-      setBanner({ type: "error", text: String(e?.message || e || "Не удалось восстановить сотрудника") });
+      setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось восстановить сотрудника") });
     } finally {
       setRestoring(false);
     }
   }
 
   const displayName = getDisplayName(item);
-  const secondaryLine = item?.position || item?.phone || item?.email || "—";
-  const statusBadge = item?.status === "ACTIVE" ? "Работает" : item?.status === "FIRED" ? "Уволен" : item?.status || "";
+  const groupLabel = getPortalGroupName(item);
+  const statusBadge =
+    item?.status === "ACTIVE" ? "Работает" : item?.status === "FIRED" ? "Уволен" : item?.status || "";
+  const statusBadgeStyle =
+    item?.status === "ACTIVE" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800";
+  const canSave = Boolean(item) && (profileChanged || accessChanged) && !saving;
+  const availableOutlets = outlets.filter(
+    (outlet) => !accesses.some((row) => row.outletId === outlet.id),
+  );
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-6 ">
       {banner && (
         <div
-          style={{
-            borderRadius: 12,
-            padding: "12px 16px",
-            background: banner.type === "success" ? "rgba(34,197,94,.15)" : "rgba(248,113,113,.16)",
-            border: `1px solid ${banner.type === "success" ? "rgba(34,197,94,.35)" : "rgba(248,113,113,.35)"}`,
-            color: banner.type === "success" ? "#4ade80" : "#fca5a5",
-          }}
+          className={`rounded-xl px-4 py-3 text-sm border ${
+            banner.type === "success"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+              : "bg-red-50 border-red-200 text-red-700"
+          }`}
         >
           {banner.text}
         </div>
       )}
       {error && (
-        <div style={{ color: "#f87171", border: "1px solid rgba(248,113,113,.35)", borderRadius: 12, padding: "12px 16px" }}>{error}</div>
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
       )}
 
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 24,
-          justifyContent: "space-between",
-          alignItems: "center",
-          background: "rgba(10,14,24,.55)",
-          border: "1px solid rgba(255,255,255,.05)",
-          borderRadius: 18,
-          padding: 24,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-          <div style={{ position: "relative" }}>
-            <div
-              style={{
-                width: 82,
-                height: 82,
-                borderRadius: "50%",
-                background: "rgba(255,255,255,.08)",
-                overflow: "hidden",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 30,
-                fontWeight: 700,
-              }}
-            >
-              {item?.avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.avatarUrl} alt={displayName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                displayName.slice(0, 1).toUpperCase()
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setEditOpen(true)}
-              title="Редактировать профиль"
-              style={{
-                position: "absolute",
-                right: -4,
-                bottom: -4,
-                width: 30,
-                height: 30,
-                borderRadius: "50%",
-                border: "none",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "var(--brand-primary)",
-                color: "#0b0f19",
-                cursor: "pointer",
-                fontSize: 16,
-                fontWeight: 700,
-              }}
-            >
-              ✎
-            </button>
-          </div>
-          <div style={{ display: "grid", gap: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: 22, fontWeight: 700 }}>{displayName}</div>
-              {(item?.isOwner || (item?.role || "").toUpperCase() === "MERCHANT") && (
-                <span
-                  title="Владелец мерчанта"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 22,
-                    height: 22,
-                    borderRadius: "50%",
-                    background: "var(--brand-primary)",
-                    color: "#0b0f19",
-                    fontSize: 12,
-                    fontWeight: 700,
-                  }}
-                >
-                  А
-                </span>
-              )}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={() => router.back()}
+            className="p-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 leading-none">{displayName}</h2>
+            <div className="flex items-center space-x-2 mt-1">
               {statusBadge && (
-                <span
-                  style={{
-                    marginLeft: 6,
-                    padding: "2px 8px",
-                    borderRadius: 999,
-                    background: item?.status === "ACTIVE" ? "rgba(34,197,94,.18)" : "rgba(248,113,113,.18)",
-                    color: item?.status === "ACTIVE" ? "#4ade80" : "#fca5a5",
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                >
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${statusBadgeStyle}`}>
                   {statusBadge}
                 </span>
               )}
+              <span className="text-sm text-gray-500">{groupLabel}</span>
             </div>
-            <div style={{ fontSize: 14, opacity: 0.75 }}>Группа доступа: {getRoleLabel(item?.role)}</div>
-            <div style={{ fontSize: 13, opacity: 0.75 }}>Email: {item?.email || "—"}</div>
-            <div style={{ fontSize: 13, opacity: 0.65 }}>Телефон: {item?.phone || "—"}</div>
           </div>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "flex-end" }}>
-          <Button variant="primary" onClick={() => setEditOpen(true)} disabled={!item}>
-            Редактировать
-          </Button>
-          <button
-            className="btn"
-            onClick={() => setPasswordOpen(true)}
-            disabled={!canChangePassword || !portalCurrentlyEnabled}
-            title={
-              canChangePassword
-                ? portalCurrentlyEnabled
-                  ? "Сменить пароль"
-                  : "Нет активного доступа в портал"
-                : "Доступно только для собственного профиля"
-            }
-            style={{ opacity: canChangePassword && portalCurrentlyEnabled ? 1 : 0.6 }}
-          >
-            Сменить пароль
-          </button>
-          <button
-            className="btn"
-            onClick={() => {
-              if (hasTransactions) window.location.href = `/operations?staffId=${encodeURIComponent(staffId)}`;
-            }}
-            disabled={!hasTransactions}
-            title={hasTransactions ? "Открыть операции по сотруднику" : "Нет транзакций"}
-            style={{ opacity: hasTransactions ? 1 : 0.6 }}
-          >
-            Посмотреть транзакции
-          </button>
-          {item?.status === "FIRED" ? (
-            <Button variant="primary" onClick={handleRestore} disabled={!item || restoring}>
-              {restoring ? "Восстанавливаем…" : "Восстановить"}
-            </Button>
-          ) : (
-            <Button variant="danger" onClick={handleFire} disabled={!item || item.isOwner || firing}>
-              {firing ? "Увольняем…" : "Уволить"}
-            </Button>
-          )}
-        </div>
+
+        <button
+          onClick={handleSaveAll}
+          disabled={!canSave}
+          className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors shadow-sm disabled:opacity-60"
+        >
+          <Save size={18} />
+          <span>{saving ? "Сохраняем…" : "Сохранить"}</span>
+        </button>
       </div>
 
-      <Card>
-        <CardBody>
-          {loading && !item ? (
-            <Skeleton height={160} />
-          ) : (
-            <div style={{ display: "grid", gap: 18 }}>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", justifyContent: "space-between" }}>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 600 }}>Доступ в портал</div>
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>Последняя активность: {formatActivityDate(item?.lastActivityAt)}</div>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-6">
+            <div className="flex flex-col items-center">
+              <div className="relative group cursor-pointer">
+                <div className="w-32 h-32 rounded-full bg-gray-100 flex items-center justify-center border-4 border-white shadow-sm overflow-hidden">
+                  {item?.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={item.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-4xl font-bold text-gray-400">
+                      {displayName.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
                 </div>
-                <Toggle
+                <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Camera className="text-white" size={24} />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Имя</label>
+                <input
+                  type="text"
+                  value={editForm.firstName}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Фамилия</label>
+                <input
+                  type="text"
+                  value={editForm.lastName}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Телефон</label>
+                <input
+                  type="text"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={accessForm.email}
+                  onChange={(e) => setAccessForm((prev) => ({ ...prev, email: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none disabled:bg-gray-100"
+                  disabled={!canEditCredentials}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий</label>
+                <textarea
+                  rows={3}
+                  value={editForm.comment}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, comment: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none resize-none"
+                />
+              </div>
+            </div>
+
+            {item?.status !== "FIRED" ? (
+              <div className="pt-4 border-t border-gray-100">
+                <button
+                  onClick={handleFire}
+                  disabled={!item || item.isOwner || firing}
+                  className="w-full flex items-center justify-center space-x-2 text-red-600 bg-red-50 hover:bg-red-100 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+                >
+                  <Ban size={16} />
+                  <span>{firing ? "Увольняем…" : "Уволить сотрудника"}</span>
+                </button>
+              </div>
+            ) : (
+              <div className="pt-4 border-t border-gray-100">
+                <button
+                  onClick={handleRestore}
+                  disabled={!item || restoring}
+                  className="w-full flex items-center justify-center space-x-2 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+                >
+                  <span>{restoring ? "Восстанавливаем…" : "Восстановить сотрудника"}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-6">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+              <div className="flex items-center space-x-2">
+                <Shield className="text-purple-600" size={20} />
+                <h3 className="font-bold text-gray-900">Доступ в панель</h3>
+              </div>
+              <label
+                className={`relative inline-flex items-center ${
+                  canTogglePortal ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+                }`}
+              >
+                <input
+                  type="checkbox"
                   checked={portalSectionOpen}
-                  onChange={(value) => {
+                  onChange={(e) => {
                     if (!canTogglePortal) return;
+                    const value = e.target.checked;
                     setPortalSectionOpen(value);
                     setAccessForm((prev) => ({
                       ...prev,
@@ -845,352 +924,285 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
                     }));
                     if (value) ensureGroupsLoaded();
                   }}
-                  label="Доступ в админ-панель"
+                  className="sr-only peer"
                   disabled={!canTogglePortal}
-                  title={canTogglePortal ? undefined : "Для владельца доступ всегда включён"}
                 />
-              </div>
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
 
-              {portalSectionOpen && (
-                <div style={{ display: "grid", gap: 16 }}>
-                  <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontSize: 13, opacity: 0.75 }}>Группа доступа</label>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <select
-                          value={accessForm.groupId}
-                          disabled={!!item?.isOwner}
-                          onChange={(e) => setAccessForm((prev) => ({ ...prev, groupId: e.target.value }))}
-                          style={{ padding: "10px 12px", borderRadius: 8, flex: 1 }}
-                        >
-                          {groupOptions.map((group) => (
-                            <option key={group.id} value={group.id}>
-                              {group.name}
-                            </option>
-                          ))}
-                        </select>
+            {portalSectionOpen ? (
+              <div className="space-y-4 ">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Группа доступа</label>
+                  <select
+                    value={accessForm.groupId}
+                    disabled={!canChangeGroup}
+                    onChange={(e) => setAccessForm((prev) => ({ ...prev, groupId: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none disabled:bg-gray-100"
+                  >
+                    {groupOptions.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+                  {!canChangeGroup && (
+                    <div className="mt-1 text-xs text-gray-500">Группа владельца не меняется.</div>
+                  )}
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-lg space-y-3 border border-gray-200">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1 uppercase">Логин</label>
+                    <input
+                      type="email"
+                      value={accessForm.email}
+                      onChange={(e) => setAccessForm((prev) => ({ ...prev, email: e.target.value }))}
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none disabled:bg-gray-100"
+                      disabled={!canEditCredentials}
+                    />
+                  </div>
+
+                  {!item?.isOwner && !portalCurrentlyEnabled && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1 uppercase">Пароль</label>
+                      <div className="relative">
+                        <input
+                          type={showPassword ? "text" : "password"}
+                          value={accessForm.password}
+                          onChange={(e) => setAccessForm((prev) => ({ ...prev, password: e.target.value }))}
+                          className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm pr-10 focus:ring-2 focus:ring-purple-500 focus:outline-none disabled:bg-gray-100"
+                          disabled={!canEditCredentials}
+                        />
                         <button
-                          className="btn btn-ghost"
-                          onClick={() => ensureGroupsLoaded(true)}
-                          disabled={groupsLoading}
-                          title="Обновить список групп доступа"
+                          onClick={() => setShowPassword((prev) => !prev)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          type="button"
                         >
-                          ⟳
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
-                        <a
-                          href="/settings/access"
-                          className="btn btn-ghost"
-                          title="Перейти к редактированию групп доступа"
-                        >
-                          ＋
-                        </a>
                       </div>
                     </div>
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontSize: 13, opacity: 0.75 }}>E-mail</label>
-                      <input
-                        value={accessForm.email}
-                        onChange={(e) => setAccessForm((prev) => ({ ...prev, email: e.target.value }))}
-                        placeholder="E-mail для входа"
-                        style={{ padding: "10px 12px", borderRadius: 8 }}
-                      />
-                    </div>
-                  </div>
-
-                  {!item?.isOwner && !(item?.portalAccessEnabled || item?.canAccessPortal) && (
-                    <div style={{ display: "grid", gap: 6, maxWidth: "min(420px, 100%)" }}>
-                      <label style={{ fontSize: 13, opacity: 0.75 }}>Пароль</label>
-                      <input
-                        type="password"
-                        value={accessForm.password}
-                        onChange={(e) => setAccessForm((prev) => ({ ...prev, password: e.target.value }))}
-                        placeholder="Придумайте пароль для входа"
-                        style={{ padding: "10px 12px", borderRadius: 8 }}
-                      />
-                      <span style={{ fontSize: 12, opacity: 0.65 }}>Не менее 6 символов</span>
-                    </div>
                   )}
-
-                  <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-                    <Button variant="primary" onClick={handleAccessSave} disabled={!accessChanged || accessSubmitLoading}>
-                      {accessSubmitLoading ? "Сохраняем…" : "Сохранить"}
-                    </Button>
-                  </div>
                 </div>
-              )}
 
-              {!portalSectionOpen && portalCurrentlyEnabled && !item?.isOwner && (
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 12,
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "12px 16px",
-                    borderRadius: 12,
-                    background: "rgba(255,255,255,0.03)",
-                    border: "1px solid rgba(255,255,255,0.05)",
-                  }}
-                >
-                  <span style={{ fontSize: 13, opacity: 0.75 }}>
-                    Доступ включён. Чтобы отключить вход в портал, сохраните изменение.
-                  </span>
-                  <Button variant="primary" onClick={handleAccessSave} disabled={!accessChanged || accessSubmitLoading}>
-                    {accessSubmitLoading ? "Сохраняем…" : "Сохранить"}
-                  </Button>
-                </div>
-              )}
+                {canChangePassword && (
+                  <button
+                    type="button"
+                    onClick={() => setPasswordOpen(true)}
+                    className="text-sm text-purple-600 hover:text-purple-700 font-medium"
+                  >
+                    Сменить пароль
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-gray-500 text-sm">
+                <Ban size={32} className="mx-auto text-gray-300 mb-2" />
+                {ACCESS_DENIED_MESSAGE}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+            <div className="flex items-center space-x-2 mb-4">
+              <History className="text-blue-500" size={20} />
+              <h3 className="font-bold text-gray-900">История действий</h3>
             </div>
-          )}
-        </CardBody>
-      </Card>
+            <div className="text-sm text-gray-600 mb-4">
+              Просмотр всех операций (начисления, списания), выполненных этим сотрудником.
+            </div>
+            <button
+              onClick={() => {
+                if (hasTransactions) window.location.href = `/operations?staffId=${encodeURIComponent(staffId)}`;
+              }}
+              className={`w-full flex items-center justify-center space-x-2 border border-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium transition-colors ${
+                hasTransactions ? "hover:bg-gray-50" : "opacity-60 cursor-not-allowed"
+              }`}
+              disabled={!hasTransactions}
+            >
+              <span>Открыть журнал</span>
+              <ExternalLink size={14} />
+            </button>
+          </div>
+        </div>
 
-      <Card>
-        <CardHeader title="Связанные торговые точки" subtitle="Права кассира по точкам" />
-        <CardBody>
-          {loading && !item ? (
-            <Skeleton height={200} />
-          ) : (
-            <div style={{ display: "grid", gap: 16 }}>
-              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "minmax(260px, 1fr) auto" }}>
-                <select
-                  value={newOutletId}
-                  onChange={(e) => setNewOutletId(e.target.value)}
-                  style={{ padding: "10px 12px", borderRadius: 8 }}
-                >
-                  <option value="">Выберите торговую точку…</option>
-                  {outlets
-                    .filter((outlet) => !accesses.some((row) => row.outletId === outlet.id))
-                    .map((outlet) => (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-4">
+              <div className="flex items-center space-x-2">
+                <Store className="text-green-600" size={20} />
+                <h3 className="font-bold text-gray-900">Торговые точки</h3>
+              </div>
+              <button
+                onClick={() => setIsAddOutletOpen(true)}
+                className="p-1.5 bg-green-50 text-green-700 hover:bg-green-100 rounded-lg transition-colors"
+                title="Привязать к точке"
+                disabled={!availableOutlets.length}
+              >
+                <Plus size={18} />
+              </button>
+            </div>
+
+            {isAddOutletOpen && (
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200 ">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Выберите точку</label>
+                <div className="flex space-x-2">
+                  <select
+                    value={newOutletId}
+                    onChange={(e) => setNewOutletId(e.target.value)}
+                    className="flex-1 text-sm border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500"
+                  >
+                    <option value="">Выберите торговую точку…</option>
+                    {availableOutlets.map((outlet) => (
                       <option key={outlet.id} value={outlet.id}>
                         {outlet.name}
                       </option>
                     ))}
-                </select>
-                <Button variant="primary" onClick={handleAddOutlet} disabled={!newOutletId || addAccessLoading}>
-                  {addAccessLoading ? "Добавляем…" : "Добавить точку для кассира"}
-                </Button>
-              </div>
-
-              <div style={{ display: "grid", gap: 8 }}>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(220px, 2fr) minmax(140px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) 120px",
-                    fontSize: 12,
-                    textTransform: "uppercase",
-                    opacity: 0.6,
-                    padding: "4px 12px",
-                  }}
-                >
-                  <div>Торговая точка</div>
-                  <div>Транзакций всего</div>
-                  <div>Последняя транзакция</div>
-                  <div>Пин-код</div>
-                  <div>Действия</div>
-                </div>
-                {accesses.map((row) => (
-                  <div
-                    key={row.outletId}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "minmax(220px, 2fr) minmax(140px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) 120px",
-                      gap: 12,
-                      alignItems: "center",
-                      padding: "12px 12px",
-                      borderRadius: 12,
-                      background: "rgba(10,14,24,.45)",
-                      border: "1px solid rgba(255,255,255,.06)",
-                    }}
+                  </select>
+                  <button
+                    onClick={handleAddOutlet}
+                    disabled={!newOutletId || addAccessLoading}
+                    className="px-3 py-1 bg-purple-600 text-white rounded-md text-sm disabled:opacity-60"
                   >
-                    <div>{row.outletName}</div>
-                    <div>{row.transactionsTotal ?? 0}</div>
-                    <div>{formatDateTime(row.lastTxnAt)}</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <code style={{ background: "rgba(255,255,255,.05)", padding: "4px 8px", borderRadius: 6 }}>{row.pinCode || "—"}</code>
-                      {row.pinCode && (
-                        <button
-                          className="btn"
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(row.pinCode || "");
-                              setBanner({ type: "success", text: "PIN скопирован" });
-                            } catch {}
-                          }}
-                        >
-                          Копировать
-                        </button>
-                      )}
+                    {addAccessLoading ? "..." : "OK"}
+                  </button>
+                  <button
+                    onClick={() => setIsAddOutletOpen(false)}
+                    className="px-2 py-1 text-gray-500 hover:text-gray-700"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {accesses.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 text-sm">Нет привязанных точек</div>
+              ) : (
+                accesses.map((assignment) => (
+                  <div
+                    key={assignment.outletId}
+                    className="bg-gray-50 rounded-lg border border-gray-200 p-4 relative group"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className="font-bold text-gray-900 text-sm">{assignment.outletName}</h4>
+                      <button
+                        onClick={() => handleRevoke(assignment.outletId)}
+                        className="text-gray-400 hover:text-red-500 transition-colors"
+                        disabled={accessActionOutlet === assignment.outletId}
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        className="btn"
-                        onClick={() => handleRegenerate(row.outletId)}
-                        disabled={accessActionOutlet === row.outletId}
-                        title="Обновить PIN"
-                      >
-                        ⟳
-                      </button>
-                      <button
-                        className="btn"
-                        onClick={() => handleRevoke(row.outletId)}
-                        disabled={accessActionOutlet === row.outletId}
-                        title="Отозвать доступ"
-                      >
-                        ✕
-                      </button>
+
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded border border-gray-200">
+                        <KeyRound size={14} className="text-gray-400" />
+                        <span className="font-mono font-bold text-lg tracking-widest text-gray-800">
+                          {assignment.pinCode || "—"}
+                        </span>
+                        <button
+                          onClick={() => handleRegenerate(assignment.outletId)}
+                          className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-purple-600 transition-colors"
+                          title="Сгенерировать новый PIN"
+                          disabled={accessActionOutlet === assignment.outletId}
+                        >
+                          <RefreshCw size={12} />
+                        </button>
+                      </div>
+                      <span className="text-xs text-gray-500">PIN-код для входа</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-gray-500 border-t border-gray-200 pt-2">
+                      <div className="flex items-center space-x-1" title="Количество транзакций">
+                        <CreditCard size={12} />
+                        <span>{assignment.transactionsTotal ?? 0} чек.</span>
+                      </div>
+                      <div className="flex items-center space-x-1" title="Последняя транзакция">
+                        <History size={12} />
+                        <span>{formatDateTime(assignment.lastTxnAt)}</span>
+                      </div>
                     </div>
                   </div>
-                ))}
-                {!accesses.length && <div style={{ opacity: 0.7, padding: "8px 12px" }}>Нет точек, добавьте кассира в торговую точку</div>}
-              </div>
-            </div>
-          )}
-        </CardBody>
-      </Card>
-
-      {editOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(5,8,16,0.75)",
-            backdropFilter: "blur(8px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            zIndex: 70,
-          }}
-        >
-          <div
-            style={{
-              width: "min(640px, 96vw)",
-              background: "rgba(12,16,26,0.96)",
-              borderRadius: 16,
-              border: "1px solid rgba(255,255,255,.08)",
-              display: "grid",
-              gridTemplateRows: "auto 1fr auto",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 24px", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>Редактировать сотрудника</div>
-                <div style={{ fontSize: 13, opacity: 0.7 }}>Измените данные профиля</div>
-              </div>
-              <button className="btn btn-ghost" onClick={() => setEditOpen(false)}>✕</button>
-            </div>
-            <div style={{ padding: 24, display: "grid", gap: 16 }}>
-              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.75 }}>Имя</label>
-                  <input value={editForm.firstName} onChange={(e) => setEditForm((prev) => ({ ...prev, firstName: e.target.value }))} style={{ padding: "10px 12px", borderRadius: 8 }} />
-                </div>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.75 }}>Фамилия</label>
-                  <input value={editForm.lastName} onChange={(e) => setEditForm((prev) => ({ ...prev, lastName: e.target.value }))} style={{ padding: "10px 12px", borderRadius: 8 }} />
-                </div>
-              </div>
-              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.75 }}>Должность</label>
-                  <input value={editForm.position} onChange={(e) => setEditForm((prev) => ({ ...prev, position: e.target.value }))} style={{ padding: "10px 12px", borderRadius: 8 }} />
-                </div>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.75 }}>Телефон</label>
-                  <input value={editForm.phone} onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))} style={{ padding: "10px 12px", borderRadius: 8 }} />
-                </div>
-              </div>
-              <div style={{ display: "grid", gap: 6 }}>
-                <label style={{ fontSize: 13, opacity: 0.75 }}>Комментарий</label>
-                <textarea value={editForm.comment} onChange={(e) => setEditForm((prev) => ({ ...prev, comment: e.target.value }))} style={{ padding: "10px 12px", borderRadius: 8, minHeight: 100, resize: "vertical" }} />
-              </div>
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, padding: "16px 24px", borderTop: "1px solid rgba(255,255,255,.06)" }}>
-              <button className="btn" onClick={() => setEditOpen(false)} disabled={editSaving}>
-                Отмена
-              </button>
-              <Button variant="primary" onClick={handleEditSave} disabled={editSaving}>
-                {editSaving ? "Сохраняем…" : "Сохранить"}
-              </Button>
+                ))
+              )}
             </div>
           </div>
         </div>
-      )}
+      </div>
 
-      {passwordOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(5,8,16,0.75)",
-            backdropFilter: "blur(8px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            zIndex: 70,
-          }}
-        >
-          <div
-            style={{
-              width: "min(460px, 92vw)",
-              background: "rgba(12,16,26,0.96)",
-              borderRadius: 16,
-              border: "1px solid rgba(255,255,255,.08)",
-              display: "grid",
-              gridTemplateRows: "auto 1fr auto",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 24px", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>Сменить пароль</div>
-                <div style={{ fontSize: 13, opacity: 0.7 }}>Введите текущий и новый пароль</div>
+      {passwordOpen &&
+        createPortal(
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-[4px] z-[150] flex items-center justify-center p-4 ">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md relative z-[101]">
+              <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Сменить пароль</h3>
+                  <p className="text-sm text-gray-500">
+                    {isSelf ? "Введите текущий и новый пароль" : "Установите новый пароль"}
+                  </p>
+                </div>
+                <button onClick={() => setPasswordOpen(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={24} />
+                </button>
               </div>
-              <button className="btn btn-ghost" onClick={() => setPasswordOpen(false)}>✕</button>
+
+              <div className="p-6 space-y-4">
+                {isSelf && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Текущий пароль</label>
+                    <input
+                      type="password"
+                      value={passwordForm.current}
+                      onChange={(e) => setPasswordForm((prev) => ({ ...prev, current: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Новый пароль</label>
+                  <input
+                    type="password"
+                    value={passwordForm.next}
+                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, next: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Повторить новый пароль</label>
+                  <input
+                    type="password"
+                    value={passwordForm.confirm}
+                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirm: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                {passwordError && <div className="text-sm text-red-600">{passwordError}</div>}
+              </div>
+
+              <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex justify-end space-x-3">
+                <button
+                  onClick={() => setPasswordOpen(false)}
+                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50"
+                  disabled={passwordSaving}
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={handlePasswordSave}
+                  className="px-6 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-60"
+                  disabled={passwordSaving}
+                >
+                  {passwordSaving ? "Обновляем…" : "Сменить"}
+                </button>
+              </div>
             </div>
-            <div style={{ padding: 24, display: "grid", gap: 14 }}>
-              <div style={{ display: "grid", gap: 6 }}>
-                <label style={{ fontSize: 13, opacity: 0.75 }}>Текущий пароль</label>
-                <input
-                  type="password"
-                  value={passwordForm.current}
-                  onChange={(e) => setPasswordForm((prev) => ({ ...prev, current: e.target.value }))}
-                  style={{ padding: "10px 12px", borderRadius: 8 }}
-                />
-              </div>
-              <div style={{ display: "grid", gap: 6 }}>
-                <label style={{ fontSize: 13, opacity: 0.75 }}>Новый пароль</label>
-                <input
-                  type="password"
-                  value={passwordForm.next}
-                  onChange={(e) => setPasswordForm((prev) => ({ ...prev, next: e.target.value }))}
-                  style={{ padding: "10px 12px", borderRadius: 8 }}
-                />
-              </div>
-              <div style={{ display: "grid", gap: 6 }}>
-                <label style={{ fontSize: 13, opacity: 0.75 }}>Повторить новый пароль</label>
-                <input
-                  type="password"
-                  value={passwordForm.confirm}
-                  onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirm: e.target.value }))}
-                  style={{ padding: "10px 12px", borderRadius: 8 }}
-                />
-              </div>
-              {passwordError && <div style={{ color: "#f87171", fontSize: 13 }}>{passwordError}</div>}
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, padding: "16px 24px", borderTop: "1px solid rgba(255,255,255,.06)" }}>
-              <button className="btn" onClick={() => setPasswordOpen(false)} disabled={passwordSaving}>
-                Отмена
-              </button>
-              <Button variant="primary" onClick={handlePasswordSave} disabled={passwordSaving}>
-                {passwordSaving ? "Обновляем…" : "Сменить"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

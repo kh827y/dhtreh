@@ -15,6 +15,7 @@ import {
   EyeOff,
   Terminal,
 } from "lucide-react";
+import { normalizeErrorMessage } from "lib/portal-errors";
 
 type RateLimit = { limit?: number; ttl?: number };
 type RateLimits = {
@@ -109,7 +110,7 @@ export default function RestApiIntegrationPage() {
       setMessage((data && data.message) || "");
     } catch (e: any) {
       setState(null);
-      setError(String(e?.message || e));
+      setError(normalizeErrorMessage(e, "Ошибка"));
     } finally {
       setLoading(false);
     }
@@ -161,14 +162,14 @@ export default function RestApiIntegrationPage() {
       setIssuedKey(data?.apiKey || null);
       setMessage(data?.message || "API-ключ обновлён");
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(normalizeErrorMessage(e, "Ошибка"));
     } finally {
       setPending(false);
     }
   };
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto space-y-8 animate-fade-in">
+    <div className="p-8 max-w-[1400px] mx-auto space-y-8 ">
       <div className="flex items-center space-x-4 mb-8">
         <button
           onClick={() => router.push("/settings/integrations")}
