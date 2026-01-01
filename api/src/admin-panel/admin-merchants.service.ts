@@ -304,7 +304,7 @@ export class AdminMerchantsService {
       await tx.merchantSettings.create({
         data: {
           merchantId: merchant.id,
-          qrTtlSec: payload.settings?.qrTtlSec ?? 120,
+          qrTtlSec: payload.settings?.qrTtlSec ?? 300,
           requireBridgeSig: payload.settings?.requireBridgeSig ?? false,
           bridgeSecret: payload.settings?.bridgeSecret ?? null,
           requireStaffKey: payload.settings?.requireStaffKey ?? false,
@@ -381,7 +381,7 @@ export class AdminMerchantsService {
       where: { merchantId },
       create: {
         merchantId,
-        qrTtlSec: payload.qrTtlSec ?? 120,
+        qrTtlSec: payload.qrTtlSec ?? 300,
         requireBridgeSig: payload.requireBridgeSig ?? false,
         bridgeSecret: payload.bridgeSecret ?? null,
         requireStaffKey: payload.requireStaffKey ?? false,

@@ -114,6 +114,7 @@ export class MerchantsController {
       email: string;
       password: string;
       ownerName?: string;
+      maxOutlets?: number | null;
     },
   ) {
     return this.service.createMerchant(
@@ -123,6 +124,7 @@ export class MerchantsController {
         .toLowerCase(),
       String(body?.password || ''),
       body?.ownerName ? String(body.ownerName).trim() : undefined,
+      body?.maxOutlets ?? null,
     );
   }
 

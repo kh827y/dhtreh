@@ -134,6 +134,19 @@ export class PortalCatalogService {
     return Number(value);
   }
 
+  private async assertOutletLimit(merchantId: string) {
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { maxOutlets: true },
+    });
+    const limit = settings?.maxOutlets ?? null;
+    if (limit == null || limit <= 0) return;
+    const count = await this.prisma.outlet.count({ where: { merchantId } });
+    if (count >= limit) {
+      throw new BadRequestException('Вы достигли лимита торговых точек.');
+    }
+  }
+
   private mapCategory(entity: ProductCategory): CategoryDto {
     return {
       id: entity.id,
@@ -1564,6 +1577,7 @@ export class PortalCatalogService {
     const name = dto.name?.trim();
     const address = dto.address?.trim() || null;
     if (!name) throw new BadRequestException('Outlet name is required');
+    await this.assertOutletLimit(merchantId);
     const devices = this.normalizeDevicesInput(dto.devices);
     const scheduleEnabled = dto.showSchedule ?? false;
     const schedule =

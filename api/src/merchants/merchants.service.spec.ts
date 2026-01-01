@@ -19,7 +19,7 @@ describe('MerchantsService rulesJson validation', () => {
               merchantId: base.merchantId,
               earnBps: updated.earnBps ?? 500,
               redeemLimitBps: updated.redeemLimitBps ?? 5000,
-              qrTtlSec: updated.qrTtlSec ?? 120,
+              qrTtlSec: updated.qrTtlSec ?? 300,
               webhookUrl: updated.webhookUrl ?? null,
               webhookSecret: updated.webhookSecret ?? null,
               webhookKeyId: updated.webhookKeyId ?? null,
@@ -122,5 +122,25 @@ describe('MerchantsService rulesJson validation', () => {
         blockFactors: ['no_outlet_id', 'velocity'],
       },
     });
+  });
+});
+
+describe('MerchantsService outlet limits', () => {
+  it('blocks outlet creation when limit reached', async () => {
+    const prisma: any = {
+      merchant: { upsert: jest.fn().mockResolvedValue({ id: 'M-1' }) },
+      merchantSettings: {
+        findUnique: jest.fn().mockResolvedValue({ maxOutlets: 2 }),
+      },
+      outlet: {
+        count: jest.fn().mockResolvedValue(2),
+        create: jest.fn(),
+      },
+    };
+    const svc = new MerchantsService(prisma);
+    await expect(svc.createOutlet('M-1', 'Main')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.outlet.create).not.toHaveBeenCalled();
   });
 });

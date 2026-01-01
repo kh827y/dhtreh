@@ -1,8 +1,18 @@
 "use client";
 import React from 'react';
-import { listMerchants, createMerchant, updateMerchant as apiUpdateMerchant, deleteMerchant as apiDeleteMerchant, setPortalLoginEnabled, initTotp, verifyTotp, disableTotp, impersonatePortal, getCashier, rotateCashier, grantSubscription as apiGrantSubscription, resetSubscription as apiResetSubscription, type MerchantRow } from "../../lib/merchants";
+import { listMerchants, createMerchant, updateMerchant as apiUpdateMerchant, deleteMerchant as apiDeleteMerchant, setPortalLoginEnabled, initTotp, verifyTotp, disableTotp, impersonatePortal, getCashier, rotateCashier, grantSubscription as apiGrantSubscription, resetSubscription as apiResetSubscription, updateMerchantSettings, type MerchantRow } from "../../lib/merchants";
 
 const PORTAL_BASE = process.env.NEXT_PUBLIC_PORTAL_BASE || 'http://localhost:3004';
+
+function parseOptionalPositiveInt(value: string): number | null | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 1) {
+    return null;
+  }
+  return parsed;
+}
 
 export default function AdminMerchantsPage() {
   const [items, setItems] = React.useState<MerchantRow[]>([]);
@@ -11,11 +21,14 @@ export default function AdminMerchantsPage() {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [ownerName, setOwnerName] = React.useState('');
+  const [maxOutlets, setMaxOutlets] = React.useState('');
   const [msg, setMsg] = React.useState('');
   const [totp, setTotp] = React.useState<{ secret: string; otpauth: string }|null>(null);
   const [code, setCode] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [subscriptionFilter, setSubscriptionFilter] = React.useState<'all'|'active'|'expiring'|'expired'>('all');
+  const maxOutletsParsed = parseOptionalPositiveInt(maxOutlets);
+  const maxOutletsInvalid = maxOutletsParsed === null;
 
   async function load() {
     setLoading(true); setMsg('');
@@ -44,15 +57,34 @@ export default function AdminMerchantsPage() {
 
   async function create() {
     setMsg('');
+    const parsedLimit = parseOptionalPositiveInt(maxOutlets);
+    if (parsedLimit === null) {
+      setMsg('Лимит торговых точек должен быть целым числом >= 1');
+      return;
+    }
     try {
-      await createMerchant(name.trim(), email.trim().toLowerCase(), password, ownerName.trim() || undefined);
-      setName(''); setEmail(''); setPassword(''); setOwnerName('');
+      await createMerchant(
+        name.trim(),
+        email.trim().toLowerCase(),
+        password,
+        ownerName.trim() || undefined,
+        parsedLimit ?? undefined,
+      );
+      setName(''); setEmail(''); setPassword(''); setOwnerName(''); setMaxOutlets('');
       await load();
     } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
   }
   async function saveRow(id: string, fields: { name?: string; email?: string; password?: string }) {
     setMsg('');
     try { await apiUpdateMerchant(id, fields); await load(); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
+  }
+  async function updateMaxOutlets(id: string, maxOutletsValue: number | null, base: { earnBps: number; redeemLimitBps: number }) {
+    await updateMerchantSettings(id, {
+      earnBps: base.earnBps,
+      redeemLimitBps: base.redeemLimitBps,
+      maxOutlets: maxOutletsValue,
+    });
+    await load();
   }
   async function removeRow(id: string) {
     setMsg('');
@@ -138,14 +170,15 @@ export default function AdminMerchantsPage() {
 
       <div style={{ background:'#0e1629', border:'1px solid #1e2a44', borderRadius:10, padding:12, marginBottom:16 }}>
         <div style={{ fontWeight:600, marginBottom:8 }}>Создать мерчанта</div>
-        <div style={{ display:'grid', gap: 8, alignItems:'center', gridTemplateColumns:'1fr 1fr 1fr 1fr auto' }}>
+        <div style={{ display:'grid', gap: 8, alignItems:'center', gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr auto' }}>
           <input value={name} onChange={e=>setName(e.target.value)} placeholder="Название мерчанта" style={{ padding: 8 }} />
           <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" style={{ padding: 8 }} />
           <input value={password} onChange={e=>setPassword(e.target.value)} placeholder="Пароль (мин. 6)" type="password" style={{ padding: 8 }} />
           <input value={ownerName} onChange={e=>setOwnerName(e.target.value)} placeholder="Имя владельца (обяз.)" style={{ padding: 8 }} />
-          <button onClick={create} disabled={!name.trim() || !email.trim() || password.length < 6 || !ownerName.trim()} style={{ padding: '8px 12px' }}>Создать</button>
+          <input value={maxOutlets} onChange={e=>setMaxOutlets(e.target.value)} placeholder="Лимит точек (опц.)" type="number" min={1} inputMode="numeric" style={{ padding: 8 }} />
+          <button onClick={create} disabled={!name.trim() || !email.trim() || password.length < 6 || !ownerName.trim() || maxOutletsInvalid} style={{ padding: '8px 12px' }}>Создать</button>
         </div>
-        <div style={{ fontSize:12, opacity:.8, marginTop:6 }}>Требуется минимум: имя, email, пароль (≥6), имя владельца. Остальные настройки — в карточке мерчанта.</div>
+        <div style={{ fontSize:12, opacity:.8, marginTop:6 }}>Требуется минимум: имя, email, пароль (≥6), имя владельца. Лимит точек можно не задавать — тогда ограничений нет.</div>
       </div>
       {msg && <div style={{ marginBottom: 12, color: '#f44' }}>{msg}</div>}
       <div style={{ display:'grid', gap: 12 }}>
@@ -158,6 +191,7 @@ export default function AdminMerchantsPage() {
                 onDelete={removeRow}
                 onGrantSubscription={grantPlan}
                 onResetSubscription={resetPlan}
+                onUpdateMaxOutlets={updateMaxOutlets}
               />
               <div style={{ display:'flex', gap: 8, flexWrap:'wrap' }}>
                 <button onClick={()=>openAs(m.id)} style={{ padding: '6px 10px' }}>Открыть как мерчант</button>
@@ -200,12 +234,13 @@ function StatTile({ label, value, color = '#e6edf3' }: { label: string; value: n
   );
 }
 
-function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscription }: {
+function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscription, onUpdateMaxOutlets }: {
   row: MerchantRow;
   onSave: (id: string, patch: { name?: string; email?: string; password?: string }) => void;
   onDelete: (id: string) => void;
   onGrantSubscription: (id: string, days: number) => void;
   onResetSubscription: (id: string) => void;
+  onUpdateMaxOutlets: (id: string, maxOutletsValue: number | null, base: { earnBps: number; redeemLimitBps: number }) => Promise<void>;
 }) {
   const [name, setName] = React.useState(row.name);
   const [email, setEmail] = React.useState(row.portalEmail || '');
@@ -217,6 +252,13 @@ function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscrip
   const [subscriptionDays, setSubscriptionDays] = React.useState(30);
   const [subscriptionMsg, setSubscriptionMsg] = React.useState('');
   const [subscriptionBusy, setSubscriptionBusy] = React.useState(false);
+  const [maxOutletsInput, setMaxOutletsInput] = React.useState(
+    row.maxOutlets != null ? String(row.maxOutlets) : '',
+  );
+  const [maxOutletsMsg, setMaxOutletsMsg] = React.useState('');
+  const [maxOutletsBusy, setMaxOutletsBusy] = React.useState(false);
+  const parsedMaxOutlets = parseOptionalPositiveInt(maxOutletsInput);
+  const maxOutletsInvalid = parsedMaxOutlets === null;
   async function save() { setSaving(true); try { await onSave(row.id, { name, email, password: pwd || undefined }); setPwd(''); } finally { setSaving(false); } }
   async function del() { if (!confirm('Удалить мерчанта?')) return; setDeleting(true); try { await onDelete(row.id); } finally { setDeleting(false); } }
   async function loadCashier() {
@@ -259,6 +301,26 @@ function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscrip
       setSubscriptionMsg(String(e?.message || e));
     } finally {
       setSubscriptionBusy(false);
+    }
+  }
+  async function saveMaxOutlets() {
+    setMaxOutletsMsg('');
+    const limit = parseOptionalPositiveInt(maxOutletsInput);
+    if (limit === null) {
+      setMaxOutletsMsg('Лимит должен быть целым числом ≥ 1');
+      return;
+    }
+    setMaxOutletsBusy(true);
+    try {
+      await onUpdateMaxOutlets(row.id, limit ?? null, {
+        earnBps: row.earnBps ?? 300,
+        redeemLimitBps: row.redeemLimitBps ?? 5000,
+      });
+      setMaxOutletsMsg('Лимит обновлён');
+    } catch (e: any) {
+      setMaxOutletsMsg(String(e?.message || e));
+    } finally {
+      setMaxOutletsBusy(false);
     }
   }
   const expiresLabel = row.subscriptionEndsAt ? new Date(row.subscriptionEndsAt).toLocaleString('ru-RU') : '—';
@@ -336,6 +398,33 @@ function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscrip
         {subscriptionMsg && (
           <div style={{ color: subscriptionMsg.toLowerCase().includes('ошиб') ? '#f33' : '#0a0' }}>
             {subscriptionMsg}
+          </div>
+        )}
+      </div>
+      <div style={{ marginTop:6, paddingTop:6, borderTop:'1px dashed #ddd', display:'grid', gap:8 }}>
+        <div style={{ fontSize:13, opacity:.8 }}>Лимит торговых точек</div>
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+          <label style={{ display:'flex', gap:6, alignItems:'center' }}>
+            Макс.:
+            <input
+              type="number"
+              min={1}
+              value={maxOutletsInput}
+              onChange={(e)=>setMaxOutletsInput(e.target.value)}
+              placeholder="без лимита"
+              style={{ padding:6, width:140 }}
+            />
+          </label>
+          <button onClick={saveMaxOutlets} disabled={maxOutletsBusy || maxOutletsInvalid} className="btn btn-primary">
+            {maxOutletsBusy ? 'Сохранение…' : 'Сохранить'}
+          </button>
+        </div>
+        {maxOutletsInvalid && (
+          <div style={{ color:'#f33', fontSize:12 }}>Укажите целое число ≥ 1 или оставьте пустым.</div>
+        )}
+        {maxOutletsMsg && (
+          <div style={{ color: maxOutletsMsg.toLowerCase().includes('ошиб') ? '#f33' : '#0a0' }}>
+            {maxOutletsMsg}
           </div>
         )}
       </div>

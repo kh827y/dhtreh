@@ -939,7 +939,7 @@ Response 200:
   "merchantId": "string",
   "earnBps": 500,
   "redeemLimitBps": 5000,
-  "qrTtlSec": 120,
+  "qrTtlSec": 300,
   "webhookUrl": "https://merchant.com/webhook",
   "requireStaffKey": true,
   "requireBridgeSig": false,

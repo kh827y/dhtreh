@@ -25,6 +25,7 @@ export type MerchantSettings = {
   earnCooldownSec: number;
   redeemDailyCap?: number | null;
   earnDailyCap?: number | null;
+  maxOutlets?: number | null;
   requireJwtForQuote: boolean;
   rulesJson?: any;
   requireStaffKey: boolean;

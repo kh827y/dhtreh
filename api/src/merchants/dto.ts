@@ -86,6 +86,15 @@ export class UpdateMerchantSettingsDto {
   @Min(0)
   earnDailyCap?: number;
 
+  @ApiPropertyOptional({
+    minimum: 1,
+    description: 'Максимальное количество торговых точек (без лимита, если не задано)',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxOutlets?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   requireJwtForQuote?: boolean;
@@ -323,6 +332,8 @@ export class MerchantSettingsRespDto {
   @ApiProperty() earnCooldownSec!: number;
   @ApiPropertyOptional() redeemDailyCap?: number | null;
   @ApiPropertyOptional() earnDailyCap?: number | null;
+  @ApiPropertyOptional({ description: 'Максимальное количество торговых точек' })
+  maxOutlets?: number | null;
   @ApiProperty() requireJwtForQuote!: boolean;
   @ApiPropertyOptional() rulesJson?: any;
   @ApiProperty() requireStaffKey!: boolean;

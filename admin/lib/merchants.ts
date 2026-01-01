@@ -25,10 +25,11 @@ export type MerchantRow = {
   subscriptionDaysLeft?: number | null;
   subscriptionExpiresSoon?: boolean;
   subscriptionExpired?: boolean;
+  maxOutlets?: number | null;
 };
 
 export async function listMerchants(): Promise<MerchantRow[]> {
-  const rows = await http<Array<MerchantRow & { settings?: { earnBps: number; redeemLimitBps: number; qrTtlSec: number | null; requireBridgeSig: boolean; requireStaffKey: boolean } }>>(`/merchants`);
+  const rows = await http<Array<MerchantRow & { settings?: { earnBps: number; redeemLimitBps: number; qrTtlSec: number | null; requireBridgeSig: boolean; requireStaffKey: boolean; maxOutlets?: number | null } }>>(`/merchants`);
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
@@ -51,10 +52,17 @@ export async function listMerchants(): Promise<MerchantRow[]> {
     subscriptionDaysLeft: (row as any)?.subscription?.daysLeft ?? null,
     subscriptionExpiresSoon: Boolean((row as any)?.subscription?.expiresSoon),
     subscriptionExpired: Boolean((row as any)?.subscription?.expired),
+    maxOutlets: row.settings?.maxOutlets ?? row.maxOutlets ?? null,
   }));
 }
-export async function createMerchant(name: string, email: string, password: string, ownerName?: string): Promise<{ id: string; name: string; email: string }> {
-  return http(`/merchants`, { method: 'POST', body: JSON.stringify({ name, email, password, ownerName }) });
+export async function createMerchant(
+  name: string,
+  email: string,
+  password: string,
+  ownerName?: string,
+  maxOutlets?: number | null,
+): Promise<{ id: string; name: string; email: string }> {
+  return http(`/merchants`, { method: 'POST', body: JSON.stringify({ name, email, password, ownerName, maxOutlets }) });
 }
 export async function updateMerchant(id: string, patch: { name?: string; email?: string; password?: string }): Promise<{ id: string; name: string; email: string|null }> {
   return http(`/merchants/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(patch) });
@@ -88,7 +96,7 @@ export async function rotateCashier(merchantId: string, regenerateLogin?: boolea
 
 export async function updateMerchantSettings(
   merchantId: string,
-  dto: { earnBps: number; redeemLimitBps: number; qrTtlSec?: number; requireBridgeSig?: boolean; requireStaffKey?: boolean },
+  dto: { earnBps: number; redeemLimitBps: number; qrTtlSec?: number; requireBridgeSig?: boolean; requireStaffKey?: boolean; maxOutlets?: number | null },
 ): Promise<any> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/settings`, {
     method: 'PUT',

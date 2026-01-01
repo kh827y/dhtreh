@@ -312,7 +312,7 @@ model MerchantSettings {
   merchant                              Merchant  @relation(fields: [merchantId], references: [id])
   earnBps                               Int       @default(500)
   redeemLimitBps                        Int       @default(5000)
-  qrTtlSec                              Int       @default(120)
+  qrTtlSec                              Int       @default(300)
   webhookUrl                            String?
   webhookSecret                         String?
   webhookKeyId                          String?
@@ -325,6 +325,7 @@ model MerchantSettings {
   earnCooldownSec                       Int       @default(0)
   redeemDailyCap                        Int?
   earnDailyCap                          Int?
+  maxOutlets                            Int?
   requireJwtForQuote                    Boolean   @default(false)
   requireBridgeSig                      Boolean   @default(false)
   bridgeSecret                          String?

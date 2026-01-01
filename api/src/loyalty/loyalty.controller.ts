@@ -2060,7 +2060,7 @@ export class LoyaltyController {
       }
     }
 
-    let ttl = dto.ttlSec ?? 60;
+    let ttl = dto.ttlSec ?? 300;
     if (!dto.ttlSec && settings?.qrTtlSec) ttl = settings.qrTtlSec;
     await this.ensureCustomer(merchantId, dto.customerId);
     const requireJwtForQuote = Boolean(settings?.requireJwtForQuote);
@@ -2440,7 +2440,7 @@ export class LoyaltyController {
         : true;
     return {
       merchantId,
-      qrTtlSec: s?.qrTtlSec ?? 120,
+      qrTtlSec: s?.qrTtlSec ?? 300,
       miniappThemePrimary: (s as any)?.miniappThemePrimary ?? null,
       miniappThemeBg: (s as any)?.miniappThemeBg ?? null,
       miniappLogoUrl: (s as any)?.miniappLogoUrl ?? null,

@@ -241,6 +241,9 @@ describe('PortalCatalogService', () => {
     };
     const prisma: any = {
       $transaction: jest.fn(async (fn: any) => fn(tx)),
+      merchantSettings: {
+        findUnique: jest.fn().mockResolvedValue({ maxOutlets: null }),
+      },
       outlet: {
         create: createMock,
         findMany: jest.fn(),
@@ -289,5 +292,22 @@ describe('PortalCatalogService', () => {
     expect(metrics.inc).toHaveBeenCalledWith('portal_outlets_changed_total', {
       action: 'create',
     });
+  });
+
+  it('blocks outlet creation when limit reached', async () => {
+    const prisma: any = {
+      merchantSettings: {
+        findUnique: jest.fn().mockResolvedValue({ maxOutlets: 1 }),
+      },
+      outlet: {
+        count: jest.fn().mockResolvedValue(1),
+      },
+      $transaction: jest.fn(),
+    };
+    const service = new PortalCatalogService(prisma, metrics);
+    await expect(
+      service.createOutlet('m-1', { name: 'Outlet' } as any),
+    ).rejects.toThrow('Вы достигли лимита торговых точек.');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

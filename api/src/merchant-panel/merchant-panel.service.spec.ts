@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { MerchantPanelService } from './merchant-panel.service';
 import {
   StaffStatus,
@@ -221,5 +222,29 @@ describe('MerchantPanelService', () => {
       expectedCreated,
     );
     expect(metrics.inc).toHaveBeenCalledWith('portal_access_group_list_total');
+  });
+
+  it('blocks outlet creation when limit reached', async () => {
+    const prisma: any = {
+      merchantSettings: {
+        findUnique: jest.fn().mockResolvedValue({ maxOutlets: 1 }),
+      },
+      outlet: {
+        count: jest.fn().mockResolvedValue(1),
+      },
+      $transaction: jest.fn(),
+    };
+    const merchants: any = {};
+    const metrics = {
+      inc: jest.fn(),
+      observe: jest.fn(),
+      setGauge: jest.fn(),
+    } as any;
+
+    const service = new MerchantPanelService(prisma, merchants, metrics);
+    await expect(
+      service.createOutlet('mrc_1', { name: 'Main' } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

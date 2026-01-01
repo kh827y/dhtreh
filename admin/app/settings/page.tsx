@@ -174,7 +174,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <label>QR TTL (сек):</label>
-            <input type="number" min={15} max={600} value={s.qrTtlSec} onChange={e=>setS({ ...s, qrTtlSec: num(e.target.value, s.qrTtlSec) || 120 })} style={{ marginLeft: 8, width: 100 }} />
+            <input type="number" min={15} max={600} value={s.qrTtlSec} onChange={e=>setS({ ...s, qrTtlSec: num(e.target.value, s.qrTtlSec) || 300 })} style={{ marginLeft: 8, width: 100 }} />
           </div>
           <div>
             <label>Cooldown списаний (сек):</label>

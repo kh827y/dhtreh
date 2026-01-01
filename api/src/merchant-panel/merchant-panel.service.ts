@@ -1898,10 +1898,24 @@ export class MerchantPanelService {
     };
   }
 
+  private async assertOutletLimit(merchantId: string) {
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { maxOutlets: true },
+    });
+    const limit = settings?.maxOutlets ?? null;
+    if (limit == null || limit <= 0) return;
+    const count = await this.prisma.outlet.count({ where: { merchantId } });
+    if (count >= limit) {
+      throw new BadRequestException('Вы достигли лимита торговых точек.');
+    }
+  }
+
   async createOutlet(merchantId: string, payload: UpsertOutletPayload) {
     const outletName = payload.name?.trim();
     if (!outletName)
       throw new BadRequestException('Название обязательно');
+    await this.assertOutletLimit(merchantId);
     const reviewLinksInput = this.sanitizeReviewLinksInput(
       payload.reviewsShareLinks,
     );

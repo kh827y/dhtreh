@@ -578,7 +578,7 @@ export class MerchantsService {
     if (!merchant) throw new NotFoundException('Merchant not found');
     const s =
       merchant.settings ??
-      ({ earnBps: 300, redeemLimitBps: 5000, qrTtlSec: 120 } as any);
+      ({ earnBps: 300, redeemLimitBps: 5000, qrTtlSec: 300 } as any);
     const normalizedRules = this.normalizeRulesJson(s.rulesJson ?? null);
     return {
       merchantId,
@@ -598,6 +598,7 @@ export class MerchantsService {
       earnCooldownSec: s.earnCooldownSec ?? 0,
       redeemDailyCap: s.redeemDailyCap ?? null,
       earnDailyCap: s.earnDailyCap ?? null,
+      maxOutlets: s.maxOutlets ?? null,
       requireJwtForQuote: s.requireJwtForQuote ?? false,
       rulesJson: normalizedRules ?? null,
       requireStaffKey: s.requireStaffKey ?? false,
@@ -756,6 +757,9 @@ export class MerchantsService {
         earnCooldownSec: earnCooldownSec ?? undefined,
         redeemDailyCap: redeemDailyCap ?? undefined,
         earnDailyCap: earnDailyCap ?? undefined,
+        ...(extras?.maxOutlets !== undefined
+          ? { maxOutlets: extras.maxOutlets }
+          : {}),
         requireJwtForQuote: requireJwtForQuote ?? undefined,
         rulesJson: normalizedRulesJson ?? undefined,
         requireStaffKey: requireStaffKey ?? undefined,
@@ -776,7 +780,7 @@ export class MerchantsService {
         merchantId,
         earnBps,
         redeemLimitBps,
-        qrTtlSec: qrTtlSec ?? 120,
+        qrTtlSec: qrTtlSec ?? 300,
         webhookUrl: webhookUrl ?? null,
         webhookSecret: webhookSecret ?? null,
         webhookKeyId: webhookKeyId ?? null,
@@ -790,6 +794,7 @@ export class MerchantsService {
         earnCooldownSec: earnCooldownSec ?? 0,
         redeemDailyCap: redeemDailyCap ?? null,
         earnDailyCap: earnDailyCap ?? null,
+        maxOutlets: extras?.maxOutlets ?? null,
         requireJwtForQuote: requireJwtForQuote ?? false,
         rulesJson: normalizedRulesJson ?? null,
         requireStaffKey: requireStaffKey ?? false,
@@ -819,6 +824,7 @@ export class MerchantsService {
       earnCooldownSec: updated.earnCooldownSec,
       redeemDailyCap: updated.redeemDailyCap,
       earnDailyCap: updated.earnDailyCap,
+      maxOutlets: (updated as any).maxOutlets ?? null,
       requireJwtForQuote: updated.requireJwtForQuote,
       rulesJson: updated.rulesJson,
       requireStaffKey: updated.requireStaffKey,
@@ -1006,6 +1012,19 @@ export class MerchantsService {
     return outlet;
   }
 
+  private async assertOutletLimit(merchantId: string) {
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { maxOutlets: true },
+    });
+    const limit = settings?.maxOutlets ?? null;
+    if (limit == null || limit <= 0) return;
+    const count = await this.prisma.outlet.count({ where: { merchantId } });
+    if (count >= limit) {
+      throw new BadRequestException('Вы достигли лимита торговых точек.');
+    }
+  }
+
   async listOutlets(merchantId: string) {
     const items = await this.prisma.outlet.findMany({
       where: { merchantId },
@@ -1015,6 +1034,7 @@ export class MerchantsService {
   }
   async createOutlet(merchantId: string, name: string, address?: string) {
     await this.ensureMerchant(merchantId);
+    await this.assertOutletLimit(merchantId);
     const created = await this.prisma.outlet.create({
       data: { merchantId, name, address: address ?? null },
     });
@@ -2381,6 +2401,7 @@ export class MerchantsService {
             qrTtlSec: true,
             requireBridgeSig: true,
             requireStaffKey: true,
+            maxOutlets: true,
           },
         },
         subscription: { include: { plan: true } },
@@ -2392,6 +2413,7 @@ export class MerchantsService {
     email: string,
     password: string,
     ownerName?: string,
+    maxOutlets?: number | null,
   ) {
     if (!name || !name.trim()) throw new BadRequestException('name required');
     const em = String(email || '')
@@ -2400,6 +2422,19 @@ export class MerchantsService {
     if (!em) throw new BadRequestException('email required');
     if (!password || String(password).length < 6)
       throw new BadRequestException('password too short');
+    const parsedMaxOutlets =
+      maxOutlets == null ? null : Number(maxOutlets);
+    if (parsedMaxOutlets != null) {
+      if (
+        !Number.isFinite(parsedMaxOutlets) ||
+        parsedMaxOutlets < 1 ||
+        !Number.isInteger(parsedMaxOutlets)
+      ) {
+        throw new BadRequestException(
+          'Лимит торговых точек должен быть >= 1',
+        );
+      }
+    }
     const pwd = hashPassword(String(password));
     // slug для логина кассира + уникальность
     const baseSlug = this.slugify(name.trim());
@@ -2413,6 +2448,11 @@ export class MerchantsService {
         cashierLogin: uniqueSlug,
       },
     });
+    if (parsedMaxOutlets != null) {
+      await this.prisma.merchantSettings.create({
+        data: { merchantId: m.id, maxOutlets: parsedMaxOutlets },
+      });
+    }
     // Автосоздание сотрудника-владельца с флагами и пинкодом (минимальный профиль до полной миграции UI)
     if (ownerName && ownerName.trim()) {
       const [firstName, ...rest] = ownerName.trim().split(/\s+/);
@@ -2540,7 +2580,7 @@ export class MerchantsService {
         merchantId,
         earnBps: 500,
         redeemLimitBps: 5000,
-        qrTtlSec: 120,
+        qrTtlSec: 300,
         requireBridgeSig: false,
         bridgeSecret: null,
         requireStaffKey: false,
