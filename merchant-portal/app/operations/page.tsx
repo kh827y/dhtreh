@@ -1,27 +1,32 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { createPortal } from "react-dom";
-import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
-import StarRating from "../../components/StarRating";
-import { useTimezone } from "../../components/TimezoneProvider";
-import { 
-  Receipt, 
-  Search as SearchIcon, 
-  ChevronLeft, 
-  ChevronRight,
-  X,
-  Calendar,
+import { useSearchParams } from "next/navigation";
+import {
+  Search,
   Filter,
+  Store,
   User,
-  Smartphone,
-  Store as StoreIcon,
-  ArrowUpRight,
+  Monitor,
+  Star,
   ArrowDownLeft,
-  CreditCard,
+  ArrowUpRight,
+  RotateCcw,
+  AlertTriangle,
+  X,
   Ban,
-  RefreshCcw,
+  CheckCircle2,
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Briefcase,
+  ExternalLink,
 } from "lucide-react";
+import { useTimezone } from "../../components/TimezoneProvider";
+
+// ---- Types ----
 
 type OperationKind =
   | "PURCHASE"
@@ -47,7 +52,7 @@ type Operation = {
   datetime: string;
   outlet: { id: string; name: string | null };
   client: { id: string; name: string };
-  manager: { id: string; name: string | null } | null;
+  manager: { id: string; name: string | null; status?: string | null } | null;
   device: string | null;
   rating: number | null;
   spent: number;
@@ -57,7 +62,7 @@ type Operation = {
   total: number;
   paidByPoints: number;
   toPay: number;
-  receipt: string;
+  receiptNumber: string | null;
   orderId: string;
   carrier: { id: string; name: string; code: string } | null;
   kind: OperationKind;
@@ -69,9 +74,8 @@ type Operation = {
 };
 
 type SelectOption = { value: string; label: string; status?: string };
-type DeviceOption = { value: string; label: string; outletId?: string };
 
-// убрали мок-данные; список загружается с сервера
+type DeviceOption = { value: string; label: string; outletId?: string };
 
 const operationKindLabels: Record<OperationKind, string> = {
   PURCHASE: "Покупка",
@@ -89,7 +93,7 @@ const operationKindLabels: Record<OperationKind, string> = {
   ADJUST: "Корректировка",
   EARN: "Начисление",
   REDEEM: "Списание",
-  CAMPAIGN: "Акции и промо",
+  CAMPAIGN: "Акция",
   OTHER: "Прочие операции",
 };
 
@@ -109,6 +113,8 @@ const kindFilterOptions: Array<{ value: OperationKind; label: string }> = [
   { value: "CAMPAIGN", label: operationKindLabels.CAMPAIGN },
 ];
 
+const PAGE_SIZE = 10;
+
 function formatRub(value: number) {
   return value.toLocaleString("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
 }
@@ -117,50 +123,90 @@ function formatPoints(value: number) {
   return value.toLocaleString("ru-RU");
 }
 
-const orderKey = (op: Pick<Operation, "orderId" | "receipt" | "canceledAt" | "kind">) => {
-  const key = (op.orderId || op.receipt || "").trim();
-  // для возвратов без orderId/receipt пытаемся брать id как ключ
+const orderKey = (op: Pick<Operation, "orderId" | "receiptNumber" | "id" | "kind">) => {
+  const key = (op.orderId || op.receiptNumber || "").trim();
   if (key) return key;
-  // fallback только для REFUND без ключа
-  if ((op as any).kind === "REFUND") return `refund-${(op as any).id || ""}`;
+  if (op.kind === "REFUND") return `refund-${op.id || ""}`;
   return "";
 };
 
+function getReasonText(operation: Operation): string {
+  const details = (operation.details || "").trim();
+  const note = (operation.note || "").trim();
+  if ((operation.kind === "PROMOCODE" || operation.kind === "CAMPAIGN") && note) {
+    return note;
+  }
+  return details || operationKindLabels[operation.kind] || "Операция";
+}
+
+function getDisplayId(operation: Operation): string | null {
+  if (operation.kind === "REFUND" || operation.kind === "COMPLIMENTARY") {
+    return null;
+  }
+  const candidate = (operation.receiptNumber || operation.orderId || operation.id || "").trim();
+  return candidate || null;
+}
+
+function getSourceMeta(operation: Operation) {
+  if (operation.manager) {
+    return {
+      type: "staff" as const,
+      name: operation.manager.name || operation.manager.id || "—",
+      id: operation.manager.id,
+    };
+  }
+  if (operation.device) {
+    return {
+      type: "device" as const,
+      name: operation.device,
+      id: operation.device,
+    };
+  }
+  const fallbackName = operation.carrier?.name || "Система";
+  return { type: "system" as const, name: fallbackName, id: "system" };
+}
+
 function mapOperationFromDto(item: any): Operation {
-  const carrierType = String(item?.carrier?.type || '').toUpperCase();
-  const carrierIdMap: Record<string, string> = { PHONE: 'phone', APP: 'app', WALLET: 'wallet', CARD: 'card' };
+  const carrierType = String(item?.carrier?.type || "").toUpperCase();
+  const carrierIdMap: Record<string, string> = { PHONE: "phone", APP: "app", WALLET: "wallet", CARD: "card" };
   const carrierNameMap: Record<string, string> = {
-    phone: 'Номер телефона',
-    app: 'Мобильное приложение',
-    wallet: 'Цифровая карта Wallet',
-    card: 'Пластиковая карта',
+    phone: "Номер телефона",
+    app: "Мобильное приложение",
+    wallet: "Цифровая карта Wallet",
+    card: "Пластиковая карта",
   };
-  const carrierId = carrierIdMap[carrierType] || carrierType.toLowerCase() || 'other';
-  const fallbackCarrierName = carrierNameMap[carrierId] || '—';
-  const carrierCode = String(item?.carrier?.code || '');
+  const carrierId = carrierIdMap[carrierType] || carrierType.toLowerCase() || "other";
+  const fallbackCarrierName = carrierNameMap[carrierId] || "—";
+  const carrierCode = String(item?.carrier?.code || "");
   const isDeviceCarrier =
-    carrierType === 'SMART' ||
-    carrierType === 'PC_POS' ||
-    carrierType === 'OUTLET' ||
-    carrierType === 'DEVICE';
+    carrierType === "SMART" ||
+    carrierType === "PC_POS" ||
+    carrierType === "OUTLET" ||
+    carrierType === "DEVICE";
   const deviceFromPayload =
-    typeof item?.device?.code === 'string' ? item.device.code.trim() : '';
+    typeof item?.device?.code === "string" ? item.device.code.trim() : "";
   const deviceId =
     deviceFromPayload ||
-    (isDeviceCarrier && carrierCode.trim() ? carrierCode.trim() : '');
-  const receipt = String(item?.receiptNumber || item?.orderId || item?.id || '');
+    (isDeviceCarrier && carrierCode.trim() ? carrierCode.trim() : "");
+  const receiptNumberRaw = item?.receiptNumber;
+  const receiptNumber = receiptNumberRaw != null ? String(receiptNumberRaw).trim() : "";
+  const orderIdRaw = item?.orderId;
+  const orderId = orderIdRaw != null ? String(orderIdRaw).trim() : "";
+  const fallbackId = String(item?.id || receiptNumber || orderId || "");
   const earnedAmount = Number(item?.earn?.amount ?? 0);
   const spentAmount = Number(item?.redeem?.amount ?? 0);
   const totalAmount = Number(item?.totalAmount ?? 0);
-  const customerName = String(item?.customer?.name || item?.customer?.phone || 'Клиент');
-  const managerId = typeof item?.staff?.id === 'string' ? item.staff.id.trim() : '';
-  const managerNameRaw = item?.staff?.name != null ? String(item.staff.name).trim() : '';
+  const customerName = String(item?.customer?.name || item?.customer?.phone || "Клиент");
+  const managerId = typeof item?.staff?.id === "string" ? item.staff.id.trim() : "";
+  const managerNameRaw = item?.staff?.name != null ? String(item.staff.name).trim() : "";
   const managerName = managerNameRaw || managerId || null;
+  const managerStatus = item?.staff?.status != null ? String(item.staff.status) : null;
   const manager =
     managerId || managerNameRaw
       ? {
-          id: managerId || managerNameRaw || '',
+          id: managerId || managerNameRaw || "",
           name: managerName,
+          status: managerStatus,
         }
       : null;
   const canceledAt = item?.canceledAt ? String(item.canceledAt) : null;
@@ -178,29 +224,30 @@ function mapOperationFromDto(item: any): Operation {
   const canceledBy =
     canceledAt && hasCanceledBy
       ? {
-          id: String(rawCanceledBy.id || ''),
+          id: String(rawCanceledBy.id || ""),
           name: canceledByName ? String(canceledByName) : null,
         }
       : null;
-  const rawKind = String(item?.kind || '').toUpperCase();
+  const rawKind = String(item?.kind || "").toUpperCase();
   const allowedKinds = Object.keys(operationKindLabels) as OperationKind[];
   const kind = allowedKinds.includes(rawKind as OperationKind)
     ? (rawKind as OperationKind)
-    : 'OTHER';
+    : "OTHER";
   const details = String(
-    item?.details || item?.earn?.source || item?.redeem?.source || 'Операция с баллами',
+    item?.details || item?.earn?.source || item?.redeem?.source || "Операция с баллами",
   );
-  const note = typeof item?.note === 'string' ? item.note : null;
+  const note = typeof item?.note === "string" ? item.note : null;
   const change = Number(item?.change ?? earnedAmount - spentAmount);
   const carrierLabel =
     item?.carrier?.label != null && String(item.carrier.label).trim()
       ? String(item.carrier.label).trim()
       : fallbackCarrierName;
+
   return {
-    id: String(item?.id || receipt),
+    id: fallbackId,
     datetime: String(item?.occurredAt || new Date().toISOString()),
     outlet: {
-      id: String(item?.outlet?.id || ''),
+      id: String(item?.outlet?.id || ""),
       name:
         item?.outlet?.name != null
           ? String(item.outlet.name)
@@ -208,7 +255,7 @@ function mapOperationFromDto(item: any): Operation {
             ? String(item.outlet.code)
             : null,
     },
-    client: { id: String(item?.customer?.id || ''), name: customerName },
+    client: { id: String(item?.customer?.id || ""), name: customerName },
     manager,
     device: deviceId || null,
     rating: item?.rating != null ? Number(item.rating) : null,
@@ -219,8 +266,8 @@ function mapOperationFromDto(item: any): Operation {
     total: totalAmount,
     paidByPoints: Math.max(0, spentAmount),
     toPay: Math.max(0, totalAmount - Math.max(0, spentAmount)),
-    receipt,
-    orderId: String(item?.orderId || item?.id || ''),
+    receiptNumber: receiptNumber || null,
+    orderId: orderId || fallbackId,
     carrier: item?.carrier
       ? { id: carrierId, name: carrierLabel, code: carrierCode }
       : null,
@@ -233,30 +280,38 @@ function mapOperationFromDto(item: any): Operation {
   };
 }
 
-const PAGE_SIZE = 10;
-const purchaseSummaryKinds: OperationKind[] = ["PURCHASE"];
-
 export default function OperationsPage() {
+  return (
+    <Suspense fallback={null}>
+      <OperationsPageInner />
+    </Suspense>
+  );
+}
+
+function OperationsPageInner() {
+  const searchParams = useSearchParams();
+  const initialStaffId = searchParams.get("staffId");
+  const timezone = useTimezone();
+
   const [dateFrom, setDateFrom] = React.useState("");
   const [dateTo, setDateTo] = React.useState("");
   const [staffScope, setStaffScope] = React.useState("all");
-  const [managerFilter, setManagerFilter] = React.useState("all");
+  const [staffFilter, setStaffFilter] = React.useState("all");
   const [outletFilter, setOutletFilter] = React.useState("all");
   const [deviceFilter, setDeviceFilter] = React.useState("all");
-  const [typeFilter, setTypeFilter] = React.useState<"ALL" | OperationKind>("ALL");
-  const [directionFilter, setDirectionFilter] = React.useState("both");
+  const [typeFilter, setTypeFilter] = React.useState<"all" | OperationKind>("all");
+  const [directionFilter, setDirectionFilter] = React.useState<"all" | "earn" | "redeem">("all");
   const [search, setSearch] = React.useState("");
   const [page, setPage] = React.useState(1);
   const [preview, setPreview] = React.useState<Operation | null>(null);
   const [items, setItems] = React.useState<Operation[]>([]);
   const [total, setTotal] = React.useState(0);
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const [hoveredRowId, setHoveredRowId] = React.useState<string | null>(null);
   const [refundedOrderIds, setRefundedOrderIds] = React.useState<Set<string>>(new Set());
   const [staffOptions, setStaffOptions] = React.useState<SelectOption[]>([]);
   const [outletOptions, setOutletOptions] = React.useState<SelectOption[]>([]);
   const [deviceOptions, setDeviceOptions] = React.useState<DeviceOption[]>([]);
-  const timezone = useTimezone();
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const dateFormatter = React.useMemo(
     () => new Intl.DateTimeFormat("ru-RU", { timeZone: timezone.iana }),
     [timezone],
@@ -270,8 +325,35 @@ export default function OperationsPage() {
       }),
     [timezone],
   );
-  const formatDate = React.useCallback((value: string) => dateFormatter.format(new Date(value)), [dateFormatter]);
-  const formatTime = React.useCallback((value: string) => timeFormatter.format(new Date(value)), [timeFormatter]);
+
+  const formatDate = React.useCallback(
+    (value: string) => dateFormatter.format(new Date(value)),
+    [dateFormatter],
+  );
+  const formatTime = React.useCallback(
+    (value: string) => timeFormatter.format(new Date(value)),
+    [timeFormatter],
+  );
+
+  React.useEffect(() => {
+    if (!initialStaffId) return;
+    setStaffFilter(initialStaffId);
+  }, [initialStaffId]);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [
+    search,
+    dateFrom,
+    dateTo,
+    staffScope,
+    staffFilter,
+    outletFilter,
+    deviceFilter,
+    typeFilter,
+    directionFilter,
+  ]);
+
   const staffSelectOptions = React.useMemo(() => {
     const activeStatuses = new Set(["ACTIVE", "PENDING", "SUSPENDED"]);
     const formerStatuses = new Set(["FIRED", "ARCHIVED"]);
@@ -281,12 +363,18 @@ export default function OperationsPage() {
         : staffScope === "former"
           ? staffOptions.filter((opt) => formerStatuses.has((opt.status || "").toUpperCase()))
           : staffOptions;
-    return [{ value: "all", label: "Все сотрудники", status: "ACTIVE" }, ...filtered];
-  }, [staffOptions, staffScope]);
+    const withAll = [{ value: "all", label: "Все сотрудники" }, ...filtered];
+    if (staffFilter !== "all" && !withAll.find((opt) => opt.value === staffFilter)) {
+      withAll.push({ value: staffFilter, label: staffFilter });
+    }
+    return withAll;
+  }, [staffOptions, staffScope, staffFilter]);
+
   const outletSelectOptions = React.useMemo(
     () => [{ value: "all", label: "Все торговые точки" }, ...outletOptions],
     [outletOptions],
   );
+
   const deviceSelectOptions = React.useMemo(
     () => [{ value: "all", label: "Все устройства" }, ...deviceOptions],
     [deviceOptions],
@@ -303,45 +391,33 @@ export default function OperationsPage() {
   );
 
   React.useEffect(() => {
-    if (typeof document === "undefined") return;
-    const body = document.body;
-    if (preview) {
-      body.classList.add("modal-blur-active");
-    } else {
-      body.classList.remove("modal-blur-active");
-    }
-    return () => {
-      body.classList.remove("modal-blur-active");
-    };
-  }, [preview]);
-
-  React.useEffect(() => {
     const controller = new AbortController();
     const params = new URLSearchParams();
     params.set("limit", String(PAGE_SIZE));
     params.set("offset", String((page - 1) * PAGE_SIZE));
     if (dateFrom) params.set("from", dateFrom);
     if (dateTo) params.set("to", dateTo);
-    if (managerFilter !== "all") params.set("staffId", managerFilter);
+    if (staffFilter !== "all") params.set("staffId", staffFilter);
     if (staffScope === "current") params.set("staffStatus", "current");
     if (staffScope === "former") params.set("staffStatus", "former");
     if (outletFilter !== "all") params.set("outletId", outletFilter);
     if (deviceFilter !== "all") params.set("deviceId", deviceFilter);
-    if (typeFilter !== "ALL") params.set("operationType", typeFilter);
-    if (directionFilter !== "both") params.set("direction", directionFilter);
-    if (search.trim()) params.set("receipt", search.trim());
+    if (typeFilter !== "all") params.set("operationType", typeFilter);
+    if (directionFilter !== "all") params.set("direction", directionFilter);
+    if (search.trim()) params.set("receiptNumber", search.trim());
 
     (async () => {
       try {
         const res = await fetch(`/api/operations/log?${params.toString()}`, {
           method: "GET",
           signal: controller.signal,
+          cache: "no-store",
         });
         if (!res.ok) throw new Error("Не удалось загрузить операции");
         const payload: any = await res.json().catch(() => ({}));
         const list: any[] = Array.isArray(payload.items) ? payload.items : [];
         const mapped = list.map((item) => mapOperationFromDto(item));
-        // отметим чеки с возвратами
+
         const refunds = new Set<string>();
         mapped.forEach((op) => {
           if (op.kind === "REFUND") {
@@ -354,13 +430,16 @@ export default function OperationsPage() {
         setItems(mapped);
         setTotal(Number(payload.total ?? mapped.length ?? 0));
 
-        // заполняем селекты на основе полученных данных
         const staffMap = new Map<string, SelectOption>();
         const outletMap = new Map<string, SelectOption>();
         const deviceMap = new Map<string, DeviceOption>();
         mapped.forEach((op) => {
           if (op.manager?.id) {
-            staffMap.set(op.manager.id, { value: op.manager.id, label: op.manager.name || op.manager.id, status: "ACTIVE" });
+            staffMap.set(op.manager.id, {
+              value: op.manager.id,
+              label: op.manager.name || op.manager.id,
+              status: op.manager.status || "ACTIVE",
+            });
           }
           if (op.outlet?.id) {
             outletMap.set(op.outlet.id, { value: op.outlet.id, label: op.outlet.name || op.outlet.id });
@@ -384,7 +463,7 @@ export default function OperationsPage() {
     dateFrom,
     dateTo,
     staffScope,
-    managerFilter,
+    staffFilter,
     outletFilter,
     deviceFilter,
     typeFilter,
@@ -392,15 +471,6 @@ export default function OperationsPage() {
     search,
     page,
   ]);
-
-  const previewActor = React.useMemo(() => {
-    if (!preview) return { label: "Устройство", value: "—" };
-    const val = (preview.manager?.name || "").trim() || (preview.manager?.id || "").trim();
-    return {
-        label: preview.manager ? "Сотрудник" : "Устройство",
-        value: val || "—"
-    };
-  }, [preview]);
 
   const cancelOperation = React.useCallback(async (op: Operation) => {
     if (!op.id || op.kind === "REFUND") return;
@@ -431,472 +501,541 @@ export default function OperationsPage() {
     }
   }, []);
 
+  const pageStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const pageEnd = Math.min(page * PAGE_SIZE, total);
+
+  const renderStars = (rating: number) => (
+    <div className="flex space-x-0.5">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <Star
+          key={star}
+          size={12}
+          className={star <= rating ? "text-yellow-400 fill-yellow-400" : "text-gray-200"}
+        />
+      ))}
+    </div>
+  );
+
+  const modalDisplayId = preview ? getDisplayId(preview) : null;
+  const modalNoteValue = preview ? (preview.note || "").trim() : "";
+  const modalReasonUsesNote =
+    preview && (preview.kind === "PROMOCODE" || preview.kind === "CAMPAIGN") && Boolean(modalNoteValue);
+
   return (
-    <div style={{ display: "grid", gap: 24 }}>
-      {/* Header code remains same ... */}
-      <header style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-        <div style={{
-          width: 48,
-          height: 48,
-          borderRadius: "var(--radius-lg)",
-          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--brand-primary-light)",
-        }}>
-          <Receipt size={24} />
-        </div>
-        <div>
-          <h1 style={{ 
-            fontSize: 28, 
-            fontWeight: 800, 
-            margin: 0,
-            letterSpacing: "-0.02em",
-          }}>
-            Журнал операций
-          </h1>
-          <div style={{ display: "flex", gap: 16, marginTop: 6 }}>
-            <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>
-              Всего: <strong style={{ color: "var(--fg)" }}>{total}</strong> записей
-            </span>
-            <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>
-              Время: {timezone.label}
-            </span>
-          </div>
-        </div>
-      </header>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-6">
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Журнал операций</h2>
+        <p className="text-gray-500 mt-1">История всех транзакций, начислений и списаний баллов.</p>
+      </div>
 
-      <Card>
-        <CardBody style={{ padding: 20 }}>
-          <div className="filter-grid">
-            <FilterBlock label="Дата">
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(event) => setDateFrom(event.target.value)}
-                  className="input"
-                  style={{ width: 140 }}
-                />
-                <span style={{ opacity: 0.4 }}>—</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(event) => setDateTo(event.target.value)}
-                  className="input"
-                  style={{ width: 140 }}
-                />
-              </div>
-            </FilterBlock>
-            <FilterBlock label="Сотрудники">
-              <select value={staffScope} onChange={(event) => setStaffScope(event.target.value)} className="input" style={{ minWidth: 200 }}>
-                <option value="all">Текущие и бывшие</option>
-                <option value="current">Только текущие</option>
-                <option value="former">Только бывшие</option>
-              </select>
-            </FilterBlock>
-            <FilterBlock label="Имя сотрудника">
-              <select value={managerFilter} onChange={(event) => setManagerFilter(event.target.value)} className="input" style={{ minWidth: 200 }}>
-                {staffSelectOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </FilterBlock>
-            <FilterBlock label="Устройство">
-              <select value={deviceFilter} onChange={(event) => setDeviceFilter(event.target.value)} className="input" style={{ minWidth: 180 }}>
-                {deviceSelectOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </FilterBlock>
-            <FilterBlock label="Торговые точки">
-              <select value={outletFilter} onChange={(event) => setOutletFilter(event.target.value)} className="input" style={{ minWidth: 200 }}>
-                {outletSelectOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </FilterBlock>
-            <FilterBlock label="Тип операции">
-              <select
-                value={typeFilter}
-                onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)}
-                className="input"
-                style={{ minWidth: 180 }}
-              >
-                <option value="ALL">Все операции</option>
-                {kindFilterOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </FilterBlock>
-            <FilterBlock label="Направление">
-              <select value={directionFilter} onChange={(event) => setDirectionFilter(event.target.value)} className="input" style={{ minWidth: 200 }}>
-                <option value="both">Списания и начисления</option>
-                <option value="earn">Только начисления</option>
-                <option value="spend">Только списания</option>
-              </select>
-            </FilterBlock>
-            <FilterBlock label="Поиск по чеку">
-              <div style={{ position: "relative" }}>
-                <SearchIcon size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--fg-muted)" }} />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Номер чека"
-                  className="input"
-                  style={{ paddingLeft: 38, width: 180 }}
-                />
-              </div>
-            </FilterBlock>
+      {/* Filters Bar */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-200/60 shadow-sm space-y-5">
+        {/* Top Row: Search & Date & Reset */}
+        <div className="flex flex-col xl:flex-row gap-4">
+          {/* Search */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="text"
+              placeholder="Поиск по номеру чека..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-transparent focus:bg-white border focus:border-purple-500 rounded-xl text-sm font-medium transition-all outline-none"
+            />
           </div>
-        </CardBody>
-      </Card>
 
-      <Card>
-        <CardHeader title="Список операций" />
-        <CardBody style={{ display: "grid", gap: 0 }}>
-          {items.map((operation) => {
-            const isRefundOperation = operation.kind === "REFUND";
-            const isRefundedOrigin = !isRefundOperation && isRefundedOperation(operation);
-            const isCanceled = !isRefundOperation && Boolean(operation.canceledAt);
-            const hasAdminCancelMarker = Boolean(operation.canceledBy);
-            const isPromocode = operation.kind === "PROMOCODE";
-            const statusText = isCanceled && hasAdminCancelMarker
-              ? "Операция отменена администратором"
-              : isRefundedOrigin
-                ? "Возврат оформлен"
-                : isCanceled
-                  ? "Операция отменена"
-                  : "";
-            const statusColor = isCanceled || isRefundedOrigin ? "var(--fg-muted)" : "inherit";
-            const ratingValue = operation.rating ?? 0;
-            const hasOutlet = Boolean(operation.outlet?.name);
-            const performerFromManager =
-              (operation.manager?.name || "").trim() ||
-              (operation.manager?.id || "").trim();
-            const performerValue = performerFromManager || "—";
-            const performerLabel = operation.manager ? "Сотрудник" : "Устройство";
-            const isPurchaseOperation = purchaseSummaryKinds.includes(operation.kind);
-            const summaryLabel = isPurchaseOperation ? "Сумма покупки" : null;
-            const summaryValue =
-              isPurchaseOperation && operation.total > 0
-                ? formatRub(operation.total)
-                : operation.details || "—";
-            const earnedPoints = `+${formatPoints(operation.earned)}`;
-            const spentPoints = operation.spent > 0 ? `-${formatPoints(operation.spent)}` : "0";
-            const isHovered = hoveredRowId === operation.id;
-            const customerId = operation.client?.id?.trim();
-            const customerHref = customerId ? `/customers?customerId=${encodeURIComponent(customerId)}` : null;
-            return (
-              <div
-                key={operation.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => setPreview(operation)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setPreview(operation);
-                  }
-                }}
-                onMouseEnter={() => setHoveredRowId(operation.id)}
-                onMouseLeave={() => {
-                  setHoveredRowId((current) => (current === operation.id ? null : current));
-                }}
-                className="list-row operation-grid"
-                style={{
-                  opacity: isCanceled || isRefundedOrigin ? 0.6 : 1,
-                }}
-              >
-                <div className="cell-date">
-                  <span style={{ fontWeight: 600 }}>{formatDate(operation.datetime)}</span>
-                  <span style={{ fontSize: 12, opacity: 0.7 }}>{formatTime(operation.datetime)}</span>
-                </div>
-                <div className="cell-info">
-                  {hasOutlet && <span style={{ fontWeight: 500 }}>{operation.outlet.name}</span>}
-                  <span style={{ display: 'flex', gap: 4 }}>
-                    <span style={{ opacity: 0.7 }}>Клиент:</span>
-                    {customerHref ? (
-                      <a
-                        href={customerHref}
-                        style={{ color: "var(--brand-primary-light)", fontWeight: 500 }}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {operation.client.name}
-                      </a>
-                    ) : (
-                      <span>{operation.client.name}</span>
-                    )}
-                  </span>
-                  <span style={{ opacity: 0.7 }}>
-                    {performerLabel}: {performerValue}
-                  </span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <StarRating rating={ratingValue} size={16} />
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: statusColor }}>
-                  {statusText}
-                </div>
-                <div className="cell-right">
-                  <span className="cell-label">Начислено</span>
-                  <span style={{ color: "var(--success)", fontWeight: 600 }}>{earnedPoints}</span>
-                </div>
-                <div className="cell-right">
-                  <span className="cell-label">Списано</span>
-                  <span style={{ color: operation.spent > 0 ? "var(--danger)" : "inherit", fontWeight: 600 }}>
-                    {spentPoints}
-                  </span>
-                </div>
-                <div className="cell-right">
-                  {summaryLabel && <span className="cell-label">{summaryLabel}</span>}
-                  <span
-                    style={{
-                      fontWeight: isPurchaseOperation && operation.total > 0 ? 600 : 400,
-                      background: isPromocode ? "rgba(250,204,21,0.15)" : undefined,
-                      color: isPromocode ? "#ca8a04" : undefined,
-                      padding: isPromocode ? "2px 8px" : undefined,
-                      borderRadius: isPromocode ? 999 : undefined,
-                      fontSize: isPromocode ? 12 : undefined,
-                    }}
-                  >
-                    {summaryValue}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-          {!items.length && (
-            <div style={{ textAlign: "center", padding: 48, opacity: 0.6 }}>
-              <Filter size={48} style={{ opacity: 0.2, marginBottom: 16 }} />
-              <div>Нет операций для выбранных фильтров</div>
+          {/* Date Range */}
+          <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-xl border border-gray-100">
+            <div className="relative">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="pl-3 pr-2 py-1.5 bg-transparent text-sm font-medium text-gray-700 outline-none cursor-pointer"
+              />
             </div>
-          )}
-        </CardBody>
-      </Card>
+            <span className="text-gray-300">|</span>
+            <div className="relative">
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="pl-2 pr-3 py-1.5 bg-transparent text-sm font-medium text-gray-700 outline-none cursor-pointer"
+              />
+            </div>
+          </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>Страница {page} из {totalPages}</span>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={page === 1}
-            leftIcon={<ChevronLeft size={16} />}
+          {/* Reset */}
+          <button
+            onClick={() => {
+              setSearch("");
+              setDateFrom("");
+              setDateTo("");
+              setTypeFilter("all");
+              setDirectionFilter("all");
+              setOutletFilter("all");
+              setStaffFilter("all");
+              setStaffScope("all");
+              setDeviceFilter("all");
+              setPage(1);
+            }}
+            className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-sm font-medium transition-colors flex items-center gap-2"
           >
-            Назад
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-            disabled={page === totalPages}
-            rightIcon={<ChevronRight size={16} />}
-          >
-            Вперёд
-          </Button>
+            <X size={16} />
+            <span>Сбросить</span>
+          </button>
+        </div>
+
+        {/* Bottom Row: Selects */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* 1. Type */}
+          <div className="relative">
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+              <Filter size={16} />
+            </div>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
+              className="w-full pl-10 pr-8 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 font-medium focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none appearance-none cursor-pointer transition-all"
+            >
+              <option value="all">Все типы операций</option>
+              {kindFilterOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          </div>
+
+          {/* 2. Direction */}
+          <div className="relative">
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+              <ArrowUpRight size={16} />
+            </div>
+            <select
+              value={directionFilter}
+              onChange={(e) => setDirectionFilter(e.target.value as typeof directionFilter)}
+              className="w-full pl-10 pr-8 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 font-medium focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none appearance-none cursor-pointer transition-all"
+            >
+              <option value="all">Начисления и списания</option>
+              <option value="earn">Только начисления</option>
+              <option value="redeem">Только списания</option>
+            </select>
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          </div>
+
+          {/* 3. Outlet */}
+          <div className="relative">
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+              <Store size={16} />
+            </div>
+            <select
+              value={outletFilter}
+              onChange={(e) => setOutletFilter(e.target.value)}
+              className="w-full pl-10 pr-8 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 font-medium focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none appearance-none cursor-pointer transition-all"
+            >
+              {outletSelectOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          </div>
+
+          {/* 4. Staff Status */}
+          <div className="relative">
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+              <Briefcase size={16} />
+            </div>
+            <select
+              value={staffScope}
+              onChange={(e) => {
+                setStaffScope(e.target.value);
+                setStaffFilter("all");
+                setDeviceFilter("all");
+              }}
+              className="w-full pl-10 pr-8 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 font-medium focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none appearance-none cursor-pointer transition-all"
+            >
+              <option value="all">Текущие и уволенные</option>
+              <option value="current">Только текущие</option>
+              <option value="former">Только уволенные</option>
+            </select>
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          </div>
+
+          {/* 5. Staff Name */}
+          <div className="relative">
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+              <User size={16} />
+            </div>
+            <select
+              value={staffFilter}
+              onChange={(e) => {
+                setStaffFilter(e.target.value);
+                setDeviceFilter("all");
+              }}
+              disabled={deviceFilter !== "all"}
+              className="w-full pl-10 pr-8 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 font-medium focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none appearance-none cursor-pointer transition-all disabled:bg-gray-50 disabled:opacity-60"
+            >
+              {staffSelectOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          </div>
+
+          {/* 6. Device */}
+          <div className="relative">
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+              <Monitor size={16} />
+            </div>
+            <select
+              value={deviceFilter}
+              onChange={(e) => {
+                setDeviceFilter(e.target.value);
+                setStaffFilter("all");
+              }}
+              disabled={staffFilter !== "all" || staffScope !== "all"}
+              className="w-full pl-10 pr-8 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 font-medium focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none appearance-none cursor-pointer transition-all disabled:bg-gray-50 disabled:opacity-60"
+            >
+              {deviceSelectOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          </div>
         </div>
       </div>
 
-      {preview && typeof document !== "undefined"
-        ? createPortal(
-        <div className="modal-overlay" onClick={() => setPreview(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-            <div className="modal-header">
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>
-                  {formatDate(preview.datetime)} {formatTime(preview.datetime)}
-                </div>
-                <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>
-                  {preview.details}
-                </div>
-                <div style={{ fontSize: 12, opacity: 0.5, marginTop: 2 }}>
-                  ID: {preview.receipt || preview.orderId || preview.id}
-                </div>
-              </div>
+      {/* Main Table */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="px-6 py-4 font-semibold w-32">Дата / Время</th>
+                <th className="px-6 py-4 font-semibold">Клиент</th>
+                <th className="px-6 py-4 font-semibold">Основание</th>
+                <th className="px-6 py-4 font-semibold text-right">Баллы</th>
+                <th className="px-6 py-4 font-semibold">Торговая точка</th>
+                <th className="px-6 py-4 font-semibold">Источник</th>
+                <th className="px-6 py-4 font-semibold text-center w-24">Оценка</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {items.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                    <FileText size={48} className="mx-auto text-gray-300 mb-4" />
+                    <p>Операции не найдены.</p>
+                  </td>
+                </tr>
+              ) : (
+                items.map((operation) => {
+                  const isRefundOperation = operation.kind === "REFUND";
+                  const isRefundedOrigin = !isRefundOperation && isRefundedOperation(operation);
+                  const isCanceled = !isRefundOperation && Boolean(operation.canceledAt);
+                  const statusMuted = isCanceled || isRefundedOrigin;
+                  const source = getSourceMeta(operation);
+                  const reason = getReasonText(operation);
+                  const noteValue = (operation.note || "").trim();
+                  const reasonUsesNote = (operation.kind === "PROMOCODE" || operation.kind === "CAMPAIGN") && Boolean(noteValue);
+                  const showReceipt = Boolean(operation.receiptNumber) && operation.kind !== "PURCHASE";
+                  const displayId = getDisplayId(operation);
+                  const showCancelTag = operation.kind === "PURCHASE" && (isCanceled || isRefundedOrigin);
+
+                  return (
+                    <tr
+                      key={operation.id}
+                      onClick={() => setPreview(operation)}
+                      className={`hover:bg-gray-50 transition-colors cursor-pointer group ${statusMuted ? "bg-gray-50/50 opacity-60 grayscale" : ""}`}
+                    >
+                      {/* Date */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="font-medium text-gray-900">{formatDate(operation.datetime)}</div>
+                        <div className="text-xs text-gray-500">{formatTime(operation.datetime)}</div>
+                      </td>
+
+                      {/* Client */}
+                      <td className="px-6 py-4">
+                        {operation.client.id ? (
+                          <a
+                            href={`/customers?customerId=${encodeURIComponent(operation.client.id)}`}
+                            onClick={(event) => event.stopPropagation()}
+                            className="font-medium text-purple-600 hover:text-purple-800 hover:underline flex items-center"
+                          >
+                            {operation.client.name}
+                            <ExternalLink size={10} className="ml-1 opacity-50" />
+                          </a>
+                        ) : (
+                          <span className="font-medium text-gray-900">{operation.client.name}</span>
+                        )}
+                      </td>
+
+                      {/* Reason & Amount */}
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-gray-900">{reason}</span>
+                          {operation.kind === "PURCHASE" && (
+                            <span className="text-xs text-gray-500 mt-0.5">
+                              Сумма: <span className="font-medium text-gray-700">{formatRub(operation.total)}</span>
+                              {showCancelTag && <span className="text-red-500 font-bold ml-2">(ОТМЕНА)</span>}
+                            </span>
+                          )}
+                          {operation.kind !== "PURCHASE" && showReceipt && (
+                            <span className="text-xs text-gray-400 mt-0.5">Чек: {operation.receiptNumber}</span>
+                          )}
+                          {operation.kind !== "PURCHASE" && !showReceipt && noteValue && !reasonUsesNote && (
+                            <span className="text-xs text-gray-400 mt-0.5">{noteValue}</span>
+                          )}
+                          {operation.kind !== "PURCHASE" && !showReceipt && !noteValue && displayId && (
+                            <span className="text-xs text-gray-400 mt-0.5">ID: {displayId}</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Points */}
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex flex-col items-end gap-1">
+                          {operation.earned > 0 && (
+                            <span className="font-bold text-green-600 flex items-center">
+                              +{formatPoints(operation.earned)} <ArrowUpRight size={12} className="ml-0.5" />
+                            </span>
+                          )}
+                          {operation.spent > 0 && (
+                            <span className="font-bold text-red-500 flex items-center">
+                              -{formatPoints(operation.spent)} <ArrowDownLeft size={12} className="ml-0.5" />
+                            </span>
+                          )}
+                          {operation.earned === 0 && operation.spent === 0 && (
+                            <span className="text-gray-300">-</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Outlet */}
+                      <td className="px-6 py-4 text-gray-600">
+                        {operation.outlet?.name ? (
+                          <div className="flex items-center space-x-2">
+                            <Store size={14} className="text-gray-400" />
+                            <span className="truncate max-w-[150px]" title={operation.outlet.name}>
+                              {operation.outlet.name}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-300 pl-6">-</span>
+                        )}
+                      </td>
+
+                      {/* Source */}
+                      <td className="px-6 py-4 text-gray-600">
+                        <div className="flex items-center space-x-2">
+                          {source.type === "device" ? (
+                            <Monitor size={14} className="text-purple-500" />
+                          ) : source.type === "system" ? (
+                            <CheckCircle2 size={14} className="text-blue-500" />
+                          ) : (
+                            <User size={14} className="text-gray-400" />
+                          )}
+                          <span className="truncate max-w-[120px]" title={source.name}>
+                            {source.name}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Rating */}
+                      <td className="px-6 py-4 text-center">
+                        {operation.rating ? renderStars(operation.rating) : <span className="text-gray-300 text-xs">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+            <span className="text-sm text-gray-500">
+              Показано {pageStart} - {pageEnd} из {total}
+            </span>
+            <div className="flex items-center space-x-2">
               <button
-                type="button"
-                onClick={() => setPreview(null)}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "var(--fg-muted)",
-                  cursor: "pointer",
-                  padding: 4,
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  transition: "background 0.2s",
-                }}
-                className="btn-ghost"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <X size={20} />
+                <ChevronLeft size={16} />
+              </button>
+              <span className="text-sm font-medium text-gray-900">Стр. {page}</span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronRight size={16} />
               </button>
             </div>
-            <div className="modal-body">
-              <div style={{ display: "grid", gap: 0 }}>
-                <InfoRow label="Торговая точка" value={preview.outlet.name || '—'} />
-                <InfoRow
-                  label="Клиент"
-                  value={
-                    <a
-                      href={`/customers?customerId=${encodeURIComponent(preview.client.id)}`}
-                      style={{ color: "var(--brand-primary-light)", fontWeight: 500 }}
-                    >
-                      {preview.client.name}
-                    </a>
-                  }
-                />
-                <InfoRow label={previewActor.label} value={previewActor.value} />
-              </div>
-              
-              <div style={{ 
-                background: "rgba(255, 255, 255, 0.03)", 
-                borderRadius: 12, 
-                padding: 16, 
-                border: "1px solid var(--border-subtle)" 
-              }}>
-                <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 14 }}>Движение баллов</div>
-                <div style={{ display: "flex", gap: 24 }}>
-                  <div>
-                    <div style={{ fontSize: 12, opacity: 0.6 }}>Начислено</div>
-                    <div style={{ color: "var(--success)", fontWeight: 600, fontSize: 16 }}>+{formatPoints(preview.earned)}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 12, opacity: 0.6 }}>Списано</div>
-                    <div style={{ color: "var(--danger)", fontWeight: 600, fontSize: 16 }}>–{formatPoints(preview.spent)}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
-                <SummaryCard label="К оплате" value={formatRub(preview.toPay)} />
-                <SummaryCard label="Баллами" value={`${formatPoints(preview.paidByPoints)}`} />
-                <SummaryCard label="Итого" value={formatRub(preview.total)} />
-              </div>
-
-              {(() => {
-                const isRefundOperationModal = preview.kind === "REFUND";
-                const isRefundedOriginModal = !isRefundOperationModal && isRefundedOperation(preview);
-                const isCanceledModal = !isRefundOperationModal && Boolean(preview.canceledAt);
-                const hasAdminCancelMarkerModal = Boolean(preview.canceledBy);
-                if (isCanceledModal) {
-                  const isWarnStyle = isRefundedOriginModal && !hasAdminCancelMarkerModal;
-                  const text = isRefundedOriginModal
-                    ? "Оформлен возврат по покупке"
-                    : "Операция отменена администратором";
-                  return (
-                    <div
-                      style={{
-                        padding: 12,
-                        borderRadius: 8,
-                        background: isWarnStyle
-                          ? "rgba(234, 179, 8, 0.12)"
-                          : "rgba(239, 68, 68, 0.1)",
-                        color: isWarnStyle
-                          ? "var(--warning, #eab308)"
-                          : "var(--danger)",
-                        fontSize: 13,
-                        fontWeight: 500,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                      }}
-                    >
-                      <Ban size={16} />
-                      {text}
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              {preview.kind === "REFUND" && (
-                <div style={{
-                  padding: 12,
-                  borderRadius: 8,
-                  background: "rgba(234, 179, 8, 0.12)",
-                  color: "var(--warning, #eab308)",
-                  fontSize: 13,
-                  fontWeight: 500,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                }}>
-                  <Ban size={16} />
-                  Возврат нельзя отменить
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <Button variant="ghost" onClick={() => setPreview(null)}>
-                Закрыть
-              </Button>
-              <Button
-                variant="danger"
-                disabled={
-                  Boolean(preview.canceledAt) ||
-                  preview.kind === "REFUND" ||
-                  isRefundedOperation(preview)
-                }
-                onClick={() => cancelOperation(preview)}
-                leftIcon={<Ban size={16} />}
-              >
-                {preview.canceledAt ? "Отменена" : "Отменить"}
-              </Button>
-            </div>
           </div>
-        </div>,
-        document.body,
-      ) : null}
+        )}
+      </div>
+
+      {/* Detail Modal */}
+      {preview && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4"
+              style={{ backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
+            >
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg relative z-[101]">
+                {/* Modal Header */}
+                <div className={`p-6 border-b border-gray-100 rounded-t-xl flex justify-between items-start ${preview.canceledAt ? "bg-gray-100" : "bg-white"}`}>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <h3 className="text-xl font-bold text-gray-900">{getReasonText(preview)}</h3>
+                      {preview.canceledAt && (
+                        <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide border border-red-200">
+                          Отменена
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-500 font-mono mt-1">
+                      {modalDisplayId ? `ID: ${modalDisplayId} • ${formatDate(preview.datetime)}` : formatDate(preview.datetime)}
+                    </p>
+                  </div>
+                  <button onClick={() => setPreview(null)} className="text-gray-400 hover:text-gray-600 p-1">
+                    <X size={24} />
+                  </button>
+                </div>
+
+                {/* Modal Content */}
+                <div className="p-6 space-y-6">
+                  {/* Financial Breakdown */}
+                  {preview.kind === "PURCHASE" && (
+                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-3">
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-600">Сумма чека (полная)</span>
+                        <span className="font-bold text-gray-900">{formatRub(preview.total)}</span>
+                      </div>
+                      {preview.paidByPoints > 0 && (
+                        <div className="flex justify-between items-center text-sm text-red-600">
+                          <span>Оплачено баллами</span>
+                          <span className="font-bold">-{formatPoints(preview.paidByPoints)} Б</span>
+                        </div>
+                      )}
+                      {preview.earned > 0 && (
+                        <div className="flex justify-between items-center text-sm text-green-600">
+                          <span>Начислено за покупку</span>
+                          <span className="font-bold">+{formatPoints(preview.earned)} Б</span>
+                        </div>
+                      )}
+                      <div className="border-t border-gray-200 pt-2 mt-2 flex justify-between items-center text-sm">
+                        <span className="text-gray-600">Оплачено деньгами</span>
+                        <span className="font-medium text-gray-900">{formatRub(preview.toPay)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* General Points Info */}
+                  {preview.kind !== "PURCHASE" && (
+                    <div className="flex justify-center space-x-8 py-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-green-600">+{formatPoints(preview.earned)}</div>
+                        <div className="text-xs text-gray-500 uppercase font-medium">Начислено</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-red-500">-{formatPoints(preview.spent)}</div>
+                        <div className="text-xs text-gray-500 uppercase font-medium">Списано/Возврат</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Metadata Grid */}
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="block text-xs text-gray-400 uppercase font-medium mb-1">Клиент</span>
+                      {preview.client.id ? (
+                        <a
+                          href={`/customers?customerId=${encodeURIComponent(preview.client.id)}`}
+                          className="font-medium text-purple-600"
+                        >
+                          {preview.client.name}
+                        </a>
+                      ) : (
+                        <div className="font-medium text-gray-800">{preview.client.name}</div>
+                      )}
+                    </div>
+                    <div>
+                      <span className="block text-xs text-gray-400 uppercase font-medium mb-1">Торговая точка</span>
+                      <div className="text-gray-800">{preview.outlet?.name || "—"}</div>
+                    </div>
+                    <div>
+                      <span className="block text-xs text-gray-400 uppercase font-medium mb-1">Исполнитель</span>
+                      <div className="text-gray-800">{getSourceMeta(preview).name}</div>
+                    </div>
+                    <div>
+                      <span className="block text-xs text-gray-400 uppercase font-medium mb-1">Номер чека</span>
+                      <div className="font-mono text-gray-800">{preview.receiptNumber || "—"}</div>
+                    </div>
+                  </div>
+
+                  {modalNoteValue && !modalReasonUsesNote && (
+                    <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-700 border border-gray-100">
+                      {modalNoteValue}
+                    </div>
+                  )}
+
+                  {/* Cancellation Warning/Action */}
+                  <div className="border-t border-gray-100 pt-6">
+                    {preview.canceledAt ? (
+                      <div className="bg-red-50 p-4 rounded-lg flex items-start space-x-3">
+                        <Ban className="text-red-600 mt-0.5" size={20} />
+                        <div className="text-sm text-red-800">
+                          <p className="font-bold">Операция уже отменена</p>
+                          <p>Баллы возвращены/списаны в соответствии с правилами отмены.</p>
+                        </div>
+                      </div>
+                    ) : preview.kind === "REFUND" ? (
+                      <div className="bg-amber-50 p-4 rounded-lg flex items-start space-x-3">
+                        <AlertTriangle className="text-amber-600 mt-0.5" size={20} />
+                        <div className="text-sm text-amber-800">
+                          <p className="font-bold">Нельзя отменить возврат</p>
+                          <p>Для коррекции создайте новую операцию вручную.</p>
+                        </div>
+                      </div>
+                    ) : isRefundedOperation(preview) ? (
+                      <div className="bg-amber-50 p-4 rounded-lg flex items-start space-x-3">
+                        <AlertTriangle className="text-amber-600 mt-0.5" size={20} />
+                        <div className="text-sm text-amber-800">
+                          <p className="font-bold">Возврат уже оформлен</p>
+                          <p>Эта покупка не может быть отменена повторно.</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => cancelOperation(preview)}
+                        className="w-full flex items-center justify-center space-x-2 border-2 border-red-100 bg-white text-red-600 hover:bg-red-50 hover:border-red-200 py-3 rounded-xl font-bold transition-colors"
+                      >
+                        <RotateCcw size={18} />
+                        <span>Отменить операцию</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
-
-type FilterBlockProps = {
-  label: string;
-  children: React.ReactNode;
-};
-
-const FilterBlock: React.FC<FilterBlockProps> = ({ label, children }) => (
-  <div className="filter-block">
-    <span className="filter-label">{label}</span>
-    {children}
-  </div>
-);
-
-type InfoRowProps = { label: string; value: React.ReactNode };
-
-const InfoRow: React.FC<InfoRowProps> = ({ label, value }) => (
-  <div className="info-row">
-    <span className="info-label">{label}</span>
-    <span className="info-value">{value}</span>
-  </div>
-);
-
-type SummaryCardProps = { label: string; value: React.ReactNode };
-
-const SummaryCard: React.FC<SummaryCardProps> = ({ label, value }) => (
-  <div style={{ 
-    border: "1px solid var(--border-subtle)", 
-    borderRadius: 12, 
-    padding: 12, 
-    display: "flex", 
-    flexDirection: "column", 
-    gap: 4 
-  }}>
-    <span style={{ fontSize: 11, opacity: 0.6 }}>{label}</span>
-    <span style={{ fontWeight: 600, fontSize: 15 }}>{value}</span>
-  </div>
-);
