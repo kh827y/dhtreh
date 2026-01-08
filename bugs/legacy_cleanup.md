@@ -1,0 +1,24 @@
+# Legacy cleanup — аудит упоминаний legacy
+
+Ниже перечислены устаревшие части, которые стоит удалить/почистить. Список отсортирован по убыванию важности.
+
+## Высокий приоритет
+
+1. **Legacy Staff Key продолжает жить в API и настройках мерчанта**
+   - В документации это явно помечено как legacy, но в коде остаются: проверка заголовка `X-Staff-Key`, флаг `requireStaffKey`, сохранение/проброс настройки в портале.
+   - Это создаёт избыточную поверхность для поддержки/тестирования и усложняет миграции на актуальные схемы авторизации (Bridge‑подпись, cashier‑сессии).
+   - Минимальное удаление без overengineering: объявить дату снятия поддержки, мигрировать мерчантов на Bridge/cashier‑сессию, затем удалить обработку `X-Staff-Key`, `requireStaffKey` и связанные настройки/DTO/валидации.
+   - Где видно: `API_DOCUMENTATION.md` (раздел “Staff Key (legacy)”), `api/src/loyalty/loyalty.controller.ts`, `api/src/merchants/merchants.service.ts`, `api/src/portal/portal.controller.ts`.
+
+## Средний приоритет
+
+2. **Legacy‑алиасы прав доступа держат старые ресурсы “loyalty/analytics” живыми**
+   - В портале и в API есть таблицы соответствия legacy‑ресурсов новым секциям. Это делает права более запутанными и мешает полностью удалить старую модель разрешений.
+   - Минимальное удаление: мигрировать существующие access‑groups/permissions на новые имена ресурсов, затем убрать `LEGACY_RESOURCE_ALIASES` с фронта и бэка.
+   - Где видно: `merchant-portal/app/settings/access/page.tsx`, `api/src/portal-auth/portal-permissions.util.ts`.
+
+3. **Legacy поля `levelsCfg/levelBenefits` объявлены устаревшими, но UI всё ещё на них опирается**
+   - В README/API‑доках указано, что эти поля больше не используются, однако админ‑UI читает `rulesJson.levelBenefits` при расчёте “эффективных ставок”.
+   - Это либо мёртвый код (можно удалить), либо скрытая зависимость, которая мешает полностью перейти на `LoyaltyTier`.
+   - Минимальное удаление: либо убрать чтение `levelBenefits`, либо переподключить вычисления к данным `LoyaltyTier`.
+   - Где видно: `README.md`, `API_DOCUMENTATION.md`, `admin/components/EffectiveRatesPopover.tsx`.
