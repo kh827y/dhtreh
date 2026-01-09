@@ -11,10 +11,4 @@
 
 ## P2 — Medium
 
-- **UI «Настройки бонусов» не использует backend-эндпоинт `/portal/loyalty/redeem-limits`**
-  - **Риск**: логика и валидации в `RedeemLimitsController` фактически не используются, а фронт всегда работает через `/portal/settings`. Это создаёт риск расхождения поведения (например, при изменении валидации или полномочий в специализированном контроллере) и повышает вероятность случайной перезаписи несвязанных настроек при изменении схемы `/portal/settings`.
-  - **Где**:
-    - `merchant-portal/app/loyalty/mechanics/bonus-settings/page.tsx` → `/api/portal/loyalty/redeem-limits`.
-    - `merchant-portal/app/api/portal/loyalty/redeem-limits/route.ts` — проксирует в `/portal/settings` вместо `/portal/loyalty/redeem-limits`.
-    - `api/src/loyalty-program/controllers/redeem-limits.controller.ts` — специализированный, но не используемый в портале контроллер.
-  - **Как исправить**: переключить `merchant-portal` на прямую работу с `/portal/loyalty/redeem-limits` и убрать дублирующую логику в proxy-роуте.
+Нет актуальных пунктов.

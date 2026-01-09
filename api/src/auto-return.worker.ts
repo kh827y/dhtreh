@@ -144,14 +144,28 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
       typeof autoReturn.text === 'string' && autoReturn.text.trim().length
         ? autoReturn.text.trim()
         : 'Мы скучаем! Возвращайтесь и получите бонусные баллы.';
-    const giftPoints = Math.max(
+    let giftPoints = Math.max(
       0,
       Math.floor(Number(autoReturn.giftPoints ?? 0) || 0),
     );
-    const giftTtlDays = Math.max(
+    let giftTtlDays = Math.max(
       0,
       Math.floor(Number(autoReturn.giftTtlDays ?? 0) || 0),
     );
+    const giftEnabledFlag = autoReturn.giftEnabled;
+    const giftBurnEnabledFlag = autoReturn.giftBurnEnabled;
+    const giftEnabled =
+      giftEnabledFlag !== undefined ? Boolean(giftEnabledFlag) : giftPoints > 0;
+    const giftBurnEnabled =
+      giftBurnEnabledFlag !== undefined
+        ? Boolean(giftBurnEnabledFlag)
+        : giftTtlDays > 0;
+    if (!giftEnabled) {
+      giftPoints = 0;
+      giftTtlDays = 0;
+    } else if (!giftBurnEnabled) {
+      giftTtlDays = 0;
+    }
     const repeatRaw =
       autoReturn.repeat && typeof autoReturn.repeat === 'object'
         ? autoReturn.repeat
@@ -161,12 +175,16 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
       autoReturn.repeatDays ??
       autoReturn.repeatAfterDays ??
       0;
-    const repeatEnabled = Boolean(
-      repeatRaw?.enabled ??
-        (Number.isFinite(Number(repeatValue))
-          ? Number(repeatValue) > 0
-          : false),
-    );
+    const repeatEnabledFlag = autoReturn.repeatEnabled;
+    const repeatEnabled =
+      repeatEnabledFlag !== undefined
+        ? Boolean(repeatEnabledFlag)
+        : Boolean(
+            repeatRaw?.enabled ??
+              (Number.isFinite(Number(repeatValue))
+                ? Number(repeatValue) > 0
+                : false),
+          );
     const repeatDays = repeatEnabled
       ? Math.max(1, Math.floor(Number(repeatValue) || 0))
       : 0;

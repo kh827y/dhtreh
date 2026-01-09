@@ -225,7 +225,7 @@ type TxMode = 'accrue' | 'redeem';
 const STORAGE_MERCHANT_LOGIN_KEY = 'cashier_merchant_login';
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
-const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
+const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || '';
 const LOYALTY_EVENT_CHANNEL = 'loyalty:events';
 const LOYALTY_EVENT_STORAGE_KEY = 'loyalty:lastEvent';
 

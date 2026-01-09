@@ -150,19 +150,16 @@ export async function PUT(req: NextRequest) {
 
   if (burnEnabled) {
     nextRegistration.ttlDays = burnTtlDays;
-  } else if ('ttlDays' in nextRegistration) {
-    delete nextRegistration.ttlDays;
+  } else {
+    nextRegistration.ttlDays = 0;
   }
 
   if (delayEnabled) {
     nextRegistration.delayHours = delayHours;
     nextRegistration.delayDays = delayDays;
-  } else if ('delayDays' in nextRegistration) {
-    delete nextRegistration.delayDays;
-  }
-
-  if (!delayEnabled && 'delayHours' in nextRegistration) {
-    delete nextRegistration.delayHours;
+  } else {
+    nextRegistration.delayHours = 0;
+    nextRegistration.delayDays = 0;
   }
 
   nextRegistration.pushEnabled = pushEnabled;

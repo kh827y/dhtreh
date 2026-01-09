@@ -346,6 +346,23 @@ export class TelegramNotifyService {
       );
       return;
     }
+    const claimed = await prismaAny.telegramStaffInvite
+      .updateMany({
+        where: {
+          id: invite.id,
+          token: invite.token,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+        data: { expiresAt: now },
+      })
+      .catch(() => ({ count: 0 }));
+    if (!claimed?.count) {
+      await this.sendMessage(
+        chat.id,
+        'Ссылка уже использована. Сгенерируйте новую в портале.',
+      );
+      return;
+    }
 
     const chatId = String(chat.id);
     const chatType = String(chat.type || 'private');

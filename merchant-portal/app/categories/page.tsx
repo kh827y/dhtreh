@@ -123,11 +123,14 @@ const CategoriesPage: React.FC = () => {
   }, [loadData]);
 
   const getDescendantIds = useCallback(
-    (catId: string): string[] => {
+    (catId: string, visited = new Set<string>()): string[] => {
+      if (visited.has(catId)) return [];
+      visited.add(catId);
       const children = categories.filter((c) => c.parentId === catId);
-      let ids = children.map((c) => c.id);
+      let ids: string[] = [];
       children.forEach((child) => {
-        ids = [...ids, ...getDescendantIds(child.id)];
+        ids.push(child.id);
+        ids = ids.concat(getDescendantIds(child.id, visited));
       });
       return ids;
     },
@@ -175,6 +178,11 @@ const CategoriesPage: React.FC = () => {
     }
     return result;
   }, [categoryTree, searchTerm]);
+
+  const disallowedParentIds = useMemo(() => {
+    if (!editingId) return new Set<string>();
+    return new Set([editingId, ...getDescendantIds(editingId)]);
+  }, [editingId, getDescendantIds]);
 
   const handleStartCreate = () => {
     const newId = Date.now().toString();
@@ -411,7 +419,7 @@ const CategoriesPage: React.FC = () => {
                   >
                     <option value="">-- Корневая категория --</option>
                     {categories
-                      .filter((c) => c.id !== editingId)
+                      .filter((c) => !disallowedParentIds.has(c.id))
                       .map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}

@@ -111,7 +111,7 @@ export default function RedeemLimitsPage() {
               <ArrowLeft size={20} />
             </Link>
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Настройки бонусов</h2>
+              <h2 className="text-2xl font-bold text-gray-900">Настройки бонусов за покупки</h2>
               <p className="text-sm text-gray-500">Правила сгорания, активации и списания баллов.</p>
             </div>
           </div>

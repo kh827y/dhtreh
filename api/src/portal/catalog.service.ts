@@ -719,6 +719,33 @@ export class PortalCatalogService {
           if (dto.parentId === categoryId)
             throw new BadRequestException('Category cannot reference itself');
           await this.ensureCategoryOwnership(tx, merchantId, dto.parentId);
+          const categories = await tx.productCategory.findMany({
+            where: { merchantId, deletedAt: null },
+            select: { id: true, parentId: true },
+          });
+          const childrenMap = new Map<string, string[]>();
+          categories.forEach((item) => {
+            if (!item.parentId) return;
+            const list = childrenMap.get(item.parentId) ?? [];
+            list.push(item.id);
+            childrenMap.set(item.parentId, list);
+          });
+          const descendants = new Set<string>();
+          const stack = [categoryId];
+          while (stack.length) {
+            const current = stack.pop() ?? '';
+            const children = childrenMap.get(current) ?? [];
+            for (const child of children) {
+              if (descendants.has(child)) continue;
+              descendants.add(child);
+              stack.push(child);
+            }
+          }
+          if (descendants.has(dto.parentId)) {
+            throw new BadRequestException(
+              'Category cannot reference its descendant',
+            );
+          }
           data.parent = { connect: { id: dto.parentId } };
         } else {
           data.parent = { disconnect: true };
@@ -783,6 +810,12 @@ export class PortalCatalogService {
   async deleteCategory(merchantId: string, categoryId: string) {
     await this.prisma.$transaction(async (tx) => {
       await this.ensureCategoryOwnership(tx, merchantId, categoryId);
+      const childCount = await tx.productCategory.count({
+        where: { merchantId, parentId: categoryId, deletedAt: null },
+      });
+      if (childCount > 0) {
+        throw new BadRequestException('Category has child categories');
+      }
       await tx.productCategory.update({
         where: { id: categoryId },
         data: { deletedAt: new Date() },

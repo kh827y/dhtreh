@@ -74,6 +74,15 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
         const ttlDays = (s as any).pointsTtlDays as number | null;
         if (!ttlDays || ttlDays <= 0) continue;
         const cutoff = new Date(now - ttlDays * 24 * 60 * 60 * 1000);
+        const purchaseOnly = {
+          orderId: { not: null },
+          NOT: [
+            { orderId: 'registration_bonus' },
+            { orderId: { startsWith: 'birthday:' } },
+            { orderId: { startsWith: 'auto_return:' } },
+            { orderId: { startsWith: 'complimentary:' } },
+          ],
+        };
         const useLots = process.env.EARN_LOTS_FEATURE === '1';
         if (useLots) {
           // Точный превью: неиспользованные lot'ы, «заработанные» ранее cutoff
@@ -82,6 +91,7 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
               merchantId: s.merchantId,
               status: 'ACTIVE',
               earnedAt: { lt: cutoff },
+              ...purchaseOnly,
             },
           });
           const byCustomer = new Map<string, number>();
@@ -122,6 +132,7 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
                   merchantId: s.merchantId,
                   customerId: w.customerId,
                   type: 'EARN' as any,
+                  ...purchaseOnly,
                   createdAt: { gte: cutoff },
                 },
               });

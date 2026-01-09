@@ -173,6 +173,13 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
           gt: lowerBound,
           lte: upperBound,
         },
+        orderId: { not: null },
+        NOT: [
+          { orderId: 'registration_bonus' },
+          { orderId: { startsWith: 'birthday:' } },
+          { orderId: { startsWith: 'auto_return:' } },
+          { orderId: { startsWith: 'complimentary:' } },
+        ],
       });
     }
 
@@ -340,12 +347,26 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
         where: {
           merchantId,
           customerId,
-          type: 'TTL_REMINDER',
           createdAt: { gte: since },
-          data: {
-            path: ['burnDate'],
-            equals: burnDateIso,
-          } as Prisma.JsonNullableFilter,
+          AND: [
+            {
+              data: {
+                path: ['burnDate'],
+                equals: burnDateIso,
+              } as Prisma.JsonNullableFilter,
+            },
+            {
+              OR: [
+                { type: 'TTL_REMINDER' },
+                {
+                  data: {
+                    path: ['type'],
+                    equals: 'ttl_reminder',
+                  } as Prisma.JsonNullableFilter,
+                },
+              ],
+            },
+          ],
         },
         select: { id: true },
       });

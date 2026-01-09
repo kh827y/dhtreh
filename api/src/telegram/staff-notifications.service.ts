@@ -168,8 +168,7 @@ export class TelegramStaffNotificationsService {
   }
 
   private normalizeRulesJson(raw: unknown): Record<string, any> {
-    if (Array.isArray(raw)) return { rules: raw };
-    if (raw && typeof raw === 'object') {
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
       return { ...(raw as Record<string, any>) };
     }
     return {};

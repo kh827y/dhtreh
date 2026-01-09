@@ -69,12 +69,22 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
         const days = (s as any).pointsTtlDays as number | null;
         if (!days || days <= 0) continue;
         const cutoff = new Date(now - days * 24 * 60 * 60 * 1000);
+        const purchaseOnly = {
+          orderId: { not: null },
+          NOT: [
+            { orderId: 'registration_bonus' },
+            { orderId: { startsWith: 'birthday:' } },
+            { orderId: { startsWith: 'auto_return:' } },
+            { orderId: { startsWith: 'complimentary:' } },
+          ],
+        };
         // Выберем клиентов, у кого есть неиспользованные lot'ы до cutoff
         const lots = await this.prisma.earnLot.findMany({
           where: {
             merchantId: s.merchantId,
             status: 'ACTIVE',
             earnedAt: { lt: cutoff },
+            ...purchaseOnly,
           },
         });
         const map = new Map<string, number>();
@@ -105,6 +115,7 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
                 merchantId: s.merchantId,
                 customerId,
                 earnedAt: { lt: cutoff },
+                ...purchaseOnly,
               },
               orderBy: { earnedAt: 'asc' },
             });

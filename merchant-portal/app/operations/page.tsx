@@ -114,6 +114,7 @@ const kindFilterOptions: Array<{ value: OperationKind; label: string }> = [
 ];
 
 const PAGE_SIZE = 10;
+const STAFF_PAGE_SIZE = 200;
 
 function formatRub(value: number) {
   return value.toLocaleString("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
@@ -121,6 +122,87 @@ function formatRub(value: number) {
 
 function formatPoints(value: number) {
   return value.toLocaleString("ru-RU");
+}
+
+const buildStaffLabel = (row: any) => {
+  const first = typeof row?.firstName === "string" ? row.firstName.trim() : "";
+  const last = typeof row?.lastName === "string" ? row.lastName.trim() : "";
+  const fullName = [first, last].filter(Boolean).join(" ").trim();
+  const fallback = String(row?.login || row?.email || row?.phone || row?.id || "").trim();
+  return fullName || fallback || "—";
+};
+
+async function fetchAllStaffOptions(): Promise<SelectOption[]> {
+  const staffMap = new Map<string, SelectOption>();
+  const loadPage = async (page: number) => {
+    const res = await fetch(
+      `/api/portal/staff?page=${page}&pageSize=${STAFF_PAGE_SIZE}`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const payload = await res.json().catch(() => ({}));
+    const items: any[] = Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload)
+        ? payload
+        : [];
+    items.forEach((row) => {
+      if (!row?.id) return;
+      staffMap.set(String(row.id), {
+        value: String(row.id),
+        label: buildStaffLabel(row),
+        status: row?.status ? String(row.status) : undefined,
+      });
+    });
+    const totalPages = Number(payload?.meta?.totalPages ?? 1) || 1;
+    return totalPages;
+  };
+
+  const firstTotal = await loadPage(1);
+  if (!firstTotal) return [];
+  if (firstTotal > 1) {
+    for (let page = 2; page <= firstTotal; page += 1) {
+      const ok = await loadPage(page);
+      if (!ok) break;
+    }
+  }
+  return Array.from(staffMap.values());
+}
+
+async function fetchOutletOptions(): Promise<{
+  outlets: SelectOption[];
+  devices: DeviceOption[];
+}> {
+  const res = await fetch("/api/portal/outlets?status=all", {
+    cache: "no-store",
+  });
+  if (!res.ok) return { outlets: [], devices: [] };
+  const payload = await res.json().catch(() => ({}));
+  const rows: any[] = Array.isArray(payload?.items)
+    ? payload.items
+    : Array.isArray(payload)
+      ? payload
+      : [];
+  const outletMap = new Map<string, SelectOption>();
+  const deviceMap = new Map<string, DeviceOption>();
+  rows.forEach((row) => {
+    if (!row?.id) return;
+    const outletId = String(row.id);
+    const outletLabel = String(row?.name || row?.address || outletId);
+    outletMap.set(outletId, { value: outletId, label: outletLabel });
+    const devices = Array.isArray(row?.devices) ? row.devices : [];
+    devices.forEach((device: any) => {
+      const code = String(device?.code || "").trim();
+      if (!code) return;
+      if (!deviceMap.has(code)) {
+        deviceMap.set(code, { value: code, label: code, outletId });
+      }
+    });
+  });
+  return {
+    outlets: Array.from(outletMap.values()),
+    devices: Array.from(deviceMap.values()),
+  };
 }
 
 const orderKey = (op: Pick<Operation, "orderId" | "receiptNumber" | "id" | "kind">) => {
@@ -310,6 +392,9 @@ function OperationsPageInner() {
   const [staffOptions, setStaffOptions] = React.useState<SelectOption[]>([]);
   const [outletOptions, setOutletOptions] = React.useState<SelectOption[]>([]);
   const [deviceOptions, setDeviceOptions] = React.useState<DeviceOption[]>([]);
+  const [staffOptionsReady, setStaffOptionsReady] = React.useState(false);
+  const [outletOptionsReady, setOutletOptionsReady] = React.useState(false);
+  const [deviceOptionsReady, setDeviceOptionsReady] = React.useState(false);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const dateFormatter = React.useMemo(
@@ -339,6 +424,34 @@ function OperationsPageInner() {
     if (!initialStaffId) return;
     setStaffFilter(initialStaffId);
   }, [initialStaffId]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [staffList, outletsData] = await Promise.all([
+          fetchAllStaffOptions(),
+          fetchOutletOptions(),
+        ]);
+        if (cancelled) return;
+        if (staffList.length) {
+          setStaffOptions(staffList);
+          setStaffOptionsReady(true);
+        }
+        if (outletsData.outlets.length) {
+          setOutletOptions(outletsData.outlets);
+          setOutletOptionsReady(true);
+        }
+        if (outletsData.devices.length) {
+          setDeviceOptions(outletsData.devices);
+          setDeviceOptionsReady(true);
+        }
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     setPage(1);
@@ -448,9 +561,15 @@ function OperationsPageInner() {
             deviceMap.set(op.device, { value: op.device, label: op.device, outletId: op.outlet?.id });
           }
         });
-        setStaffOptions(Array.from(staffMap.values()));
-        setOutletOptions(Array.from(outletMap.values()));
-        setDeviceOptions(Array.from(deviceMap.values()));
+        if (!staffOptionsReady && staffMap.size) {
+          setStaffOptions(Array.from(staffMap.values()));
+        }
+        if (!outletOptionsReady && outletMap.size) {
+          setOutletOptions(Array.from(outletMap.values()));
+        }
+        if (!deviceOptionsReady && deviceMap.size) {
+          setDeviceOptions(Array.from(deviceMap.values()));
+        }
       } catch (error) {
         if ((error as any)?.name === "AbortError") return;
         setItems([]);
@@ -470,6 +589,9 @@ function OperationsPageInner() {
     directionFilter,
     search,
     page,
+    staffOptionsReady,
+    outletOptionsReady,
+    deviceOptionsReady,
   ]);
 
   const cancelOperation = React.useCallback(async (op: Operation) => {

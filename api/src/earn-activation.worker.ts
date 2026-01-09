@@ -137,6 +137,19 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
               } as any,
             },
           });
+          if (fresh.orderId === 'registration_bonus') {
+            await tx.eventOutbox.create({
+              data: {
+                merchantId: fresh.merchantId,
+                eventType: 'notify.registration_bonus',
+                payload: {
+                  merchantId: fresh.merchantId,
+                  customerId: fresh.customerId,
+                  points: fresh.points,
+                },
+              },
+            });
+          }
         });
         try {
           this.metrics.inc('loyalty_delayed_earn_activated_total');

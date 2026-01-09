@@ -172,6 +172,40 @@ export class PortalController {
     return this.shiftFromTimezone(date, offsetMinutes);
   }
 
+  private parseDateParam(
+    req: any,
+    value?: string,
+    endOfDay = false,
+  ): Date | undefined {
+    if (!value) return undefined;
+    const raw = String(value).trim();
+    if (!raw) return undefined;
+    const offset = this.getTimezoneOffsetMinutes(req);
+    const local = this.parseLocalDate(raw, offset, endOfDay);
+    const parsed = local ?? new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException('Некорректный формат даты');
+    }
+    return parsed;
+  }
+
+  private normalizePromocodePayload(
+    req: any,
+    body: PortalPromoCodePayload,
+  ): PortalPromoCodePayload {
+    const offset = this.getTimezoneOffsetMinutes(req);
+    const payload: PortalPromoCodePayload = { ...body };
+    if (typeof body?.validFrom === 'string' && body.validFrom) {
+      const parsed = this.parseLocalDate(body.validFrom, offset, false);
+      if (parsed) payload.validFrom = parsed.toISOString();
+    }
+    if (typeof body?.validUntil === 'string' && body.validUntil) {
+      const parsed = this.parseLocalDate(body.validUntil, offset, true);
+      if (parsed) payload.validUntil = parsed.toISOString();
+    }
+    return payload;
+  }
+
   private computePeriod(
     req: any,
     periodType?: string,
@@ -569,10 +603,124 @@ export class PortalController {
         'mechanic_ttl',
         'antifraud',
         'integrations',
+        'feedback',
       ],
       'read',
       'any',
     );
+  }
+
+  private maskSettingsSecrets(req: any, settings: any) {
+    if (!settings) return settings;
+    if (req.portalActor !== 'STAFF') return settings;
+    if (hasPortalPermission(req.portalPermissions, 'system_settings', 'read')) {
+      return settings;
+    }
+    return {
+      ...settings,
+      webhookSecret: null,
+      webhookSecretNext: null,
+      bridgeSecret: null,
+      bridgeSecretNext: null,
+      telegramBotToken: null,
+    };
+  }
+
+  private filterSettingsByPermissions(req: any, settings: any) {
+    if (!settings) return settings;
+    if (req.portalActor !== 'STAFF') return settings;
+    if (hasPortalPermission(req.portalPermissions, 'system_settings', 'read')) {
+      return settings;
+    }
+
+    const filtered: Record<string, any> = {
+      merchantId: settings.merchantId,
+    };
+    const rulesJson =
+      settings.rulesJson &&
+      typeof settings.rulesJson === 'object' &&
+      !Array.isArray(settings.rulesJson)
+        ? (settings.rulesJson as Record<string, any>)
+        : null;
+    const nextRules: Record<string, any> = {};
+    const pickRule = (key: string, allowed: boolean) => {
+      if (!allowed || !rulesJson) return;
+      if (Object.prototype.hasOwnProperty.call(rulesJson, key)) {
+        nextRules[key] = rulesJson[key];
+      }
+    };
+
+    const allowTtl = hasPortalPermission(
+      req.portalPermissions,
+      'mechanic_ttl',
+      'read',
+    );
+    if (allowTtl) {
+      filtered.pointsTtlDays = settings.pointsTtlDays ?? null;
+      pickRule('burnReminder', true);
+    }
+
+    const allowRedeemLimits = hasPortalPermission(
+      req.portalPermissions,
+      'mechanic_redeem_limits',
+      'read',
+    );
+    if (allowRedeemLimits) {
+      filtered.earnDelayDays = settings.earnDelayDays ?? null;
+      pickRule('allowEarnRedeemSameReceipt', true);
+      pickRule('disallowEarnRedeemSameReceipt', true);
+    }
+
+    pickRule(
+      'birthday',
+      hasPortalPermission(req.portalPermissions, 'mechanic_birthday', 'read'),
+    );
+    pickRule(
+      'autoReturn',
+      hasPortalPermission(
+        req.portalPermissions,
+        'mechanic_auto_return',
+        'read',
+      ),
+    );
+    pickRule(
+      'registration',
+      hasPortalPermission(
+        req.portalPermissions,
+        'mechanic_registration_bonus',
+        'read',
+      ),
+    );
+    pickRule(
+      'af',
+      hasPortalPermission(req.portalPermissions, 'antifraud', 'read'),
+    );
+    pickRule(
+      'reviews',
+      hasPortalPermission(req.portalPermissions, 'feedback', 'read'),
+    );
+    pickRule(
+      'reviewsShare',
+      hasPortalPermission(req.portalPermissions, 'feedback', 'read'),
+    );
+
+    if (Object.keys(nextRules).length) {
+      filtered.rulesJson = nextRules;
+    }
+
+    if (
+      hasPortalPermission(req.portalPermissions, 'integrations', 'read')
+    ) {
+      filtered.telegramBotUsername = settings.telegramBotUsername ?? null;
+      filtered.telegramStartParamRequired =
+        settings.telegramStartParamRequired ?? null;
+      filtered.miniappBaseUrl = settings.miniappBaseUrl ?? null;
+      filtered.miniappThemePrimary = settings.miniappThemePrimary ?? null;
+      filtered.miniappThemeBg = settings.miniappThemeBg ?? null;
+      filtered.miniappLogoUrl = settings.miniappLogoUrl ?? null;
+    }
+
+    return filtered;
   }
 
   private resolveSettingsUpdateResources(
@@ -654,13 +802,16 @@ export class PortalController {
     if (dto.rulesJson !== undefined) {
       const currentRules =
         currentSettings.rulesJson &&
-        typeof currentSettings.rulesJson === 'object' &&
-        !Array.isArray(currentSettings.rulesJson)
-          ? (currentSettings.rulesJson as Record<string, any>)
+        typeof currentSettings.rulesJson === 'object'
+          ? Array.isArray(currentSettings.rulesJson)
+            ? {}
+            : (currentSettings.rulesJson as Record<string, any>)
           : null;
       const nextRules =
-        dto.rulesJson && typeof dto.rulesJson === 'object' && !Array.isArray(dto.rulesJson)
-          ? (dto.rulesJson as Record<string, any>)
+        dto.rulesJson && typeof dto.rulesJson === 'object'
+          ? Array.isArray(dto.rulesJson)
+            ? {}
+            : (dto.rulesJson as Record<string, any>)
           : null;
       if (!currentRules || !nextRules) {
         if (
@@ -680,6 +831,8 @@ export class PortalController {
           registration: 'mechanic_registration_bonus',
           burnReminder: 'mechanic_ttl',
           af: 'antifraud',
+          reviews: 'feedback',
+          reviewsShare: 'feedback',
           allowEarnRedeemSameReceipt: 'mechanic_redeem_limits',
           disallowEarnRedeemSameReceipt: 'mechanic_redeem_limits',
         };
@@ -870,18 +1023,24 @@ export class PortalController {
   }
 
   @Post('customers/import')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   importCustomers(@Req() req: any, @UploadedFile() file: any) {
     if (!file) {
       throw new BadRequestException('Файл не загружен');
     }
     const name = String(file.originalname || '').toLowerCase();
     const format = name.endsWith('.xlsx') ? 'excel' : 'csv';
+    const updateExistingRaw = String(req?.body?.updateExisting || '')
+      .trim()
+      .toLowerCase();
+    const updateExisting = ['1', 'true', 'yes', 'y', 'on'].includes(
+      updateExistingRaw,
+    );
     return this.importExport.importCustomers({
       merchantId: this.getMerchantId(req),
       format,
       data: file.buffer,
-      updateExisting: true,
+      updateExisting,
     });
   }
 
@@ -1024,14 +1183,19 @@ export class PortalController {
     @Req() req: any,
     @Query('status') status?: string,
     @Query('limit') limitStr?: string,
+    @Query('offset') offsetStr?: string,
   ) {
     const limit = limitStr
       ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
       : 50;
+    const offset = offsetStr
+      ? Math.max(parseInt(offsetStr, 10) || 0, 0)
+      : 0;
     return this.promoCodes.listForPortal(
       this.getMerchantId(req),
       status,
       limit,
+      offset,
     );
   }
   @Post('promocodes/issue')
@@ -1042,8 +1206,9 @@ export class PortalController {
     },
   })
   promocodesIssue(@Req() req: any, @Body() body: PortalPromoCodePayload) {
+    const payload = this.normalizePromocodePayload(req, body);
     return this.promoCodes
-      .createFromPortal(this.getMerchantId(req), body)
+      .createFromPortal(this.getMerchantId(req), payload)
       .then((created) => ({ ok: true, promoCodeId: created.id }));
   }
   @Post('promocodes/deactivate')
@@ -1085,11 +1250,128 @@ export class PortalController {
     @Param('promoCodeId') promoCodeId: string,
     @Body() body: PortalPromoCodePayload,
   ) {
+    const payload = this.normalizePromocodePayload(req, body);
     return this.promoCodes.updateFromPortal(
       this.getMerchantId(req),
       promoCodeId,
-      body,
+      payload,
     );
+  }
+
+  @Get('loyalty/ttl/forecast')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        count: { type: 'number' },
+        daysBefore: { type: 'number' },
+      },
+    },
+  })
+  async ttlReminderForecast(
+    @Req() req: any,
+    @Query('daysBefore') daysBeforeStr?: string,
+  ) {
+    assertPortalPermissions(req, ['mechanic_ttl'], 'read');
+    const merchantId = this.getMerchantId(req);
+    const rawDays = Number(daysBeforeStr ?? NaN);
+    const daysBefore = Number.isFinite(rawDays)
+      ? Math.min(90, Math.max(1, Math.floor(rawDays)))
+      : 3;
+
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { telegramBotEnabled: true },
+    });
+    if (!merchant?.telegramBotEnabled) {
+      return { count: 0, daysBefore };
+    }
+
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { pointsTtlDays: true },
+    });
+    const ttlDaysRaw = Number(settings?.pointsTtlDays ?? 0);
+    const ttlDays =
+      Number.isFinite(ttlDaysRaw) && ttlDaysRaw > 0
+        ? Math.floor(ttlDaysRaw)
+        : 0;
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + daysBefore * 24 * 60 * 60 * 1000);
+
+    const conditions: any[] = [
+      { expiresAt: { gt: now, lte: windowEnd } },
+    ];
+    if (ttlDays > 0) {
+      const lowerBound = new Date(
+        now.getTime() - ttlDays * 24 * 60 * 60 * 1000,
+      );
+      const upperBound = new Date(
+        windowEnd.getTime() - ttlDays * 24 * 60 * 60 * 1000,
+      );
+      conditions.push({
+        expiresAt: null,
+        earnedAt: { gt: lowerBound, lte: upperBound },
+        orderId: { not: null },
+        NOT: [
+          { orderId: 'registration_bonus' },
+          { orderId: { startsWith: 'birthday:' } },
+          { orderId: { startsWith: 'auto_return:' } },
+          { orderId: { startsWith: 'complimentary:' } },
+        ],
+      });
+    }
+
+    const lots = await this.prisma.earnLot.findMany({
+      where: {
+        merchantId,
+        status: 'ACTIVE',
+        OR: conditions,
+      },
+      select: {
+        customerId: true,
+        points: true,
+        consumedPoints: true,
+        earnedAt: true,
+        expiresAt: true,
+      },
+    });
+
+    if (!lots.length) {
+      return { count: 0, daysBefore };
+    }
+
+    const ttlMs = ttlDays > 0 ? ttlDays * 24 * 60 * 60 * 1000 : 0;
+    const customers = new Map<string, number>();
+    for (const lot of lots) {
+      const remaining = Math.max(0, lot.points - (lot.consumedPoints || 0));
+      if (remaining <= 0) continue;
+      const burnDate =
+        lot.expiresAt ??
+        (ttlMs > 0 ? new Date(lot.earnedAt.getTime() + ttlMs) : null);
+      if (!burnDate) continue;
+      if (burnDate <= now || burnDate > windowEnd) continue;
+      const burnTime = burnDate.getTime();
+      const existing = customers.get(lot.customerId);
+      if (existing == null || burnTime < existing) {
+        customers.set(lot.customerId, burnTime);
+      }
+    }
+
+    const customerIds = Array.from(customers.keys());
+    if (!customerIds.length) {
+      return { count: 0, daysBefore };
+    }
+
+    const count = await this.prisma.customer.count({
+      where: {
+        merchantId,
+        id: { in: customerIds },
+        tgId: { not: null },
+      },
+    });
+
+    return { count, daysBefore };
   }
 
   // Notifications broadcast (enqueue or dry-run)
@@ -1948,7 +2230,11 @@ export class PortalController {
   @ApiUnauthorizedResponse({ type: ErrorDto })
   getSettings(@Req() req: any) {
     this.assertSettingsReadAccess(req);
-    return this.service.getSettings(this.getMerchantId(req));
+    return this.service
+      .getSettings(this.getMerchantId(req))
+      .then((data) =>
+        this.filterSettingsByPermissions(req, this.maskSettingsSecrets(req, data)),
+      );
   }
 
   @Put('settings')
@@ -2076,17 +2362,12 @@ export class PortalController {
       where: { merchantId },
       select: { rulesJson: true },
     });
-    let rules: Record<string, any>;
-    if (Array.isArray(settings?.rulesJson)) {
-      rules = { rules: settings?.rulesJson };
-    } else if (
+    const rules =
       settings?.rulesJson &&
-      typeof settings.rulesJson === 'object'
-    ) {
-      rules = { ...(settings.rulesJson as Record<string, any>) };
-    } else {
-      rules = {};
-    }
+      typeof settings.rulesJson === 'object' &&
+      !Array.isArray(settings.rulesJson)
+        ? { ...(settings.rulesJson as Record<string, any>) }
+        : {};
     const miniapp =
       rules.miniapp && typeof rules.miniapp === 'object'
         ? { ...(rules.miniapp as Record<string, any>) }
@@ -2221,10 +2502,11 @@ export class PortalController {
     @Query('status') status?: 'active' | 'inactive' | 'all',
     @Query('search') search?: string,
   ) {
+    const rawStatus = typeof status === 'string' ? status.trim().toLowerCase() : '';
     const normalized: 'active' | 'inactive' | 'all' =
-      status === 'active'
+      rawStatus === 'active'
         ? 'active'
-        : status === 'inactive'
+        : rawStatus === 'inactive'
           ? 'inactive'
           : 'all';
     return this.catalog.listOutlets(
@@ -2360,9 +2642,9 @@ export class PortalController {
     const limit = limitStr
       ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
       : 50;
-    const before = beforeStr ? new Date(beforeStr) : undefined;
-    const from = fromStr ? new Date(fromStr) : undefined;
-    const to = toStr ? new Date(toStr) : undefined;
+    const before = this.parseDateParam(req, beforeStr, true);
+    const from = this.parseDateParam(req, fromStr, false);
+    const to = this.parseDateParam(req, toStr, true);
     return this.service.listTransactions(id, {
       limit,
       before,
@@ -2388,7 +2670,7 @@ export class PortalController {
     const limit = limitStr
       ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
       : 50;
-    const before = beforeStr ? new Date(beforeStr) : undefined;
+    const before = this.parseDateParam(req, beforeStr, true);
     return this.service.listReceipts(id, {
       limit,
       before,
@@ -2412,9 +2694,9 @@ export class PortalController {
     const limit = limitStr
       ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500)
       : 50;
-    const before = beforeStr ? new Date(beforeStr) : undefined;
-    const from = fromStr ? new Date(fromStr) : undefined;
-    const to = toStr ? new Date(toStr) : undefined;
+    const before = this.parseDateParam(req, beforeStr, true);
+    const from = this.parseDateParam(req, fromStr, false);
+    const to = this.parseDateParam(req, toStr, true);
     return this.service.listLedger(id, {
       limit,
       before,

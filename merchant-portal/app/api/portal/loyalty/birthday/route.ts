@@ -14,7 +14,7 @@ async function fetchSettings(req: NextRequest) {
 }
 
 function resolveRulesJson(source: any) {
-  if (!source || typeof source !== "object") return {};
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
   return { ...source };
 }
 

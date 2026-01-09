@@ -99,7 +99,9 @@ export class ReviewService {
       );
     }
 
-    const finalOrderId = orderId ?? anchorTransaction.orderId ?? undefined;
+    const finalOrderId = transactionId
+      ? anchorTransaction.orderId ?? undefined
+      : orderId ?? anchorTransaction.orderId ?? undefined;
 
     const existingByTransaction = await this.prisma.review.findFirst({
       where: { transactionId: anchorTransaction.id },

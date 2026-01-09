@@ -157,6 +157,7 @@ export default function ImportCustomersPage() {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [updateExisting, setUpdateExisting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -220,6 +221,7 @@ export default function ImportCustomersPage() {
 
     const formData = new FormData();
     formData.append("file", selectedFile);
+    formData.append("updateExisting", updateExisting ? "true" : "false");
 
     try {
       const res = await fetch("/api/portal/customers/import", {
@@ -325,6 +327,21 @@ export default function ImportCustomersPage() {
                 </button>
               </div>
             )}
+
+            <label className="mt-4 flex items-start gap-3 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={updateExisting}
+                onChange={(event) => setUpdateExisting(event.target.checked)}
+              />
+              <span>
+                Обновлять существующих клиентов
+                <span className="block text-xs text-gray-500">
+                  Если выключено — будут добавлены только новые.
+                </span>
+              </span>
+            </label>
 
             <button
               disabled={!selectedFile || uploading}

@@ -860,7 +860,18 @@ export class MerchantPanelService {
         where: { merchantId, status: StaffStatus.ARCHIVED },
       }),
       this.prisma.staff.count({
-        where: { merchantId, portalAccessEnabled: true },
+        where: {
+          merchantId,
+          status: StaffStatus.ACTIVE,
+          OR: [
+            { isOwner: true },
+            {
+              portalAccessEnabled: true,
+              canAccessPortal: true,
+              hash: { not: null },
+            },
+          ],
+        },
       }),
     ]);
 
@@ -1309,6 +1320,13 @@ export class MerchantPanelService {
               : staff.portalState,
       };
 
+      const nextStatus = payload.status ?? staff.status;
+      if (nextStatus === StaffStatus.FIRED) {
+        updateData.canAccessPortal = false;
+        updateData.portalAccessEnabled = false;
+        updateData.portalState = 'DISABLED';
+      }
+
       if (trimmedPassword !== undefined) {
         if (trimmedPassword) {
           updateData.hash = hashPassword(trimmedPassword);
@@ -1372,9 +1390,15 @@ export class MerchantPanelService {
     if (staff.isOwner && status !== StaffStatus.ACTIVE) {
       throw new ForbiddenException('Нельзя отключить владельца');
     }
+    const data: Prisma.StaffUpdateInput = { status };
+    if (status === StaffStatus.FIRED) {
+      data.canAccessPortal = false;
+      data.portalAccessEnabled = false;
+      data.portalState = 'DISABLED';
+    }
     await this.prisma.staff.update({
       where: { id: staffId },
-      data: { status },
+      data,
     });
     try {
       this.logger.log(
@@ -1799,6 +1823,26 @@ export class MerchantPanelService {
       where: { merchantId, id: groupId },
     });
     if (!group) throw new NotFoundException('Группа не найдена');
+    const uniqueIds = Array.from(
+      new Set(
+        staffIds
+          .map((id) => String(id || '').trim())
+          .filter((id) => id.length > 0),
+      ),
+    );
+    if (uniqueIds.length) {
+      const staffRows = await this.prisma.staff.findMany({
+        where: { merchantId, id: { in: uniqueIds } },
+        select: { id: true },
+      });
+      const validIds = new Set(
+        staffRows.map((row) => String(row.id)).filter(Boolean),
+      );
+      const invalid = uniqueIds.filter((id) => !validIds.has(id));
+      if (invalid.length) {
+        throw new BadRequestException('Сотрудники должны принадлежать мерчанту');
+      }
+    }
     const ownerRows = await this.prisma.staff.findMany({
       where: {
         merchantId,
@@ -2080,7 +2124,11 @@ export class MerchantPanelService {
 
   async listCashierPins(merchantId: string) {
     const accesses = await this.prisma.staffOutletAccess.findMany({
-      where: { merchantId },
+      where: {
+        merchantId,
+        status: StaffOutletAccessStatus.ACTIVE,
+        staff: { status: StaffStatus.ACTIVE },
+      },
       include: {
         staff: true,
         outlet: true,

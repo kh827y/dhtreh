@@ -15,6 +15,9 @@ import {
 } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
 
+const MAX_DAYS_BEFORE = 90;
+const MAX_TEXT_LENGTH = 150;
+
 export default function BurnReminderPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -26,6 +29,8 @@ export default function BurnReminderPage() {
     daysBefore: 3,
     pushText: "Уважаемый %username%, у вас сгорает %amount% баллов %burn_date%. Успейте потратить!",
   });
+  const [forecastCount, setForecastCount] = useState<number | null>(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
 
   const load = React.useCallback(async (options?: { keepSuccess?: boolean }) => {
     setLoading(true);
@@ -38,7 +43,10 @@ export default function BurnReminderPage() {
       setSettings((prev) => ({
         ...prev,
         isEnabled: Boolean(json?.enabled),
-        daysBefore: Math.max(1, Math.floor(Number(json?.daysBefore ?? json?.days ?? prev.daysBefore) || 0)),
+        daysBefore: Math.min(
+          MAX_DAYS_BEFORE,
+          Math.max(1, Math.floor(Number(json?.daysBefore ?? json?.days ?? prev.daysBefore) || 0)),
+        ),
         pushText: typeof json?.text === "string" ? json.text : prev.pushText,
       }));
     } catch (e: any) {
@@ -48,16 +56,40 @@ export default function BurnReminderPage() {
     }
   }, []);
 
+  const loadForecast = React.useCallback(async (daysBefore: number) => {
+    const safeDays = Math.min(MAX_DAYS_BEFORE, Math.max(1, Math.floor(Number(daysBefore) || 0)));
+    setForecastLoading(true);
+    try {
+      const res = await fetch(`/api/portal/loyalty/ttl/forecast?daysBefore=${safeDays}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.message || "Не удалось загрузить прогноз");
+      const count = Number(json?.count ?? 0);
+      setForecastCount(Number.isFinite(count) && count >= 0 ? count : 0);
+    } catch {
+      setForecastCount(null);
+    } finally {
+      setForecastLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadForecast(settings.daysBefore);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [loadForecast, settings.daysBefore]);
 
   const handleSave = React.useCallback(async () => {
     if (saving) return;
     setError(null);
     setSuccess(null);
 
-    const daysBefore = Math.max(1, Math.floor(Number(settings.daysBefore) || 0));
+    const rawDaysBefore = Math.floor(Number(settings.daysBefore) || 0);
+    const daysBefore = Math.min(MAX_DAYS_BEFORE, Math.max(1, rawDaysBefore));
     const text = String(settings.pushText || "").trim();
 
     if (settings.isEnabled) {
@@ -65,8 +97,16 @@ export default function BurnReminderPage() {
         setError("Введите текст уведомления");
         return;
       }
-      if (daysBefore <= 0) {
+      if (rawDaysBefore <= 0) {
         setError("Количество дней должно быть положительным");
+        return;
+      }
+      if (rawDaysBefore > MAX_DAYS_BEFORE) {
+        setError(`Количество дней не может превышать ${MAX_DAYS_BEFORE}`);
+        return;
+      }
+      if (text.length > MAX_TEXT_LENGTH) {
+        setError(`Текст уведомления не должен превышать ${MAX_TEXT_LENGTH} символов`);
         return;
       }
     }
@@ -214,9 +254,14 @@ export default function BurnReminderPage() {
                     <input
                       type="number"
                       min="1"
-                      max="90"
+                      max={MAX_DAYS_BEFORE}
                       value={settings.daysBefore}
-                      onChange={(e) => setSettings({ ...settings, daysBefore: Number(e.target.value) })}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          daysBefore: Math.min(MAX_DAYS_BEFORE, Math.max(1, Number(e.target.value))),
+                        })
+                      }
                       aria-label="За сколько дней отправлять"
                       className="w-full bg-gray-50 border-transparent focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 rounded-lg px-3 py-2 text-center text-lg font-bold text-gray-900 transition-all outline-none"
                     />
@@ -246,7 +291,7 @@ export default function BurnReminderPage() {
                   </label>
                   <textarea
                     rows={3}
-                    maxLength={150}
+                    maxLength={MAX_TEXT_LENGTH}
                     value={settings.pushText}
                     onChange={(e) => setSettings({ ...settings, pushText: e.target.value })}
                     aria-label="Текст Push-уведомления"
@@ -275,9 +320,11 @@ export default function BurnReminderPage() {
                       </button>
                     </div>
                     <span
-                      className={`text-xs ${settings.pushText.length > 140 ? "text-red-500 font-bold" : "text-gray-400"} ml-auto`}
+                      className={`text-xs ${
+                        settings.pushText.length > MAX_TEXT_LENGTH - 10 ? "text-red-500 font-bold" : "text-gray-400"
+                      } ml-auto`}
                     >
-                      {settings.pushText.length}/150
+                      {settings.pushText.length}/{MAX_TEXT_LENGTH}
                     </span>
                   </div>
                 </div>
@@ -333,18 +380,17 @@ export default function BurnReminderPage() {
                 <Bell size={20} className="text-gray-400" />
                 <h3 className="font-bold text-gray-900">Прогноз охвата</h3>
               </div>
-              <div className="space-y-4">
+              <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">
-                    Клиентов со сгорающими баллами (в ближ. {settings.daysBefore} дн.)
+                    Клиентов с напоминанием (в ближ. {settings.daysBefore} дн.)
                   </span>
-                  <span className="font-bold text-gray-900">~142</span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-2">
-                  <div className="bg-amber-400 h-2 rounded-full" style={{ width: "35%" }}></div>
+                  <span className="font-bold text-gray-900">
+                    {forecastLoading ? "..." : forecastCount ?? "—"}
+                  </span>
                 </div>
                 <p className="text-xs text-gray-400">
-                  Примерное количество уведомлений в неделю при текущих настройках.
+                  Прогноз рассчитывается по реальным баллам со сроком сгорания.
                 </p>
               </div>
             </div>
@@ -355,7 +401,7 @@ export default function BurnReminderPage() {
                 <h3 className="font-bold text-gray-900">Расписание проверки</h3>
               </div>
               <p className="text-sm text-gray-600">
-                Система проверяет баллы каждого клиента <strong>ежедневно в 10:00</strong> по вашему часовому поясу.
+                Система проверяет баллы несколько раз в день и отправляет уведомления по мере приближения срока.
               </p>
             </div>
           </div>

@@ -20,6 +20,7 @@ type LevelOption = {
 };
 
 const ITEMS_PER_PAGE = 10;
+const CUSTOMERS_FETCH_LIMIT = 200;
 
 function formatCurrency(value?: number | null): string {
   if (value == null || Number.isNaN(Number(value)) || value <= 0) return "-";
@@ -130,9 +131,23 @@ function CustomersPageInner() {
   const loadCustomers = React.useCallback(async () => {
     try {
       setLoading(true);
-      const qs = new URLSearchParams({ registeredOnly: "0", excludeMiniapp: "1" });
-      const data = await api<any[]>(`/api/customers?${qs.toString()}`);
-      setCustomers(Array.isArray(data) ? data.map(normalizeCustomer) : []);
+      const baseParams = new URLSearchParams({
+        registeredOnly: "0",
+        excludeMiniapp: "1",
+        limit: String(CUSTOMERS_FETCH_LIMIT),
+      });
+      let offset = 0;
+      const all: CustomerRecord[] = [];
+      while (true) {
+        const params = new URLSearchParams(baseParams);
+        params.set("offset", String(offset));
+        const batch = await api<any[]>(`/api/customers?${params.toString()}`);
+        const normalized = Array.isArray(batch) ? batch.map(normalizeCustomer) : [];
+        all.push(...normalized);
+        if (normalized.length < CUSTOMERS_FETCH_LIMIT) break;
+        offset += CUSTOMERS_FETCH_LIMIT;
+      }
+      setCustomers(all);
     } catch (e: any) {
       console.error(e);
       setToast(readApiError(e?.message || e) || "Не удалось загрузить клиентов");

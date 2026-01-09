@@ -59,7 +59,9 @@ export class PortalGuard implements CanActivate {
           where: { id: staffId, merchantId },
           include: {
             accessGroupMemberships: {
-              where: { group: { scope: 'PORTAL', archivedAt: null } },
+              where: {
+                group: { scope: 'PORTAL', archivedAt: null, merchantId },
+              },
               include: { group: { include: { permissions: true } } },
             },
           },
@@ -188,8 +190,14 @@ export class PortalGuard implements CanActivate {
     if (path.startsWith('/portal/transactions')) {
       return { resources: ['customers'], action };
     }
+    if (path.startsWith('/portal/receipts')) {
+      return { resources: ['customers'], action };
+    }
     if (path.startsWith('/portal/loyalty/tiers')) {
       return { resources: ['mechanic_levels'], action };
+    }
+    if (path.startsWith('/portal/loyalty/ttl')) {
+      return { resources: ['mechanic_ttl'], action };
     }
     if (path.startsWith('/portal/promocodes')) {
       return { resources: ['promocodes'], action };

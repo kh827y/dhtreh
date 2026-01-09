@@ -69,11 +69,17 @@ function formatDateRu(value: unknown): string | null {
   return date.toLocaleDateString("ru-RU");
 }
 
+function formatLocalDateInput(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function formatDateInput(value: unknown): string {
-  if (!value) return new Date().toISOString().split("T")[0];
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return new Date().toISOString().split("T")[0];
-  return date.toISOString().split("T")[0];
+  const date = value ? new Date(String(value)) : new Date();
+  if (Number.isNaN(date.getTime())) return formatLocalDateInput(new Date());
+  return formatLocalDateInput(date);
 }
 
 function safeInt(value: unknown, fallback: number): number {
@@ -207,6 +213,7 @@ const PromocodesPage: React.FC = () => {
 
     isLimited: false,
     limitValue: 100,
+    hasPerClientLimit: true,
     perClientLimit: 1,
 
     hasFrequencyLimit: false,
@@ -215,8 +222,8 @@ const PromocodesPage: React.FC = () => {
     requiresVisit: false,
 
     isIndefinite: false,
-    startDate: new Date().toISOString().split("T")[0],
-    endDate: new Date(Date.now() + 86400000 * 30).toISOString().split("T")[0],
+    startDate: formatLocalDateInput(new Date()),
+    endDate: formatLocalDateInput(new Date(Date.now() + 86400000 * 30)),
 
     isPointsBurning: false,
     pointsBurnDays: 30,
@@ -244,13 +251,23 @@ const PromocodesPage: React.FC = () => {
 
   const loadPromocodes = async () => {
     try {
-      const qs = new URLSearchParams();
-      qs.set("limit", "200");
-      const res = await fetch(`/api/portal/promocodes?${qs.toString()}`, { cache: "no-store" });
-      if (!res.ok) throw new Error(await res.text().catch(() => ""));
-      const payload = await res.json();
-      const source = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
-      setRawPromocodes(source.map(mapPortalRow).filter((row) => row.id && row.code));
+      const limit = 200;
+      let offset = 0;
+      const collected: PortalPromocodeRow[] = [];
+      while (true) {
+        const qs = new URLSearchParams();
+        qs.set("limit", String(limit));
+        qs.set("offset", String(offset));
+        const res = await fetch(`/api/portal/promocodes?${qs.toString()}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(await res.text().catch(() => ""));
+        const payload = await res.json();
+        const source = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
+        const mapped = source.map(mapPortalRow).filter((row) => row.id && row.code);
+        collected.push(...mapped);
+        if (source.length < limit) break;
+        offset += limit;
+      }
+      setRawPromocodes(collected);
     } catch {
       setRawPromocodes([]);
     }
@@ -295,7 +312,7 @@ const PromocodesPage: React.FC = () => {
       levelId: hasLevel ? formData.levelValue : undefined,
       usageLimit: formData.isLimited ? ("once_total" as const) : ("none" as const),
       usageLimitValue: formData.isLimited ? Math.max(1, safeInt(formData.limitValue, 1)) : undefined,
-      perCustomerLimit: Math.max(1, safeInt(formData.perClientLimit, 1)),
+      perCustomerLimit: formData.hasPerClientLimit ? Math.max(1, safeInt(formData.perClientLimit, 1)) : undefined,
       usagePeriodEnabled: formData.hasFrequencyLimit,
       usagePeriodDays: formData.hasFrequencyLimit ? Math.max(1, safeInt(formData.frequencyDays, 1)) : undefined,
       recentVisitEnabled: formData.requiresVisit,
@@ -347,7 +364,9 @@ const PromocodesPage: React.FC = () => {
     const isPointsBurning = item.pointsBurnDays != null;
     const startDate = formatDateInput(item.source.validFrom ?? item.source.createdAt);
     const endDate = formatDateInput(item.source.validUntil);
-    const perClientLimit = safeInt(item.source.perCustomerLimit, 1);
+    const perCustomerLimitRaw = item.source.perCustomerLimit;
+    const hasPerClientLimit = perCustomerLimitRaw != null && Number.isFinite(Number(perCustomerLimitRaw));
+    const perClientLimit = hasPerClientLimit ? Math.max(1, safeInt(perCustomerLimitRaw, 1)) : 1;
     const cooldownDays = safeInt(item.source.cooldownDays, 0);
 
     setFormData({
@@ -359,7 +378,8 @@ const PromocodesPage: React.FC = () => {
       levelValue: item.assignsLevelId ?? defaultLevelId,
       isLimited: item.usageLimit !== "unlimited",
       limitValue: item.usageLimit === "unlimited" ? 100 : item.usageLimit,
-      perClientLimit: Math.max(1, perClientLimit),
+      hasPerClientLimit,
+      perClientLimit,
       hasFrequencyLimit: cooldownDays > 0,
       frequencyDays: cooldownDays > 0 ? cooldownDays : 1,
       requiresVisit: item.requiresVisit,
@@ -650,24 +670,34 @@ const PromocodesPage: React.FC = () => {
 
                 {/* Per Client Limit */}
                 <div className="flex items-center justify-between border-t border-gray-50 pt-4">
-                  <div>
-                    <span className="block text-sm text-gray-900 font-medium">Лимит на одного клиента</span>
-                    <p className="text-xs text-gray-500">Сколько раз один клиент может использовать код.</p>
-                  </div>
-                  <div className="relative w-32">
+                  <label className="flex items-center space-x-2 cursor-pointer">
                     <input
-                      type="number"
-                      min={1}
-                      value={formData.perClientLimit}
-                      onChange={(e) =>
-                        setFormData({ ...formData, perClientLimit: Math.max(1, Number(e.target.value)) })
-                      }
-                      className="w-full border border-gray-300 rounded-lg pl-3 pr-10 py-1.5 text-sm [&::-webkit-inner-spin-button]:appearance-none"
+                      type="checkbox"
+                      checked={formData.hasPerClientLimit}
+                      onChange={(e) => setFormData({ ...formData, hasPerClientLimit: e.target.checked })}
+                      className="rounded text-purple-600 focus:ring-purple-500"
                     />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
-                      раз
-                    </span>
-                  </div>
+                    <div>
+                      <span className="block text-sm text-gray-900 font-medium">Ограничить на клиента</span>
+                      <p className="text-xs text-gray-500">Сколько раз один клиент может использовать код.</p>
+                    </div>
+                  </label>
+                  {formData.hasPerClientLimit && (
+                    <div className="relative w-32">
+                      <input
+                        type="number"
+                        min={1}
+                        value={formData.perClientLimit}
+                        onChange={(e) =>
+                          setFormData({ ...formData, perClientLimit: Math.max(1, Number(e.target.value)) })
+                        }
+                        className="w-full border border-gray-300 rounded-lg pl-3 pr-10 py-1.5 text-sm [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
+                        раз
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Usage Period (Frequency) */}
@@ -750,13 +780,14 @@ const PromocodesPage: React.FC = () => {
               levelValue: defaultLevelId,
               isLimited: false,
               limitValue: 100,
+              hasPerClientLimit: true,
               perClientLimit: 1,
               hasFrequencyLimit: false,
               frequencyDays: 1,
               requiresVisit: false,
               isIndefinite: false,
-              startDate: new Date().toISOString().split("T")[0],
-              endDate: new Date(Date.now() + 86400000 * 30).toISOString().split("T")[0],
+              startDate: formatLocalDateInput(new Date()),
+              endDate: formatLocalDateInput(new Date(Date.now() + 86400000 * 30)),
               isPointsBurning: false,
               pointsBurnDays: 30,
             });

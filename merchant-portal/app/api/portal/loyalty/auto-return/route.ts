@@ -34,16 +34,21 @@ export async function GET(req: NextRequest) {
   const giftPoints = Math.max(0, Math.floor(Number(autoReturn?.giftPoints ?? 0) || 0));
   const giftTtlDays = Math.max(0, Math.floor(Number(autoReturn?.giftTtlDays ?? 0) || 0));
   const repeatDays = Math.max(0, Math.floor(Number(autoReturn?.repeat?.days ?? autoReturn?.repeatAfterDays ?? 0) || 0));
+  const giftEnabled = Boolean(autoReturn?.giftEnabled ?? giftPoints > 0);
+  const giftBurnEnabled = Boolean(autoReturn?.giftBurnEnabled ?? giftTtlDays > 0);
+  const repeatEnabled = Boolean(
+    autoReturn?.repeatEnabled ?? autoReturn?.repeat?.enabled ?? repeatDays > 0,
+  );
 
   return Response.json({
     enabled: Boolean(autoReturn?.enabled ?? false),
     days,
     text,
-    giftEnabled: giftPoints > 0,
+    giftEnabled,
     giftPoints,
-    giftBurnEnabled: giftTtlDays > 0,
+    giftBurnEnabled,
     giftTtlDays,
-    repeatEnabled: Boolean(autoReturn?.repeat?.enabled ?? (autoReturn?.repeatDays ? true : false)),
+    repeatEnabled,
     repeatDays,
   });
 }
@@ -119,6 +124,9 @@ export async function PUT(req: NextRequest) {
     days,
     text: textValue,
   };
+  nextAutoReturn.giftEnabled = giftEnabled;
+  nextAutoReturn.giftBurnEnabled = giftEnabled ? giftBurnEnabled : false;
+  nextAutoReturn.repeatEnabled = repeatEnabled;
   if (giftEnabled) {
     nextAutoReturn.giftPoints = giftPoints;
     if (giftBurnEnabled) {

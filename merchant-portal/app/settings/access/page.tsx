@@ -82,7 +82,7 @@ const SECTIONS: PermissionSection[] = [
   { id: "mechanic_birthday", label: "Механика: День рождения" },
   { id: "mechanic_auto_return", label: "Механика: Автовозврат" },
   { id: "mechanic_levels", label: "Механика: Уровни" },
-  { id: "mechanic_redeem_limits", label: "Механика: Настройки бонусов" },
+  { id: "mechanic_redeem_limits", label: "Механика: Настройки бонусов за покупки" },
   { id: "mechanic_registration_bonus", label: "Механика: Бонус за регистрацию" },
   { id: "mechanic_ttl", label: "Механика: Срок действия" },
   { id: "mechanic_referral", label: "Механика: Реферальная программа" },
@@ -114,44 +114,44 @@ async function fetchAccessGroupsAndStaff(force = false) {
     return accessGroupsLoadPromise;
   }
   const task = (async () => {
-    const [groupsRes, staffRes] = await Promise.all([
-      fetch("/api/portal/access-groups"),
-      fetch(`/api/portal/staff?page=1&pageSize=${STAFF_PAGE_SIZE}`),
-    ]);
+    const groupsRes = await fetch("/api/portal/access-groups");
     if (!groupsRes.ok) {
       const errText = await groupsRes.text().catch(() => "");
-      throw new Error(errText || "Не удалось получить группы доступа");
-    }
-    if (!staffRes.ok) {
-      const errText = await staffRes.text().catch(() => "");
-      throw new Error(errText || "Не удалось получить сотрудников");
+      const error = new Error(errText || "Группы доступа недоступны");
+      (error as any).groupsUnavailable = true;
+      throw error;
     }
     const groupsPayload = await groupsRes.json().catch(() => ({}));
-    const staffPayload = await staffRes.json().catch(() => ({}));
-    const staffRows: any[] = Array.isArray(staffPayload?.items)
-      ? staffPayload.items
-      : Array.isArray(staffPayload)
-        ? staffPayload
-        : [];
-    const totalPages = Number(staffPayload?.meta?.totalPages ?? 1) || 1;
-    if (totalPages > 1) {
-      for (let page = 2; page <= totalPages; page += 1) {
-        const pageRes = await fetch(
-          `/api/portal/staff?page=${page}&pageSize=${STAFF_PAGE_SIZE}`,
-        );
-        if (!pageRes.ok) {
-          const errText = await pageRes.text().catch(() => "");
-          throw new Error(errText || "Не удалось получить сотрудников");
-        }
-        const pagePayload = await pageRes.json().catch(() => ({}));
-        const pageRows: any[] = Array.isArray(pagePayload?.items)
-          ? pagePayload.items
-          : Array.isArray(pagePayload)
-            ? pagePayload
+    let staffRows: any[] = [];
+    try {
+      const staffRes = await fetch(
+        `/api/portal/staff?page=1&pageSize=${STAFF_PAGE_SIZE}`,
+      );
+      if (staffRes.ok) {
+        const staffPayload = await staffRes.json().catch(() => ({}));
+        staffRows = Array.isArray(staffPayload?.items)
+          ? staffPayload.items
+          : Array.isArray(staffPayload)
+            ? staffPayload
             : [];
-        staffRows.push(...pageRows);
+        const totalPages = Number(staffPayload?.meta?.totalPages ?? 1) || 1;
+        if (totalPages > 1) {
+          for (let page = 2; page <= totalPages; page += 1) {
+            const pageRes = await fetch(
+              `/api/portal/staff?page=${page}&pageSize=${STAFF_PAGE_SIZE}`,
+            );
+            if (!pageRes.ok) break;
+            const pagePayload = await pageRes.json().catch(() => ({}));
+            const pageRows: any[] = Array.isArray(pagePayload?.items)
+              ? pagePayload.items
+              : Array.isArray(pagePayload)
+                ? pagePayload
+                : [];
+            staffRows.push(...pageRows);
+          }
+        }
       }
-    }
+    } catch {}
     return { groupsPayload, staffPayload: { items: staffRows } };
   })();
   accessGroupsLoadPromise = task;
@@ -333,6 +333,7 @@ export default function AccessSettingsPage() {
   const [loading, setLoading] = React.useState(true);
   const [groups, setGroups] = React.useState<AccessGroupRow[]>([]);
   const [staff, setStaff] = React.useState<StaffOption[]>([]);
+  const [groupsAvailable, setGroupsAvailable] = React.useState(true);
   const [banner, setBanner] = React.useState<
     { type: "success" | "error"; text: string } | null
   >(null);
@@ -374,11 +375,16 @@ export default function AccessSettingsPage() {
       const mergedGroups = mergeGroups(remoteGroups, staffRows);
       setGroups(mergedGroups);
       setStaff(staffList);
+      setGroupsAvailable(true);
       setBanner((prev) => (prev?.type === "error" ? null : prev));
     } catch (err: unknown) {
-      const message = normalizeErrorMessage(err, "Неизвестная ошибка загрузки");
+      const isUnavailable = Boolean((err as any)?.groupsUnavailable);
+      const message = isUnavailable
+        ? "Группы доступа недоступны. Проверьте поддержку на сервере."
+        : normalizeErrorMessage(err, "Неизвестная ошибка загрузки");
       setGroups([]);
       setStaff([]);
+      setGroupsAvailable(false);
       setBanner({ type: "error", text: message });
     } finally {
       setLoading(false);
@@ -390,6 +396,7 @@ export default function AccessSettingsPage() {
   }, [load]);
 
   const openCreate = () => {
+    if (!groupsAvailable) return;
     setDraft({
       id: "",
       name: "",
@@ -405,6 +412,7 @@ export default function AccessSettingsPage() {
   };
 
   const openEdit = (group: AccessGroupRow) => {
+    if (!groupsAvailable) return;
     setDraft({
       ...group,
       membersCount: group.staffIds.length || group.membersCount,
@@ -793,7 +801,8 @@ export default function AccessSettingsPage() {
 
         <button
           onClick={openCreate}
-          className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm"
+          disabled={!groupsAvailable}
+          className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus size={18} />
           <span>Создать группу</span>
@@ -835,7 +844,12 @@ export default function AccessSettingsPage() {
                 <div className="flex space-x-1">
                   <button
                     onClick={() => openEdit(group)}
-                    className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                    disabled={!groupsAvailable}
+                    className={`p-1.5 text-gray-400 rounded-lg transition-colors ${
+                      groupsAvailable
+                        ? "hover:text-purple-600 hover:bg-purple-50"
+                        : "opacity-40 cursor-not-allowed"
+                    }`}
                     title="Редактировать"
                   >
                     <Edit size={18} />
@@ -843,7 +857,12 @@ export default function AccessSettingsPage() {
                   {!group.isSystem && (
                     <button
                       onClick={() => handleDelete(group.id)}
-                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      disabled={!groupsAvailable}
+                      className={`p-1.5 text-gray-400 rounded-lg transition-colors ${
+                        groupsAvailable
+                          ? "hover:text-red-600 hover:bg-red-50"
+                          : "opacity-40 cursor-not-allowed"
+                      }`}
                       title="Удалить"
                     >
                       <Trash2 size={18} />
@@ -880,7 +899,12 @@ export default function AccessSettingsPage() {
                   </div>
                   <button
                     onClick={() => openMembersModal(group)}
-                    className="text-purple-600 hover:text-purple-700 font-medium text-xs"
+                    disabled={!groupsAvailable}
+                    className={`font-medium text-xs ${
+                      groupsAvailable
+                        ? "text-purple-600 hover:text-purple-700"
+                        : "text-gray-400 cursor-not-allowed"
+                    }`}
                   >
                     Посмотреть состав
                   </button>
@@ -891,7 +915,9 @@ export default function AccessSettingsPage() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-8 text-gray-500">
-          Группы доступа не найдены.
+          {groupsAvailable
+            ? "Группы доступа не найдены."
+            : "Группы доступа недоступны."}
         </div>
       )}
 

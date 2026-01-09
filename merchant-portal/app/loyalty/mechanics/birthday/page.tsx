@@ -178,7 +178,7 @@ function SettingsTab() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (state.saving) return;
+    if (state.saving || state.loading || state.error) return;
 
     const payload = {
       enabled: state.enabled,
@@ -365,7 +365,7 @@ function SettingsTab() {
             )}
 
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <Button type="submit" variant="primary" disabled={state.loading || state.saving}>
+              <Button type="submit" variant="primary" disabled={state.loading || state.saving || Boolean(state.error)}>
                 {state.saving ? "Сохранение…" : "Сохранить"}
               </Button>
             </div>

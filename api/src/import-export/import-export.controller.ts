@@ -38,7 +38,7 @@ export class ImportExportController {
    * Импорт клиентов
    */
   @Post('import/customers')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   @ApiOperation({ summary: 'Импортировать клиентов из CSV/Excel файла' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -174,7 +174,7 @@ export class ImportExportController {
    * Импорт транзакций
    */
   @Post('import/transactions')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   @ApiOperation({ summary: 'Импортировать транзакции из CSV/Excel файла' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -245,7 +245,7 @@ export class ImportExportController {
    * Массовое обновление клиентов
    */
   @Post('bulk-update/customers')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   @ApiOperation({ summary: 'Массовое обновление данных клиентов' })
   @ApiConsumes('multipart/form-data')
   async bulkUpdateCustomers(

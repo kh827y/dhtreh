@@ -87,7 +87,7 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
         icon: <Trophy size={14} strokeWidth={1.5} />,
       },
       {
-        label: "Настройки бонусов",
+        label: "Настройки бонусов за покупки",
         type: "Настройка",
         href: "/loyalty/mechanics/bonus-settings",
         icon: <Ban size={14} strokeWidth={1.5} />,

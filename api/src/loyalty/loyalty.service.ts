@@ -1788,9 +1788,7 @@ export class LoyaltyService {
       ? Math.max(0, Math.floor(pointsRaw))
       : 0;
     const ttlDaysRaw =
-      reg && reg.ttlDays != null
-        ? Number(reg.ttlDays)
-        : (settings?.pointsTtlDays ?? null);
+      reg && reg.ttlDays != null ? Number(reg.ttlDays) : null;
     const ttlDays =
       Number.isFinite(ttlDaysRaw as any) &&
       (ttlDaysRaw as any) != null &&
@@ -1798,9 +1796,7 @@ export class LoyaltyService {
         ? Math.floor(Number(ttlDaysRaw))
         : null;
     const delayDaysRaw =
-      reg && reg.delayDays != null
-        ? Number(reg.delayDays)
-        : (settings?.earnDelayDays ?? 0);
+      reg && reg.delayDays != null ? Number(reg.delayDays) : 0;
     const delayHoursRaw =
       reg && reg.delayHours != null ? Number(reg.delayHours) : null;
     const delayMs =
@@ -1815,20 +1811,18 @@ export class LoyaltyService {
           : 0;
 
     // Если клиент приглашён по рефералу и у активной программы выключено суммирование с регистрацией — запрещаем выдачу
-    try {
-      const ref = await this.prisma.referral.findFirst({
-        where: {
-          refereeId: customerId,
-          program: { merchantId, status: 'ACTIVE', isActive: true },
-        },
-        include: { program: true },
-      });
-      if (ref?.program && ref.program.stackWithRegistration === false) {
-        throw new BadRequestException(
-          'Регистрационный бонус не суммируется с реферальным для приглашённых клиентов',
-        );
-      }
-    } catch {}
+    const ref = await this.prisma.referral.findFirst({
+      where: {
+        refereeId: customerId,
+        program: { merchantId, status: 'ACTIVE', isActive: true },
+      },
+      include: { program: true },
+    });
+    if (ref?.program && ref.program.stackWithRegistration === false) {
+      throw new BadRequestException(
+        'Регистрационный бонус не суммируется с реферальным для приглашённых клиентов',
+      );
+    }
 
     if (!enabled || points <= 0) {
       throw new BadRequestException(
@@ -1856,6 +1850,7 @@ export class LoyaltyService {
           ? existingLot.maturesAt.toISOString()
           : null,
         pointsExpireInDays: ttlDays,
+        expiresInDays: ttlDays,
         pointsExpireAt: existingLot?.expiresAt
           ? existingLot.expiresAt.toISOString()
           : null,
@@ -1928,6 +1923,7 @@ export class LoyaltyService {
           pending: true,
           maturesAt: maturesAt.toISOString(),
           pointsExpireInDays: ttlDays,
+          expiresInDays: ttlDays,
           pointsExpireAt: expiresAt ? expiresAt.toISOString() : null,
           balance: (await tx.wallet.findUnique({ where: { id: wallet.id } }))!
             .balance,
@@ -2009,6 +2005,17 @@ export class LoyaltyService {
             },
           },
         });
+        await tx.eventOutbox.create({
+          data: {
+            merchantId,
+            eventType: 'notify.registration_bonus',
+            payload: {
+              merchantId,
+              customerId,
+              points,
+            },
+          },
+        });
 
         return {
           ok: true,
@@ -2016,6 +2023,7 @@ export class LoyaltyService {
           pending: false,
           maturesAt: null,
           pointsExpireInDays: ttlDays,
+          expiresInDays: ttlDays,
           pointsExpireAt: ttlDays
             ? new Date(
                 now.getTime() + ttlDays * 24 * 60 * 60 * 1000,

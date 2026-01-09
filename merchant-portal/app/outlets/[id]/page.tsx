@@ -103,20 +103,30 @@ export default function EditOutletPage() {
 
   const loadStaff = React.useCallback(async () => {
     try {
-      const res = await fetch(
-        `/api/portal/staff?outletId=${encodeURIComponent(outletId)}&pageSize=${STAFF_PAGE_SIZE}`,
-        { cache: "no-store" },
-      );
-      if (!res.ok) {
-        setStaffTotal(null);
-        return;
+      let page = 1;
+      let total: number | null = null;
+      const allItems: StaffItem[] = [];
+      while (page <= 50) {
+        const res = await fetch(
+          `/api/portal/staff?outletId=${encodeURIComponent(outletId)}&pageSize=${STAFF_PAGE_SIZE}&page=${page}`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) {
+          setStaffTotal(null);
+          return;
+        }
+        const data = await res.json();
+        const items = Array.isArray(data?.items) ? data.items : [];
+        const totalRaw = Number(data?.meta?.total);
+        if (Number.isFinite(totalRaw)) total = totalRaw;
+        allItems.push(...items);
+        if (!items.length) break;
+        if (total !== null && allItems.length >= total) break;
+        if (items.length < STAFF_PAGE_SIZE) break;
+        page += 1;
       }
-      const data = await res.json();
-      const items = Array.isArray(data?.items) ? data.items : [];
-      const totalRaw = Number(data?.meta?.total);
-      const total = Number.isFinite(totalRaw) ? totalRaw : items.length;
-      setStaff(items);
-      setStaffTotal(total);
+      setStaff(allItems);
+      setStaffTotal(total ?? allItems.length);
     } catch {
       setStaff([]);
       setStaffTotal(null);

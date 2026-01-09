@@ -105,16 +105,6 @@ function getDisplayName(staff: Staff | null): string {
   return composed || staff.login || staff.email || staff.id;
 }
 
-function getRoleLabel(role?: string | null): string {
-  if (!role) return "—";
-  const upper = role.toUpperCase();
-  if (upper === "MERCHANT") return "Владелец";
-  if (upper === "MANAGER") return "Менеджер";
-  if (upper === "ANALYST") return "Аналитик";
-  if (upper === "CASHIER") return "Кассир";
-  return upper;
-}
-
 function isCashierGroup(group?: { id?: string; name?: string; scope?: string | null }) {
   if (!group) return false;
   const id = String(group.id ?? "").trim().toLowerCase();
@@ -132,14 +122,17 @@ function getPortalGroupName(staff: Staff | null) {
       return !scope || scope === "PORTAL";
     }) || groups[0];
   if (portalGroup?.name) return portalGroup.name;
-  return getRoleLabel(staff.role);
+  if (staff.isOwner || (staff.role || "").toUpperCase() === "MERCHANT") {
+    return "Владелец";
+  }
+  return "—";
 }
 
 function isAccessRevoked(status?: string | null) {
   return String(status || "").toUpperCase() === "REVOKED";
 }
 
-function mergeGroups(options: AccessGroup[], currentRole?: string | null, currentGroups?: StaffGroup[] | null) {
+function mergeGroups(options: AccessGroup[], currentGroups?: StaffGroup[] | null) {
   const map = new Map<string, AccessGroup>();
   for (const group of options) {
     if (!group) continue;
@@ -170,12 +163,9 @@ function mergeGroups(options: AccessGroup[], currentRole?: string | null, curren
       const id = String(group.id ?? "").trim();
       if (isCashierGroup({ id, name: group.name, scope: group.scope })) continue;
       if (!id || map.has(id)) continue;
-      const name = String(group.name ?? "").trim() || (currentRole ? getRoleLabel(currentRole) : id);
+      const name = String(group.name ?? "").trim() || id;
       map.set(id, { id, name: name || id });
     }
-  }
-  if (currentRole && !map.has(currentRole) && !isCashierGroup({ id: currentRole })) {
-    map.set(currentRole, { id: currentRole, name: getRoleLabel(currentRole) });
   }
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
 }
@@ -365,8 +355,8 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
   }, [item]);
 
   const groupOptions = React.useMemo(
-    () => mergeGroups(groups, item?.role, item?.groups ?? null),
-    [groups, item?.groups, item?.role],
+    () => mergeGroups(groups, item?.groups ?? null),
+    [groups, item?.groups],
   );
   React.useEffect(() => {
     if (!portalSectionOpen) return;
@@ -685,7 +675,11 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "FIRED", canAccessPortal: false }),
+        body: JSON.stringify({
+          status: "FIRED",
+          canAccessPortal: false,
+          portalAccessEnabled: false,
+        }),
       });
       if (!res.ok) throw new Error(await res.text());
       const updated = await res.json();

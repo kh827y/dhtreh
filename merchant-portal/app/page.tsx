@@ -21,9 +21,13 @@ type SetupStatus = {
   hasLoyaltySettings: boolean;
   hasOutlets: boolean;
   hasStaff: boolean;
-  hasMechanics: boolean;
+  hasBonusSettings: boolean;
+  hasSystemSettings: boolean;
+  hasTelegramMiniApp: boolean;
   outletsCount?: number;
   staffCount?: number;
+  bonusTtlDays?: number;
+  bonusTtlEnabled?: boolean;
 };
 
 // MasterSettings 1:1 как в new design/components/MasterSettings.tsx
@@ -57,11 +61,23 @@ export default function Page() {
   }, []);
 
   // Расчёт прогресса
-  const totalSteps = 4;
+  const totalSteps = 6;
   const completedSteps = status
-    ? [status.hasLoyaltySettings, status.hasOutlets, status.hasStaff, status.hasMechanics].filter(Boolean).length
+    ? [
+        status.hasLoyaltySettings,
+        status.hasBonusSettings,
+        status.hasOutlets,
+        status.hasStaff,
+        status.hasSystemSettings,
+        status.hasTelegramMiniApp,
+      ].filter(Boolean).length
     : 0;
   const progress = (completedSteps / totalSteps) * 100;
+  const ttlLabel = status
+    ? status.bonusTtlEnabled && (status.bonusTtlDays ?? 0) > 0
+      ? `${status.bonusTtlDays} дн.`
+      : "Не ограничен"
+    : "—";
 
   // Ошибка загрузки
   if (!loading && error) {
@@ -105,7 +121,7 @@ export default function Page() {
           <div className="h-3 w-full bg-gray-100 rounded-full animate-pulse" />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[1, 2, 3, 4].map((i) => (
+          {[1, 2, 3, 4, 5, 6].map((i) => (
             <div key={i} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm animate-pulse">
               <div className="flex items-start space-x-3 mb-4">
                 <div className="w-12 h-12 bg-gray-200 rounded-lg" />
@@ -199,13 +215,13 @@ export default function Page() {
                 <Ban size={24} />
               </div>
               <div>
-                <h3 className="font-bold text-gray-900 text-lg">Настройки бонусов</h3>
+                <h3 className="font-bold text-gray-900 text-lg">Настройки бонусов за покупки</h3>
                 <p className="text-sm text-gray-500 leading-snug mt-1">
-                  Настройка времени жизни бонусов, отложенных начислений и правил начисления при списании.
+                  Срок жизни и отложенные начисления для бонусов за покупки.
                 </p>
               </div>
             </div>
-            {status?.hasMechanics ? (
+            {status?.hasBonusSettings ? (
               <CheckCircle2 className="text-green-500 flex-shrink-0" size={24} />
             ) : (
               <AlertCircle className="text-amber-500 flex-shrink-0" size={24} />
@@ -215,7 +231,7 @@ export default function Page() {
           <div className="space-y-3 mb-6">
             <div className="flex items-center justify-between text-sm p-3 bg-gray-50 rounded-lg">
               <span className="text-gray-600">Срок жизни баллов:</span>
-              <span className="font-medium text-gray-900">Не ограничен</span>
+              <span className="font-medium text-gray-900">{ttlLabel}</span>
             </div>
           </div>
 
@@ -223,7 +239,7 @@ export default function Page() {
             href="/loyalty/mechanics/bonus-settings"
             className="w-full flex items-center justify-center space-x-2 bg-white border border-gray-200 text-gray-700 py-2.5 rounded-lg font-medium hover:bg-gray-50 hover:border-purple-200 hover:text-purple-700 transition-colors"
           >
-            <span>Настроить бонусы</span>
+            <span>Настроить бонусы за покупки</span>
             <ChevronRight size={16} />
           </Link>
         </div>
@@ -316,7 +332,11 @@ export default function Page() {
                 </p>
               </div>
             </div>
-            <AlertCircle className="text-amber-500 flex-shrink-0" size={24} />
+            {status?.hasSystemSettings ? (
+              <CheckCircle2 className="text-green-500 flex-shrink-0" size={24} />
+            ) : (
+              <AlertCircle className="text-amber-500 flex-shrink-0" size={24} />
+            )}
           </div>
 
           <Link
@@ -342,7 +362,11 @@ export default function Page() {
                 </p>
               </div>
             </div>
-            <AlertCircle className="text-amber-500 flex-shrink-0" size={24} />
+            {status?.hasTelegramMiniApp ? (
+              <CheckCircle2 className="text-green-500 flex-shrink-0" size={24} />
+            ) : (
+              <AlertCircle className="text-amber-500 flex-shrink-0" size={24} />
+            )}
           </div>
 
           <Link

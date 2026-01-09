@@ -47,7 +47,7 @@ describe("bonus settings page (new design)", () => {
     const { default: BonusSettingsPage } = await import("../app/loyalty/mechanics/bonus-settings/page");
     render(React.createElement(BonusSettingsPage));
 
-    await screen.findByText("Настройки бонусов");
+    await screen.findByText("Настройки бонусов за покупки");
     fireEvent.click(screen.getByText("Сохранить"));
 
     await screen.findByText("Готово");
@@ -64,7 +64,7 @@ describe("bonus settings page (new design)", () => {
     const { default: BonusSettingsPage } = await import("../app/loyalty/mechanics/bonus-settings/page");
     render(React.createElement(BonusSettingsPage));
 
-    await screen.findByText("Настройки бонусов");
+    await screen.findByText("Настройки бонусов за покупки");
 
     fireEvent.click(screen.getByLabelText("Баллы не сгорают"));
     fireEvent.click(screen.getByLabelText("Разрешить смешанную оплату"));

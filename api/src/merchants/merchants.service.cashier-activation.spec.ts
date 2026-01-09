@@ -12,13 +12,16 @@ describe('MerchantsService cashier activation codes', () => {
     jest.useFakeTimers().setSystemTime(fixedNow);
 
     let created = 0;
-    const prisma: any = {
+    const tx: any = {
       cashierActivationCode: {
         create: jest.fn().mockImplementation(async () => {
           created += 1;
           return { id: `C-${created}` };
         }),
       },
+    };
+    const prisma: any = {
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
     };
     const svc = new MerchantsService(prisma);
 
@@ -31,7 +34,7 @@ describe('MerchantsService cashier activation codes', () => {
       expect(code).toMatch(/^[0-9]{9}$/);
     }
 
-    const createCalls = prisma.cashierActivationCode.create.mock.calls;
+    const createCalls = tx.cashierActivationCode.create.mock.calls;
     expect(createCalls).toHaveLength(2);
     for (let i = 0; i < createCalls.length; i += 1) {
       const args = createCalls[i]?.[0];
@@ -172,4 +175,3 @@ describe('MerchantsService cashier activation codes', () => {
     );
   });
 });
-

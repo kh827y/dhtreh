@@ -428,9 +428,25 @@ export class OperationsLogService {
     ];
 
     if (receiptSearch) {
-      baseOr.push({
-        orderId: { contains: receiptSearch, mode: 'insensitive' },
-      });
+      const receiptFilters: Prisma.TransactionWhereInput[] = [
+        { orderId: { contains: receiptSearch, mode: 'insensitive' } },
+        {
+          metadata: {
+            path: ['receiptNumber'],
+            string_contains: receiptSearch,
+          } as Prisma.JsonFilter,
+        },
+      ];
+      const receiptNumeric = Number(receiptSearch);
+      if (Number.isFinite(receiptNumeric)) {
+        receiptFilters.push({
+          metadata: {
+            path: ['receiptNumber'],
+            equals: receiptNumeric,
+          } as Prisma.JsonFilter,
+        });
+      }
+      baseOr.push({ OR: receiptFilters });
     }
 
     if (kind && kind !== 'PURCHASE') {

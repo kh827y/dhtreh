@@ -199,11 +199,19 @@ export class PromoCodesService {
     };
   }
 
-  async listForPortal(merchantId: string, scope?: string, limit = 200) {
+  async listForPortal(
+    merchantId: string,
+    scope?: string,
+    limit = 200,
+    offset = 0,
+  ) {
     if (!merchantId) throw new BadRequestException('merchantId required');
     const status = this.normalizeStatus(scope);
     const where: Prisma.PromoCodeWhereInput = { merchantId };
     const now = new Date();
+    const safeOffset = Number.isFinite(Number(offset))
+      ? Math.max(0, Math.floor(Number(offset)))
+      : 0;
     try {
       // Автоархив истёкших промокодов, чтобы они не висели в активных
       await this.prisma.promoCode.updateMany({
@@ -233,6 +241,7 @@ export class PromoCodesService {
       orderBy: { createdAt: 'desc' },
       include: { metrics: true },
       take: limit,
+      skip: safeOffset,
     });
 
     const statusLabel = scope && scope !== 'ALL' ? scope : 'ALL';
@@ -277,7 +286,7 @@ export class PromoCodesService {
       case 'once_total':
         usageLimitType = PromoCodeUsageLimitType.ONCE_TOTAL;
         usageLimitValue = usageLimitValueRaw ?? 1;
-        perCustomerLimit = perCustomerLimitRequested ?? 1;
+        perCustomerLimit = perCustomerLimitRequested;
         break;
       case 'once_per_customer':
         usageLimitType = PromoCodeUsageLimitType.ONCE_PER_CUSTOMER;
@@ -300,6 +309,22 @@ export class PromoCodesService {
       ? Math.max(0, Number(payload.recentVisitHours ?? 0))
       : null;
 
+    const activeFrom = payload.validFrom ? new Date(payload.validFrom) : null;
+    const activeUntil = payload.validUntil
+      ? new Date(payload.validUntil)
+      : null;
+    if (activeFrom && Number.isNaN(activeFrom.getTime())) {
+      throw new BadRequestException('Некорректная дата начала');
+    }
+    if (activeUntil && Number.isNaN(activeUntil.getTime())) {
+      throw new BadRequestException('Некорректная дата окончания');
+    }
+    if (activeFrom && activeUntil && activeUntil < activeFrom) {
+      throw new BadRequestException(
+        'Дата окончания не может быть раньше даты начала',
+      );
+    }
+
     return {
       merchantId,
       code,
@@ -316,13 +341,25 @@ export class PromoCodesService {
       pointsAmount: awardPoints ? points : null,
       pointsExpireInDays: burnDays,
       assignTierId: payload.levelEnabled ? (payload.levelId ?? null) : null,
-      activeFrom: payload.validFrom ? new Date(payload.validFrom) : null,
-      activeUntil: payload.validUntil ? new Date(payload.validUntil) : null,
+      activeFrom,
+      activeUntil,
       metadata: this.toMetadata(payload),
     } satisfies Prisma.PromoCodeUncheckedCreateInput;
   }
 
   async createFromPortal(merchantId: string, payload: PortalPromoCodePayload) {
+    if (payload.levelEnabled) {
+      if (!payload.levelId) {
+        throw new BadRequestException('Уровень лояльности обязателен');
+      }
+      const tier = await this.prisma.loyaltyTier.findFirst({
+        where: { id: payload.levelId, merchantId },
+        select: { id: true },
+      });
+      if (!tier) {
+        throw new BadRequestException('Уровень лояльности не найден');
+      }
+    }
     const data = this.payloadToPrisma(merchantId, payload);
     const existing = await this.prisma.promoCode.findFirst({
       where: { merchantId, code: data.code },
@@ -374,6 +411,18 @@ export class PromoCodesService {
     promoCodeId: string,
     payload: PortalPromoCodePayload,
   ) {
+    if (payload.levelEnabled) {
+      if (!payload.levelId) {
+        throw new BadRequestException('Уровень лояльности обязателен');
+      }
+      const tier = await this.prisma.loyaltyTier.findFirst({
+        where: { id: payload.levelId, merchantId },
+        select: { id: true },
+      });
+      if (!tier) {
+        throw new BadRequestException('Уровень лояльности не найден');
+      }
+    }
     const promoCode = await this.prisma.promoCode.findFirst({
       where: { id: promoCodeId, merchantId },
     });
@@ -543,8 +592,8 @@ export class PromoCodesService {
     } | null = null;
 
     if (promo.assignTierId) {
-      targetTier = await tx.loyaltyTier.findUnique({
-        where: { id: promo.assignTierId },
+      targetTier = await tx.loyaltyTier.findFirst({
+        where: { id: promo.assignTierId, merchantId: params.merchantId },
         select: {
           id: true,
           name: true,
@@ -644,12 +693,14 @@ export class PromoCodesService {
       const limit = promo.usageLimitValue ?? 1;
       if (total >= limit)
         throw new BadRequestException('Лимит промокода исчерпан.');
-      const perCustomer = promo.perCustomerLimit ?? 1;
+      const perCustomer = promo.perCustomerLimit;
       const normalizedPerCustomer =
-        Number.isFinite(Number(perCustomer)) && Number(perCustomer) > 0
+        perCustomer != null &&
+        Number.isFinite(Number(perCustomer)) &&
+        Number(perCustomer) > 0
           ? Number(perCustomer)
-          : 1;
-      if (customerUsageCount >= normalizedPerCustomer) {
+          : null;
+      if (normalizedPerCustomer && customerUsageCount >= normalizedPerCustomer) {
         if (normalizedPerCustomer <= 1) {
           throw new BadRequestException('Вы уже использовали этот промокод.');
         }

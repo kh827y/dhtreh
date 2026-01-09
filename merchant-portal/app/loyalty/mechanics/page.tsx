@@ -37,8 +37,8 @@ const cards: MechanicCard[] = [
   },
   {
     id: "bonus-settings",
-    title: "Настройки бонусов",
-    description: "Срок жизни, запреты и задержки начисления баллов",
+    title: "Настройки бонусов за покупки",
+    description: "Срок жизни и отложенные начисления для покупок",
     icon: <Ban size={28} />,
     href: "/loyalty/mechanics/bonus-settings",
     color: "bg-red-50 text-red-600",

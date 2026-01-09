@@ -205,37 +205,40 @@ export class MerchantsService {
     const normalizedCount = Math.max(1, Math.min(50, Math.floor(Number(count) || 0)));
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 3);
-    const created: Array<{ id: string; code: string; tokenHint: string }> = [];
-
-    for (let i = 0; i < normalizedCount; i += 1) {
-      for (let attempt = 0; attempt < 20; attempt += 1) {
-        const code = this.randomDigitsSecure(9);
-        const tokenHash = this.sha256(code);
-        const tokenHint = code.slice(-3);
-        try {
-          const row = await this.prisma.cashierActivationCode.create({
-            data: {
-              merchantId,
-              tokenHash,
-              tokenHint,
-              expiresAt,
-            },
-            select: { id: true },
-          });
-          created.push({ id: row.id, code, tokenHint });
-          break;
-        } catch (e: any) {
-          if (String(e?.code || '').toUpperCase() === 'P2002') {
-            continue;
+    const created = await this.prisma.$transaction(async (tx) => {
+      const items: Array<{ id: string; code: string; tokenHint: string }> = [];
+      for (let i = 0; i < normalizedCount; i += 1) {
+        let issued = false;
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          const code = this.randomDigitsSecure(9);
+          const tokenHash = this.sha256(code);
+          const tokenHint = code.slice(-3);
+          try {
+            const row = await tx.cashierActivationCode.create({
+              data: {
+                merchantId,
+                tokenHash,
+                tokenHint,
+                expiresAt,
+              },
+              select: { id: true },
+            });
+            items.push({ id: row.id, code, tokenHint });
+            issued = true;
+            break;
+          } catch (e: any) {
+            if (String(e?.code || '').toUpperCase() === 'P2002') {
+              continue;
+            }
+            throw e;
           }
-          throw e;
+        }
+        if (!issued) {
+          throw new BadRequestException('Unable to issue activation codes');
         }
       }
-    }
-
-    if (created.length !== normalizedCount) {
-      throw new BadRequestException('Unable to issue activation codes');
-    }
+      return items;
+    });
 
     return {
       expiresAt: expiresAt.toISOString(),
@@ -287,7 +290,7 @@ export class MerchantsService {
   async revokeCashierActivationCode(merchantId: string, codeId: string) {
     const id = String(codeId || '').trim();
     if (!id) throw new BadRequestException('codeId required');
-    await this.prisma.cashierActivationCode.updateMany({
+    const result = await this.prisma.cashierActivationCode.updateMany({
       where: {
         merchantId,
         id,
@@ -296,6 +299,9 @@ export class MerchantsService {
       },
       data: { revokedAt: new Date() },
     });
+    if (result.count === 0) {
+      throw new NotFoundException('Activation code not found or inactive');
+    }
     return { ok: true };
   }
 
@@ -620,18 +626,8 @@ export class MerchantsService {
   validateRules(rulesJson: any) {
     const normalized = this.normalizeRulesJson(rulesJson);
     if (normalized === undefined || normalized === null) return { ok: true };
-    // Backward-compatible: поддерживаем оба формата
-    // 1) Массив правил (старый формат)
-    // 2) Объект { rules?: Rule[], af?: {...} }
+    // Поддерживаем только объектный формат правил.
     try {
-      if (Array.isArray(normalized)) {
-        const valid = this.ajv.validate(this.rulesSchema as any, normalized);
-        if (!valid)
-          throw new Error(
-            this.ajv.errorsText(this.ajv.errors, { separator: '; ' }),
-          );
-        return { ok: true };
-      }
       if (normalized && typeof normalized === 'object') {
         const hasRulesArr = Array.isArray(normalized.rules);
         if (hasRulesArr) {
@@ -966,7 +962,7 @@ export class MerchantsService {
 
   private normalizeRulesJson(rulesJson: any) {
     if (rulesJson == null) return rulesJson;
-    if (Array.isArray(rulesJson)) return rulesJson;
+    if (Array.isArray(rulesJson)) return {};
     if (typeof rulesJson !== 'object') return rulesJson;
 
     const clone: any = { ...rulesJson };

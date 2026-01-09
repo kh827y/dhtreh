@@ -10,6 +10,19 @@ async function fetchJson(url: string, headers: Record<string, string>, label: st
   return res.json();
 }
 
+async function fetchJsonSafe(url: string, headers: Record<string, string>) {
+  try {
+    const res = await fetch(url, { headers, cache: "no-store" });
+    if (!res.ok) {
+      return { ok: false, status: res.status, data: null };
+    }
+    const data = await res.json().catch(() => null);
+    return { ok: true, status: res.status, data };
+  } catch {
+    return { ok: false, status: 0, data: null };
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
     const token = req.cookies.get("portal_jwt")?.value;
@@ -25,11 +38,10 @@ export async function GET(req: NextRequest) {
 
     const headers = { authorization: `Bearer ${token}` };
 
-    const [tiers, outlets, staff, mechanics] = await Promise.all([
+    const [tiers, outlets, staff] = await Promise.all([
       fetchJson(`${API_BASE}/portal/loyalty/tiers`, headers, "уровни лояльности"),
       fetchJson(`${API_BASE}/portal/outlets`, headers, "торговые точки"),
       fetchJson(`${API_BASE}/portal/staff`, headers, "сотрудников"),
-      fetchJson(`${API_BASE}/portal/loyalty/mechanics`, headers, "механики"),
     ]);
 
     const tiersList = Array.isArray(tiers)
@@ -57,30 +69,48 @@ export async function GET(req: NextRequest) {
     hasStaff = staffList.length > 0;
     staffCount = staffList.length;
 
-    // Check if any mechanics are enabled
-    let hasMechanics = false;
-    if (Array.isArray(mechanics)) {
-      hasMechanics = mechanics.some((item: any) =>
-        item?.status === "ACTIVE" || item?.enabled === true
-      );
-    } else if (mechanics && typeof mechanics === "object") {
-      hasMechanics = Boolean(
-        (mechanics as any)?.birthday?.enabled ||
-        (mechanics as any)?.referral?.enabled ||
-        (mechanics as any)?.autoReturn?.enabled ||
-        (mechanics as any)?.welcome?.enabled
-      );
-    }
+    const [bonusRes, nameRes, timezoneRes, supportRes, telegramRes] = await Promise.all([
+      fetchJsonSafe(`${API_BASE}/portal/loyalty/redeem-limits`, headers),
+      fetchJsonSafe(`${API_BASE}/portal/settings/name`, headers),
+      fetchJsonSafe(`${API_BASE}/portal/settings/timezone`, headers),
+      fetchJsonSafe(`${API_BASE}/portal/settings/support`, headers),
+      fetchJsonSafe(`${API_BASE}/portal/integrations/telegram-mini-app`, headers),
+    ]);
+
+    const bonusData = bonusRes.ok ? bonusRes.data : null;
+    const ttlDays = Number(bonusData?.ttlDays ?? 0) || 0;
+    const ttlEnabled = Boolean(bonusData?.ttlEnabled && ttlDays > 0);
+    const delayDays = Number(bonusData?.delayDays ?? 0) || 0;
+    const delayEnabled = Boolean(bonusData?.delayEnabled && delayDays > 0);
+    const allowSameReceipt = Boolean(bonusData?.allowSameReceipt);
+    const hasBonusSettings = Boolean(ttlEnabled || delayEnabled || allowSameReceipt);
+
+    const nameValue =
+      typeof nameRes.data?.name === "string" ? nameRes.data.name.trim() : "";
+    const timezoneCode =
+      typeof timezoneRes.data?.timezone?.code === "string"
+        ? timezoneRes.data.timezone.code.trim()
+        : "";
+    const supportValue =
+      typeof supportRes.data?.supportTelegram === "string"
+        ? supportRes.data.supportTelegram.trim()
+        : "";
+    const hasSystemSettings = Boolean(nameValue || timezoneCode || supportValue);
+
+    const telegramData = telegramRes.ok ? telegramRes.data : null;
+    const hasTelegramMiniApp = Boolean(telegramData?.enabled);
 
     return NextResponse.json({
       hasLoyaltySettings,
       hasOutlets,
       hasStaff,
-      hasMechanics,
+      hasBonusSettings,
+      hasSystemSettings,
+      hasTelegramMiniApp,
       outletsCount,
       staffCount,
-      hasWallet: false,
-      hasPush: false,
+      bonusTtlDays: ttlDays,
+      bonusTtlEnabled: ttlEnabled,
     });
   } catch (err) {
     console.error("Setup status error:", err);

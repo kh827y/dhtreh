@@ -2073,7 +2073,9 @@ export class AnalyticsService {
     });
 
     const rules =
-      settings?.rulesJson && typeof settings.rulesJson === 'object'
+      settings?.rulesJson &&
+      typeof settings.rulesJson === 'object' &&
+      !Array.isArray(settings.rulesJson)
         ? (settings.rulesJson as any)
         : {};
     const autoReturn =
@@ -2311,7 +2313,8 @@ export class AnalyticsService {
     let purchasesAfterReturn = 0;
     let amountAfterReturn = 0;
 
-    const dateKey = (value: Date) => value.toISOString().slice(0, 10);
+    const timezone = await this.getTimezoneInfo(merchantId);
+    const dateKey = (value: Date) => this.formatDateLabel(value, timezone);
 
     for (const attempt of attempts) {
       const customerId = attempt.customerId;
@@ -2789,6 +2792,9 @@ export class AnalyticsService {
         for (let i = 0; i < lots.length && toSpend > 0; i += 1) {
           const lot = lots[i];
           const expiresAt = lot.expiresAt;
+          if (receipt.createdAt.getTime() < lot.sendDate.getTime()) {
+            continue;
+          }
           if (expiresAt && expiresAt.getTime() < receipt.createdAt.getTime()) {
             continue;
           }

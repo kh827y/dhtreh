@@ -272,9 +272,11 @@ export default function ReviewsPage() {
               outlets.push({ value: outlet.id, label: outlet.name || "Без названия" });
             }
             if (Array.isArray(outlet?.devices)) {
+              const outletName = outlet?.name || "Без названия";
+              const outletId = outlet?.id;
               outlet.devices.forEach((d: DeviceInfo) => {
-                if (d?.code) {
-                  allDevices.push(d);
+                if (d?.code && outletId) {
+                  allDevices.push({ ...d, outletId, outletName });
                 }
               });
             }

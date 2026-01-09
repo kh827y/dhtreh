@@ -28,6 +28,9 @@ const buildPrisma = (overrides: Partial<any> = {}) => {
       findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'rcp_1' }),
     },
+    transaction: {
+      create: jest.fn().mockResolvedValue({ id: 'tx_1' }),
+    },
     loyaltyTier: {
       findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
@@ -69,6 +72,15 @@ describe('ImportExportService.importCustomers', () => {
           total: 1500,
           earnApplied: 75,
           redeemApplied: 0,
+        }),
+      }),
+    );
+    expect(prisma.transaction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: 'EARN',
+          amount: 75,
+          orderId: 'ORDER-1',
         }),
       }),
     );

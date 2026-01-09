@@ -6,8 +6,9 @@ import { DEFAULT_TIMEZONE_CODE, findTimezone } from '../timezone/russia-timezone
 import { STAFF_DIGEST_LOCAL_HOUR } from './staff-digest.constants';
 
 const normalizeRulesJson = (raw: unknown): Record<string, any> => {
-  if (Array.isArray(raw)) return { rules: raw };
-  if (raw && typeof raw === 'object') return { ...(raw as Record<string, any>) };
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return { ...(raw as Record<string, any>) };
+  }
   return {};
 };
 

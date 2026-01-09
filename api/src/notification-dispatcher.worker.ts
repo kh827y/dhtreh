@@ -64,6 +64,15 @@ export class NotificationDispatcherWorker
     });
   }
 
+  private applyRegistrationTemplate(
+    template: string,
+    vars: { username: string; bonus: string },
+  ): string {
+    const name = vars.username || 'Уважаемый клиент';
+    const bonus = vars.bonus || '';
+    return template.replace(/%username%/gi, name).replace(/%bonus%/gi, bonus);
+  }
+
   onModuleInit() {
     if (process.env.WORKERS_ENABLED === '0') {
       this.logger.log('Workers disabled (WORKERS_ENABLED=0)');
@@ -370,6 +379,120 @@ export class NotificationDispatcherWorker
         try {
           this.metrics.inc('notifications_processed_total', {
             type: 'broadcast',
+            result: 'sent',
+          });
+        } catch {}
+        return;
+      }
+      if (type === 'notify.registration_bonus') {
+        const merchantId = String(payload.merchantId || row.merchantId || '');
+        const customerId = String(payload.customerId || '');
+        const pointsRaw = Number(payload.points ?? 0);
+        const points = Number.isFinite(pointsRaw) ? Math.max(0, pointsRaw) : 0;
+        if (!merchantId || !customerId) {
+          throw new Error('merchantId/customerId missing for notify.registration_bonus');
+        }
+        if (!this.canPassRps(merchantId)) {
+          const delayMs = 1000;
+          await this.prisma.eventOutbox.update({
+            where: { id: row.id },
+            data: {
+              status: 'PENDING',
+              nextRetryAt: new Date(Date.now() + delayMs),
+              lastError: 'throttled',
+            },
+          });
+          try {
+            this.metrics.inc('notifications_processed_total', {
+              type: 'registration_bonus',
+              result: 'throttled',
+            });
+          } catch {}
+          return;
+        }
+
+        const settings = await this.prisma.merchantSettings.findUnique({
+          where: { merchantId },
+          select: { rulesJson: true },
+        });
+        const rules =
+          settings?.rulesJson && typeof settings.rulesJson === 'object'
+            ? (settings.rulesJson as any)
+            : null;
+        const registration =
+          rules && typeof rules.registration === 'object'
+            ? rules.registration
+            : null;
+        const pushEnabled = registration
+          ? Object.prototype.hasOwnProperty.call(registration, 'pushEnabled')
+            ? Boolean(registration.pushEnabled)
+            : true
+          : false;
+        const template =
+          registration && typeof registration.text === 'string'
+            ? registration.text.trim()
+            : '';
+        if (!pushEnabled || !template) {
+          await this.prisma.eventOutbox.update({
+            where: { id: row.id },
+            data: { status: 'SENT', lastError: 'disabled' },
+          });
+          try {
+            this.metrics.inc('notifications_processed_total', {
+              type: 'registration_bonus',
+              result: 'skipped',
+            });
+          } catch {}
+          return;
+        }
+
+        const customer = await this.prisma.customer.findFirst({
+          where: { id: customerId, merchantId },
+          select: { name: true },
+        });
+        if (!customer) {
+          await this.prisma.eventOutbox.update({
+            where: { id: row.id },
+            data: { status: 'SENT', lastError: 'customer not found' },
+          });
+          return;
+        }
+
+        const merchant = await this.prisma.merchant.findUnique({
+          where: { id: merchantId },
+          select: { telegramBotEnabled: true },
+        });
+        if (!merchant?.telegramBotEnabled) {
+          await this.prisma.eventOutbox.update({
+            where: { id: row.id },
+            data: { status: 'SENT', lastError: 'telegram disabled' },
+          });
+          return;
+        }
+
+        const bonusText = points.toLocaleString('ru-RU');
+        const body = this.applyRegistrationTemplate(template, {
+          username: customer.name?.trim() || '',
+          bonus: bonusText,
+        });
+        await this.push.sendPush({
+          merchantId,
+          customerId,
+          title: '',
+          body,
+          type: 'SYSTEM',
+          data: {
+            type: 'registration_bonus',
+            amount: String(points),
+          },
+        });
+        await this.prisma.eventOutbox.update({
+          where: { id: row.id },
+          data: { status: 'SENT', lastError: null },
+        });
+        try {
+          this.metrics.inc('notifications_processed_total', {
+            type: 'registration_bonus',
             result: 'sent',
           });
         } catch {}

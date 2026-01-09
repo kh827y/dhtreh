@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { WalletType } from '@prisma/client';
+import { WalletType, TxnType } from '@prisma/client';
 import type { Response } from 'express';
 import { PrismaService } from '../prisma.service';
 import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
@@ -246,6 +246,7 @@ export class ImportExportService {
                 receiptNumber: string | null;
               }
             | null = null;
+          let receiptCreated = false;
 
           if (hasOperation) {
             const total = Math.max(0, Math.floor(operationAmount ?? 0));
@@ -304,6 +305,7 @@ export class ImportExportService {
                   },
                 });
                 receiptsImported++;
+                receiptCreated = true;
                 receiptCacheKey = receiptKey;
                 receiptCacheValue = {
                   customerId: customer.id,
@@ -312,6 +314,40 @@ export class ImportExportService {
                   redeemApplied,
                   receiptNumber: receiptNumber ?? null,
                 };
+              }
+            }
+
+            if (receiptCreated) {
+              const createdAt = transactionDate ?? new Date();
+              const metadata = {
+                source: 'IMPORT',
+                receiptNumber: receiptNumber ?? null,
+              };
+              if (earnApplied > 0) {
+                await tx.transaction.create({
+                  data: {
+                    customerId: customer.id,
+                    merchantId: dto.merchantId,
+                    type: TxnType.EARN,
+                    amount: earnApplied,
+                    orderId: orderId!,
+                    createdAt,
+                    metadata,
+                  },
+                });
+              }
+              if (redeemApplied > 0) {
+                await tx.transaction.create({
+                  data: {
+                    customerId: customer.id,
+                    merchantId: dto.merchantId,
+                    type: TxnType.REDEEM,
+                    amount: -redeemApplied,
+                    orderId: orderId!,
+                    createdAt,
+                    metadata,
+                  },
+                });
               }
             }
           }
