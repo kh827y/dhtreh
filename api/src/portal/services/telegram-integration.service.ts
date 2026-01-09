@@ -157,11 +157,14 @@ export class PortalTelegramIntegrationService {
       } catch (e: any) {
         menuMessage = ` Меню‑кнопка не установлена: ${String(e?.message || e)}.`;
       }
+      const miniappMessage = state?.miniappUrl
+        ? ''
+        : ' Mini App URL не настроен. Проверьте MINIAPP_BASE_URL.';
       const mainAppMessage =
         ' Для корректной работы ссылок вида t.me/<бот>/?startapp=... необходимо установить Main App у бота в BotFather на тот же URL, что и у Menu Button (это действие недоступно через Bot API).';
       return {
         ...state,
-        message: `${baseMessage}${webhookMessage}${menuMessage} ${mainAppMessage}`,
+        message: `${baseMessage}${webhookMessage}${menuMessage}${miniappMessage} ${mainAppMessage}`,
       };
     } catch (error: any) {
       const description = error?.message

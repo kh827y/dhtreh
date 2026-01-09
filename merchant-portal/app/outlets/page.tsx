@@ -28,6 +28,8 @@ export default function OutletsPage() {
   const [error, setError] = React.useState("");
   const [activeOutlets, setActiveOutlets] = React.useState<OutletItem[]>([]);
   const [inactiveOutlets, setInactiveOutlets] = React.useState<OutletItem[]>([]);
+  const [activeTotal, setActiveTotal] = React.useState(0);
+  const [inactiveTotal, setInactiveTotal] = React.useState(0);
 
   const fetchOutlets = React.useCallback(async () => {
     setLoading(true);
@@ -45,10 +47,26 @@ export default function OutletsPage() {
       const inactiveData = (await inactiveRes.json()) as OutletListResponse;
       setActiveOutlets(Array.isArray(activeData.items) ? activeData.items : []);
       setInactiveOutlets(Array.isArray(inactiveData.items) ? inactiveData.items : []);
+      setActiveTotal(
+        typeof activeData.total === "number"
+          ? activeData.total
+          : Array.isArray(activeData.items)
+            ? activeData.items.length
+            : 0,
+      );
+      setInactiveTotal(
+        typeof inactiveData.total === "number"
+          ? inactiveData.total
+          : Array.isArray(inactiveData.items)
+            ? inactiveData.items.length
+            : 0,
+      );
     } catch (e: any) {
       setError(normalizeErrorMessage(e, "Не удалось загрузить торговые точки"));
       setActiveOutlets([]);
       setInactiveOutlets([]);
+      setActiveTotal(0);
+      setInactiveTotal(0);
     } finally {
       setLoading(false);
     }
@@ -107,7 +125,7 @@ export default function OutletsPage() {
                 activeTab === "active" ? "bg-purple-100 text-purple-600" : "bg-gray-100 text-gray-500"
               }`}
             >
-              {activeOutlets.length}
+              {activeTotal}
             </span>
           </button>
           <button
@@ -124,7 +142,7 @@ export default function OutletsPage() {
                 activeTab === "inactive" ? "bg-purple-100 text-purple-600" : "bg-gray-100 text-gray-500"
               }`}
             >
-              {inactiveOutlets.length}
+              {inactiveTotal}
             </span>
           </button>
         </nav>

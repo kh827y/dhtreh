@@ -279,31 +279,29 @@ export class LoyaltyProgramService {
       }
       if (when !== undefined) {
         const text = this.resolvePromotionText(promotion, 'start');
-        // PUSH — если выбран шаблон
-        if (promotion.pushTemplateStartId) {
-          if (
-            !(await this.taskExists({
-              merchantId,
+        // PUSH — шедулим даже без шаблона, текст берём из payload
+        if (
+          !(await this.taskExists({
+            merchantId,
+            promotionId: promotion.id,
+            channel: CommunicationChannel.PUSH,
+            scheduledAt: when,
+          }))
+        ) {
+          await this.comms.createTask(merchantId, {
+            channel: CommunicationChannel.PUSH,
+            templateId: promotion.pushTemplateStartId ?? null,
+            audienceId,
+            audienceCode,
+            promotionId: promotion.id,
+            scheduledAt: when,
+            payload: {
+              text,
+              event: 'promotion.start',
               promotionId: promotion.id,
-              channel: CommunicationChannel.PUSH,
-              scheduledAt: when,
-            }))
-          ) {
-            await this.comms.createTask(merchantId, {
-              channel: CommunicationChannel.PUSH,
-              templateId: promotion.pushTemplateStartId,
-              audienceId,
-              audienceCode,
-              promotionId: promotion.id,
-              scheduledAt: when,
-              payload: {
-                text,
-                event: 'promotion.start',
-                promotionId: promotion.id,
-              },
-              actorId: actorId ?? undefined,
-            });
-          }
+            },
+            actorId: actorId ?? undefined,
+          });
         }
         // TELEGRAM — если включён бот
         if (await this.isTelegramEnabled(merchantId)) {
@@ -351,30 +349,28 @@ export class LoyaltyProgramService {
             'reminder',
             offsetH,
           );
-          if (promotion.pushTemplateReminderId) {
-            if (
-              !(await this.taskExists({
-                merchantId,
+          if (
+            !(await this.taskExists({
+              merchantId,
+              promotionId: promotion.id,
+              channel: CommunicationChannel.PUSH,
+              scheduledAt: when,
+            }))
+          ) {
+            await this.comms.createTask(merchantId, {
+              channel: CommunicationChannel.PUSH,
+              templateId: promotion.pushTemplateReminderId ?? null,
+              audienceId,
+              audienceCode,
+              promotionId: promotion.id,
+              scheduledAt: when,
+              payload: {
+                text,
+                event: 'promotion.reminder',
                 promotionId: promotion.id,
-                channel: CommunicationChannel.PUSH,
-                scheduledAt: when,
-              }))
-            ) {
-              await this.comms.createTask(merchantId, {
-                channel: CommunicationChannel.PUSH,
-                templateId: promotion.pushTemplateReminderId,
-                audienceId,
-                audienceCode,
-                promotionId: promotion.id,
-                scheduledAt: when,
-                payload: {
-                  text,
-                  event: 'promotion.reminder',
-                  promotionId: promotion.id,
-                },
-                actorId: actorId ?? undefined,
-              });
-            }
+              },
+              actorId: actorId ?? undefined,
+            });
           }
           if (await this.isTelegramEnabled(merchantId)) {
             if (

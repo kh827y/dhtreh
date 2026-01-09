@@ -136,13 +136,19 @@ export class TelegramBotService {
       const secret = crypto.randomBytes(16).toString('hex');
 
       // Сохраняем настройки мерчанта (для MiniApp и бэкапа токена)
+      const baseUrl = String(this.configService.get('MINIAPP_BASE_URL') || '')
+        .trim()
+        .replace(/\/$/, '');
+      const nextSettings: Record<string, any> = {
+        telegramBotToken: botToken,
+        telegramBotUsername: botInfo.username,
+      };
+      if (baseUrl) {
+        nextSettings.miniappBaseUrl = `${baseUrl}/?merchant=${merchantId}`;
+      }
       await this.prisma.merchantSettings.update({
         where: { merchantId },
-        data: {
-          telegramBotToken: botToken,
-          telegramBotUsername: botInfo.username,
-          miniappBaseUrl: `${this.configService.get('MINIAPP_BASE_URL')}/?merchant=${merchantId}`,
-        },
+        data: nextSettings,
       });
 
       await this.prisma.merchant.update({
@@ -1050,6 +1056,12 @@ export class TelegramBotService {
           where: { merchantId },
           data: { isActive: false },
         });
+        await this.prisma.merchantSettings
+          .update({
+            where: { merchantId },
+            data: { telegramBotToken: null },
+          })
+          .catch(() => null);
       } else {
         // Попробуем удалить webhook по токену из настроек мерчанта
         const settings = await this.prisma.merchantSettings.findUnique({
@@ -1057,6 +1069,14 @@ export class TelegramBotService {
         });
         if (settings?.telegramBotToken) {
           await this.deleteWebhook(settings.telegramBotToken);
+        }
+        if (settings?.telegramBotToken) {
+          await this.prisma.merchantSettings
+            .update({
+              where: { merchantId },
+              data: { telegramBotToken: null },
+            })
+            .catch(() => null);
         }
       }
       // Локально тоже уберем бота из карты

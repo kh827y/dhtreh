@@ -492,8 +492,24 @@ function formDataToFilters(formData: AudienceFormData): Record<string, unknown> 
 }
 
 function mapMember(row: any): AudienceMember {
-  const totalSpend = safeNumber(row?.spendTotal) ?? 0;
-  const daysSinceLastVisit = safeNumber(row?.daysSinceLastVisit);
+  const stats =
+    asRecord(row?.stats) ??
+    (Array.isArray(row?.customerStats) ? asRecord(row?.customerStats[0]) : asRecord(row?.customerStats)) ??
+    null;
+  const spendTotal = safeNumber(row?.spendTotal);
+  const statsSpend = safeNumber(stats?.totalSpent);
+  let daysSinceLastVisit = safeNumber(row?.daysSinceLastVisit);
+  if (daysSinceLastVisit === null) {
+    const lastOrderAt = stats?.lastOrderAt ?? stats?.lastSeenAt ?? null;
+    if (lastOrderAt) {
+      const lastTs = new Date(String(lastOrderAt)).getTime();
+      const diffMs = Date.now() - lastTs;
+      if (Number.isFinite(diffMs)) {
+        daysSinceLastVisit = Math.max(0, Math.floor(diffMs / 86400000));
+      }
+    }
+  }
+  const totalSpend = Math.max(0, spendTotal ?? statsSpend ?? 0);
   return {
     id: String(row?.id || ""),
     phone: row?.phone ? String(row.phone) : "",
@@ -501,7 +517,7 @@ function mapMember(row: any): AudienceMember {
     levelId: row?.levelId ? String(row.levelId) : null,
     levelName: row?.levelName ? String(row.levelName) : null,
     daysSinceLastVisit,
-    totalSpend: Math.max(0, totalSpend),
+    totalSpend,
   };
 }
 
@@ -737,10 +753,7 @@ export default function AudiencesPage() {
     setFormError(null);
     try {
       const filters = formDataToFilters(formData);
-      const currentAudience = editingId ? audiences.find((item) => item.id === editingId) : null;
-      const description =
-        currentAudience?.description?.trim() ||
-        buildAudienceDescription(formData, { outlets, products, categories, levels });
+      const description = buildAudienceDescription(formData, { outlets, products, categories, levels });
       const payload = {
         name: trimmed,
         description,
@@ -781,10 +794,28 @@ export default function AudiencesPage() {
       setMembersLoading(true);
       try {
         await loadCatalog();
-        const qs = new URLSearchParams({ segmentId: audience.id, limit: "200" });
-        const res = await fetchJson<any>(`/api/customers?${qs.toString()}`);
-        const items = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : [];
-        setMembers(items.map(mapMember));
+        const limit = 200;
+        let offset = 0;
+        let total: number | null = null;
+        const collected: any[] = [];
+        while (true) {
+          const qs = new URLSearchParams({
+            segmentId: audience.id,
+            limit: String(limit),
+            offset: String(offset),
+            registeredOnly: "0",
+          });
+          const res = await fetchJson<any>(`/api/customers?${qs.toString()}`);
+          const items = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : [];
+          if (typeof res?.total === "number") {
+            total = res.total;
+          }
+          collected.push(...items);
+          if (!items.length || items.length < limit) break;
+          if (total !== null && collected.length >= total) break;
+          offset += limit;
+        }
+        setMembers(collected.map(mapMember));
       } catch (err) {
         setMembersError(readApiError(err) || "Не удалось загрузить участников");
         setMembers([]);

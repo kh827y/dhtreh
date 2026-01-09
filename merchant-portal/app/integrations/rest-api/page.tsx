@@ -92,6 +92,7 @@ export default function RestApiIntegrationPage() {
   const [copiedKey, setCopiedKey] = React.useState(false);
   const [copiedUrl, setCopiedUrl] = React.useState(false);
   const [pending, setPending] = React.useState(false);
+  const [disablePending, setDisablePending] = React.useState(false);
 
   async function load() {
     setLoading(true);
@@ -165,6 +166,34 @@ export default function RestApiIntegrationPage() {
       setError(normalizeErrorMessage(e, "Ошибка"));
     } finally {
       setPending(false);
+    }
+  };
+
+  const handleDisable = async () => {
+    if (!state?.enabled) return;
+    if (!confirm("Отключить REST API? Доступ по ключу будет закрыт.")) {
+      return;
+    }
+    setDisablePending(true);
+    setError("");
+    setMessage("");
+    try {
+      const res = await fetch("/api/portal/integrations/rest-api", {
+        method: "DELETE",
+      });
+      const data: RestApiState = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        throw new Error(
+          (data && (data as any)?.message) || "Не удалось отключить интеграцию",
+        );
+      }
+      setState(data || null);
+      setIssuedKey(null);
+      setMessage(data?.message || "Интеграция отключена");
+    } catch (e: any) {
+      setError(normalizeErrorMessage(e, "Ошибка"));
+    } finally {
+      setDisablePending(false);
     }
   };
 
@@ -270,6 +299,18 @@ export default function RestApiIntegrationPage() {
                 <span>Сгенерировать новый ключ</span>
               </button>
             </div>
+            {state?.enabled ? (
+              <div className="pt-2">
+                <button
+                  onClick={handleDisable}
+                  disabled={disablePending || loading}
+                  className="w-full flex items-center justify-center space-x-2 border border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-70 disabled:cursor-wait"
+                >
+                  <RefreshCw size={14} />
+                  <span>Отключить интеграцию</span>
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 rounded-xl shadow-md text-white">

@@ -140,6 +140,7 @@ export default function TelegramPage() {
   const [error, setError] = useState<string | null>(null);
   const [audiences, setAudiences] = useState<AudienceOption[]>([]);
   const [audiencesLoaded, setAudiencesLoaded] = useState(false);
+  const [audiencesError, setAudiencesError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -174,9 +175,10 @@ export default function TelegramPage() {
     }
   }, []);
 
-  const loadAudiences = useCallback(async () => {
-    if (audiencesLoaded) return;
+  const loadAudiences = useCallback(async (force = false) => {
+    if (audiencesLoaded && !force) return;
     try {
+      setAudiencesError(null);
       const list = await fetchJson<any[]>("/api/portal/audiences?includeSystem=1");
       const mapped: AudienceOption[] = list
         .filter((item) => !item.archivedAt)
@@ -191,6 +193,7 @@ export default function TelegramPage() {
       setAudiencesLoaded(true);
     } catch (err) {
       setAudiencesLoaded(true);
+      setAudiencesError("Не удалось загрузить аудитории");
     }
   }, [audiencesLoaded]);
 
@@ -428,13 +431,7 @@ export default function TelegramPage() {
     setSaving(true);
     setFormError(null);
     try {
-      if (editingId) {
-        await fetchJson(`/api/portal/communications/telegram/${encodeURIComponent(editingId)}/cancel`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
+      const cancelId = editingId;
       await fetchJson("/api/portal/communications/telegram", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -447,6 +444,19 @@ export default function TelegramPage() {
           media,
         }),
       });
+
+      let cancelWarning: string | null = null;
+      if (cancelId) {
+        try {
+          await fetchJson(`/api/portal/communications/telegram/${encodeURIComponent(cancelId)}/cancel`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+        } catch (cancelError) {
+          cancelWarning =
+            readApiError(cancelError) || "Новая рассылка создана, но старую не удалось отменить";
+        }
+      }
 
       setEditingId(null);
       setView("list");
@@ -464,6 +474,11 @@ export default function TelegramPage() {
       });
       if (fileInputRef.current) fileInputRef.current.value = "";
       await loadCampaigns();
+      if (cancelWarning) {
+        setError(cancelWarning);
+      } else {
+        setError(null);
+      }
     } catch (err) {
       setFormError(readApiError(err) || "Не удалось сохранить рассылку");
     } finally {
@@ -569,6 +584,18 @@ export default function TelegramPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Получатели</label>
+                {audiencesError && (
+                  <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    <span>{audiencesError}</span>
+                    <button
+                      type="button"
+                      onClick={() => loadAudiences(true)}
+                      className="text-xs font-medium text-amber-800 hover:underline"
+                    >
+                      Повторить
+                    </button>
+                  </div>
+                )}
                 <select
                   value={formData.audience}
                   onChange={(e) => {

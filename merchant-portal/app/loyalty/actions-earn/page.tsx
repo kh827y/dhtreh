@@ -32,6 +32,7 @@ interface PointsPromotion {
   hasExplicitStartDate: boolean;
   endDate: string;
   status: PromotionStatus;
+  isScheduled: boolean;
   accruePoints: boolean;
   pointsAmount: number;
   isBurning: boolean;
@@ -73,9 +74,13 @@ function resolvePromotionStatus(item: any): PromotionStatus {
 }
 
 function extractPointsExpireFlag(item: any): boolean {
+  const explicit = Number(item?.pointsExpireInDays ?? item?.rewardMetadata?.pointsExpireInDays);
+  if (Number.isFinite(explicit) && explicit > 0) return true;
   const meta =
     item?.rewardMetadata && typeof item.rewardMetadata === "object" ? item.rewardMetadata : null;
-  return Boolean(meta?.pointsExpire ?? meta?.pointsExpireAfterEnd);
+  const shouldExpire = Boolean(meta?.pointsExpire ?? meta?.pointsExpireAfterEnd);
+  if (!shouldExpire) return false;
+  return Boolean(item?.endAt);
 }
 
 function computeROI(revenue: number, cost: number) {
@@ -170,6 +175,14 @@ export default function ActionsEarnPage() {
           const startDateValue = item?.startAt ?? createdAtIso;
           const startDate = startDateValue ? formatDateRu(startDateValue, "—") : "—";
           const endDate = item?.endAt ? formatDateRu(item.endAt, "—") : "Бессрочно";
+          const rawStatus = String(item?.status || "").toUpperCase();
+          const startAtMoment = item?.startAt ? new Date(item.startAt) : null;
+          const isScheduled =
+            rawStatus === "SCHEDULED" ||
+            (rawStatus === "ACTIVE" &&
+              startAtMoment &&
+              Number.isFinite(startAtMoment.getTime()) &&
+              startAtMoment.getTime() > Date.now());
 
           const audienceId = item?.segmentId ? String(item.segmentId) : "";
           const resolvedAudience = audienceId || audAllId;
@@ -190,6 +203,7 @@ export default function ActionsEarnPage() {
             hasExplicitStartDate,
             endDate,
             status,
+            isScheduled,
             accruePoints: true,
             pointsAmount: Math.max(0, Math.round(rewardValue)),
             isBurning: burning,
@@ -295,6 +309,7 @@ export default function ActionsEarnPage() {
     };
 
     const isIndefinite = promo.endDate === "Бессрочно";
+    const burningFlag = isIndefinite ? false : promo.isBurning;
     const startImmediately = !promo.hasExplicitStartDate;
 
     setFormData({
@@ -307,7 +322,7 @@ export default function ActionsEarnPage() {
       audience: promo.audience,
       accruePoints: promo.accruePoints,
       pointsAmount: promo.pointsAmount,
-      isBurning: promo.isBurning,
+      isBurning: burningFlag,
       pushAtStart: promo.pushAtStart,
       pushStartText: promo.pushStartText || "",
       pushBeforeEnd: promo.pushBeforeEnd,
@@ -335,7 +350,7 @@ export default function ActionsEarnPage() {
       alert("Введите название акции");
       return;
     }
-    if (!formData.accruePoints || safeNumber(formData.pointsAmount) <= 0) {
+    if (safeNumber(formData.pointsAmount) <= 0) {
       alert("Укажите количество баллов");
       return;
     }
@@ -359,11 +374,14 @@ export default function ActionsEarnPage() {
     const endIso = endAt && Number.isFinite(endAt.getTime()) ? endAt.toISOString() : null;
 
     const wantsActive = formData.isActive;
-    const status = wantsActive ? "ACTIVE" : "DRAFT";
+    const isFutureStart =
+      wantsActive && Number.isFinite(startAt.getTime()) && startAt.getTime() > now.getTime();
+    const status = wantsActive ? (isFutureStart ? "SCHEDULED" : "ACTIVE") : "DRAFT";
 
     const selectedAudience = formData.audience || allAudienceId || null;
     const audienceIdToSend = selectedAudience && allAudienceId && selectedAudience === allAudienceId ? null : selectedAudience;
 
+    const burningFlag = formData.isIndefinite ? false : formData.isBurning;
     const payload = {
       name: formData.title,
       description: "",
@@ -374,8 +392,8 @@ export default function ActionsEarnPage() {
       rewardType: "POINTS",
       rewardValue: Math.max(0, Math.round(Number(formData.pointsAmount || 0))),
       rewardMetadata: {
-        pointsExpire: formData.isBurning,
-        pointsExpireAfterEnd: formData.isBurning,
+        pointsExpire: burningFlag,
+        pointsExpireAfterEnd: burningFlag,
       },
       pushOnStart: formData.pushAtStart,
       pushReminderEnabled: formData.pushBeforeEnd,
@@ -516,7 +534,14 @@ export default function ActionsEarnPage() {
                     <input
                       type="checkbox"
                       checked={formData.isIndefinite}
-                      onChange={(e) => setFormData({ ...formData, isIndefinite: e.target.checked })}
+                      onChange={(e) => {
+                        const isIndefinite = e.target.checked;
+                        setFormData({
+                          ...formData,
+                          isIndefinite,
+                          isBurning: isIndefinite ? false : formData.isBurning,
+                        });
+                      }}
                       className="rounded text-purple-600 focus:ring-purple-500"
                     />
                     <span className="text-sm text-gray-900">Бессрочно</span>
@@ -539,15 +564,6 @@ export default function ActionsEarnPage() {
           <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-gray-900">Начисление баллов</h3>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.accruePoints}
-                  onChange={(e) => setFormData({ ...formData, accruePoints: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-              </label>
             </div>
 
             {formData.accruePoints && (
@@ -582,13 +598,18 @@ export default function ActionsEarnPage() {
                       </div>
                     </label>
 
-                    <label className="flex items-center space-x-3 cursor-pointer">
+                    <label
+                      className={`flex items-center space-x-3 ${
+                        formData.isIndefinite ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                      }`}
+                    >
                       <input
                         type="radio"
                         name="burning"
                         checked={formData.isBurning}
                         onChange={() => setFormData({ ...formData, isBurning: true })}
-                        className="text-purple-600 focus:ring-purple-500"
+                        disabled={formData.isIndefinite}
+                        className="text-purple-600 focus:ring-purple-500 disabled:cursor-not-allowed"
                       />
                       <div className="flex items-center space-x-2 text-sm text-gray-700">
                         <Flame size={16} className="text-orange-500" />
@@ -601,6 +622,11 @@ export default function ActionsEarnPage() {
                       ? "Если акция завершится, неиспользованные баллы, начисленные в рамках этой акции, будут аннулированы."
                       : "Начисленные баллы останутся на счету клиента пока не будут потрачены."}
                   </p>
+                  {formData.isIndefinite && (
+                    <p className="text-xs text-amber-600 mt-2 ml-7">
+                      Для бессрочных акций сгорание после окончания недоступно.
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -798,7 +824,14 @@ export default function ActionsEarnPage() {
                 {/* Header: Title, Dates, Actions */}
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex-1 pr-4">
-                    <h3 className="text-lg font-bold text-gray-900 mb-2">{promo.title}</h3>
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <h3 className="text-lg font-bold text-gray-900">{promo.title}</h3>
+                      {promo.isScheduled && (
+                        <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded-full px-2 py-0.5">
+                          Запланирована
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center text-sm text-gray-400">
                       <Calendar size={14} className="mr-1.5" />
                       {promo.startDate} - {promo.endDate}

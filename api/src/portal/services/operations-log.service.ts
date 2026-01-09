@@ -117,14 +117,32 @@ export class OperationsLogService {
     const includeReceipts = !operationType || operationType === 'PURCHASE';
     const includeTransactions = !operationType || operationType !== 'PURCHASE';
 
-    const [receiptCount, transactionCount] = await Promise.all([
+    const [receiptCount] = await Promise.all([
       includeReceipts
         ? this.prisma.receipt.count({ where: receiptWhere })
         : Promise.resolve(0),
-      includeTransactions
-        ? this.prisma.transaction.count({ where: transactionWhere })
-        : Promise.resolve(0),
     ]);
+
+    const receiptOrderIds =
+      includeReceipts && includeTransactions
+        ? await this.prisma.receipt.findMany({
+            where: receiptWhere,
+            select: { orderId: true },
+          })
+        : [];
+    const receiptOrderIdSet = new Set(
+      receiptOrderIds
+        .map((item) =>
+          typeof item.orderId === 'string' ? item.orderId.trim() : null,
+        )
+        .filter((id): id is string => Boolean(id)),
+    );
+    const receiptOrderIdList = Array.from(receiptOrderIdSet);
+
+    const transactionDisplayCount = includeTransactions
+      ? await this.countLogTransactions(transactionWhere, receiptOrderIdList)
+      : 0;
+    const totalCount = (includeReceipts ? receiptCount : 0) + transactionDisplayCount;
 
     const fetchLimit = Math.min(limit + offset + 20, 500);
 
@@ -211,26 +229,28 @@ export class OperationsLogService {
       ...receipts.map((receipt) =>
         this.mapReceipt(receipt, ratings.get(receipt.orderId ?? '') ?? null),
       ),
-      ...transactions
-        .filter((tx) => {
-          if (!allowSameReceipt) return true;
-          const orderId =
-            typeof tx.orderId === 'string' && tx.orderId.trim()
-              ? tx.orderId.trim()
-              : null;
-          if (
-            orderId &&
-            receipts.find((r) => r.orderId === orderId) &&
-            (tx.type === TxnType.EARN || tx.type === TxnType.REDEEM)
-          ) {
-            return false;
-          }
-          return true;
-        })
-        .map((tx) =>
-          this.mapTransaction(tx, ratings.get(tx.orderId ?? '') ?? null),
-        )
-        .filter((item): item is OperationsLogItemDto => item !== null),
+      ...this.mergeEarnRedeemTransactions(
+        transactions
+          .filter((tx) => {
+            if (!allowSameReceipt) return true;
+            const orderId =
+              typeof tx.orderId === 'string' && tx.orderId.trim()
+                ? tx.orderId.trim()
+                : null;
+            if (
+              orderId &&
+              receiptOrderIdSet.has(orderId) &&
+              (tx.type === TxnType.EARN || tx.type === TxnType.REDEEM)
+            ) {
+              return false;
+            }
+            return true;
+          })
+          .map((tx) =>
+            this.mapTransaction(tx, ratings.get(tx.orderId ?? '') ?? null),
+          )
+          .filter((item): item is OperationsLogItemDto => item !== null),
+      ),
     ];
 
     let normalizedItems = items;
@@ -294,7 +314,7 @@ export class OperationsLogService {
     );
 
     return {
-      total: normalizedItems.length,
+      total: totalCount,
       items: normalizedItems.slice(offset, offset + limit),
     };
   }
@@ -1391,6 +1411,149 @@ export class OperationsLogService {
       };
     }
     return null;
+  }
+
+  private appendTransactionAnd(
+    where: Prisma.TransactionWhereInput,
+    extra: Prisma.TransactionWhereInput,
+  ): Prisma.TransactionWhereInput {
+    const existingAnd = where.AND
+      ? Array.isArray(where.AND)
+        ? where.AND
+        : [where.AND]
+      : [];
+    return { ...where, AND: [...existingAnd, extra] };
+  }
+
+  private async countLogTransactions(
+    where: Prisma.TransactionWhereInput,
+    receiptOrderIds: string[],
+  ): Promise<number> {
+    const earnRedeemWhere = this.appendTransactionAnd(where, {
+      type: { in: [TxnType.EARN, TxnType.REDEEM] },
+    });
+    const earnRedeemNoOrderId = await this.prisma.transaction.count({
+      where: this.appendTransactionAnd(earnRedeemWhere, { orderId: null }),
+    });
+    const orderIdFilter: Prisma.TransactionWhereInput = {
+      orderId: { not: null },
+    };
+    if (receiptOrderIds.length) {
+      orderIdFilter.orderId = { not: null, notIn: receiptOrderIds };
+    }
+    const earnRedeemGroups = await this.prisma.transaction.groupBy({
+      by: ['orderId'],
+      where: this.appendTransactionAnd(earnRedeemWhere, orderIdFilter),
+      _count: { _all: true },
+    });
+
+    const refundWhere = this.appendTransactionAnd(where, {
+      type: TxnType.REFUND,
+    });
+    const refundNoOrderId = await this.prisma.transaction.count({
+      where: this.appendTransactionAnd(refundWhere, { orderId: null }),
+    });
+    const refundGroups = await this.prisma.transaction.groupBy({
+      by: ['orderId'],
+      where: this.appendTransactionAnd(refundWhere, {
+        orderId: { not: null },
+      }),
+      _count: { _all: true },
+    });
+
+    const otherWhere = this.appendTransactionAnd(where, {
+      type: { notIn: [TxnType.EARN, TxnType.REDEEM, TxnType.REFUND] },
+    });
+    const otherCount = await this.prisma.transaction.count({
+      where: otherWhere,
+    });
+
+    return (
+      earnRedeemNoOrderId +
+      earnRedeemGroups.length +
+      refundNoOrderId +
+      refundGroups.length +
+      otherCount
+    );
+  }
+
+  private mergeEarnRedeemTransactions(
+    items: OperationsLogItemDto[],
+  ): OperationsLogItemDto[] {
+    const grouped = new Map<
+      string,
+      {
+        base: OperationsLogItemDto;
+        latest: string;
+        earn: number;
+        redeem: number;
+        totalAmount: number;
+        hasEarn: boolean;
+        hasRedeem: boolean;
+      }
+    >();
+    const rest: OperationsLogItemDto[] = [];
+
+    for (const item of items) {
+      const orderId = item.orderId ? String(item.orderId).trim() : '';
+      const kind = String(item.kind || '').toUpperCase();
+      if (!orderId || (kind !== 'EARN' && kind !== 'REDEEM')) {
+        rest.push(item);
+        continue;
+      }
+      const earnAmount = Number(item.earn?.amount ?? 0) || 0;
+      const redeemAmount = Number(item.redeem?.amount ?? 0) || 0;
+      const current = grouped.get(orderId) ?? {
+        base: item,
+        latest: item.occurredAt,
+        earn: 0,
+        redeem: 0,
+        totalAmount: Number(item.totalAmount ?? 0) || 0,
+        hasEarn: false,
+        hasRedeem: false,
+      };
+      current.earn += earnAmount;
+      current.redeem += redeemAmount;
+      if (earnAmount > 0) current.hasEarn = true;
+      if (redeemAmount > 0) current.hasRedeem = true;
+      const currentTotal = Number(item.totalAmount ?? 0) || 0;
+      if (currentTotal > current.totalAmount) {
+        current.totalAmount = currentTotal;
+      }
+      if (
+        new Date(item.occurredAt).getTime() >
+        new Date(current.latest).getTime()
+      ) {
+        current.latest = item.occurredAt;
+        current.base = item;
+      }
+      grouped.set(orderId, current);
+    }
+
+    const merged = Array.from(grouped.values()).map((group) => {
+      const combinedDetails =
+        group.hasEarn && group.hasRedeem ? 'Покупка' : group.base.details;
+      const combinedKind =
+        group.hasEarn && group.hasRedeem ? 'PURCHASE' : group.base.kind;
+      return {
+        ...group.base,
+        occurredAt: group.latest,
+        earn: {
+          amount: group.earn,
+          source: group.earn > 0 ? combinedDetails : null,
+        },
+        redeem: {
+          amount: group.redeem,
+          source: group.redeem > 0 ? combinedDetails : null,
+        },
+        totalAmount: group.totalAmount || group.base.totalAmount,
+        change: group.earn - group.redeem,
+        kind: combinedKind,
+        details: combinedDetails,
+      };
+    });
+
+    return [...rest, ...merged];
   }
 
   private normalizeStaffStatuses(

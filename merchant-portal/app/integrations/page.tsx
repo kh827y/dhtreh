@@ -25,6 +25,7 @@ type TelegramSummary = {
 
 type RestApiSummary = {
   enabled: boolean;
+  status?: string | null;
   apiKeyMask: string | null;
   baseUrl: string | null;
   requireBridgeSignature: boolean;
@@ -107,7 +108,11 @@ export default function IntegrationsPage() {
         name: "REST API",
         description: "API для работы с баллами и интеграции во внешние системы",
         icon: Code,
-        connected: Boolean(restApi?.enabled),
+        connected: Boolean(
+          restApi?.status
+            ? String(restApi.status).toLowerCase() === "active"
+            : restApi?.enabled,
+        ),
         color: "bg-blue-50 text-blue-600",
         docsUrl: "#",
         targetHref: "/integrations/rest-api",
@@ -118,14 +123,21 @@ export default function IntegrationsPage() {
         name: "Telegram Miniapp",
         description: "Программа лояльности в мини-приложении Telegram.",
         icon: Send,
-        connected: Boolean(telegram?.enabled),
+        connected: Boolean(telegram?.enabled && telegram?.connectionHealthy),
         color: "bg-sky-50 text-sky-500",
         docsUrl: "#",
         targetHref: "/integrations/telegram-mini-app",
         error: telegramError || undefined,
       },
     ],
-    [restApi?.enabled, telegram?.enabled, restError, telegramError],
+    [
+      restApi?.enabled,
+      restApi?.status,
+      telegram?.enabled,
+      telegram?.connectionHealthy,
+      restError,
+      telegramError,
+    ],
   );
 
   const sortedIntegrations = React.useMemo(() => {

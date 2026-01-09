@@ -66,7 +66,9 @@ export default function TelegramMiniAppPage() {
     load();
   }, []);
 
-  const isConnected = Boolean(state?.enabled);
+  const isEnabled = Boolean(state?.enabled);
+  const isHealthy = Boolean(state?.connectionHealthy);
+  const isConnected = isEnabled && isHealthy;
   const miniappLink = state?.miniappUrl || "";
   const botUsername = state?.botUsername || "";
 
@@ -294,6 +296,53 @@ export default function TelegramMiniAppPage() {
                     </button>
                   </div>
                 </div>
+              ) : isEnabled && !isHealthy && !editingToken ? (
+                <div className="bg-amber-50 border border-amber-100 rounded-xl p-5 ">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-4">
+                      <div className="bg-amber-100 p-3 rounded-full text-amber-600">
+                        <Bot size={24} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-amber-900">
+                          Бот подключен, но связь не работает
+                        </h4>
+                        {botUsername && (
+                          <p className="text-amber-700 font-medium">
+                            {botUsername}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={checkConnection}
+                      disabled={checking || actionPending || loading}
+                      className="text-gray-500 hover:text-amber-700 p-2 rounded-full hover:bg-amber-100 transition-colors disabled:opacity-60"
+                      title="Проверить подключение"
+                    >
+                      <RefreshCw
+                        size={18}
+                        className={checking ? "animate-spin" : ""}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="mt-6 pt-4 border-t border-amber-100 flex items-center justify-between">
+                    <button
+                      onClick={() => setEditingToken(true)}
+                      className="text-sm font-medium text-amber-800 hover:underline"
+                    >
+                      Заменить токен
+                    </button>
+                    <button
+                      onClick={disconnect}
+                      disabled={actionPending}
+                      className="text-sm font-medium text-red-600 hover:text-red-800 disabled:opacity-60"
+                    >
+                      Отключить
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-4">
                   <div>
@@ -354,6 +403,11 @@ export default function TelegramMiniAppPage() {
             </h3>
 
             <div className="space-y-4">
+              {!miniappLink && (
+                <p className="text-xs text-amber-600">
+                  Ссылка на Mini App не настроена. Проверьте MINIAPP_BASE_URL.
+                </p>
+              )}
               <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
                 <label className="block text-xs font-bold text-blue-800 uppercase tracking-wide mb-1">
                   Ссылка на ваше приложение (Main App)
@@ -408,7 +462,9 @@ export default function TelegramMiniAppPage() {
               <div className="pt-4 border-t border-gray-100">
                 <p className="text-xs text-gray-500">
                   Не требуется устанавливать Menu Button - это делается
-                  автоматически после подключения токена бота.
+                  автоматически после подключения токена бота. Если кнопка
+                  не добавилась автоматически, можно поставить её вручную в
+                  BotFather.
                 </p>
               </div>
             </div>

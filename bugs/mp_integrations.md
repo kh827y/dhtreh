@@ -4,9 +4,7 @@
 
 ## P2 — Средняя критичность
 
-1. **Статус «Подключено» не отражает реальное состояние интеграций.**
-   - На странице интеграций статус берётся только из `enabled`, при этом **игнорируется** `connectionHealthy` для Telegram и `status`/ошибки для REST API. В результате при сломанном webhook’е Telegram или других проблемах интеграция визуально остаётся «Подключено», что вводит в заблуждение и мешает диагностике.
-   - Где: `merchant-portal/app/integrations/page.tsx` (логика `connected: Boolean(telegram?.enabled)` и `connected: Boolean(restApi?.enabled)`), backend возвращает `connectionHealthy` и другие поля через `/portal/integrations/telegram-mini-app` и `/portal/integrations/rest-api`.
+Нет актуальных пунктов.
 
 ## P3 — Низкая критичность
 
