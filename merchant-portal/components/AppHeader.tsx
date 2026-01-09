@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Crown,
   Clock,
+  AlertTriangle,
   Trophy,
   Ban,
   RefreshCcw,
@@ -212,6 +213,7 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
   };
 
   const daysLeft = subscription?.daysLeft;
+  const showExpiryNotice = Boolean(subscription?.expiresSoon && !subscription?.expired);
 
   return (
     <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-8 sticky top-0 z-20">
@@ -279,6 +281,15 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
 
       {/* Right Actions */}
       <div className="flex items-center space-x-4">
+        {showExpiryNotice && (
+          <div className="hidden md:flex items-center bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3 py-1.5 text-xs font-semibold">
+            <AlertTriangle size={14} className="mr-2 text-amber-600" />
+            <span>Подписка скоро истекает</span>
+            <span className="ml-2 text-amber-700">
+              {daysLeft != null ? `${daysLeft} дн.` : "скоро"}
+            </span>
+          </div>
+        )}
         {/* Subscription Info — 1:1 как в new design */}
         <div className="hidden md:flex items-center bg-purple-50 rounded-lg px-3 py-1.5 border border-purple-100">
           <div className="flex items-center space-x-1.5 mr-3 border-r border-purple-200 pr-3">

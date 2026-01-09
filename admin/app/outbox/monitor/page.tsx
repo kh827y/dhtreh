@@ -11,18 +11,26 @@ export default function OutboxMonitorPage() {
   const [stats, setStats] = useState<any>(null);
   const [metrics, setMetrics] = useState<Summary | null>(null);
   const [err, setErr] = useState<string>('');
+  const sinceValue = since.trim();
+  const sinceValid = !sinceValue || !Number.isNaN(new Date(sinceValue).getTime());
 
   async function load() {
     try {
       if (!merchantId) { setErr('Укажите merchantId'); setStats(null); setMetrics(null); return; }
+      if (!sinceValid) {
+        setErr('Неверный формат даты');
+        setStats(null);
+        setMetrics(null);
+        return;
+      }
       const [st, met] = await Promise.all([
-        outboxStats(merchantId, since || undefined),
+        outboxStats(merchantId, sinceValue || undefined),
         fetch('/api/metrics').then(r=>r.json()),
       ]);
       setStats(st); setMetrics(met); setErr('');
     } catch (e: any) { setErr(String(e?.message || e)); }
   }
-  useEffect(() => { load().catch(()=>{}); const id = setInterval(load, 15000); return () => clearInterval(id); }, [merchantId, since]);
+  useEffect(() => { load().catch(()=>{}); const id = setInterval(load, 15000); return () => clearInterval(id); }, [merchantId, sinceValid, sinceValue]);
 
   const setPreset = (h: number) => setSince(new Date(Date.now() - h*3600*1000).toISOString());
 
@@ -42,12 +50,17 @@ export default function OutboxMonitorPage() {
       {err && <div style={{ color:'#f38ba8', marginBottom:8 }}>{err}</div>}
 
       {metrics && (
-        <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginBottom:10 }}>
-          <Metric label="Pending" value={metrics.outboxPending} warn={v=>v>0} />
-          <Metric label="DEAD total" value={metrics.outboxDead} warn={v=>v>0} />
-          <Metric label="Breaker open" value={metrics.circuitOpen || 0} warn={v=>v>0} />
-          <Metric label="Rate-limited" value={metrics.rateLimited || 0} />
-        </div>
+        <>
+          <div style={{ opacity: 0.7, marginBottom: 6 }}>
+            Метрики ниже общие по системе и не зависят от выбранного мерчанта.
+          </div>
+          <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginBottom:10 }}>
+            <Metric label="Pending" value={metrics.outboxPending} warn={v=>v>0} />
+            <Metric label="DEAD total" value={metrics.outboxDead} warn={v=>v>0} />
+            <Metric label="Breaker open" value={metrics.circuitOpen || 0} warn={v=>v>0} />
+            <Metric label="Rate-limited" value={metrics.rateLimited || 0} />
+          </div>
+        </>
       )}
       {metrics?.outboxEvents && (
         <div style={{ marginBottom: 10 }}>

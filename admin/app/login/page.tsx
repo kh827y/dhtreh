@@ -10,9 +10,22 @@ export default function LoginPage() {
     e.preventDefault(); setBusy(true); setMsg('');
     try {
       const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password, code: code || undefined }) });
-      if (!r.ok) throw new Error(await r.text());
-      location.href = '/';
-    } catch (e: any) { setMsg(String(e?.message || e)); }
+      if (r.ok) {
+        location.href = '/';
+        return;
+      }
+      if (r.status === 401) {
+        setMsg('Неверный пароль или код.');
+        return;
+      }
+      if (r.status === 429) {
+        setMsg('Слишком много попыток. Попробуйте позже.');
+        return;
+      }
+      setMsg('Вход временно недоступен. Попробуйте позже.');
+    } catch {
+      setMsg('Не удалось подключиться. Попробуйте позже.');
+    }
     finally { setBusy(false); }
   }
   return (
@@ -27,4 +40,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

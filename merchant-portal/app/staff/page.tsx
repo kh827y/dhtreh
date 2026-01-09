@@ -42,6 +42,7 @@ type Staff = {
   status: string;
   portalAccessEnabled: boolean;
   canAccessPortal: boolean;
+  portalLoginEnabled?: boolean;
   isOwner: boolean;
   accesses: StaffOutletAccess[];
   groups: StaffGroup[];
@@ -58,6 +59,8 @@ type AccessGroup = {
   isSystem?: boolean;
   isDefault?: boolean;
 };
+
+const STAFF_PAGE_SIZE = 200;
 
 function isCashierGroup(group?: { id?: string; name?: string; scope?: string | null }) {
   if (!group) return false;
@@ -115,7 +118,11 @@ function getPortalGroupLabel(staff: Staff): string | null {
 }
 
 function hasPortalAccess(staff: Staff): boolean {
-  return Boolean(staff.isOwner || staff.portalAccessEnabled || staff.canAccessPortal);
+  if (staff.isOwner) return true;
+  if (typeof staff.portalLoginEnabled === "boolean") {
+    return staff.portalLoginEnabled;
+  }
+  return Boolean(staff.portalAccessEnabled && staff.canAccessPortal);
 }
 
 function getGroupBadgeStyle(groupName: string) {
@@ -145,6 +152,8 @@ export default function StaffPage() {
   const [createError, setCreateError] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [groupsLoading, setGroupsLoading] = React.useState(false);
+  const groupsLoadedRef = React.useRef(false);
+  const groupsLoadingRef = React.useRef(false);
 
   const [tab, setTab] = React.useState<"ACTIVE" | "FIRED">("ACTIVE");
   const [groupFilter, setGroupFilter] = React.useState<string>("ALL");
@@ -215,10 +224,8 @@ export default function StaffPage() {
         const haystack = [
           staff.firstName,
           staff.lastName,
-          staff.login,
           staff.email,
           staff.phone,
-          staff.position,
         ]
           .filter(Boolean)
           .map((value) => String(value).toLowerCase())
@@ -241,7 +248,8 @@ export default function StaffPage() {
   }, [filteredItems]);
 
   const ensureGroupsLoaded = React.useCallback(async () => {
-    if (groupsLoading) return;
+    if (groupsLoadedRef.current || groupsLoadingRef.current) return;
+    groupsLoadingRef.current = true;
     setGroupsLoading(true);
     try {
       let list: AccessGroup[] = [];
@@ -265,10 +273,12 @@ export default function StaffPage() {
         }))
         .filter((item) => item.id && item.name && !isCashierGroup(item));
       setGroups(normalized);
+      groupsLoadedRef.current = true;
     } finally {
+      groupsLoadingRef.current = false;
       setGroupsLoading(false);
     }
-  }, [groupsLoading]);
+  }, []);
 
   const resetCreateForm = React.useCallback(() => {
     setCFirstName("");
@@ -288,16 +298,20 @@ export default function StaffPage() {
     setError("");
     try {
       const qs = new URLSearchParams();
-      qs.set("page", "1");
-      qs.set("pageSize", "100");
       if (outletFilter !== "ALL") qs.set("outletId", outletFilter);
       if (groupFilter !== "ALL") qs.set("groupId", groupFilter);
       if (onlyPortal) qs.set("portalOnly", "true");
       const trimmedSearch = search.trim();
       if (trimmedSearch) qs.set("search", trimmedSearch);
+      const buildStaffUrl = (page: number) => {
+        const params = new URLSearchParams(qs);
+        params.set("page", String(page));
+        params.set("pageSize", String(STAFF_PAGE_SIZE));
+        return `/api/portal/staff?${params.toString()}`;
+      };
 
       const [staffRes, outletsRes] = await Promise.all([
-        fetch(`/api/portal/staff?${qs.toString()}`),
+        fetch(buildStaffUrl(1)),
         fetch(`/api/portal/outlets`),
       ]);
       if (staffRes.status === 401 || staffRes.status === 403) {
@@ -314,6 +328,24 @@ export default function StaffPage() {
         : Array.isArray(staffPayload)
           ? staffPayload
           : [];
+      const totalPages = Number(staffPayload?.meta?.totalPages ?? 1) || 1;
+      if (totalPages > 1) {
+        for (let page = 2; page <= totalPages; page += 1) {
+          const pageRes = await fetch(buildStaffUrl(page));
+          if (pageRes.status === 401 || pageRes.status === 403) {
+            router.push('/login');
+            return;
+          }
+          if (!pageRes.ok) throw new Error(await pageRes.text());
+          const pagePayload = await pageRes.json();
+          const pageItems: Staff[] = Array.isArray(pagePayload?.items)
+            ? pagePayload.items
+            : Array.isArray(pagePayload)
+              ? pagePayload
+              : [];
+          staffItemsRaw.push(...pageItems);
+        }
+      }
       const staffItems = staffItemsRaw.map((it, idx) => {
         const id = String((it as any)?.id ?? '');
         const status = String((it as any)?.status ?? '').toUpperCase();
@@ -514,7 +546,7 @@ export default function StaffPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
               type="text"
-              placeholder="Поиск по имени или телефону..."
+              placeholder="Поиск по имени, телефону или email..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"

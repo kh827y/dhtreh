@@ -22,6 +22,7 @@ import {
   UpdateOutletPosDto,
 } from './dto';
 import { signPortalJwt as issuePortalJwt } from '../portal-auth/portal-jwt.util';
+import { ensureBaseTier } from '../loyalty/tier-defaults.util';
 import {
   DEFAULT_TIMEZONE_CODE,
   findTimezone,
@@ -710,8 +711,8 @@ export class MerchantsService {
 
   async updateSettings(
     merchantId: string,
-    earnBps: number,
-    redeemLimitBps: number,
+    earnBps?: number,
+    redeemLimitBps?: number,
     qrTtlSec?: number,
     webhookUrl?: string,
     webhookSecret?: string,
@@ -738,77 +739,89 @@ export class MerchantsService {
       create: { id: merchantId, name: merchantId, initialName: merchantId },
     });
 
+    const updateData: Prisma.MerchantSettingsUpdateInput = {
+      qrTtlSec: qrTtlSec ?? undefined,
+      webhookUrl,
+      webhookSecret,
+      webhookKeyId,
+      webhookSecretNext: extras?.webhookSecretNext ?? undefined,
+      webhookKeyIdNext: extras?.webhookKeyIdNext ?? undefined,
+      useWebhookNext: extras?.useWebhookNext ?? undefined,
+      requireBridgeSig: requireBridgeSig ?? undefined,
+      bridgeSecret: bridgeSecret ?? undefined,
+      bridgeSecretNext: extras?.bridgeSecretNext ?? undefined,
+      redeemCooldownSec: redeemCooldownSec ?? undefined,
+      earnCooldownSec: earnCooldownSec ?? undefined,
+      redeemDailyCap: redeemDailyCap ?? undefined,
+      earnDailyCap: earnDailyCap ?? undefined,
+      ...(extras?.maxOutlets !== undefined
+        ? { maxOutlets: extras.maxOutlets }
+        : {}),
+      requireJwtForQuote: requireJwtForQuote ?? undefined,
+      rulesJson: normalizedRulesJson ?? undefined,
+      requireStaffKey: requireStaffKey ?? undefined,
+      updatedAt: new Date(),
+      pointsTtlDays: extras?.pointsTtlDays ?? undefined,
+      earnDelayDays: extras?.earnDelayDays ?? undefined,
+      telegramBotToken: extras?.telegramBotToken ?? undefined,
+      telegramBotUsername: extras?.telegramBotUsername ?? undefined,
+      telegramStartParamRequired:
+        extras?.telegramStartParamRequired ?? undefined,
+      miniappBaseUrl: extras?.miniappBaseUrl ?? undefined,
+      miniappThemePrimary: extras?.miniappThemePrimary ?? undefined,
+      miniappThemeBg: extras?.miniappThemeBg ?? undefined,
+      miniappLogoUrl: extras?.miniappLogoUrl ?? undefined,
+      timezone: extras?.timezone ?? undefined,
+    };
+    if (earnBps !== undefined) {
+      updateData.earnBps = earnBps;
+    }
+    if (redeemLimitBps !== undefined) {
+      updateData.redeemLimitBps = redeemLimitBps;
+    }
+
+    const createData: Prisma.MerchantSettingsUncheckedCreateInput = {
+      merchantId,
+      qrTtlSec: qrTtlSec ?? 300,
+      webhookUrl: webhookUrl ?? null,
+      webhookSecret: webhookSecret ?? null,
+      webhookKeyId: webhookKeyId ?? null,
+      webhookSecretNext: extras?.webhookSecretNext ?? null,
+      webhookKeyIdNext: extras?.webhookKeyIdNext ?? null,
+      useWebhookNext: extras?.useWebhookNext ?? false,
+      requireBridgeSig: requireBridgeSig ?? false,
+      bridgeSecret: bridgeSecret ?? null,
+      bridgeSecretNext: extras?.bridgeSecretNext ?? null,
+      redeemCooldownSec: redeemCooldownSec ?? 0,
+      earnCooldownSec: earnCooldownSec ?? 0,
+      redeemDailyCap: redeemDailyCap ?? null,
+      earnDailyCap: earnDailyCap ?? null,
+      maxOutlets: extras?.maxOutlets ?? null,
+      requireJwtForQuote: requireJwtForQuote ?? false,
+      rulesJson: normalizedRulesJson ?? null,
+      requireStaffKey: requireStaffKey ?? false,
+      pointsTtlDays: extras?.pointsTtlDays ?? null,
+      earnDelayDays: extras?.earnDelayDays ?? null,
+      telegramBotToken: extras?.telegramBotToken ?? null,
+      telegramBotUsername: extras?.telegramBotUsername ?? null,
+      telegramStartParamRequired: extras?.telegramStartParamRequired ?? false,
+      miniappBaseUrl: extras?.miniappBaseUrl ?? null,
+      miniappThemePrimary: extras?.miniappThemePrimary ?? null,
+      miniappThemeBg: extras?.miniappThemeBg ?? null,
+      miniappLogoUrl: extras?.miniappLogoUrl ?? null,
+      timezone: extras?.timezone ?? undefined,
+    };
+    if (earnBps !== undefined) {
+      createData.earnBps = earnBps;
+    }
+    if (redeemLimitBps !== undefined) {
+      createData.redeemLimitBps = redeemLimitBps;
+    }
+
     const updated = await this.prisma.merchantSettings.upsert({
       where: { merchantId },
-      update: {
-        earnBps,
-        redeemLimitBps,
-        qrTtlSec: qrTtlSec ?? undefined,
-        webhookUrl,
-        webhookSecret,
-        webhookKeyId,
-        webhookSecretNext: extras?.webhookSecretNext ?? undefined,
-        webhookKeyIdNext: extras?.webhookKeyIdNext ?? undefined,
-        useWebhookNext: extras?.useWebhookNext ?? undefined,
-        requireBridgeSig: requireBridgeSig ?? undefined,
-        bridgeSecret: bridgeSecret ?? undefined,
-        bridgeSecretNext: extras?.bridgeSecretNext ?? undefined,
-        redeemCooldownSec: redeemCooldownSec ?? undefined,
-        earnCooldownSec: earnCooldownSec ?? undefined,
-        redeemDailyCap: redeemDailyCap ?? undefined,
-        earnDailyCap: earnDailyCap ?? undefined,
-        ...(extras?.maxOutlets !== undefined
-          ? { maxOutlets: extras.maxOutlets }
-          : {}),
-        requireJwtForQuote: requireJwtForQuote ?? undefined,
-        rulesJson: normalizedRulesJson ?? undefined,
-        requireStaffKey: requireStaffKey ?? undefined,
-        updatedAt: new Date(),
-        pointsTtlDays: extras?.pointsTtlDays ?? undefined,
-        earnDelayDays: extras?.earnDelayDays ?? undefined,
-        telegramBotToken: extras?.telegramBotToken ?? undefined,
-        telegramBotUsername: extras?.telegramBotUsername ?? undefined,
-        telegramStartParamRequired:
-          extras?.telegramStartParamRequired ?? undefined,
-        miniappBaseUrl: extras?.miniappBaseUrl ?? undefined,
-        miniappThemePrimary: extras?.miniappThemePrimary ?? undefined,
-        miniappThemeBg: extras?.miniappThemeBg ?? undefined,
-        miniappLogoUrl: extras?.miniappLogoUrl ?? undefined,
-        timezone: extras?.timezone ?? undefined,
-      },
-      create: {
-        merchantId,
-        earnBps,
-        redeemLimitBps,
-        qrTtlSec: qrTtlSec ?? 300,
-        webhookUrl: webhookUrl ?? null,
-        webhookSecret: webhookSecret ?? null,
-        webhookKeyId: webhookKeyId ?? null,
-        webhookSecretNext: extras?.webhookSecretNext ?? null,
-        webhookKeyIdNext: extras?.webhookKeyIdNext ?? null,
-        useWebhookNext: extras?.useWebhookNext ?? false,
-        requireBridgeSig: requireBridgeSig ?? false,
-        bridgeSecret: bridgeSecret ?? null,
-        bridgeSecretNext: extras?.bridgeSecretNext ?? null,
-        redeemCooldownSec: redeemCooldownSec ?? 0,
-        earnCooldownSec: earnCooldownSec ?? 0,
-        redeemDailyCap: redeemDailyCap ?? null,
-        earnDailyCap: earnDailyCap ?? null,
-        maxOutlets: extras?.maxOutlets ?? null,
-        requireJwtForQuote: requireJwtForQuote ?? false,
-        rulesJson: normalizedRulesJson ?? null,
-        requireStaffKey: requireStaffKey ?? false,
-        pointsTtlDays: extras?.pointsTtlDays ?? null,
-        earnDelayDays: extras?.earnDelayDays ?? null,
-        telegramBotToken: extras?.telegramBotToken ?? null,
-        telegramBotUsername: extras?.telegramBotUsername ?? null,
-        telegramStartParamRequired: extras?.telegramStartParamRequired ?? false,
-        miniappBaseUrl: extras?.miniappBaseUrl ?? null,
-        miniappThemePrimary: extras?.miniappThemePrimary ?? null,
-        miniappThemeBg: extras?.miniappThemeBg ?? null,
-        miniappLogoUrl: extras?.miniappLogoUrl ?? null,
-        timezone: extras?.timezone ?? undefined,
-      },
+      update: updateData,
+      create: createData,
     });
     return {
       merchantId,
@@ -850,8 +863,23 @@ export class MerchantsService {
     },
   ) {
     const s = await this.getSettings(merchantId);
-    let earnBps = s.earnBps ?? 300;
-    let redeemLimitBps = s.redeemLimitBps ?? 5000;
+    let earnBps = 0;
+    let redeemLimitBps = 0;
+    try {
+      await ensureBaseTier(this.prisma, merchantId);
+      const tier = await this.prisma.loyaltyTier.findFirst({
+        where: { merchantId, isInitial: true },
+        orderBy: { thresholdAmount: 'asc' },
+      });
+      if (tier) {
+        if (typeof tier.earnRateBps === 'number') {
+          earnBps = Math.max(0, Math.floor(Number(tier.earnRateBps)));
+        }
+        if (typeof tier.redeemRateBps === 'number') {
+          redeemLimitBps = Math.max(0, Math.floor(Number(tier.redeemRateBps)));
+        }
+      }
+    } catch {}
     const rules = s.rulesJson;
     if (Array.isArray(rules)) {
       for (const item of rules) {
@@ -1012,6 +1040,37 @@ export class MerchantsService {
     return outlet;
   }
 
+  private async outletHasOperations(
+    tx: Prisma.TransactionClient,
+    merchantId: string,
+    outletId: string,
+  ) {
+    const [receipt, txn, hold, promoUsage, promoParticipant] =
+      await Promise.all([
+        tx.receipt.findFirst({
+          where: { merchantId, outletId },
+          select: { id: true },
+        }),
+        tx.transaction.findFirst({
+          where: { merchantId, outletId },
+          select: { id: true },
+        }),
+        tx.hold.findFirst({
+          where: { merchantId, outletId },
+          select: { id: true },
+        }),
+        tx.promoCodeUsage.findFirst({
+          where: { merchantId, outletId },
+          select: { id: true },
+        }),
+        tx.promotionParticipant.findFirst({
+          where: { merchantId, outletId },
+          select: { id: true },
+        }),
+      ]);
+    return Boolean(receipt || txn || hold || promoUsage || promoParticipant);
+  }
+
   private async assertOutletLimit(merchantId: string) {
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
@@ -1054,7 +1113,36 @@ export class MerchantsService {
   }
   async deleteOutlet(merchantId: string, outletId: string) {
     await this.ensureOutlet(merchantId, outletId);
-    await this.prisma.outlet.delete({ where: { id: outletId } });
+    await this.prisma.$transaction(async (tx) => {
+      const hasOperations = await this.outletHasOperations(
+        tx,
+        merchantId,
+        outletId,
+      );
+      if (hasOperations) {
+        await tx.outlet.update({
+          where: { id: outletId },
+          data: { hidden: true, status: 'INACTIVE' },
+        });
+        return;
+      }
+      await tx.staffOutletAccess.deleteMany({
+        where: { merchantId, outletId },
+      });
+      await tx.outletSchedule.deleteMany({ where: { outletId } });
+      await tx.productStock.deleteMany({ where: { outletId } });
+      await tx.cashierSession.deleteMany({ where: { merchantId, outletId } });
+      await tx.promoCodeUsage.deleteMany({ where: { merchantId, outletId } });
+      await tx.promotionParticipant.deleteMany({
+        where: { merchantId, outletId },
+      });
+      await tx.staffKpiDaily.deleteMany({ where: { outletId } });
+      await tx.staffMotivationEntry.deleteMany({ where: { outletId } });
+      await tx.outletKpiDaily.deleteMany({ where: { outletId } });
+      await tx.pushDevice.deleteMany({ where: { outletId } });
+      await tx.device.deleteMany({ where: { outletId } });
+      await tx.outlet.delete({ where: { id: outletId } });
+    });
     return { ok: true };
   }
 
@@ -1552,17 +1640,29 @@ export class MerchantsService {
     limit = 50,
     type?: string,
     since?: string,
+    cursor?: { createdAt: Date; id: string } | null,
   ) {
     const where: any = { merchantId };
-    if (status) where.status = status;
+    const normalizedStatus = status ? String(status).toUpperCase() : undefined;
+    if (normalizedStatus) where.status = normalizedStatus;
     if (type) where.eventType = type;
+    const and: any[] = [];
     if (since) {
       const d = new Date(since);
-      if (!isNaN(d.getTime())) where.createdAt = { gte: d };
+      if (!isNaN(d.getTime())) and.push({ createdAt: { gte: d } });
     }
+    if (cursor?.createdAt && cursor?.id) {
+      and.push({
+        OR: [
+          { createdAt: { lt: cursor.createdAt } },
+          { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+        ],
+      });
+    }
+    if (and.length) where.AND = and;
     return this.prisma.eventOutbox.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit,
     });
   }
@@ -1572,6 +1672,12 @@ export class MerchantsService {
     });
     if (!ev || ev.merchantId !== merchantId)
       throw new NotFoundException('Event not found');
+    if (ev.status === 'SENT') {
+      throw new BadRequestException('Event already delivered');
+    }
+    if (ev.status === 'SENDING') {
+      throw new BadRequestException('Event is being delivered');
+    }
     await this.prisma.eventOutbox.update({
       where: { id: eventId },
       data: { status: 'PENDING', nextRetryAt: new Date(), lastError: null },
@@ -1597,7 +1703,15 @@ export class MerchantsService {
   }
   async retryAll(merchantId: string, status?: string) {
     const where: any = { merchantId };
-    if (status) where.status = status;
+    const normalizedStatus = status ? String(status).toUpperCase() : undefined;
+    if (normalizedStatus) {
+      if (normalizedStatus === 'SENT' || normalizedStatus === 'SENDING') {
+        return { ok: true, updated: 0 };
+      }
+      where.status = normalizedStatus;
+    } else {
+      where.status = { in: ['FAILED', 'DEAD'] };
+    }
     const updated = await this.prisma.eventOutbox.updateMany({
       where,
       data: { status: 'PENDING', nextRetryAt: new Date(), lastError: null },
@@ -1610,7 +1724,17 @@ export class MerchantsService {
     params: { status?: string; since?: string },
   ) {
     const where: any = { merchantId };
-    if (params.status) where.status = params.status;
+    const normalizedStatus = params.status
+      ? String(params.status).toUpperCase()
+      : undefined;
+    if (normalizedStatus) {
+      if (normalizedStatus === 'SENT' || normalizedStatus === 'SENDING') {
+        return { ok: true, updated: 0 };
+      }
+      where.status = normalizedStatus;
+    } else {
+      where.status = { in: ['FAILED', 'DEAD'] };
+    }
     if (params.since) {
       const d = new Date(params.since);
       if (!isNaN(d.getTime())) where.createdAt = { gte: d };
@@ -1720,38 +1844,33 @@ export class MerchantsService {
     };
   }
   async listOutboxByOrder(merchantId: string, orderId: string, limit = 100) {
-    const items = await this.prisma.eventOutbox.findMany({
-      where: { merchantId },
+    const normalizedOrderId = String(orderId || '').trim();
+    if (!normalizedOrderId) return [];
+    return this.prisma.eventOutbox.findMany({
+      where: {
+        merchantId,
+        payload: { path: ['orderId'], equals: normalizedOrderId } as any,
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
-    });
-    return items.filter((i) => {
-      try {
-        return (i.payload as any)?.orderId === orderId;
-      } catch {
-        return false;
-      }
     });
   }
 
   // Staff tokens
+  private secureToken(len = 48) {
+    const crypto = require('crypto');
+    const bytes = Math.ceil(len / 2);
+    return crypto.randomBytes(bytes).toString('hex').slice(0, len);
+  }
   private randToken() {
-    return (
-      Math.random().toString(36).slice(2) +
-      Math.random().toString(36).slice(2) +
-      Math.random().toString(36).slice(2)
-    ).slice(0, 48);
+    return this.secureToken(48);
   }
   private sha256(s: string) {
     const crypto = require('crypto');
     return crypto.createHash('sha256').update(s, 'utf8').digest('hex');
   }
   private randomKey(len = 48) {
-    return (
-      Math.random().toString(36).slice(2) +
-      Math.random().toString(36).slice(2) +
-      Math.random().toString(36).slice(2)
-    ).slice(0, len);
+    return this.secureToken(len);
   }
   private async signPortalJwt(
     merchantId: string,
@@ -2046,6 +2165,8 @@ export class MerchantsService {
     params: {
       limit: number;
       before?: Date;
+      from?: Date;
+      to?: Date;
       orderId?: string;
       customerId?: string;
     },
@@ -2054,6 +2175,14 @@ export class MerchantsService {
     if (params.orderId) where.orderId = params.orderId;
     if (params.customerId) where.customerId = params.customerId;
     if (params.before) where.createdAt = { lt: params.before };
+    if (params.from)
+      where.createdAt = Object.assign(where.createdAt || {}, {
+        gte: params.from,
+      });
+    if (params.to)
+      where.createdAt = Object.assign(where.createdAt || {}, {
+        lte: params.to,
+      });
     const items = await this.prisma.receipt.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -2578,7 +2707,7 @@ export class MerchantsService {
       update: { timezone: normalized.code, updatedAt: new Date() },
       create: {
         merchantId,
-        earnBps: 500,
+        earnBps: 300,
         redeemLimitBps: 5000,
         qrTtlSec: 300,
         requireBridgeSig: false,

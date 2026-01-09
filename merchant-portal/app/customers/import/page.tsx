@@ -187,8 +187,11 @@ export default function ImportCustomersPage() {
   };
 
   const handleFile = (file: File) => {
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      alert("Пожалуйста, загрузите файл в формате CSV");
+    const lower = file.name.toLowerCase();
+    const isCsv = lower.endsWith(".csv");
+    const isXlsx = lower.endsWith(".xlsx");
+    if (!isCsv && !isXlsx) {
+      alert("Пожалуйста, загрузите файл в формате CSV или Excel (.xlsx)");
       setSelectedFile(null);
       if (inputRef.current) {
         inputRef.current.value = "";
@@ -207,7 +210,7 @@ export default function ImportCustomersPage() {
 
   const handleUpload = async () => {
     if (!selectedFile) {
-      alert("Выберите CSV-файл для загрузки.");
+      alert("Выберите CSV или Excel файл для загрузки.");
       return;
     }
 
@@ -290,7 +293,7 @@ export default function ImportCustomersPage() {
                 type="file"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 onChange={handleChange}
-                accept=".csv"
+                accept=".csv,.xlsx"
               />
 
               <div className="bg-blue-50 p-4 rounded-full mb-4">
@@ -300,7 +303,7 @@ export default function ImportCustomersPage() {
               <p className="text-sm font-medium text-gray-900 mb-1">
                 Перетащите файл сюда или нажмите для выбора
               </p>
-              <p className="text-xs text-gray-500">Поддерживается только формат CSV</p>
+              <p className="text-xs text-gray-500">Поддерживаются CSV и Excel (.xlsx)</p>
             </div>
 
             {selectedFile && (
@@ -440,7 +443,8 @@ export default function ImportCustomersPage() {
               <li className="flex items-start space-x-3 text-sm text-gray-600">
                 <Check size={16} className="text-green-500 mt-0.5 flex-shrink-0" />
                 <span>
-                  Формат файла — <strong>CSV</strong>. Кодировка <strong>UTF-8</strong>.
+                  Формат файла — <strong>CSV</strong> или <strong>Excel (.xlsx)</strong>. Для CSV используйте кодировку{" "}
+                  <strong>UTF-8</strong>.
                   Разделитель — <strong>точка с запятой (;)</strong>.
                 </span>
               </li>

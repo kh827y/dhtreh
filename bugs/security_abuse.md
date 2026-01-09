@@ -4,24 +4,6 @@
 
 ## P1 — High
 
-### 1) `/loyalty/bootstrap` отдаёт данные клиента без Telegram‑auth
-**Риск:** утечка чувствительных данных (баланс, история операций, согласия, промо) по любому `customerId` при знании `merchantId`. Это облегчает перебор клиентов и сбор истории операций.
-
-**Где:**
-- `api/src/loyalty/loyalty.controller.ts` — `GET /loyalty/bootstrap` возвращает профиль/баланс/транзакции без дополнительной проверки.
-- `api/src/guards/cashier.guard.ts` — в `telegramProtectedPaths` нет `/loyalty/bootstrap`, поэтому для запроса без сессии/teleauth/подписи срабатывает fallback `return Boolean(merchantIdFromRequest)`.
-
-**Как воспроизвести:**
-1. Без `cashier_session`, `Authorization: tma ...`, `X-Staff-Key` или `X-Bridge-Signature` выполнить:
-   ```
-   GET /loyalty/bootstrap?merchantId=M-1&customerId=<ID>
-   ```
-2. Сервер возвращает данные клиента.
-
-**Что делать (без overengineering):**
-- Добавить `/loyalty/bootstrap` в `telegramProtectedPaths` или перевести эндпоинт под `TelegramMiniappGuard`.
-- Явно требовать `Authorization: tma <initData>` и сверять `customerId` с Telegram‑контекстом, как для остальных miniapp‑эндпоинтов.
-
 ### 2) Глобальный `TELEGRAM_BOT_TOKEN` фактически открывает miniapp для всех мерчантов
 **Риск:** если в окружении задан `TELEGRAM_BOT_TOKEN`, любой пользователь с валидным `initData` этого бота может авторизоваться в miniapp для *любого* `merchantId` (даже если бот не подключён у мерчанта), создавать `Customer` и получать доступ к функционалу (в т.ч. начислениям/промо).
 

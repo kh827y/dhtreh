@@ -19,8 +19,7 @@ export default function SettingsPage() {
         />
         <CardBody>
           <p style={{ margin: 0, lineHeight: 1.6 }}>
-            Чтобы изменить требования к подписи Bridge или Staff‑ключу, а также таймаут QR‑кодов, откройте админку владельца и перейдите по адресу{' '}
-            <Link href="http://localhost:3001/merchants" style={{ color: '#60a5fa' }}>http://localhost:3001/merchants</Link>. Там рядом с мерчантом есть блок «Настройки кассовых операций».
+            Эти настройки доступны только администратору системы.
           </p>
         </CardBody>
       </Card>

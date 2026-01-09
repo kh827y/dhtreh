@@ -18,6 +18,5 @@ export async function listAudit(params: { merchantId?: string; limit?: number; b
 }
 
 export async function getAudit(id: string) {
-  const q = new URLSearchParams({ id });
-  return http(`/admin/audit?${q.toString()}`);
+  return http(`/admin/audit/${encodeURIComponent(id)}`);
 }

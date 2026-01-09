@@ -118,8 +118,11 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
     for (const merchant of merchants) {
       const settings = merchant.settings;
       if (!settings) continue;
-      const ttlDays = Number(settings.pointsTtlDays ?? 0) || 0;
-      if (!Number.isFinite(ttlDays) || ttlDays <= 0) continue;
+      const ttlDaysRaw = Number(settings.pointsTtlDays ?? 0);
+      const ttlDays =
+        Number.isFinite(ttlDaysRaw) && ttlDaysRaw > 0
+          ? Math.floor(ttlDaysRaw)
+          : 0;
       const rules =
         settings.rulesJson && typeof settings.rulesJson === 'object'
           ? (settings.rulesJson as any)
@@ -155,25 +158,36 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
 
   private async processMerchant(config: ReminderConfig) {
     const now = new Date();
-    const ttlMs = config.ttlDays * DAY_MS;
+    const ttlMs = config.ttlDays > 0 ? config.ttlDays * DAY_MS : 0;
     const windowEnd = new Date(now.getTime() + config.daysBefore * DAY_MS);
-    const lowerBound = new Date(now.getTime() - ttlMs);
-    const upperBound = new Date(windowEnd.getTime() - ttlMs);
+    const lowerBound = ttlMs > 0 ? new Date(now.getTime() - ttlMs) : null;
+    const upperBound = ttlMs > 0 ? new Date(windowEnd.getTime() - ttlMs) : null;
+
+    const conditions: Prisma.EarnLotWhereInput[] = [
+      { expiresAt: { gt: now, lte: windowEnd } },
+    ];
+    if (ttlMs > 0 && lowerBound && upperBound) {
+      conditions.push({
+        expiresAt: null,
+        earnedAt: {
+          gt: lowerBound,
+          lte: upperBound,
+        },
+      });
+    }
 
     const lots = await this.prisma.earnLot.findMany({
       where: {
         merchantId: config.merchantId,
         status: 'ACTIVE',
-        earnedAt: {
-          gt: lowerBound,
-          lte: upperBound,
-        },
+        OR: conditions,
       },
       select: {
         customerId: true,
         points: true,
         consumedPoints: true,
         earnedAt: true,
+        expiresAt: true,
       },
     });
 
@@ -254,6 +268,7 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
       points: number;
       consumedPoints: number;
       earnedAt: Date;
+      expiresAt: Date | null;
     }>,
     ttlMs: number,
     now: Date,
@@ -261,10 +276,12 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
   ): AggregatedReminder[] {
     const map = new Map<string, AggregatedReminder>();
     for (const lot of lots) {
-      if (!lot.earnedAt) continue;
       const remaining = Math.max(0, lot.points - (lot.consumedPoints || 0));
       if (remaining <= 0) continue;
-      const burnDate = new Date(lot.earnedAt.getTime() + ttlMs);
+      const burnDate =
+        lot.expiresAt ??
+        (ttlMs > 0 ? new Date(lot.earnedAt.getTime() + ttlMs) : null);
+      if (!burnDate) continue;
       if (burnDate <= now || burnDate > windowEnd) continue;
       const entry = map.get(lot.customerId);
       if (!entry) {

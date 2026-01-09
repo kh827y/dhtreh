@@ -172,11 +172,14 @@ export class GiftsService {
   }
 
   private randCode() {
-    const s =
-      Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-    return s
-      .replace(/[^A-Za-z0-9]/g, '')
-      .slice(0, 10)
-      .toUpperCase();
+    const crypto = require('crypto');
+    let value = '';
+    while (value.length < 10) {
+      value += crypto
+        .randomBytes(16)
+        .toString('base64')
+        .replace(/[^A-Za-z0-9]/g, '');
+    }
+    return value.slice(0, 10).toUpperCase();
   }
 }

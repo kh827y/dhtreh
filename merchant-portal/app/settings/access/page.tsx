@@ -56,6 +56,7 @@ type ModalState = {
 };
 
 const ACCESS_GROUPS_CACHE_TTL_MS = 2000;
+const STAFF_PAGE_SIZE = 200;
 let accessGroupsCache: { ts: number; groupsPayload: any; staffPayload: any } | null =
   null;
 let accessGroupsLoadPromise:
@@ -115,7 +116,7 @@ async function fetchAccessGroupsAndStaff(force = false) {
   const task = (async () => {
     const [groupsRes, staffRes] = await Promise.all([
       fetch("/api/portal/access-groups"),
-      fetch("/api/portal/staff"),
+      fetch(`/api/portal/staff?page=1&pageSize=${STAFF_PAGE_SIZE}`),
     ]);
     if (!groupsRes.ok) {
       const errText = await groupsRes.text().catch(() => "");
@@ -127,7 +128,31 @@ async function fetchAccessGroupsAndStaff(force = false) {
     }
     const groupsPayload = await groupsRes.json().catch(() => ({}));
     const staffPayload = await staffRes.json().catch(() => ({}));
-    return { groupsPayload, staffPayload };
+    const staffRows: any[] = Array.isArray(staffPayload?.items)
+      ? staffPayload.items
+      : Array.isArray(staffPayload)
+        ? staffPayload
+        : [];
+    const totalPages = Number(staffPayload?.meta?.totalPages ?? 1) || 1;
+    if (totalPages > 1) {
+      for (let page = 2; page <= totalPages; page += 1) {
+        const pageRes = await fetch(
+          `/api/portal/staff?page=${page}&pageSize=${STAFF_PAGE_SIZE}`,
+        );
+        if (!pageRes.ok) {
+          const errText = await pageRes.text().catch(() => "");
+          throw new Error(errText || "Не удалось получить сотрудников");
+        }
+        const pagePayload = await pageRes.json().catch(() => ({}));
+        const pageRows: any[] = Array.isArray(pagePayload?.items)
+          ? pagePayload.items
+          : Array.isArray(pagePayload)
+            ? pagePayload
+            : [];
+        staffRows.push(...pageRows);
+      }
+    }
+    return { groupsPayload, staffPayload: { items: staffRows } };
   })();
   accessGroupsLoadPromise = task;
   try {

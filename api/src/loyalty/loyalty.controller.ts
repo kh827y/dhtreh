@@ -657,10 +657,11 @@ export class LoyaltyController {
       }
 
       // Update balance
-      const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
-      const currentBalance = fresh?.balance ?? 0;
-      const balance = currentBalance + points;
-      await tx.wallet.update({ where: { id: wallet.id }, data: { balance } });
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: { increment: points } },
+      });
+      const balance = updatedWallet.balance;
 
       // Transaction record
       await tx.transaction.create({
@@ -1914,6 +1915,9 @@ export class LoyaltyController {
       ? Math.min(Math.max(parseInt(limitStr, 10) || 20, 1), 100)
       : 20;
     const before = beforeStr ? new Date(beforeStr) : undefined;
+    if (beforeStr && Number.isNaN(before?.getTime() ?? NaN)) {
+      throw new BadRequestException('before is invalid');
+    }
     return this.service.outletTransactions(merchantId, outletId, limit, before);
   }
 
@@ -3028,6 +3032,9 @@ export class LoyaltyController {
       ? Math.min(Math.max(parseInt(limitStr, 10) || 20, 1), 100)
       : 20;
     const before = beforeStr ? new Date(beforeStr) : undefined;
+    if (beforeStr && Number.isNaN(before?.getTime() ?? NaN)) {
+      throw new BadRequestException('before is invalid');
+    }
     return this.service.transactions(merchantId, customerId, limit, before, {
       outletId,
       staffId,

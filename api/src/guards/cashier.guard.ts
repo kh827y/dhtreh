@@ -16,11 +16,13 @@ export class CashierGuard implements CanActivate {
     [
       '/loyalty/profile',
       '/loyalty/profile/phone-status',
+      '/loyalty/bootstrap',
       '/loyalty/consent',
       '/loyalty/promotions',
       '/loyalty/promotions/claim',
       '/loyalty/promocodes/apply',
       '/loyalty/reviews',
+      '/loyalty/reviews/dismiss',
       '/loyalty/qr',
       '/loyalty/transactions',
       { prefix: '/loyalty/balance/' },

@@ -320,7 +320,7 @@ export default function Page() {
           </div>
 
           <Link
-            href="http://localhost:3004/settings/system"
+            href="/settings/system"
             className="w-full flex items-center justify-center space-x-2 bg-white border border-gray-200 text-gray-700 py-2.5 rounded-lg font-medium hover:bg-gray-50 hover:border-purple-200 hover:text-purple-700 transition-colors"
           >
             <span>Перейти к настройкам</span>
@@ -346,7 +346,7 @@ export default function Page() {
           </div>
 
           <Link
-            href="http://localhost:3004/integrations/telegram-mini-app"
+            href="/integrations/telegram-mini-app"
             className="w-full flex items-center justify-center space-x-2 bg-white border border-gray-200 text-gray-700 py-2.5 rounded-lg font-medium hover:bg-gray-50 hover:border-purple-200 hover:text-purple-700 transition-colors"
           >
             <span>Открыть интеграцию</span>

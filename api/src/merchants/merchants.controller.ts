@@ -483,6 +483,9 @@ export class MerchantsController {
   })
   outboxStats(@Param('id') id: string, @Query('since') sinceStr?: string) {
     const since = sinceStr ? new Date(sinceStr) : undefined;
+    if (sinceStr && Number.isNaN(since?.getTime() ?? NaN)) {
+      throw new BadRequestException('since is invalid');
+    }
     return this.service.outboxStats(id, since);
   }
 
@@ -493,10 +496,21 @@ export class MerchantsController {
     @Query('status') status?: string,
     @Query('since') since?: string,
     @Query('type') type?: string,
+    @Query('limit') limitStr?: string,
     @Query('batch') batchStr: string = '1000',
     @Res() res?: any,
   ) {
-    const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
+    const batchRaw = parseInt(batchStr, 10);
+    const batch = Math.min(
+      Math.max(Number.isFinite(batchRaw) ? batchRaw : 1000, 100),
+      5000,
+    );
+    const limitRaw = limitStr ? parseInt(limitStr, 10) : NaN;
+    const totalLimit =
+      Number.isFinite(limitRaw) && limitRaw > 0
+        ? Math.min(limitRaw, 5000)
+        : undefined;
+    const pageSize = totalLimit ? Math.min(totalLimit, batch) : batch;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
@@ -504,14 +518,16 @@ export class MerchantsController {
     );
     res.write('id,eventType,status,retries,nextRetryAt,lastError,createdAt\n');
     // Пагинация по createdAt
-    let cursorSince = since;
+    let cursor: { createdAt: Date; id: string } | null = null;
+    let written = 0;
     while (true) {
       const page = await this.service.listOutbox(
         id,
         status,
-        batch,
+        pageSize,
         type,
-        cursorSince,
+        since,
+        cursor,
       );
       if (!page.length) break;
       for (const ev of page) {
@@ -527,9 +543,13 @@ export class MerchantsController {
           .map((x) => `"${String(x).replaceAll('"', '""')}"`)
           .join(',');
         res.write(row + '\n');
+        written += 1;
+        if (totalLimit && written >= totalLimit) break;
       }
-      cursorSince = page[page.length - 1].createdAt.toISOString();
-      if (page.length < batch) break;
+      if (totalLimit && written >= totalLimit) break;
+      const last = page[page.length - 1];
+      cursor = { createdAt: last.createdAt, id: last.id };
+      if (page.length < pageSize) break;
     }
     res.end();
   }
@@ -662,6 +682,8 @@ export class MerchantsController {
     @Param('id') id: string,
     @Query('limit') limitStr?: string,
     @Query('before') beforeStr?: string,
+    @Query('from') fromStr?: string,
+    @Query('to') toStr?: string,
     @Query('orderId') orderId?: string,
     @Query('customerId') customerId?: string,
   ) {
@@ -669,9 +691,13 @@ export class MerchantsController {
       ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
       : 50;
     const before = beforeStr ? new Date(beforeStr) : undefined;
+    const from = fromStr ? new Date(fromStr) : undefined;
+    const to = toStr ? new Date(toStr) : undefined;
     return this.service.listReceipts(id, {
       limit,
       before,
+      from,
+      to,
       orderId,
       customerId,
     });

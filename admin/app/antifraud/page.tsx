@@ -5,6 +5,8 @@ import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
 
 export default function AntiFraudPage() {
   const { merchantId, setMerchantId } = usePreferredMerchantId();
+  const TRANSACTION_LIMIT = 200;
+  const RECEIPT_LIMIT = 200;
   const [loading, setLoading] = useState<boolean>(false);
   const [anomalies, setAnomalies] = useState<any[]>([]);
   const [nightActivity, setNightActivity] = useState<any[]>([]);
@@ -34,7 +36,10 @@ export default function AntiFraudPage() {
     try {
       if (!merchantId) { setLoading(false); return; }
       // Fetch transactions for analysis
-      const txResponse = await fetch(`/api/admin/merchants/${merchantId}/transactions?limit=1000&from=${dateRange.from}&to=${dateRange.to}`);
+      const txParams = new URLSearchParams({ limit: String(TRANSACTION_LIMIT) });
+      if (dateRange.from) txParams.set('from', dateRange.from);
+      if (dateRange.to) txParams.set('to', dateRange.to);
+      const txResponse = await fetch(`/api/admin/merchants/${merchantId}/transactions?${txParams.toString()}`);
       const txJson = await txResponse.json();
       const transactions: any[] = Array.isArray(txJson?.items) ? txJson.items : (Array.isArray(txJson) ? txJson : []);
       
@@ -43,7 +48,10 @@ export default function AntiFraudPage() {
       analyzeNightActivity(transactions);
       
       // Fetch receipts for refund analysis
-      const rcResponse = await fetch(`/api/admin/merchants/${merchantId}/receipts?limit=500`);
+      const rcParams = new URLSearchParams({ limit: String(RECEIPT_LIMIT) });
+      if (dateRange.from) rcParams.set('from', dateRange.from);
+      if (dateRange.to) rcParams.set('to', dateRange.to);
+      const rcResponse = await fetch(`/api/admin/merchants/${merchantId}/receipts?${rcParams.toString()}`);
       const rcJson = await rcResponse.json();
       const receipts: any[] = Array.isArray(rcJson?.items) ? rcJson.items : (Array.isArray(rcJson) ? rcJson : []);
       analyzeSerialRefunds(receipts);
@@ -325,6 +333,9 @@ export default function AntiFraudPage() {
         <button onClick={loadReports} disabled={loading} style={{ padding: '6px 12px' }}>
           {loading ? 'Loading...' : 'Refresh'}
         </button>
+        <span style={{ opacity: 0.7, fontSize: 12 }}>
+          Report uses last {TRANSACTION_LIMIT} transactions and {RECEIPT_LIMIT} receipts for the selected dates.
+        </span>
       </div>
 
       <h3 style={{ marginTop: 24, color: '#f38ba8' }}>🚨 Anomalies Detected</h3>

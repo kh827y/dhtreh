@@ -95,20 +95,28 @@ export default function MechanicsPage() {
   const [enabled, setEnabled] = React.useState<Record<string, boolean>>({});
   const [settings, setSettings] = React.useState<Record<string, any>>({});
   const [saving, setSaving] = React.useState<Record<string, boolean>>({});
+  const [access, setAccess] = React.useState<Record<string, boolean>>({});
   const [error, setError] = React.useState<string>("");
   const [tiersCount, setTiersCount] = React.useState<number | null>(null);
 
   const loadAll = React.useCallback(async () => {
     setError("");
+    const nextAccess: Record<string, boolean> = {};
     try {
-      const tiersPromise = fetch("/api/portal/loyalty/tiers", { cache: "no-store" })
-        .then(async (res) => {
-          const json = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(json?.message || "Не удалось загрузить уровни");
-          const items = Array.isArray(json) ? json : Array.isArray((json as any)?.items) ? (json as any).items : [];
-          return Array.isArray(items) ? items.length : null;
-        })
-        .catch(() => null);
+      const tiersPromise = (async () => {
+        const res = await fetch("/api/portal/loyalty/tiers", { cache: "no-store" });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (res.status === 403) {
+            nextAccess.levels = false;
+            return null;
+          }
+          throw new Error(json?.message || "Не удалось загрузить уровни");
+        }
+        nextAccess.levels = true;
+        const items = Array.isArray(json) ? json : Array.isArray((json as any)?.items) ? (json as any).items : [];
+        return Array.isArray(items) ? items.length : null;
+      })();
 
       const endpoints: Record<string, string> = {
         "auto-return": "/api/portal/loyalty/auto-return",
@@ -124,13 +132,22 @@ export default function MechanicsPage() {
           if (!endpoint) throw new Error(`Unknown endpoint: ${id}`);
           const res = await fetch(endpoint);
           const json = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(json?.message || `Не удалось загрузить ${id}`);
+          if (!res.ok) {
+            if (res.status === 403) {
+              nextAccess[id] = false;
+              return null;
+            }
+            throw new Error(json?.message || `Не удалось загрузить ${id}`);
+          }
+          nextAccess[id] = true;
           return { id, json } as const;
         })
       );
       const nextEnabled: Record<string, boolean> = {};
       const nextSettings: Record<string, any> = {};
-      for (const { id, json } of responses) {
+      for (const item of responses) {
+        if (!item) continue;
+        const { id, json } = item;
         nextEnabled[id] = Boolean(json?.enabled);
         nextSettings[id] = json;
       }
@@ -142,6 +159,8 @@ export default function MechanicsPage() {
     } catch (e: any) {
       setError(normalizeErrorMessage(e, "Ошибка загрузки механик"));
       setTiersCount(null);
+    } finally {
+      setAccess(nextAccess);
     }
   }, []);
 
@@ -214,6 +233,12 @@ export default function MechanicsPage() {
           ? current.placeholders
           : ["{businessname}", "{bonusamount}", "{code}", "{link}"];
         const multiLevel = Boolean(current.multiLevel);
+        const shareMessage = typeof current.shareMessage === "string"
+          ? current.shareMessage
+          : typeof current.shareMessageTemplate === "string"
+            ? current.shareMessageTemplate
+            : "";
+        const minPurchaseAmount = Number(current.minPurchaseAmount ?? 0);
         const base: Record<string, any> = {
           enabled: value,
           rewardTrigger: current.rewardTrigger === "all" ? "all" : "first",
@@ -222,7 +247,9 @@ export default function MechanicsPage() {
           stackWithRegistration: Boolean(current.stackWithRegistration),
           friendReward: Number(current.friendReward || 0),
           message: typeof current.message === "string" ? current.message : "",
+          shareMessage,
           placeholders,
+          minPurchaseAmount,
         };
         if (multiLevel) {
           const levels = Array.isArray(current.levels) ? current.levels : [];
@@ -273,6 +300,7 @@ export default function MechanicsPage() {
             .filter((card) => card.id === "levels" || card.id === "bonus-settings")
             .map((card) => {
               const isLevels = card.id === "levels";
+              const canAccess = access[card.id] !== false;
               const iconHoverClass = isLevels
                 ? "group-hover:bg-yellow-100"
                 : card.id === "bonus-settings"
@@ -282,10 +310,13 @@ export default function MechanicsPage() {
               return (
                 <div
                   key={card.id}
-                  onClick={() => router.push(card.href)}
+                  onClick={() => {
+                    if (canAccess) router.push(card.href);
+                  }}
                   className={
-                    "bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group flex items-start justify-between" +
-                    (isLevels ? " relative overflow-hidden" : "")
+                    "bg-white p-6 rounded-xl border border-gray-100 shadow-sm transition-all group flex items-start justify-between" +
+                    (isLevels ? " relative overflow-hidden" : "") +
+                    (canAccess ? " hover:shadow-md cursor-pointer" : " opacity-60 cursor-not-allowed")
                   }
                 >
                   <div className={"flex items-start space-x-4" + (isLevels ? " relative z-10" : "")}
@@ -320,16 +351,20 @@ export default function MechanicsPage() {
           {cards
             .filter((card) => card.toggle)
             .map((card) => {
-              const isOn = Boolean(enabled[card.id]);
+              const canAccess = access[card.id] !== false;
+              const isOn = canAccess ? Boolean(enabled[card.id]) : false;
               const isSaving = Boolean(saving[card.id]);
 
               return (
                 <div
                   key={card.id}
-                  onClick={() => router.push(card.href)}
+                  onClick={() => {
+                    if (canAccess) router.push(card.href);
+                  }}
                   className={
-                    "bg-white p-6 rounded-xl border transition-all duration-200 cursor-pointer group hover:shadow-md hover:border-purple-200 relative " +
-                    (isOn ? "border-gray-200 shadow-sm" : "border-gray-100 bg-gray-50/30")
+                    "bg-white p-6 rounded-xl border transition-all duration-200 group hover:shadow-md hover:border-purple-200 relative " +
+                    (isOn ? "border-gray-200 shadow-sm" : "border-gray-100 bg-gray-50/30") +
+                    (canAccess ? " cursor-pointer" : " cursor-not-allowed opacity-60")
                   }
                 >
                   <div className="flex justify-between items-start mb-4">
@@ -346,9 +381,10 @@ export default function MechanicsPage() {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (!canAccess) return;
                         void handleToggle(card.id, !isOn);
                       }}
-                      disabled={isSaving}
+                      disabled={isSaving || !canAccess}
                       className={
                         "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 z-10 disabled:opacity-60 " +
                         (isOn ? "bg-purple-600" : "bg-gray-300")
@@ -381,17 +417,23 @@ export default function MechanicsPage() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (!canAccess) return;
                           router.push(card.href);
                         }}
                         className={
-                          "text-sm font-medium transition-colors flex items-center hover:text-purple-700 " +
+                          "text-sm font-medium transition-colors flex items-center " +
+                          (canAccess ? "hover:text-purple-700 " : "cursor-not-allowed ") +
                           (isOn ? "text-purple-600" : "text-gray-500")
                         }
                       >
                         <Settings size={14} className="mr-1.5" />
                         Настроить
                       </button>
-                      {isOn ? (
+                      {!canAccess ? (
+                        <span className="flex items-center text-xs text-gray-400">
+                          Нет доступа
+                        </span>
+                      ) : isOn ? (
                         <span className="flex items-center text-xs text-green-600 font-medium">
                           <Power size={12} className="mr-1" /> Активна
                         </span>

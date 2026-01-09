@@ -10,18 +10,24 @@ export default function AuditPage() {
   const [before, setBefore] = useState<string>('');
   const [msg, setMsg] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+  const beforeValue = before.trim();
+  const beforeValid = !beforeValue || !Number.isNaN(new Date(beforeValue).getTime());
 
   async function load() {
+    if (!beforeValid) {
+      setMsg('Неверный формат даты');
+      return;
+    }
     setLoading(true);
     try {
-      const r = await listAudit({ merchantId: merchantId || undefined, limit, before: before || undefined });
+      const r = await listAudit({ merchantId: merchantId || undefined, limit, before: beforeValue || undefined });
       setItems(r);
       setMsg('');
     } catch (e: any) { setMsg(String(e?.message || e)); }
     finally { setLoading(false); }
   }
 
-  useEffect(() => { load().catch(()=>{}); }, []);
+  useEffect(() => { load().catch(()=>{}); }, [merchantId, limit, beforeValid, beforeValue]);
 
   return (
     <div>
@@ -30,9 +36,20 @@ export default function AuditPage() {
         <label>Мерчант: <input value={merchantId} onChange={e=>setMerchantId(e.target.value)} style={{ marginLeft: 8 }} placeholder="опц." /></label>
         <label>Лимит: <input type="number" value={limit} onChange={e=>setLimit(parseInt(e.target.value||'50',10))} style={{ marginLeft: 8, width: 90 }} /></label>
         <label>До (ISO): <input value={before} onChange={e=>setBefore(e.target.value)} style={{ marginLeft: 8, width: 220 }} placeholder="2025-09-01T00:00:00Z" /></label>
-        <button onClick={load} disabled={loading} style={{ padding: '6px 10px' }}>Обновить</button>
-        <a href={`/api/admin/admin/audit/csv${merchantId||before?`?${new URLSearchParams({ ...(merchantId?{merchantId}:{}), ...(before?{before}:{}), limit: String(limit) }).toString()}`:''}`}
-           style={{ color: '#89b4fa' }} target="_blank" rel="noreferrer">Export CSV</a>
+        <button onClick={load} disabled={loading || !beforeValid} style={{ padding: '6px 10px' }}>Обновить</button>
+        <a
+          href={`/api/admin/admin/audit/csv${merchantId || beforeValue ? `?${new URLSearchParams({ ...(merchantId ? { merchantId } : {}), ...(beforeValid && beforeValue ? { before: beforeValue } : {}), limit: String(limit) }).toString()}` : ''}`}
+          onClick={(e) => {
+            if (beforeValid) return;
+            e.preventDefault();
+            setMsg('Неверный формат даты');
+          }}
+          style={{ color: beforeValid ? '#89b4fa' : '#6c7086', pointerEvents: beforeValid ? 'auto' : 'none' }}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Export CSV
+        </a>
       </div>
       {msg && <div style={{ color: '#f38ba8', marginBottom: 8 }}>{msg}</div>}
       <div style={{ display: 'grid', gap: 8 }}>

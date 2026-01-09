@@ -53,7 +53,10 @@ export async function getSettings(merchantId: string): Promise<MerchantSettings>
   return http(`/merchants/${encodeURIComponent(merchantId)}/settings`);
 }
 
-export async function updateSettings(merchantId: string, dto: Partial<MerchantSettings> & { earnBps: number; redeemLimitBps: number }): Promise<MerchantSettings> {
+export async function updateSettings(
+  merchantId: string,
+  dto: Partial<MerchantSettings>,
+): Promise<MerchantSettings> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/settings`, { method: 'PUT', body: JSON.stringify(dto) });
 }
 

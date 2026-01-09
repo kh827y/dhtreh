@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma.service';
 import { TelegramNotifyService } from '../../telegram/telegram-notify.service';
 import {
@@ -42,9 +43,8 @@ export class PortalTelegramNotifyService {
   }
 
   private genToken(): string {
-    const rand =
-      Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-    return rand.slice(0, 32);
+    const raw = randomBytes(24).toString('base64');
+    return raw.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
   }
 
   async issueInvite(

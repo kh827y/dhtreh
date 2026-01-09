@@ -53,8 +53,6 @@ export async function PUT(req: NextRequest) {
   }
 
   const payload: Record<string, any> = {
-    earnBps: data?.earnBps ?? 0,
-    redeemLimitBps: data?.redeemLimitBps ?? 0,
     qrTtlSec: data?.qrTtlSec ?? undefined,
     webhookUrl: data?.webhookUrl ?? undefined,
     webhookSecret: data?.webhookSecret ?? undefined,

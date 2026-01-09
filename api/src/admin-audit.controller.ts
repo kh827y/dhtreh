@@ -1,4 +1,11 @@
-import { Controller, Get, Query, UseGuards, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  UseGuards,
+  Param,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { AdminGuard } from './admin.guard';
 import { AdminIpGuard } from './admin-ip.guard';
@@ -36,24 +43,6 @@ export class AdminAuditController {
     }));
   }
 
-  @Get(':id')
-  async getOne(@Param('id') id: string) {
-    if (!id) return null as any;
-    const row = await this.prisma.adminAudit
-      .findUnique({ where: { id } as any })
-      .catch(() => null);
-    if (!row) return null as any;
-    return {
-      id: row.id,
-      createdAt: row.createdAt,
-      actor: row.actor,
-      method: row.method,
-      path: row.path,
-      merchantId: row.merchantId,
-      action: row.action,
-      payload: row.payload ?? null,
-    };
-  }
   @Get('csv')
   async exportCsv(
     @Query('merchantId') merchantId?: string,
@@ -86,5 +75,24 @@ export class AdminAuditController {
       lines.push(row);
     }
     return lines.join('\n') + '\n';
+  }
+
+  @Get(':id')
+  async getOne(@Param('id') id: string) {
+    if (!id) throw new NotFoundException('Запись не найдена');
+    const row = await this.prisma.adminAudit
+      .findUnique({ where: { id } as any })
+      .catch(() => null);
+    if (!row) throw new NotFoundException('Запись не найдена');
+    return {
+      id: row.id,
+      createdAt: row.createdAt,
+      actor: row.actor,
+      method: row.method,
+      path: row.path,
+      merchantId: row.merchantId,
+      action: row.action,
+      payload: row.payload ?? null,
+    };
   }
 }

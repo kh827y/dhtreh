@@ -13,6 +13,7 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
+import { hasPortalPermission } from '../../portal-auth/portal-permissions.util';
 import { MerchantPanelService, StaffFilters } from '../merchant-panel.service';
 import {
   ChangeStaffStatusDto,
@@ -42,6 +43,30 @@ export class StaffController {
     return String(req.portalMerchantId);
   }
 
+  private canViewPins(req: any) {
+    const permissions = req?.portalPermissions;
+    if (!permissions) return false;
+    if (permissions.allowAll) return true;
+    return (
+      hasPortalPermission(permissions, 'staff', 'manage') ||
+      hasPortalPermission(permissions, 'cashier_panel', 'manage')
+    );
+  }
+
+  private stripPins<T extends { accesses?: Array<{ pinCode?: string | null }> }>(
+    items: T[],
+  ) {
+    return items.map((item) => ({
+      ...item,
+      accesses: Array.isArray(item.accesses)
+        ? item.accesses.map((access) => ({
+            ...access,
+            pinCode: null,
+          }))
+        : [],
+    }));
+  }
+
   @Get()
   async list(
     @Req() req: any,
@@ -60,12 +85,18 @@ export class StaffController {
       filters,
       { page, pageSize },
     );
+    if (!this.canViewPins(req)) {
+      result.items = this.stripPins(result.items || []);
+    }
     return result as StaffListResponseDto;
   }
 
   @Get(':id')
   async get(@Req() req: any, @Param('id') id: string): Promise<StaffDetailDto> {
     const staff = await this.service.getStaff(this.getMerchantId(req), id);
+    if (!this.canViewPins(req)) {
+      staff.accesses = this.stripPins([staff])[0]?.accesses ?? [];
+    }
     return staff as StaffDetailDto;
   }
 
@@ -123,7 +154,10 @@ export class StaffController {
       this.getMerchantId(req),
       id,
     );
-    return items as StaffOutletAccessDto[];
+    if (this.canViewPins(req)) {
+      return items as StaffOutletAccessDto[];
+    }
+    return items.map((access) => ({ ...access, pinCode: null })) as StaffOutletAccessDto[];
   }
 
   @Post(':id/access')

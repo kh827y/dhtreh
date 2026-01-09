@@ -588,12 +588,16 @@ export class PortalController {
       }
     };
 
-    if (Number(dto.earnBps ?? 0) !== Number(currentSettings.earnBps ?? 0)) {
+    if (
+      dto.earnBps !== undefined &&
+      Number(dto.earnBps) !== Number(currentSettings.earnBps ?? 0)
+    ) {
       required.add('system_settings');
     }
     if (
-      Number(dto.redeemLimitBps ?? 0) !==
-      Number(currentSettings.redeemLimitBps ?? 0)
+      dto.redeemLimitBps !== undefined &&
+      Number(dto.redeemLimitBps) !==
+        Number(currentSettings.redeemLimitBps ?? 0)
     ) {
       required.add('system_settings');
     }

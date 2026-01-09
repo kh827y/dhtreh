@@ -49,11 +49,19 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     const msg = `Upstream fetch failed to ${target}: ${String(e?.message || e)}`;
     return new NextResponse(msg, { status: 502 });
   }
-  const isCsv = /\.csv(\?|$)/i.test(suffix);
+  const isCsv = /\.csv(\?|$)/i.test(suffix) || /\/csv(\?|$)/i.test(suffix);
   if (isCsv) {
     const out = new Headers();
     out.set('Content-Type', 'text/csv; charset=utf-8');
-    const fname = suffix.split('/').pop() || 'export.csv';
+    const parts = suffix.split('/').filter(Boolean);
+    let fname = parts[parts.length - 1] || 'export.csv';
+    if (fname.toLowerCase() === 'csv') {
+      const base = parts[parts.length - 2];
+      fname = base ? `${base}.csv` : 'export.csv';
+    }
+    if (!fname.toLowerCase().endsWith('.csv')) {
+      fname = `${fname}.csv`;
+    }
     out.set('Content-Disposition', `attachment; filename="${fname}"`);
     out.set('Cache-Control', 'no-store');
     return new Response(res.body, { status: res.status, statusText: res.statusText, headers: out });

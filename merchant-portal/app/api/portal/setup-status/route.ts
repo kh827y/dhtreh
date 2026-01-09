@@ -2,15 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
 
-// Helper to safely fetch and parse JSON, returning null on error
-async function safeFetch(url: string, headers: Record<string, string>) {
-  try {
-    const res = await fetch(url, { headers, cache: "no-store" });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
+async function fetchJson(url: string, headers: Record<string, string>, label: string) {
+  const res = await fetch(url, { headers, cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`Не удалось загрузить ${label}`);
   }
+  return res.json();
 }
 
 export async function GET(req: NextRequest) {
@@ -28,54 +25,51 @@ export async function GET(req: NextRequest) {
 
     const headers = { authorization: `Bearer ${token}` };
 
-    // Fetch multiple endpoints in parallel - gracefully handle missing endpoints
-    const [settings, outlets, staff, mechanics] = await Promise.all([
-      safeFetch(`${API_BASE}/portal/settings/system`, headers),
-      safeFetch(`${API_BASE}/portal/outlets`, headers),
-      safeFetch(`${API_BASE}/portal/staff`, headers),
-      safeFetch(`${API_BASE}/portal/loyalty/mechanics`, headers),
+    const [tiers, outlets, staff, mechanics] = await Promise.all([
+      fetchJson(`${API_BASE}/portal/loyalty/tiers`, headers, "уровни лояльности"),
+      fetchJson(`${API_BASE}/portal/outlets`, headers, "торговые точки"),
+      fetchJson(`${API_BASE}/portal/staff`, headers, "сотрудников"),
+      fetchJson(`${API_BASE}/portal/loyalty/mechanics`, headers, "механики"),
     ]);
 
-    // Check if loyalty settings are configured (levels with earnBps/redeemBps)
-    let hasLoyaltySettings = false;
-    if (settings) {
-      // Check if any levels have earn/redeem configured
-      const levels = settings.levels || settings.tiers || [];
-      if (Array.isArray(levels) && levels.length > 0) {
-        hasLoyaltySettings = levels.some((lvl: { earnBps?: number; redeemBps?: number }) => 
-          (lvl.earnBps && lvl.earnBps > 0) || (lvl.redeemBps && lvl.redeemBps > 0)
-        );
-      } else {
-        hasLoyaltySettings = (settings.earnBps && settings.earnBps > 0) || 
-                            (settings.redeemBps && settings.redeemBps > 0);
-      }
-    }
+    const tiersList = Array.isArray(tiers)
+      ? tiers
+      : Array.isArray((tiers as any)?.items)
+        ? (tiers as any).items
+        : [];
+    const hasLoyaltySettings = tiersList.length > 0;
 
     // Check if outlets exist
     let hasOutlets = false;
     let outletsCount = 0;
-    if (outlets) {
-      const outletList = Array.isArray(outlets) ? outlets : outlets?.items || [];
-      hasOutlets = outletList.length > 0;
-      outletsCount = outletList.length;
-    }
+    const outletList = Array.isArray(outlets)
+      ? outlets
+      : (outlets as any)?.items || [];
+    hasOutlets = outletList.length > 0;
+    outletsCount = outletList.length;
 
     // Check if staff exists
     let hasStaff = false;
     let staffCount = 0;
-    if (staff) {
-      const staffList = Array.isArray(staff) ? staff : staff?.items || [];
-      hasStaff = staffList.length > 0;
-      staffCount = staffList.length;
-    }
+    const staffList = Array.isArray(staff)
+      ? staff
+      : (staff as any)?.items || [];
+    hasStaff = staffList.length > 0;
+    staffCount = staffList.length;
 
     // Check if any mechanics are enabled
     let hasMechanics = false;
-    if (mechanics) {
-      hasMechanics = mechanics.birthday?.enabled ||
-                     mechanics.referral?.enabled ||
-                     mechanics.autoReturn?.enabled ||
-                     mechanics.welcome?.enabled;
+    if (Array.isArray(mechanics)) {
+      hasMechanics = mechanics.some((item: any) =>
+        item?.status === "ACTIVE" || item?.enabled === true
+      );
+    } else if (mechanics && typeof mechanics === "object") {
+      hasMechanics = Boolean(
+        (mechanics as any)?.birthday?.enabled ||
+        (mechanics as any)?.referral?.enabled ||
+        (mechanics as any)?.autoReturn?.enabled ||
+        (mechanics as any)?.welcome?.enabled
+      );
     }
 
     return NextResponse.json({

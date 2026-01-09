@@ -14,6 +14,7 @@ import {
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { planConsume } from '../loyalty/lots.util';
+import { ensureBaseTier } from '../loyalty/tier-defaults.util';
 import { CustomerAudiencesService } from '../customer-audiences/customer-audiences.service';
 import { isSystemAllAudience } from '../customer-audiences/audience.utils';
 import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
@@ -1075,6 +1076,7 @@ export class PortalCustomersService {
     merchantId: string,
     customerId: string,
   ): Promise<number> {
+    await ensureBaseTier(this.prisma, merchantId).catch(() => null);
     const assignment = await this.prisma.loyaltyTierAssignment.findFirst({
       where: {
         merchantId,
@@ -1102,12 +1104,7 @@ export class PortalCustomersService {
     if (initialTier?.earnRateBps != null) {
       return Math.max(0, Math.floor(Number(initialTier.earnRateBps)));
     }
-
-    const settings = await this.prisma.merchantSettings.findUnique({
-      where: { merchantId },
-      select: { earnBps: true },
-    });
-    return Math.max(0, Math.floor(Number(settings?.earnBps ?? 0)));
+    return 0;
   }
 
   private async resolvePointsTtlDays(

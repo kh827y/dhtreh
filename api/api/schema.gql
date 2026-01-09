@@ -210,6 +210,7 @@ type StaffDetailDto {
   phone: String
   pinCode: String
   portalAccessEnabled: Boolean!
+  portalLoginEnabled: Boolean!
   position: String
   role: StaffRole!
   status: StaffStatus!
@@ -273,6 +274,7 @@ type StaffSummaryDto {
   phone: String
   pinCode: String
   portalAccessEnabled: Boolean!
+  portalLoginEnabled: Boolean!
   position: String
   role: StaffRole!
   status: StaffStatus!

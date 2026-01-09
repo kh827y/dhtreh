@@ -13,8 +13,20 @@ export default function AuditDetailPage() {
     (async () => {
       try {
         const r = await fetch(`/api/admin/admin/audit/${encodeURIComponent(id)}`);
+        if (r.status === 404) {
+          setData(null);
+          setErr('Запись не найдена');
+          return;
+        }
         if (!r.ok) throw new Error(await r.text());
-        setData(await r.json()); setErr('');
+        const payload = await r.json();
+        if (!payload) {
+          setData(null);
+          setErr('Запись не найдена');
+          return;
+        }
+        setData(payload);
+        setErr('');
       } catch (e: any) { setErr(String(e?.message || e)); }
     })();
   }, [id]);
@@ -40,4 +52,3 @@ export default function AuditDetailPage() {
     </div>
   );
 }
-

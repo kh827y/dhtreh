@@ -70,8 +70,6 @@ export default function SettingsPage() {
         if (errs.length) { setMsg('Исправьте ошибки правил перед сохранением'); setLoading(false); return; }
       }
       const dto: any = {
-        earnBps: s.earnBps,
-        redeemLimitBps: s.redeemLimitBps,
         qrTtlSec: s.qrTtlSec,
         redeemCooldownSec: s.redeemCooldownSec,
         earnCooldownSec: s.earnCooldownSec,
@@ -164,14 +162,6 @@ export default function SettingsPage() {
 
       {s && (
         <div style={{ display: 'grid', gap: 12, maxWidth: 820 }}>
-          <div>
-            <label>Базовое начисление (bps):</label>
-            <input type="number" min={0} max={10000} value={s.earnBps} onChange={e=>setS({ ...s, earnBps: num(e.target.value, s.earnBps) || 0 })} style={{ marginLeft: 8, width: 100 }} />
-          </div>
-          <div>
-            <label>Базовый лимит списания (bps):</label>
-            <input type="number" min={0} max={10000} value={s.redeemLimitBps} onChange={e=>setS({ ...s, redeemLimitBps: num(e.target.value, s.redeemLimitBps) || 0 })} style={{ marginLeft: 8, width: 120 }} />
-          </div>
           <div>
             <label>QR TTL (сек):</label>
             <input type="number" min={15} max={600} value={s.qrTtlSec} onChange={e=>setS({ ...s, qrTtlSec: num(e.target.value, s.qrTtlSec) || 300 })} style={{ marginLeft: 8, width: 100 }} />

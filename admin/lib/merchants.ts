@@ -96,7 +96,12 @@ export async function rotateCashier(merchantId: string, regenerateLogin?: boolea
 
 export async function updateMerchantSettings(
   merchantId: string,
-  dto: { earnBps: number; redeemLimitBps: number; qrTtlSec?: number; requireBridgeSig?: boolean; requireStaffKey?: boolean; maxOutlets?: number | null },
+  dto: {
+    qrTtlSec?: number;
+    requireBridgeSig?: boolean;
+    requireStaffKey?: boolean;
+    maxOutlets?: number | null;
+  },
 ): Promise<any> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/settings`, {
     method: 'PUT',

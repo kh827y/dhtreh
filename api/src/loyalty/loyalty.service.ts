@@ -2371,88 +2371,6 @@ export class LoyaltyService {
     }
   }
 
-  // ====== Кеш правил ======
-  private rulesCache = new Map<
-    string,
-    {
-      updatedAt: string;
-      baseEarnBps: number;
-      baseRedeemLimitBps: number;
-      fn: (args: {
-        channel: 'VIRTUAL' | 'PC_POS' | 'SMART';
-        weekday: number;
-        eligibleAmount: number;
-      }) => { earnBps: number; redeemLimitBps: number };
-    }
-  >();
-
-  private compileRules(
-    merchantId: string,
-    outletId: string | null,
-    base: { earnBps: number; redeemLimitBps: number },
-    rulesJson: any,
-    updatedAt: Date | null | undefined,
-  ) {
-    const key = `${merchantId}:${outletId ?? '-'}`;
-    const stamp = updatedAt ? updatedAt.toISOString() : '0';
-    const cached = this.rulesCache.get(key);
-    if (
-      cached &&
-      cached.updatedAt === stamp &&
-      cached.baseEarnBps === base.earnBps &&
-      cached.baseRedeemLimitBps === base.redeemLimitBps
-    )
-      return cached.fn;
-    let fn = (args: {
-      channel: 'VIRTUAL' | 'PC_POS' | 'SMART';
-      weekday: number;
-      eligibleAmount: number;
-    }) => ({ earnBps: base.earnBps, redeemLimitBps: base.redeemLimitBps });
-    // Support both array root and object with { rules: [...] }
-    const rulesArr: any[] | null = Array.isArray(rulesJson)
-      ? rulesJson
-      : rulesJson && Array.isArray(rulesJson.rules)
-        ? rulesJson.rules
-        : null;
-    if (Array.isArray(rulesArr)) {
-      const rules = rulesArr;
-      fn = (args) => {
-        let earnBps = base.earnBps;
-        let redeemLimitBps = base.redeemLimitBps;
-        const wd = args.weekday;
-        for (const item of rules) {
-          try {
-            if (!item || typeof item !== 'object' || Array.isArray(item))
-              continue;
-            const cond = item.if ?? {};
-            if (
-              Array.isArray(cond.channelIn) &&
-              !cond.channelIn.includes(args.channel)
-            )
-              continue;
-            if (
-              cond.minEligible != null &&
-              args.eligibleAmount < Number(cond.minEligible)
-            )
-              continue;
-            const then = item.then ?? {};
-            if (then.earnBps != null) earnBps = Number(then.earnBps);
-            if (then.redeemLimitBps != null)
-              redeemLimitBps = Number(then.redeemLimitBps);
-          } catch {}
-        }
-        return { earnBps, redeemLimitBps };
-      };
-    }
-    this.rulesCache.set(key, {
-      updatedAt: stamp,
-      baseEarnBps: base.earnBps,
-      baseRedeemLimitBps: base.redeemLimitBps,
-      fn,
-    });
-    return fn;
-  }
-
   private sanitizeManualAmount(value?: number | null): number | null {
     if (value == null) return null;
     const num = Number(value);
@@ -2588,6 +2506,58 @@ export class LoyaltyService {
     return { outletId: outlet?.id ?? null, channel };
   }
 
+  private async resolveTierRatesForCustomer(
+    merchantId: string,
+    customerId: string,
+    prisma: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    try {
+      const assignment = await prisma.loyaltyTierAssignment.findFirst({
+        where: {
+          merchantId,
+          customerId,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+        orderBy: { assignedAt: 'desc' },
+      });
+      let tier: any = null;
+      if (assignment) {
+        tier = await prisma.loyaltyTier.findUnique({
+          where: { id: assignment.tierId },
+        });
+      }
+      if (!tier) {
+        tier = await prisma.loyaltyTier.findFirst({
+          where: { merchantId, isInitial: true },
+          orderBy: { thresholdAmount: 'asc' },
+        });
+      }
+      if (!tier) {
+        return { earnBps: 0, redeemLimitBps: 0, tierMinPayment: null };
+      }
+      const earnBps =
+        typeof tier.earnRateBps === 'number'
+          ? Math.max(0, Math.floor(Number(tier.earnRateBps)))
+          : 0;
+      const redeemLimitBps =
+        typeof tier.redeemRateBps === 'number'
+          ? Math.max(0, Math.floor(Number(tier.redeemRateBps)))
+          : 0;
+      let tierMinPayment: number | null = null;
+      const meta: any = tier.metadata ?? null;
+      if (meta && typeof meta === 'object') {
+        const raw = meta.minPaymentAmount ?? meta.minPayment;
+        if (raw != null) {
+          const mp = Number(raw);
+          if (Number.isFinite(mp) && mp >= 0) tierMinPayment = Math.round(mp);
+        }
+      }
+      return { earnBps, redeemLimitBps, tierMinPayment };
+    } catch {
+      return { earnBps: 0, redeemLimitBps: 0, tierMinPayment: null };
+    }
+  }
+
   // ===== Levels integration (Wave 2) =====
   // ————— вспомогалки для идемпотентности по существующему hold —————
   private quoteFromExistingHold(mode: Mode, hold: any) {
@@ -2650,9 +2620,6 @@ export class LoyaltyService {
       redeemDailyCap,
       earnDailyCap,
       rulesJson,
-      earnBps: baseEarnBps,
-      redeemLimitBps: baseRedeemLimitBps,
-      updatedAt,
     } = await this.getSettings(dto.merchantId);
     const rulesConfig =
       rulesJson && typeof rulesJson === 'object'
@@ -2676,7 +2643,6 @@ export class LoyaltyService {
     const outletCtx = await this.resolveOutletContext(dto.merchantId, {
       outletId: effectiveOutletId,
     });
-    const channel = outletCtx.channel;
     effectiveOutletId = outletCtx.outletId ?? effectiveOutletId ?? null;
     const resolvedDeviceId = deviceCtx?.id ?? null;
 
@@ -2696,62 +2662,8 @@ export class LoyaltyService {
         Math.max(0, Math.floor(Number((dto as any).total ?? 0))),
         resolvedPositions,
       );
-    // применяем правила для earnBps/redeemLimitBps (с кешом)
-    const wd = new Date().getDay();
-    const rulesFn = this.compileRules(
-      dto.merchantId,
-      effectiveOutletId,
-      { earnBps: baseEarnBps, redeemLimitBps: baseRedeemLimitBps },
-      rulesJson,
-      updatedAt,
-    );
-    let { earnBps, redeemLimitBps } = rulesFn({
-      channel,
-      weekday: wd,
-      eligibleAmount,
-    });
-    // Уровни управляются через LoyaltyTier, бонусы из локальных настроек не применяем
-
-    // Override by portal-managed LoyaltyTier (per-customer assignment)
-    let tierMinPayment: number | null = null;
-    try {
-      const assignment = await this.prisma.loyaltyTierAssignment.findFirst({
-        where: {
-          merchantId: dto.merchantId,
-          customerId: customer.id,
-          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-        },
-        orderBy: { assignedAt: 'desc' },
-      });
-      let tier: any = null;
-      if (assignment) {
-        tier = await this.prisma.loyaltyTier.findUnique({
-          where: { id: assignment.tierId },
-        });
-      }
-      if (!tier) {
-        tier = await this.prisma.loyaltyTier.findFirst({
-          where: { merchantId: dto.merchantId, isInitial: true },
-          orderBy: { thresholdAmount: 'asc' },
-        });
-      }
-      if (tier) {
-        if (typeof tier.earnRateBps === 'number') {
-          earnBps = Math.max(0, Math.floor(Number(tier.earnRateBps)));
-        }
-        if (typeof tier.redeemRateBps === 'number') {
-          redeemLimitBps = Math.max(0, Math.floor(Number(tier.redeemRateBps)));
-        }
-        const meta: any = tier.metadata ?? null;
-        if (meta && typeof meta === 'object') {
-          const raw = meta.minPaymentAmount ?? meta.minPayment;
-          if (raw != null) {
-            const mp = Number(raw);
-            if (Number.isFinite(mp) && mp >= 0) tierMinPayment = Math.round(mp);
-          }
-        }
-      }
-    } catch {}
+    const { earnBps, redeemLimitBps, tierMinPayment } =
+      await this.resolveTierRatesForCustomer(dto.merchantId, customer.id);
 
     if (modeUpper === 'REDEEM' && redemptionsBlocked) {
       return {
@@ -3762,45 +3674,17 @@ export class LoyaltyService {
               allowSame &&
               baseEarnFromHold === 0
             ) {
-              const { earnBps: baseEarnBps, earnDailyCap } =
-                await this.getSettings(hold.merchantId);
-              let earnBpsEff = baseEarnBps;
+              const { earnDailyCap } = await this.getSettings(hold.merchantId);
+              let earnBpsEff = 0;
               let tierMinPaymentLocal: number | null = null;
               try {
-                const assignment = await tx.loyaltyTierAssignment.findFirst({
-                  where: {
-                    merchantId: hold.merchantId,
-                    customerId: hold.customerId,
-                    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-                  },
-                  orderBy: { assignedAt: 'desc' },
-                });
-                let tier: any = null;
-                if (assignment)
-                  tier = await tx.loyaltyTier.findUnique({
-                    where: { id: assignment.tierId },
-                  });
-                if (!tier)
-                  tier = await tx.loyaltyTier.findFirst({
-                    where: { merchantId: hold.merchantId, isInitial: true },
-                    orderBy: { thresholdAmount: 'asc' },
-                  });
-                if (tier) {
-                  if (typeof tier.earnRateBps === 'number')
-                    earnBpsEff = Math.max(
-                      0,
-                      Math.floor(Number(tier.earnRateBps)),
-                    );
-                  const meta: any = tier.metadata ?? null;
-                  if (meta && typeof meta === 'object') {
-                    const raw = meta.minPaymentAmount ?? meta.minPayment;
-                    if (raw != null) {
-                      const mp = Number(raw);
-                      if (Number.isFinite(mp) && mp >= 0)
-                        tierMinPaymentLocal = Math.round(mp);
-                    }
-                  }
-                }
+                const tierRates = await this.resolveTierRatesForCustomer(
+                  hold.merchantId,
+                  hold.customerId,
+                  tx,
+                );
+                earnBpsEff = tierRates.earnBps;
+                tierMinPaymentLocal = tierRates.tierMinPayment;
               } catch {}
               const appliedRedeemAmt = Math.max(0, appliedRedeem);
               const total = effectiveTotal;
@@ -5197,84 +5081,8 @@ export class LoyaltyService {
     if (!cid) throw new BadRequestException('customerId required');
 
     await ensureBaseTier(this.prisma, mid).catch(() => null);
-    const settings = await this.getSettings(mid);
-    const eligible = Math.max(
-      0,
-      Math.floor(Number(opts?.eligibleAmount ?? 0) || 0),
-    );
-    const outletCtx = await this.resolveOutletContext(mid, {
-      outletId: opts?.outletId ?? null,
-    });
-    const rulesFn = this.compileRules(
-      mid,
-      outletCtx.outletId ?? null,
-      {
-        earnBps: settings.earnBps,
-        redeemLimitBps: settings.redeemLimitBps,
-      },
-      settings.rulesJson,
-      settings.updatedAt,
-    );
-    const { earnBps: rawEarn, redeemLimitBps: rawRedeem } = rulesFn({
-      channel: outletCtx.channel,
-      weekday: new Date().getDay(),
-      eligibleAmount: eligible,
-    });
-    let earnBps = Math.max(
-      0,
-      Math.floor(
-        Number.isFinite(Number(rawEarn)) ? Number(rawEarn) : settings.earnBps,
-      ),
-    );
-    let redeemLimitBps = Math.max(
-      0,
-      Math.floor(
-        Number.isFinite(Number(rawRedeem))
-          ? Number(rawRedeem)
-          : settings.redeemLimitBps,
-      ),
-    );
-    let tierMinPayment: number | null = null;
-    try {
-      const assignment = await this.prisma.loyaltyTierAssignment.findFirst({
-        where: {
-          merchantId: mid,
-          customerId: cid,
-          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-        },
-        orderBy: { assignedAt: 'desc' },
-      });
-      let tier: any = null;
-      if (assignment) {
-        tier = await this.prisma.loyaltyTier.findUnique({
-          where: { id: assignment.tierId },
-        });
-      }
-      if (!tier) {
-        tier = await this.prisma.loyaltyTier.findFirst({
-          where: { merchantId: mid, isInitial: true },
-          orderBy: { thresholdAmount: 'asc' },
-        });
-      }
-      if (tier) {
-        if (typeof tier.earnRateBps === 'number') {
-          earnBps = Math.max(0, Math.floor(Number(tier.earnRateBps)));
-        }
-        if (typeof tier.redeemRateBps === 'number') {
-          redeemLimitBps = Math.max(0, Math.floor(Number(tier.redeemRateBps)));
-        }
-        const meta: any = tier.metadata ?? null;
-        if (meta && typeof meta === 'object') {
-          const raw = meta.minPaymentAmount ?? meta.minPayment;
-          if (raw != null) {
-            const mp = Number(raw);
-            if (Number.isFinite(mp) && mp >= 0) {
-              tierMinPayment = Math.round(mp);
-            }
-          }
-        }
-      }
-    } catch {}
+    const { earnBps, redeemLimitBps, tierMinPayment } =
+      await this.resolveTierRatesForCustomer(mid, cid);
     const toPercent = (bps: number) =>
       Math.round(Math.max(0, Number(bps) || 0)) / 100;
     return {

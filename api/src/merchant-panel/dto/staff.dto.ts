@@ -207,6 +207,10 @@ export class StaffSummaryDto {
   canAccessPortal!: boolean;
 
   @Field(() => Boolean)
+  @ApiProperty({ description: 'Может ли войти в портал прямо сейчас' })
+  portalLoginEnabled!: boolean;
+
+  @Field(() => Boolean)
   @ApiProperty({ description: 'Является владельцем аккаунта мерчанта' })
   isOwner!: boolean;
 

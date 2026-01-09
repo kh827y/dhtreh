@@ -4,26 +4,14 @@ import React from "react";
 import { Globe, Building2, Clock, Save, QrCode } from "lucide-react";
 import {
   useTimezone,
+  useTimezoneOptions,
   useTimezoneUpdater,
 } from "../../../components/TimezoneProvider";
 import { readApiError, readErrorMessage } from "lib/portal-errors";
 
-const timezones = [
-  { value: "MSK-1", label: "(MSK-1) Калининград" },
-  { value: "MSK+0", label: "(MSK) Москва, Санкт-Петербург" },
-  { value: "MSK+1", label: "(MSK+1) Самара" },
-  { value: "MSK+2", label: "(MSK+2) Екатеринбург" },
-  { value: "MSK+3", label: "(MSK+3) Омск" },
-  { value: "MSK+4", label: "(MSK+4) Красноярск" },
-  { value: "MSK+5", label: "(MSK+5) Иркутск" },
-  { value: "MSK+6", label: "(MSK+6) Якутск" },
-  { value: "MSK+7", label: "(MSK+7) Владивосток" },
-  { value: "MSK+8", label: "(MSK+8) Магадан" },
-  { value: "MSK+9", label: "(MSK+9) Камчатка" },
-];
-
 export default function SettingsSystemPage() {
   const timezone = useTimezone();
+  const timezoneOptions = useTimezoneOptions();
   const setTimezone = useTimezoneUpdater();
   const [companyName, setCompanyName] = React.useState("");
   const [savedCompanyName, setSavedCompanyName] = React.useState("");
@@ -34,6 +22,12 @@ export default function SettingsSystemPage() {
   const [savedQrMode, setSavedQrMode] = React.useState<"short" | "jwt">("short");
   const [saving, setSaving] = React.useState(false);
   const [success, setSuccess] = React.useState<string>("");
+  const resolvedTimezones = React.useMemo(() => {
+    const list = timezoneOptions.length ? timezoneOptions : [timezone];
+    const hasCurrent = list.some((item) => item.code === timezone.code);
+    if (hasCurrent) return list;
+    return [timezone, ...list];
+  }, [timezone, timezoneOptions]);
 
   React.useEffect(() => {
     setTimezoneCode(timezone.code);
@@ -294,9 +288,9 @@ export default function SettingsSystemPage() {
                 onChange={(e) => setTimezoneCode(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 bg-white appearance-none focus:ring-2 focus:ring-purple-500 focus:outline-none cursor-pointer"
               >
-                {timezones.map((tz) => (
-                  <option key={tz.value} value={tz.value}>
-                    {tz.label}
+                {resolvedTimezones.map((tz) => (
+                  <option key={tz.code} value={tz.code}>
+                    {tz.label || tz.city || tz.code}
                   </option>
                 ))}
               </select>

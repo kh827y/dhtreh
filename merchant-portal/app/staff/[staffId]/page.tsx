@@ -135,6 +135,10 @@ function getPortalGroupName(staff: Staff | null) {
   return getRoleLabel(staff.role);
 }
 
+function isAccessRevoked(status?: string | null) {
+  return String(status || "").toUpperCase() === "REVOKED";
+}
+
 function mergeGroups(options: AccessGroup[], currentRole?: string | null, currentGroups?: StaffGroup[] | null) {
   const map = new Map<string, AccessGroup>();
   for (const group of options) {
@@ -749,7 +753,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     item?.status === "ACTIVE" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800";
   const canSave = Boolean(item) && (profileChanged || accessChanged) && !saving;
   const availableOutlets = outlets.filter(
-    (outlet) => !accesses.some((row) => row.outletId === outlet.id),
+    (outlet) => !accesses.some((row) => row.outletId === outlet.id && !isAccessRevoked(row.status)),
   );
 
   return (
@@ -1082,52 +1086,69 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
               {accesses.length === 0 ? (
                 <div className="text-center py-8 text-gray-400 text-sm">Нет привязанных точек</div>
               ) : (
-                accesses.map((assignment) => (
-                  <div
-                    key={assignment.outletId}
-                    className="bg-gray-50 rounded-lg border border-gray-200 p-4 relative group"
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <h4 className="font-bold text-gray-900 text-sm">{assignment.outletName}</h4>
-                      <button
-                        onClick={() => handleRevoke(assignment.outletId)}
-                        className="text-gray-400 hover:text-red-500 transition-colors"
-                        disabled={accessActionOutlet === assignment.outletId}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded border border-gray-200">
-                        <KeyRound size={14} className="text-gray-400" />
-                        <span className="font-mono font-bold text-lg tracking-widest text-gray-800">
-                          {assignment.pinCode || "—"}
-                        </span>
+                accesses.map((assignment) => {
+                  const revoked = isAccessRevoked(assignment.status);
+                  const statusLabel = revoked ? "Доступ отозван" : "Активен";
+                  const statusStyle = revoked
+                    ? "bg-gray-100 text-gray-600 border-gray-200"
+                    : "bg-emerald-100 text-emerald-700 border-emerald-200";
+                  return (
+                    <div
+                      key={assignment.outletId}
+                      className="bg-gray-50 rounded-lg border border-gray-200 p-4 relative group"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-gray-900 text-sm">{assignment.outletName}</h4>
+                          <span
+                            className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${statusStyle}`}
+                          >
+                            {statusLabel}
+                          </span>
+                        </div>
                         <button
-                          onClick={() => handleRegenerate(assignment.outletId)}
-                          className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-purple-600 transition-colors"
-                          title="Сгенерировать новый PIN"
-                          disabled={accessActionOutlet === assignment.outletId}
+                          onClick={() => handleRevoke(assignment.outletId)}
+                          className="text-gray-400 hover:text-red-500 transition-colors"
+                          disabled={accessActionOutlet === assignment.outletId || revoked}
+                          title={revoked ? "Доступ уже отозван" : "Отозвать доступ"}
                         >
-                          <RefreshCw size={12} />
+                          <Trash2 size={16} />
                         </button>
                       </div>
-                      <span className="text-xs text-gray-500">PIN-код для входа</span>
-                    </div>
 
-                    <div className="flex items-center justify-between text-xs text-gray-500 border-t border-gray-200 pt-2">
-                      <div className="flex items-center space-x-1" title="Количество транзакций">
-                        <CreditCard size={12} />
-                        <span>{assignment.transactionsTotal ?? 0} чек.</span>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded border border-gray-200">
+                          <KeyRound size={14} className="text-gray-400" />
+                          <span className="font-mono font-bold text-lg tracking-widest text-gray-800">
+                            {revoked ? "—" : assignment.pinCode || "—"}
+                          </span>
+                          <button
+                            onClick={() => handleRegenerate(assignment.outletId)}
+                            className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-purple-600 transition-colors"
+                            title="Сгенерировать новый PIN"
+                            disabled={accessActionOutlet === assignment.outletId || revoked}
+                          >
+                            <RefreshCw size={12} />
+                          </button>
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {revoked ? "PIN скрыт для отозванного доступа" : "PIN-код для входа"}
+                        </span>
                       </div>
-                      <div className="flex items-center space-x-1" title="Последняя транзакция">
-                        <History size={12} />
-                        <span>{formatDateTime(assignment.lastTxnAt)}</span>
+
+                      <div className="flex items-center justify-between text-xs text-gray-500 border-t border-gray-200 pt-2">
+                        <div className="flex items-center space-x-1" title="Количество транзакций">
+                          <CreditCard size={12} />
+                          <span>{assignment.transactionsTotal ?? 0} чек.</span>
+                        </div>
+                        <div className="flex items-center space-x-1" title="Последняя транзакция">
+                          <History size={12} />
+                          <span>{formatDateTime(assignment.lastTxnAt)}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

@@ -10,7 +10,7 @@ export default function IntegrationDocsPage() {
       </ol>
       <p>Протокол:</p>
       <pre style={{ whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{`POST http://127.0.0.1:18080/quote
-{ "mode":"redeem","merchantId":"<merchant_id>","orderId":"O-1","total":1000,"positions":[{"id_product":"SKU-1","qty":1,"price":1000}],"userToken":"<jwt|id>" }
+{ "mode":"redeem","merchantId":"<merchant_id>","orderId":"O-1","total":1000,"positions":[{"externalId":"SKU-1","qty":1,"price":1000}],"userToken":"<jwt|id>" }
 → { canRedeem, discountToApply, finalPayable, holdId }
 
 POST http://127.0.0.1:18080/commit
@@ -24,14 +24,11 @@ const sig = sign(secret, body); // v1,ts=...,sig=...
 fetch(API_BASE + '/loyalty/commit', { method:'POST', headers:{ 'X-Bridge-Signature': sig, 'Idempotency-Key': 'commit:<merchant_id>:O-1' }, body });
 `}</pre>
       <h3>CRM‑виджет</h3>
-      <p>Сервер CRM вызывает API от имени мерчанта: баланс, история, поиск клиента по телефону.</p>
-      <pre style={{ whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{`GET /merchants/:id/customer/summary?customerId=...
-GET /merchants/:id/customer/search?phone=+7999...
-`}</pre>
+      <p>Этот раздел относится к внутренним ручкам админки и не предназначен для внешних CRM‑интеграций.</p>
       <h3>Frontol / 1С — алгоритм скидки/начислений</h3>
       <p>Применение скидки (REDEEM):</p>
       <ol>
-        <li>Перед закрытием чека посчитайте общую сумму (<code>total</code>) и передайте позиции, которые участвуют в начислении (по умолчанию все; для исключений можно указать <code>accruePoints=false</code>).</li>
+        <li>Перед закрытием чека посчитайте общую сумму (<code>total</code>) и передайте позиции для расчёта; исключения настраиваются в каталоге.</li>
         <li>Получите <code>userToken</code> из QR (JWT) или ID клиента.</li>
         <li>Вызовите <code>POST /loyalty/quote</code> с <code>{`{mode:'redeem', merchantId, orderId, total, positions, userToken}`}</code>.</li>
         <li>Если <code>canRedeem</code> и есть <code>holdId</code>, уменьшите сумму чека на <code>discountToApply</code> и отобразите клиенту.</li>
@@ -49,8 +46,8 @@ GET /merchants/:id/customer/search?phone=+7999...
   "orderId": "O-123",
   "total": 1500,
   "positions": [
-    { "id_product": "SKU-1", "qty": 1, "price": 1200, "accruePoints": true },
-    { "id_product": "SKU-2", "qty": 1, "price": 300, "accruePoints": false }
+    { "externalId": "SKU-1", "qty": 1, "price": 1200 },
+    { "externalId": "SKU-2", "qty": 1, "price": 300 }
   ],
   "userToken": "<JWT из QR>"
 }`}</pre>
@@ -60,7 +57,7 @@ GET /merchants/:id/customer/search?phone=+7999...
       <p>Используйте пакет <code>@loyalty/sdk-ts</code> (минимальный):</p>
       <pre style={{ whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{`import { LoyaltyApi } from '@loyalty/sdk-ts';
 const api = new LoyaltyApi({ baseUrl: 'http://localhost:3000' });
-const q = await api.quote({ mode:'redeem', merchantId:'<merchant_id>', userToken:'...', orderId:'O-1', total:1000, positions:[{ id_product:'SKU-1', qty:1, price:1000 }] }, { staffKey: '...', bridgeSignatureSecret: '...' });
+const q = await api.quote({ mode:'redeem', merchantId:'<merchant_id>', userToken:'...', orderId:'O-1', total:1000, positions:[{ externalId:'SKU-1', qty:1, price:1000 }] }, { staffKey: '...', bridgeSignatureSecret: '...' });
 const c = await api.commit({ merchantId:'<merchant_id>', holdId:q.holdId!, orderId:'O-1' }, { idempotencyKey:'commit:<merchant_id>:O-1' });
 `}</pre>
 

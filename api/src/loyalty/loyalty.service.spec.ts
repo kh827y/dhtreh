@@ -392,22 +392,6 @@ describe('LoyaltyService.commit idempotency', () => {
     );
   });
 
-  it('caches rules per outlet', () => {
-    const staffMotivation = mkStaffMotivation();
-    const svc = new LoyaltyService(
-      {} as any,
-      metrics,
-      undefined as any,
-      undefined as any,
-      staffMotivation,
-    );
-    const base = { earnBps: 100, redeemLimitBps: 200 };
-    const fn1 = (svc as any).compileRules('M-1', 'OUT-1', base, null, null);
-    const fn2 = (svc as any).compileRules('M-1', 'OUT-1', base, null, null);
-    const fn3 = (svc as any).compileRules('M-1', 'OUT-2', base, null, null);
-    expect(fn1).toBe(fn2);
-    expect(fn1).not.toBe(fn3);
-  });
 });
 
 describe('LoyaltyService.processIntegrationBonus', () => {
@@ -730,31 +714,6 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     const totals = (svc as any).computeTotalsFromPositions(1200, positions);
     expect(totals.total).toBe(1000);
     expect(totals.eligibleAmount).toBe(500);
-  });
-
-  it('учитывает minEligible правил на основании eligibleAmount', () => {
-    const prisma = mkPrisma();
-    const staffMotivation = mkStaffMotivation();
-    const svc = new LoyaltyService(
-      prisma,
-      metrics,
-      undefined as any,
-      undefined as any,
-      staffMotivation,
-    );
-    const fn = (svc as any).compileRules(
-      'M-1',
-      null,
-      { earnBps: 100, redeemLimitBps: 1000 },
-      { rules: [{ if: { minEligible: 200 }, then: { earnBps: 700 } }] },
-      new Date(),
-    );
-    expect(
-      fn({ channel: 'VIRTUAL', weekday: 1, eligibleAmount: 150 }).earnBps,
-    ).toBe(100);
-    expect(
-      fn({ channel: 'VIRTUAL', weekday: 1, eligibleAmount: 250 }).earnBps,
-    ).toBe(700);
   });
 
   it('передаёт рассчитанный purchaseAmount в реферальные награды', async () => {

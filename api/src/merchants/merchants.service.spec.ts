@@ -17,7 +17,7 @@ describe('MerchantsService rulesJson validation', () => {
             // ensure required response fields exist
             return {
               merchantId: base.merchantId,
-              earnBps: updated.earnBps ?? 500,
+              earnBps: updated.earnBps ?? 300,
               redeemLimitBps: updated.redeemLimitBps ?? 5000,
               qrTtlSec: updated.qrTtlSec ?? 300,
               webhookUrl: updated.webhookUrl ?? null,

@@ -506,6 +506,11 @@ export class MerchantPanelService {
       status: member.status,
       portalAccessEnabled: member.portalAccessEnabled,
       canAccessPortal: member.canAccessPortal,
+      portalLoginEnabled:
+        member.status === StaffStatus.ACTIVE &&
+        member.portalAccessEnabled &&
+        member.canAccessPortal &&
+        !!member.hash,
       isOwner: member.isOwner,
       pinCode: null,
       lastActivityAt: normalizeDate(
@@ -808,6 +813,9 @@ export class MerchantPanelService {
     }
     if (filters.portalOnly) {
       where.portalAccessEnabled = true;
+      where.canAccessPortal = true;
+      where.hash = { not: null };
+      where.status = StaffStatus.ACTIVE;
     }
     if (filters.search) {
       const q = filters.search.trim();
@@ -922,18 +930,36 @@ export class MerchantPanelService {
       this.metrics.inc('portal_staff_list_total');
     } catch {}
 
+    const resolveLastActivity = (
+      member: typeof items[number],
+      transactionDate: Date | null,
+    ) => {
+      const candidates = [
+        transactionDate,
+        member.lastActivityAt ?? null,
+        member.lastPortalLoginAt ?? null,
+      ].filter(Boolean) as Date[];
+      if (!candidates.length) return null;
+      return new Date(
+        Math.max(...candidates.map((value) => value.getTime())),
+      );
+    };
+
     return {
-      items: items.map((member) =>
-        this.mapStaff(member, {
+      items: items.map((member) => {
+        const lastActivityAt = resolveLastActivity(
+          member,
+          lastActivityMap.get(member.id) ?? null,
+        );
+        return this.mapStaff(member, {
           outletsCount:
             outletsCountMap.get(member.id) ??
             member.accesses.filter(
               (access) => access.status === StaffOutletAccessStatus.ACTIVE,
             ).length,
-          lastActivityAt:
-            lastActivityMap.get(member.id) ?? member.lastActivityAt ?? null,
-        }),
-      ),
+          lastActivityAt,
+        });
+      }),
       meta: this.buildMeta(paging, total),
       counters: {
         active,
@@ -1828,7 +1854,7 @@ export class MerchantPanelService {
     pagination?: Partial<PaginationOptions>,
   ) {
     const paging = this.normalizePagination(pagination);
-    const where: Prisma.OutletWhereInput = { merchantId };
+    const where: Prisma.OutletWhereInput = { merchantId, hidden: false };
     if (filters.status && filters.status !== 'ALL') {
       where.status = filters.status;
     }
@@ -2040,7 +2066,7 @@ export class MerchantPanelService {
 
   async getOutlet(merchantId: string, outletId: string) {
     const outlet = await this.prisma.outlet.findFirst({
-      where: { merchantId, id: outletId },
+      where: { merchantId, id: outletId, hidden: false },
       include: {
         devices: {
           where: { archivedAt: null },

@@ -164,7 +164,6 @@ const LEGACY_RESOURCE_ALIASES: Record<string, string[]> = {
   staff: ["staff"],
   access_groups: ["staff"],
   outlets: ["outlets"],
-  wallet: ["loyalty"],
   mechanic_birthday: ["loyalty"],
   mechanic_auto_return: ["loyalty"],
   mechanic_levels: ["loyalty"],
@@ -211,7 +210,6 @@ const ITEM_PERMISSION_REQUIREMENTS: Record<
   "/audiences": [{ resource: "audiences", action: "read" }],
   "/products": [{ resource: "products", action: "read" }],
   "/categories": [{ resource: "categories", action: "read" }],
-  "/wallet": [{ resource: "wallet", action: "read" }],
   "/settings/outlets": [{ resource: "outlets", action: "read" }],
   "/outlets": [{ resource: "outlets", action: "read" }],
   "/settings/staff": [{ resource: "staff", action: "read" }],
@@ -459,22 +457,6 @@ function formatDateLabel(value: string | null) {
   }
 }
 
-function SubscriptionNotice({ subscription }: { subscription: PortalSubscription | null }) {
-  if (!subscription) return null;
-  if (subscription.expired || !subscription.expiresSoon) return null;
-  const daysLeft = subscription.daysLeft;
-  return (
-    <div className="flex justify-end mb-4">
-      <div className="max-w-sm w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 shadow-sm">
-        <div className="font-semibold text-sm">Подписка скоро истекает</div>
-        <div className="text-xs text-amber-800/80 mt-1 leading-snug">
-          Осталось {daysLeft ?? "несколько"} дней. Продлите подписку, чтобы не потерять доступ.
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const profile = await fetchPortalProfile();
   const timezonePayload = await fetchPortalTimezone();
@@ -602,7 +584,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     )}
 
                     <ContentWrapper>
-                      <SubscriptionNotice subscription={subscription} />
                       <div
                         style={{
                           opacity: subscription?.expired ? 0.35 : 1,

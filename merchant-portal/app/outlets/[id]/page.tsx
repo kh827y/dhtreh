@@ -6,6 +6,7 @@ import { Plus, Monitor, Users, Save, ArrowLeft, X } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
 
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
+const STAFF_PAGE_SIZE = 100;
 const isValidHttpUrl = (value: string) => {
   try {
     const url = new URL(value);
@@ -58,6 +59,7 @@ export default function EditOutletPage() {
   const [newDeviceInput, setNewDeviceInput] = React.useState("");
   const [deviceError, setDeviceError] = React.useState<string | null>(null);
   const [staff, setStaff] = React.useState<StaffItem[]>([]);
+  const [staffTotal, setStaffTotal] = React.useState<number | null>(null);
 
   const validateReviewLinks = () => {
     const invalid: string[] = [];
@@ -101,13 +103,23 @@ export default function EditOutletPage() {
 
   const loadStaff = React.useCallback(async () => {
     try {
-      const res = await fetch(`/api/portal/staff?outletId=${encodeURIComponent(outletId)}&pageSize=100`, { cache: "no-store" });
-      if (!res.ok) return;
+      const res = await fetch(
+        `/api/portal/staff?outletId=${encodeURIComponent(outletId)}&pageSize=${STAFF_PAGE_SIZE}`,
+        { cache: "no-store" },
+      );
+      if (!res.ok) {
+        setStaffTotal(null);
+        return;
+      }
       const data = await res.json();
       const items = Array.isArray(data?.items) ? data.items : [];
+      const totalRaw = Number(data?.meta?.total);
+      const total = Number.isFinite(totalRaw) ? totalRaw : items.length;
       setStaff(items);
+      setStaffTotal(total);
     } catch {
       setStaff([]);
+      setStaffTotal(null);
     }
   }, [outletId]);
 
@@ -181,6 +193,9 @@ export default function EditOutletPage() {
       setSaving(false);
     }
   };
+
+  const staffCount = staffTotal ?? staff.length;
+  const staffHasMore = staffTotal !== null && staffTotal > staff.length;
 
   return (
     <div className="p-8 max-w-[1200px] mx-auto ">
@@ -346,13 +361,18 @@ export default function EditOutletPage() {
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-bold text-gray-900">Сотрудники</h3>
                 <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full font-medium">
-                  {staff.length}
+                  {staffCount}
                 </span>
               </div>
               <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 text-sm text-gray-600 flex items-start space-x-2">
                 <Users size={16} className="mt-0.5 flex-shrink-0 text-blue-500" />
                 <p>Управление сотрудниками и привязка их к торговым точкам осуществляется в разделе "Сотрудники".</p>
               </div>
+              {staffHasMore ? (
+                <div className="text-xs text-gray-400">
+                  Показаны первые {STAFF_PAGE_SIZE} из {staffTotal}. Полный список — в разделе "Сотрудники".
+                </div>
+              ) : null}
               <div className="border border-gray-100 rounded-lg divide-y divide-gray-100 max-h-[156px] overflow-y-auto custom-scrollbar">
                 {staff.length === 0 ? (
                   <div className="p-4 text-center text-sm text-gray-400">Сотрудников пока нет</div>

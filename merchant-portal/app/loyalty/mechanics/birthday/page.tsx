@@ -8,7 +8,7 @@ import { ChartGroup, formatBucketLabel, groupRevenue, groupTimeline } from "./st
 import { normalizeErrorMessage } from "lib/portal-errors";
 
 const quickRanges = [
-  { label: "Вчера", value: "day" },
+  { label: "Вчера", value: "yesterday" },
   { label: "Неделя", value: "week" },
   { label: "Месяц", value: "month" },
   { label: "Квартал", value: "quarter" },

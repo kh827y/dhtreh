@@ -80,7 +80,13 @@ export default function TelegramSettingsPage() {
     setErr("");
     try {
       const stateRes = await fetch("/api/portal/settings/telegram-notify/state");
-      const s = await stateRes.json().catch(() => null);
+      let s: any = null;
+      try {
+        s = await stateRes.json();
+      } catch {}
+      if (!stateRes.ok) {
+        throw new Error(s?.message || "Не удалось загрузить состояние Telegram");
+      }
       setState(s);
 
       if (s?.configured) {
@@ -101,7 +107,14 @@ export default function TelegramSettingsPage() {
         setInvite(null);
       }
 
-      const list = await fetch("/api/portal/settings/telegram-notify/subscribers").then((r) => r.json());
+      const listRes = await fetch("/api/portal/settings/telegram-notify/subscribers");
+      let list: any = null;
+      try {
+        list = await listRes.json();
+      } catch {}
+      if (!listRes.ok) {
+        throw new Error((list && list.message) || "Не удалось загрузить список подключенных пользователей");
+      }
       setSubs(Array.isArray(list) ? list : []);
 
       const prefRes = await fetch("/api/portal/settings/telegram-notify/preferences");
@@ -127,7 +140,7 @@ export default function TelegramSettingsPage() {
       setErr(normalizeErrorMessage(e, "Не удалось загрузить настройки"));
       setState(null);
       setInvite(null);
-      setSubs([]);
+      setSubs(null);
     } finally {
       setBusy(false);
     }
@@ -449,7 +462,7 @@ export default function TelegramSettingsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {subs && subs.length ? (
+              {Array.isArray(subs) && subs.length ? (
                 subs.map((account) => {
                   const isGroup =
                     account.actorType === "GROUP" ||
@@ -488,6 +501,12 @@ export default function TelegramSettingsPage() {
                     </tr>
                   );
                 })
+              ) : subs === null ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-8 text-center text-gray-400">
+                    Список недоступен
+                  </td>
+                </tr>
               ) : (
                 <tr>
                   <td colSpan={5} className="px-6 py-8 text-center text-gray-400">

@@ -30,7 +30,6 @@ const LEGACY_RESOURCE_ALIASES: Record<string, string[]> = {
   staff: ['staff'],
   access_groups: ['staff'],
   outlets: ['outlets'],
-  wallet: ['loyalty'],
   mechanic_birthday: ['loyalty'],
   mechanic_auto_return: ['loyalty'],
   mechanic_levels: ['loyalty'],

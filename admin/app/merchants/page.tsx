@@ -78,10 +78,8 @@ export default function AdminMerchantsPage() {
     setMsg('');
     try { await apiUpdateMerchant(id, fields); await load(); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
   }
-  async function updateMaxOutlets(id: string, maxOutletsValue: number | null, base: { earnBps: number; redeemLimitBps: number }) {
+  async function updateMaxOutlets(id: string, maxOutletsValue: number | null) {
     await updateMerchantSettings(id, {
-      earnBps: base.earnBps,
-      redeemLimitBps: base.redeemLimitBps,
       maxOutlets: maxOutletsValue,
     });
     await load();
@@ -240,7 +238,7 @@ function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscrip
   onDelete: (id: string) => void;
   onGrantSubscription: (id: string, days: number) => void;
   onResetSubscription: (id: string) => void;
-  onUpdateMaxOutlets: (id: string, maxOutletsValue: number | null, base: { earnBps: number; redeemLimitBps: number }) => Promise<void>;
+  onUpdateMaxOutlets: (id: string, maxOutletsValue: number | null) => Promise<void>;
 }) {
   const [name, setName] = React.useState(row.name);
   const [email, setEmail] = React.useState(row.portalEmail || '');
@@ -312,10 +310,7 @@ function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscrip
     }
     setMaxOutletsBusy(true);
     try {
-      await onUpdateMaxOutlets(row.id, limit ?? null, {
-        earnBps: row.earnBps ?? 300,
-        redeemLimitBps: row.redeemLimitBps ?? 5000,
-      });
+      await onUpdateMaxOutlets(row.id, limit ?? null);
       setMaxOutletsMsg('Лимит обновлён');
     } catch (e: any) {
       setMaxOutletsMsg(String(e?.message || e));
