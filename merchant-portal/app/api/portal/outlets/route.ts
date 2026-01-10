@@ -7,6 +7,8 @@ export async function GET(req: NextRequest) {
   const qs = new URLSearchParams();
   const status = url.searchParams.get('status');
   const search = url.searchParams.get('search');
+  const page = url.searchParams.get('page');
+  const pageSize = url.searchParams.get('pageSize');
   if (status) {
     const normalized = status.trim().toLowerCase();
     if (['active', 'inactive', 'all'].includes(normalized)) {
@@ -18,6 +20,8 @@ export async function GET(req: NextRequest) {
     }
   }
   if (search) qs.set('search', search);
+  if (page) qs.set('page', page);
+  if (pageSize) qs.set('pageSize', pageSize);
   const path = `/portal/outlets${qs.toString() ? `?${qs.toString()}` : ''}`;
   const proxied = await portalFetch(req, path, { method: 'GET' });
   const raw = await proxied.text();

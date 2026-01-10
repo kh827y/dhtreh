@@ -218,7 +218,23 @@ export class PortalController {
       const to = this.parseLocalDate(toStr, offset, true);
       if (from && to) {
         if (from.getTime() > to.getTime()) {
+          const maxRangeDays = 366;
+          const rangeMs = from.getTime() - to.getTime();
+          const maxRangeMs = maxRangeDays * 24 * 60 * 60 * 1000;
+          if (rangeMs > maxRangeMs) {
+            throw new BadRequestException(
+              'Слишком большой период. Максимум 1 год.',
+            );
+          }
           return { from: to, to: from, type: 'custom' as const };
+        }
+        const maxRangeDays = 366;
+        const rangeMs = to.getTime() - from.getTime();
+        const maxRangeMs = maxRangeDays * 24 * 60 * 60 * 1000;
+        if (rangeMs > maxRangeMs) {
+          throw new BadRequestException(
+            'Слишком большой период. Максимум 1 год.',
+          );
         }
         return { from, to, type: 'custom' as const };
       }
@@ -1772,6 +1788,27 @@ export class PortalController {
       timezoneCode,
     );
   }
+  @Get('analytics/referral/leaderboard')
+  referralLeaderboard(
+    @Req() req: any,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('offset') offset?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const merchantId = this.getMerchantId(req);
+    const timezoneCode = String(req.portalTimezone || DEFAULT_TIMEZONE_CODE);
+    const parsedOffset = Math.max(0, Number.parseInt(offset || '0', 10) || 0);
+    const parsedLimit = Math.max(1, Math.min(Number.parseInt(limit || '50', 10) || 50, 200));
+    return this.analytics.getReferralLeaderboard(
+      merchantId,
+      this.computePeriod(req, period, from, to),
+      timezoneCode,
+      parsedOffset,
+      parsedLimit,
+    );
+  }
   @Get('analytics/operations')
   analyticsOperations(
     @Req() req: any,
@@ -1863,6 +1900,7 @@ export class PortalController {
       merchantId,
       grouping,
       effectiveLimit,
+      String(req.portalTimezone || DEFAULT_TIMEZONE_CODE),
     );
   }
   @Get('analytics/time/activity')

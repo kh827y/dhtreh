@@ -55,7 +55,7 @@ export default function AnalyticsRepeatPage() {
     setOutletsLoading(true);
     setOutletsError("");
 
-    fetch(`/api/portal/outlets?status=active`, { method: "GET", cache: "no-store", signal: controller.signal })
+    fetch(`/api/portal/outlets?status=all`, { method: "GET", cache: "no-store", signal: controller.signal })
       .then(async (res) => {
         const text = await res.text().catch(() => "");
         const payload = text ? (JSON.parse(text) as any) : {};

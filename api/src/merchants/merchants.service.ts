@@ -98,6 +98,11 @@ export class MerchantsService {
     const onlyLetters = t.replace(/[^a-z]+/g, '');
     return onlyLetters || 'merchant';
   }
+
+  private normalizePhone(value?: string | null) {
+    const digits = String(value ?? '').replace(/\D/g, '');
+    return digits || null;
+  }
   private letterSuffix(index: number): string {
     let n = index;
     let suffix = '';
@@ -2499,8 +2504,14 @@ export class MerchantsService {
   }
   async findCustomerByPhone(merchantId: string, phone: string) {
     // Customer теперь per-merchant модель
+    const raw = String(phone || '').trim();
+    const normalized = this.normalizePhone(raw);
+    if (!raw && !normalized) return null;
+    const candidates = Array.from(
+      new Set([normalized, raw].filter((value): value is string => Boolean(value))),
+    );
     const c = await this.prisma.customer.findFirst({
-      where: { merchantId, phone },
+      where: { merchantId, phone: { in: candidates } },
     });
     if (!c) return null;
     const bal = await this.getBalance(merchantId, c.id);

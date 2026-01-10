@@ -51,8 +51,6 @@ const BULK_ACTION_MAP: Record<
   ProductBulkAction,
   Prisma.ProductUpdateManyMutationInput
 > = {
-  [ProductBulkAction.SHOW]: { visible: true },
-  [ProductBulkAction.HIDE]: { visible: false },
   [ProductBulkAction.ALLOW_REDEEM]: { allowRedeem: true },
   [ProductBulkAction.FORBID_REDEEM]: { allowRedeem: false },
   [ProductBulkAction.DELETE]: { deletedAt: new Date() },
@@ -121,6 +119,16 @@ export class PortalCatalogService {
     return Math.min(100, Math.max(0, Math.round(numeric)));
   }
 
+  private normalizeProductIds(ids?: string[]) {
+    if (!Array.isArray(ids)) return [];
+    const unique = new Set<string>();
+    ids.forEach((id) => {
+      const normalized = String(id || '').trim();
+      if (normalized) unique.add(normalized);
+    });
+    return Array.from(unique);
+  }
+
   private toDecimal(value: number | null | undefined): Prisma.Decimal | null {
     if (value === undefined || value === null) return null;
     if (!Number.isFinite(value)) return null;
@@ -178,7 +186,6 @@ export class PortalCatalogService {
       categoryId: product.categoryId ?? null,
       categoryName: product.category?.name ?? null,
       previewImage: product.images[0]?.url ?? null,
-      visible: product.visible,
       accruePoints: product.accruePoints,
       allowRedeem: product.allowRedeem,
       redeemPercent: product.redeemPercent,
@@ -647,6 +654,7 @@ export class PortalCatalogService {
     const name = dto.name?.trim();
     if (!name) throw new BadRequestException('Category name is required');
     const slug = dto.slug ? dto.slug.toLowerCase() : this.slugify(name);
+    const assignIds = this.normalizeProductIds(dto.assignProductIds);
     return this.prisma.$transaction(async (tx) => {
       if (dto.parentId)
         await this.ensureCategoryOwnership(tx, merchantId, dto.parentId);
@@ -664,6 +672,16 @@ export class PortalCatalogService {
             status: dto.status ?? 'ACTIVE',
           },
         });
+        if (assignIds.length) {
+          await tx.product.updateMany({
+            where: {
+              id: { in: assignIds },
+              merchantId,
+              deletedAt: null,
+            },
+            data: { categoryId: created.id },
+          });
+        }
         this.logger.log(
           JSON.stringify({
             event: 'portal.catalog.category.create',
@@ -695,6 +713,12 @@ export class PortalCatalogService {
         merchantId,
         categoryId,
       );
+      const assignIds = this.normalizeProductIds(dto.assignProductIds);
+      let unassignIds = this.normalizeProductIds(dto.unassignProductIds);
+      if (assignIds.length && unassignIds.length) {
+        const assignSet = new Set(assignIds);
+        unassignIds = unassignIds.filter((id) => !assignSet.has(id));
+      }
       const data: Prisma.ProductCategoryUpdateInput = {};
       if (dto.name !== undefined) {
         const name = dto.name.trim();
@@ -751,12 +775,41 @@ export class PortalCatalogService {
           data.parent = { disconnect: true };
         }
       }
-      if (Object.keys(data).length === 0) return this.mapCategory(category);
+      if (
+        Object.keys(data).length === 0 &&
+        assignIds.length === 0 &&
+        unassignIds.length === 0
+      )
+        return this.mapCategory(category);
       try {
-        const updated = await tx.productCategory.update({
-          where: { id: categoryId },
-          data,
-        });
+        const updated =
+          Object.keys(data).length > 0
+            ? await tx.productCategory.update({
+                where: { id: categoryId },
+                data,
+              })
+            : category;
+        if (assignIds.length) {
+          await tx.product.updateMany({
+            where: {
+              id: { in: assignIds },
+              merchantId,
+              deletedAt: null,
+            },
+            data: { categoryId },
+          });
+        }
+        if (unassignIds.length) {
+          await tx.product.updateMany({
+            where: {
+              id: { in: unassignIds },
+              merchantId,
+              deletedAt: null,
+              categoryId,
+            },
+            data: { categoryId: null },
+          });
+        }
         this.logger.log(
           JSON.stringify({
             event: 'portal.catalog.category.update',
@@ -845,8 +898,6 @@ export class PortalCatalogService {
   ): Promise<ProductListResponseDto> {
     const where: Prisma.ProductWhereInput = { merchantId, deletedAt: null };
     if (query.categoryId) where.categoryId = query.categoryId;
-    if (query.status === 'visible') where.visible = true;
-    if (query.status === 'hidden') where.visible = false;
     if (query.points === 'with_points') where.accruePoints = true;
     if (query.points === 'without_points') where.accruePoints = false;
     const andFilters: Prisma.ProductWhereInput[] = [];
@@ -958,7 +1009,6 @@ export class PortalCatalogService {
       priceEnabled,
       price: priceEnabled ? this.toDecimal(dto.price ?? 0) : null,
       allowCart,
-      visible: dto.visible ?? true,
       accruePoints: dto.accruePoints ?? true,
       allowRedeem: dto.allowRedeem ?? true,
       redeemPercent: this.clampPercent(dto.redeemPercent, 100),
@@ -1197,7 +1247,6 @@ export class PortalCatalogService {
         data.price = priceEnabled ? this.toDecimal(price ?? 0) : null;
       }
       if (dto.disableCart !== undefined) data.allowCart = !dto.disableCart;
-      if (dto.visible !== undefined) data.visible = dto.visible;
       if (dto.accruePoints !== undefined) data.accruePoints = dto.accruePoints;
       if (dto.allowRedeem !== undefined) data.allowRedeem = dto.allowRedeem;
       if (dto.redeemPercent !== undefined)
@@ -1475,7 +1524,6 @@ export class PortalCatalogService {
                   priceEnabled: true,
                   price: product.price ?? 0,
                   hasVariants: false,
-                  visible: true,
                   accruePoints: true,
                   allowRedeem: true,
                   externalProvider: providerCode,

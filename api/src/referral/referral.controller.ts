@@ -67,6 +67,7 @@ export class ReferralController {
   @Post('activate')
   @ApiOperation({ summary: 'Активировать реферальный код при регистрации' })
   async activateReferral(
+    @Req() req: any,
     @Body()
     dto: {
       code: string;
@@ -74,9 +75,15 @@ export class ReferralController {
       customerId?: string;
     },
   ) {
-    const refereeId = dto.customerId
-      ? await this.referralService.resolveCustomerId(dto.customerId)
-      : dto.refereeId;
+    const teleauthCustomerId =
+      typeof req?.teleauth?.customerId === 'string'
+        ? req.teleauth.customerId.trim()
+        : '';
+    const refereeId = teleauthCustomerId
+      ? teleauthCustomerId
+      : dto.customerId
+        ? await this.referralService.resolveCustomerId(dto.customerId)
+        : dto.refereeId;
     if (!refereeId) {
       throw new BadRequestException('refereeId or customerId required');
     }

@@ -1874,9 +1874,8 @@ export class LoyaltyService {
         });
 
       const now = new Date();
-      const lotsEnabled = process.env.EARN_LOTS_FEATURE === '1';
 
-      if (delayMs > 0 && lotsEnabled) {
+      if (delayMs > 0) {
         // Create pending lot
         const maturesAt = new Date(now.getTime() + delayMs);
         const expiresAt = ttlDays

@@ -705,6 +705,7 @@ export class AnalyticsService {
           AND r."total" > 0
           AND r."canceledAt" IS NULL
           AND r."customerId" IS NOT NULL
+          ${outletFilter ? Prisma.sql`AND r."outletId" = ${outletFilter}` : Prisma.sql``}
           AND NOT EXISTS (
             SELECT 1
             FROM "Transaction" refund
@@ -796,6 +797,28 @@ export class AnalyticsService {
     };
   }
 
+  async getReferralLeaderboard(
+    merchantId: string,
+    period: DashboardPeriod,
+    timezone: string | RussiaTimezone | undefined,
+    offset = 0,
+    limit = 50,
+  ): Promise<{ items: ReferralSummary['topReferrers'] }> {
+    const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const data = await this.computeReferralPeriodStats(
+      merchantId,
+      period,
+      tz,
+      {
+        withTimeline: false,
+        withLeaderboard: true,
+        leaderboardOffset: offset,
+        leaderboardLimit: limit,
+      },
+    );
+    return { items: data.topReferrers };
+  }
+
   private computeReferralReward(
     rewardType?: string | null,
     rewardValue?: number | null,
@@ -820,8 +843,23 @@ export class AnalyticsService {
     merchantId: string,
     period: DashboardPeriod,
     tz: RussiaTimezone,
-    opts: { withTimeline: boolean; withLeaderboard: boolean },
+    opts: {
+      withTimeline: boolean;
+      withLeaderboard: boolean;
+      leaderboardOffset?: number;
+      leaderboardLimit?: number;
+    },
   ) {
+    const bonusRows = await this.prisma.transaction.aggregate({
+      where: {
+        merchantId,
+        type: TxnType.REFERRAL,
+        createdAt: { gte: period.from, lte: period.to },
+        canceledAt: null,
+      },
+      _sum: { amount: true },
+    });
+    const bonusesIssued = Number(bonusRows._sum.amount ?? 0);
     const activations = await this.prisma.referral.findMany({
       where: {
         program: { merchantId },
@@ -854,7 +892,6 @@ export class AnalyticsService {
       string,
       { name: string; invited: number; conversions: number; revenue: number }
     >();
-    let bonusesIssued = 0;
 
     for (const activation of activations) {
       const referrerId = activation.referrerId;
@@ -873,25 +910,6 @@ export class AnalyticsService {
           });
         }
         leaderboard.get(referrerId)!.invited += 1;
-      }
-      const friendReward = Math.max(
-        0,
-        Number(activation.program?.refereeReward ?? 0),
-      );
-      if (refereeId) {
-        bonusesIssued += friendReward;
-      }
-      if (
-        activation.completedAt &&
-        activation.completedAt >= period.from &&
-        activation.completedAt <= period.to
-      ) {
-        const reward = this.computeReferralReward(
-          activation.program?.rewardType,
-          activation.program?.referrerReward,
-          activation.purchaseAmount,
-        );
-        bonusesIssued += reward;
       }
     }
 
@@ -976,6 +994,11 @@ export class AnalyticsService {
       );
     }
 
+    const leaderboardOffset = Math.max(0, Number(opts.leaderboardOffset ?? 0));
+    const leaderboardLimit =
+      typeof opts.leaderboardLimit === 'number'
+        ? Math.max(1, Math.min(opts.leaderboardLimit, 200))
+        : 20;
     const topReferrers = opts.withLeaderboard
       ? Array.from(leaderboard.entries())
           .map(([customerId, v]) => ({
@@ -994,8 +1017,11 @@ export class AnalyticsService {
             }
             return b.invited - a.invited;
           })
-          .slice(0, 20)
-          .map((x, i) => ({ rank: i + 1, ...x }))
+          .slice(leaderboardOffset, leaderboardOffset + leaderboardLimit)
+          .map((x, i) => ({
+            rank: leaderboardOffset + i + 1,
+            ...x,
+          }))
       : [];
 
     return {
@@ -2931,9 +2957,10 @@ export class AnalyticsService {
 
   private getPreviousPeriod(period: DashboardPeriod): DashboardPeriod {
     const duration = period.to.getTime() - period.from.getTime();
+    const previousTo = new Date(period.from.getTime() - 1);
     return {
-      from: new Date(period.from.getTime() - duration),
-      to: new Date(period.from.getTime()),
+      from: new Date(previousTo.getTime() - duration),
+      to: previousTo,
       type: period.type,
     };
   }
@@ -2960,6 +2987,7 @@ export class AnalyticsService {
         AND r."createdAt" >= ${period.from}
         AND r."createdAt" <= ${period.to}
         AND r."canceledAt" IS NULL
+        AND r."total" > 0
         AND NOT EXISTS (
           SELECT 1
           FROM "Transaction" refund
@@ -3018,14 +3046,15 @@ export class AnalyticsService {
           SUM(r."total")::numeric AS revenue,
           COUNT(*)::bigint AS orders,
           COUNT(DISTINCT r."customerId")::bigint AS customers
-        FROM "Receipt" r
-        WHERE r."merchantId" = ${merchantId}
-          AND r."createdAt" >= ${period.from}
-          AND r."createdAt" <= ${period.to}
-          AND r."canceledAt" IS NULL
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "Transaction" refund
+      FROM "Receipt" r
+      WHERE r."merchantId" = ${merchantId}
+        AND r."createdAt" >= ${period.from}
+        AND r."createdAt" <= ${period.to}
+        AND r."canceledAt" IS NULL
+        AND r."total" > 0
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "Transaction" refund
             WHERE refund."merchantId" = r."merchantId"
               AND refund."orderId" = r."orderId"
               AND refund."type" = 'REFUND'
@@ -3365,8 +3394,12 @@ export class AnalyticsService {
         GROUP BY r."customerId"
       )
       SELECT
-        COALESCE(SUM(CASE WHEN fp.first_at >= ${period.from} AND fp.first_at <= ${period.to} THEN 1 ELSE 0 END), 0)::bigint AS "newChecks",
-        COALESCE(SUM(CASE WHEN fp.first_at < ${period.from} THEN 1 ELSE 0 END), 0)::bigint AS "repeatChecks"
+        COUNT(*) FILTER (
+          WHERE fp.first_at >= ${period.from} AND fp.first_at <= ${period.to}
+        )::bigint AS "newChecks",
+        COUNT(*) FILTER (
+          WHERE fp.first_at < ${period.from}
+        )::bigint AS "repeatChecks"
       FROM valid_receipts vr
       JOIN first_purchases fp ON fp."customerId" = vr."customerId"
     `);
@@ -3758,8 +3791,7 @@ export class AnalyticsService {
             AND r."createdAt" >= ${period.from}
             AND r."createdAt" <= ${period.to}
             AND r."canceledAt" IS NULL
-            AND r."total" > 0
-            AND r."customerId" IS NOT NULL
+            AND r."total" >= 0
             AND r."outletId" IS NOT NULL
             AND NOT EXISTS (
               SELECT 1
@@ -3792,7 +3824,7 @@ export class AnalyticsService {
           FROM "Receipt" r
           WHERE r."merchantId" = ${merchantId}
             AND r."canceledAt" IS NULL
-            AND r."total" > 0
+            AND r."total" >= 0
             AND r."customerId" IS NOT NULL
             AND r."outletId" IS NOT NULL
             AND NOT EXISTS (
@@ -4216,7 +4248,10 @@ export class AnalyticsService {
     merchantId: string,
     group: RecencyGrouping,
     rawLimit?: number,
+    timezone?: string | RussiaTimezone,
   ): Promise<PurchaseRecencyDistribution> {
+    const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const offsetInterval = Prisma.sql`${tz.utcOffsetMinutes} * interval '1 minute'`;
     const normalizedGroup: RecencyGrouping =
       group === 'week' || group === 'month' ? group : 'day';
     const defaults: Record<RecencyGrouping, number> = {
@@ -4243,7 +4278,7 @@ export class AnalyticsService {
       SELECT
         GREATEST(
           0,
-          FLOOR(EXTRACT(EPOCH FROM (NOW() - "lastOrderAt")) / 86400)
+          (DATE(NOW() + ${offsetInterval}) - DATE("lastOrderAt" + ${offsetInterval}))
         )::int AS days,
         COUNT(*)::int AS customers
       FROM "CustomerStats"
@@ -4352,7 +4387,7 @@ export class AnalyticsService {
         WHERE r."merchantId" = ${merchantId}
           AND r."createdAt" BETWEEN ${period.from} AND ${period.to}
           AND r."canceledAt" IS NULL
-          AND r."total" > 0
+          AND r."total" >= 0
           ${refundExclusion}
         GROUP BY 1
       `),
@@ -4373,7 +4408,7 @@ export class AnalyticsService {
         WHERE r."merchantId" = ${merchantId}
           AND r."createdAt" BETWEEN ${period.from} AND ${period.to}
           AND r."canceledAt" IS NULL
-          AND r."total" > 0
+          AND r."total" >= 0
           ${refundExclusion}
         GROUP BY 1
       `),
@@ -4396,7 +4431,7 @@ export class AnalyticsService {
         WHERE r."merchantId" = ${merchantId}
           AND r."createdAt" BETWEEN ${period.from} AND ${period.to}
           AND r."canceledAt" IS NULL
-          AND r."total" > 0
+          AND r."total" >= 0
           ${refundExclusion}
         GROUP BY 1, 2
       `),

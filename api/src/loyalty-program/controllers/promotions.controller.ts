@@ -216,6 +216,8 @@ export class PromotionsController {
   async getById(@Req() req: any, @Param('id') id: string) {
     const merchantId = this.merchantId(req);
     const promotion = await this.service.getPromotion(merchantId, id);
+    const uniqueCustomersCount =
+      await this.service.countPromotionParticipants(merchantId, id);
     assertPortalPermissions(
       req,
       [resolvePromotionResource(promotion)],
@@ -227,9 +229,7 @@ export class PromotionsController {
     const totalReward =
       promotion.metrics?.pointsIssued ??
       participants.reduce((acc, p) => acc + (p.pointsIssued ?? 0), 0);
-    const uniqueCustomers =
-      promotion.metrics?.participantsCount ??
-      new Set(participants.map((p) => p.customerId)).size;
+    const uniqueCustomers = uniqueCustomersCount;
     const avgReward = totalUsage ? Math.round(totalReward / totalUsage) : 0;
     return {
       ...toPortalResponse(promotion),

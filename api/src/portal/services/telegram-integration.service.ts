@@ -117,6 +117,7 @@ export class PortalTelegramIntegrationService {
     try {
       const result = await this.telegramBots.registerBot(merchantId, botToken);
       const mask = this.maskToken(botToken);
+      const webhookOk = !result.webhookError;
       await this.prisma.merchant.update({
         where: { id: merchantId },
         data: { telegramBotEnabled: true, telegramBotToken: botToken },
@@ -139,10 +140,10 @@ export class PortalTelegramIntegrationService {
           }),
         );
       await this.touchIntegration(merchantId, {
-        isActive: true,
+        isActive: webhookOk,
         username: result.username,
         tokenMask: mask,
-        error: null,
+        error: result.webhookError ?? null,
         lastSyncAt: new Date(),
       });
       const state = await this.getState(merchantId);

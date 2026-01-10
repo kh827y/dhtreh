@@ -21,7 +21,6 @@ import { HoldGcWorker } from './hold-gc.worker';
 import { IdempotencyGcWorker } from './idempotency-gc.worker';
 import { OutboxDispatcherWorker } from './outbox-dispatcher.worker';
 import { NotificationDispatcherWorker } from './notification-dispatcher.worker';
-import { TtlBurnWorker } from './ttl-burn.worker';
 import { PointsBurnWorker } from './points-burn.worker';
 import { PointsTtlWorker } from './points-ttl.worker';
 import { PointsTtlReminderWorker } from './points-ttl-reminder.worker';
@@ -116,7 +115,6 @@ try {
     IdempotencyGcWorker,
     PointsTtlWorker,
     PointsTtlReminderWorker,
-    TtlBurnWorker,
     PointsBurnWorker,
     EarnActivationWorker,
     AutoReturnWorker,

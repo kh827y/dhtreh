@@ -66,6 +66,7 @@ function CustomersPageInner() {
   const [customers, setCustomers] = React.useState<CustomerRecord[]>([]);
   const [levelsCatalog, setLevelsCatalog] = React.useState<LevelOption[]>([]);
   const [searchTerm, setSearchTerm] = React.useState("");
+  const [appliedSearch, setAppliedSearch] = React.useState("");
   const [currentPage, setCurrentPage] = React.useState(1);
   const [toast, setToast] = React.useState<string | null>(null);
   const [modalState, setModalState] = React.useState<{ mode: "create" | "edit"; customer?: CustomerRecord } | null>(null);
@@ -128,7 +129,7 @@ function CustomersPageInner() {
     return ((undefined as unknown) as T);
   }
 
-  const loadCustomers = React.useCallback(async () => {
+  const loadCustomers = React.useCallback(async (search: string) => {
     try {
       setLoading(true);
       const baseParams = new URLSearchParams({
@@ -136,6 +137,7 @@ function CustomersPageInner() {
         excludeMiniapp: "1",
         limit: String(CUSTOMERS_FETCH_LIMIT),
       });
+      if (search) baseParams.set("search", search);
       let offset = 0;
       const all: CustomerRecord[] = [];
       while (true) {
@@ -158,8 +160,15 @@ function CustomersPageInner() {
   }, []);
 
   React.useEffect(() => {
-    void loadCustomers();
-  }, [loadCustomers]);
+    void loadCustomers(appliedSearch);
+  }, [appliedSearch, loadCustomers]);
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setAppliedSearch(searchTerm.trim());
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
 
   React.useEffect(() => {
     let aborted = false;
@@ -210,16 +219,7 @@ function CustomersPageInner() {
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
-  const filteredCustomers = React.useMemo(() => {
-    const lowerSearch = searchTerm.trim().toLowerCase();
-    if (!lowerSearch) return customers;
-    return customers.filter((customer) => {
-      const name = getFullName(customer).toLowerCase();
-      const phone = (customer.phone || customer.login || "").toLowerCase();
-      const email = (customer.email || "").toLowerCase();
-      return name.includes(lowerSearch) || phone.includes(lowerSearch) || email.includes(lowerSearch);
-    });
-  }, [customers, searchTerm]);
+  const filteredCustomers = customers;
 
   const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / ITEMS_PER_PAGE));
   const page = Math.min(currentPage, totalPages);
@@ -228,7 +228,7 @@ function CustomersPageInner() {
 
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm]);
+  }, [appliedSearch]);
 
   React.useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -276,7 +276,7 @@ function CustomersPageInner() {
           return [normalized, ...prev];
         });
         setToast(existed ? "Клиент уже существует, данные загружены" : "Клиент создан");
-        void loadCustomers();
+        void loadCustomers(appliedSearch);
       } catch (e: any) {
         setToast(readApiError(e?.message || e) || "Ошибка при создании клиента");
       }
@@ -290,7 +290,7 @@ function CustomersPageInner() {
         const normalized = normalizeCustomer(saved ?? { ...customer, ...baseBody });
         setCustomers((prev) => prev.map((item) => (item.id === customer.id ? normalized : item)));
         setToast("Данные клиента обновлены");
-        void loadCustomers();
+        void loadCustomers(appliedSearch);
       } catch (e: any) {
         setToast(readApiError(e?.message || e) || "Ошибка при сохранении клиента");
       }
@@ -515,7 +515,7 @@ function CustomersPageInner() {
           onSuccess={(message) => {
             setToast(message);
             setGiftTarget(null);
-            void loadCustomers();
+            void loadCustomers(appliedSearch);
           }}
         />
       )}

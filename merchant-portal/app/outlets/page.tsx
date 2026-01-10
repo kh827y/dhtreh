@@ -31,36 +31,39 @@ export default function OutletsPage() {
   const [activeTotal, setActiveTotal] = React.useState(0);
   const [inactiveTotal, setInactiveTotal] = React.useState(0);
 
+  const fetchOutletsByStatus = React.useCallback(async (status: string) => {
+    const pageSize = 50;
+    let page = 1;
+    let total = 0;
+    const items: OutletItem[] = [];
+    while (true) {
+      const res = await fetch(`/api/portal/outlets?status=${encodeURIComponent(status)}&page=${page}&pageSize=${pageSize}`);
+      if (!res.ok) {
+        const message = await res.text();
+        throw new Error(message || "Не удалось загрузить торговые точки");
+      }
+      const data = (await res.json()) as OutletListResponse;
+      const chunk = Array.isArray(data.items) ? data.items : [];
+      items.push(...chunk);
+      total = typeof data.total === "number" ? data.total : items.length;
+      if (chunk.length < pageSize || items.length >= total) break;
+      page += 1;
+    }
+    return { items, total };
+  }, []);
+
   const fetchOutlets = React.useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [activeRes, inactiveRes] = await Promise.all([
-        fetch("/api/portal/outlets?status=ACTIVE"),
-        fetch("/api/portal/outlets?status=INACTIVE"),
+      const [activeData, inactiveData] = await Promise.all([
+        fetchOutletsByStatus("ACTIVE"),
+        fetchOutletsByStatus("INACTIVE"),
       ]);
-      if (!activeRes.ok || !inactiveRes.ok) {
-        const message = await (activeRes.ok ? inactiveRes : activeRes).text();
-        throw new Error(message || "Не удалось загрузить торговые точки");
-      }
-      const activeData = (await activeRes.json()) as OutletListResponse;
-      const inactiveData = (await inactiveRes.json()) as OutletListResponse;
-      setActiveOutlets(Array.isArray(activeData.items) ? activeData.items : []);
-      setInactiveOutlets(Array.isArray(inactiveData.items) ? inactiveData.items : []);
-      setActiveTotal(
-        typeof activeData.total === "number"
-          ? activeData.total
-          : Array.isArray(activeData.items)
-            ? activeData.items.length
-            : 0,
-      );
-      setInactiveTotal(
-        typeof inactiveData.total === "number"
-          ? inactiveData.total
-          : Array.isArray(inactiveData.items)
-            ? inactiveData.items.length
-            : 0,
-      );
+      setActiveOutlets(activeData.items);
+      setInactiveOutlets(inactiveData.items);
+      setActiveTotal(activeData.total);
+      setInactiveTotal(inactiveData.total);
     } catch (e: any) {
       setError(normalizeErrorMessage(e, "Не удалось загрузить торговые точки"));
       setActiveOutlets([]);
@@ -70,7 +73,7 @@ export default function OutletsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchOutletsByStatus]);
 
   React.useEffect(() => {
     fetchOutlets();

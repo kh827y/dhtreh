@@ -249,6 +249,14 @@ const CategoriesPage: React.FC = () => {
       description: formData.description.trim() || null,
       parentId: formData.parentId || null,
       status: formData.status === "archived" ? "ARCHIVED" : "ACTIVE",
+      assignProductIds: products.filter((prod) => prod.categoryId === editingId).map((prod) => prod.id),
+      unassignProductIds:
+        view === "edit"
+          ? productsSnapshot
+              .filter((prod) => prod.categoryId === editingId)
+              .filter((prod) => !products.some((item) => item.id === prod.id && item.categoryId === editingId))
+              .map((prod) => prod.id)
+          : [],
     };
 
     setSaving(true);
@@ -265,34 +273,7 @@ const CategoriesPage: React.FC = () => {
       if (!res.ok) {
         throw new Error(await readErrorMessage(res, "Не удалось сохранить категорию"));
       }
-      const data = await res.json().catch(() => null);
-      const savedCategory = data ? mapPortalCategory(data) : { ...payload, id: editingId };
-
-      const snapshotMap = new Map(productsSnapshot.map((prod) => [prod.id, prod.categoryId]));
-      const updates = products
-        .map((prod) => {
-          const prevCategoryId = snapshotMap.get(prod.id) ?? null;
-          const nextCategoryId = prod.categoryId === editingId ? savedCategory.id : prod.categoryId;
-          if (prevCategoryId === nextCategoryId) return null;
-          return { id: prod.id, categoryId: nextCategoryId };
-        })
-        .filter(Boolean) as { id: string; categoryId: string | null }[];
-
-      if (updates.length > 0) {
-        const results = await Promise.allSettled(
-          updates.map((update) =>
-            fetch(`/api/portal/catalog/products/${encodeURIComponent(update.id)}`, {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ categoryId: update.categoryId }),
-            }),
-          ),
-        );
-        const failed = results.filter((result) => result.status === "rejected" || (result.status === "fulfilled" && !result.value.ok));
-        if (failed.length) {
-          throw new Error("Не удалось обновить товары в категории. Проверьте данные и попробуйте снова.");
-        }
-      }
+      await res.json().catch(() => null);
 
       await loadData();
       setView("list");

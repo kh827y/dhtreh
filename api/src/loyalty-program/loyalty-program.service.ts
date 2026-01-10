@@ -1513,6 +1513,12 @@ export class LoyaltyProgramService {
     return promotion;
   }
 
+  async countPromotionParticipants(merchantId: string, promotionId: string) {
+    return this.prisma.promotionParticipant.count({
+      where: { merchantId, promotionId },
+    });
+  }
+
   async changePromotionStatus(
     merchantId: string,
     promotionId: string,

@@ -99,6 +99,17 @@ const calculateROI = (revenue: number, cost: number): number => {
   return ((revenue - cost) / cost) * 100;
 };
 
+const formatDateInputValue = (date: Date) =>
+  date.toLocaleDateString("en-CA");
+
+const parseDateInputValue = (value: string): Date | null => {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map((part) => Number(part));
+  if (!year || !month || !day) return null;
+  const date = new Date(year, month - 1, day);
+  return Number.isFinite(date.getTime()) ? date : null;
+};
+
 function safeNumber(value: unknown): number {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
@@ -179,8 +190,8 @@ const PromotionsPage: React.FC = () => {
   const [formData, setFormData] = useState({
     title: "",
     isActive: false,
-    startDate: new Date().toISOString().split("T")[0],
-    endDate: new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0],
+    startDate: formatDateInputValue(new Date()),
+    endDate: formatDateInputValue(new Date(Date.now() + 86400000 * 7)),
     ...defaultConfig,
   });
 
@@ -213,7 +224,7 @@ const PromotionsPage: React.FC = () => {
   const loadCatalog = async () => {
     const [categoriesRes, productsRes] = await Promise.all([
       fetch("/api/portal/catalog/categories"),
-      fetch("/api/portal/catalog/products?status=visible"),
+      fetch("/api/portal/catalog/products"),
     ]);
     if (!categoriesRes.ok) {
       const text = await categoriesRes.text().catch(() => "");
@@ -260,6 +271,52 @@ const PromotionsPage: React.FC = () => {
     setCategories(mappedCategories);
     setProducts(mappedProducts);
   };
+
+  const resolveCategoryName = React.useCallback(
+    (categoryId?: string | null) => {
+      if (!categoryId) return "Без категории";
+      const category = categories.find((item) => item.id === categoryId);
+      return category?.name || "Без категории";
+    },
+    [categories],
+  );
+
+  const ensureSelectedProductsLoaded = React.useCallback(
+    async (selectedIds: string[]) => {
+      if (!selectedIds.length) return;
+      const existingIds = new Set(products.map((item) => item.id));
+      const missingIds = selectedIds.filter((id) => !existingIds.has(id));
+      if (!missingIds.length) return;
+      const results = await Promise.all(
+        missingIds.map(async (id) => {
+          const res = await fetch(`/api/portal/catalog/products/${encodeURIComponent(id)}`);
+          if (!res.ok) return null;
+          const product = await res.json().catch(() => null);
+          if (!product) return null;
+          const categoryId = product?.categoryId ? String(product.categoryId) : null;
+          const name = String(product?.name || product?.id || "").trim();
+          if (!name) return null;
+          return {
+            id: String(product.id),
+            name,
+            category: resolveCategoryName(categoryId),
+            categoryId,
+          } as ProductOption;
+        }),
+      );
+      const loaded = results.filter((item): item is ProductOption => Boolean(item));
+      if (!loaded.length) return;
+      setProducts((prev) => {
+        const next = [...prev];
+        const prevIds = new Set(prev.map((item) => item.id));
+        loaded.forEach((item) => {
+          if (!prevIds.has(item.id)) next.push(item);
+        });
+        return next;
+      });
+    },
+    [products, resolveCategoryName],
+  );
 
   const loadPromotions = async (audAllId: string) => {
     const res = await fetch("/api/portal/loyalty/promotions");
@@ -413,8 +470,8 @@ const PromotionsPage: React.FC = () => {
     setFormData({
       title: type === "double_points" ? "Акционные баллы" : type === "buy_x_get_y" ? "Акция 2+1" : "Специальная цена",
       isActive: false,
-      startDate: new Date().toISOString().split("T")[0],
-      endDate: new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0],
+      startDate: formatDateInputValue(new Date()),
+      endDate: formatDateInputValue(new Date(Date.now() + 86400000 * 7)),
       ...defaultConfig,
     });
     setProductSearch("");
@@ -440,6 +497,10 @@ const PromotionsPage: React.FC = () => {
       products: targetType === "products" ? selectedItemIds : [],
       categories: targetType === "categories" ? selectedItemIds : [],
     });
+
+    if (targetType === "products") {
+      void ensureSelectedProductsLoaded(selectedItemIds);
+    }
 
     setFormData({
       title: promo.title,
@@ -501,22 +562,17 @@ const PromotionsPage: React.FC = () => {
       return;
     }
     if (formData.startDate && formData.endDate && !formData.isIndefinite) {
-      const startMs = new Date(formData.startDate).getTime();
-      const endMs = new Date(formData.endDate).getTime();
-      if (Number.isFinite(startMs) && Number.isFinite(endMs) && startMs > endMs) {
+      const start = parseDateInputValue(formData.startDate);
+      const end = parseDateInputValue(formData.endDate);
+      if (start && end && start.getTime() > end.getTime()) {
         alert("Дата начала не может быть позже даты завершения");
         return;
       }
     }
 
-    const now = new Date();
-    const startAt = formData.startImmediately
-      ? editingId && editingCreatedAtIso
-        ? new Date(editingCreatedAtIso)
-        : now
-      : new Date(formData.startDate);
-    const endAt = formData.isIndefinite ? null : new Date(formData.endDate);
-    const startIso = Number.isFinite(startAt.getTime()) ? startAt.toISOString() : now.toISOString();
+    const startAt = formData.startImmediately ? null : parseDateInputValue(formData.startDate);
+    const endAt = formData.isIndefinite ? null : parseDateInputValue(formData.endDate);
+    const startIso = startAt && Number.isFinite(startAt.getTime()) ? startAt.toISOString() : null;
     const endIso = endAt && Number.isFinite(endAt.getTime()) ? endAt.toISOString() : null;
 
     const status = formData.isActive ? "ACTIVE" : "DRAFT";
@@ -834,7 +890,11 @@ const PromotionsPage: React.FC = () => {
                               {item.name}
                             </div>
                             <div className="text-xs text-gray-500 flex items-center space-x-2">
-                              {formData.targetType === "products" && "category" in item && <span className="bg-gray-100 px-1.5 rounded">{item.category}</span>}
+                              {formData.targetType === "products" && "category" in item && (
+                                <>
+                                  <span className="bg-gray-100 px-1.5 rounded">{item.category}</span>
+                                </>
+                              )}
                               {formData.targetType === "categories" && "count" in item && <span>{item.count} товаров</span>}
                             </div>
                           </div>

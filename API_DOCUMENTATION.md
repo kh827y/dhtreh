@@ -1062,7 +1062,7 @@ Response 200: { "ok": true }
 #### Товары
 
 ```http
-GET /portal/catalog/products?status=visible&points=with_points&categoryId=cat_1&search=маргарита
+GET /portal/catalog/products?points=with_points&categoryId=cat_1&search=маргарита
 Authorization: Bearer <portal_jwt>
 
 Response 200:

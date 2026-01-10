@@ -216,7 +216,6 @@ curl -s -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:3000/metrics 
 - `POINTS_TTL_FEATURE=1` — периодическое превью истекающих баллов (`loyalty.points_ttl.preview`).
 - `POINTS_TTL_BURN=1` — периодическое сжигание истекших баллов на основе лотов (`loyalty.points_ttl.burned`).
 - `POINTS_TTL_REMINDER=1` — push-напоминания через Telegram Mini App по настройке `rulesJson.burnReminder`.
-- `TTL_BURN_ENABLED=1` — альтернативный воркер сжигания (совместимость, если используется).
 
 Полезные интервалы/настройки (значения по умолчанию заданы в `.env.example`):
 
@@ -224,7 +223,6 @@ curl -s -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:3000/metrics 
 - `OUTBOX_WORKER_INTERVAL_MS`, `OUTBOX_WORKER_CONCURRENCY`, `OUTBOX_MAX_RETRIES`, `OUTBOX_RPS_DEFAULT`, `OUTBOX_RPS_BY_MERCHANT` — доставка вебхуков из `eventOutbox`.
 - `HOLD_GC_INTERVAL_MS` — сборщик просроченных hold’ов.
 - `POINTS_TTL_REMINDER_INTERVAL_MS` — частота запуска напоминаний о сгорании (по умолчанию 6 часов).
-- `TTL_BURN_INTERVAL_MS` — частота сжигания TTL.
 
 Пример локального запуска с включёнными лотами и превью TTL:
 

@@ -22,11 +22,13 @@ type SettingsState = {
   customDays: number;
 };
 
+const MAX_CUSTOM_DAYS = 365;
+
 const DEFAULT_STATE: SettingsState = {
-  enabled: true,
-  newClientPoints: 10,
-  existingClientPoints: 1,
-  ratingPeriod: "month",
+  enabled: false,
+  newClientPoints: 30,
+  existingClientPoints: 10,
+  ratingPeriod: "week",
   customDays: 30,
 };
 
@@ -39,7 +41,7 @@ function clampNonNegativeInt(value: unknown, fallback: number): number {
 function clampPositiveInt(value: unknown, fallback: number): number {
   const numeric = Math.round(Number(value));
   if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
-  return numeric;
+  return Math.min(numeric, MAX_CUSTOM_DAYS);
 }
 
 function normalizePeriod(value: unknown): RatingPeriod {
@@ -289,10 +291,10 @@ export default function StaffMotivationPage() {
 
                 <div className="space-y-2">
                   {[
-                    { id: "week", label: "Неделя (текущая)" },
-                    { id: "month", label: "Месяц (текущий)" },
-                    { id: "quarter", label: "Квартал" },
-                    { id: "year", label: "Год" },
+                    { id: "week", label: "Последние 7 дней" },
+                    { id: "month", label: "Последние 30 дней" },
+                    { id: "quarter", label: "Последние 90 дней" },
+                    { id: "year", label: "Последние 365 дней" },
                     { id: "custom", label: "Произвольный период (дней)" },
                   ].map((option) => (
                     <label
@@ -325,6 +327,7 @@ export default function StaffMotivationPage() {
                     <input
                       type="number"
                       min="1"
+                      max={MAX_CUSTOM_DAYS}
                       value={settings.customDays}
                       onChange={(e) =>
                         setSettings((prev) => ({
@@ -336,6 +339,7 @@ export default function StaffMotivationPage() {
                     />
                     <Clock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   </div>
+                  <p className="text-xs text-gray-500 mt-2">От 1 до {MAX_CUSTOM_DAYS} дней.</p>
                 </div>
               )}
             </div>
@@ -352,12 +356,12 @@ export default function StaffMotivationPage() {
                   {settings.ratingPeriod === "custom"
                     ? `${settings.customDays} дн.`
                     : settings.ratingPeriod === "week"
-                      ? "эту неделю"
+                      ? "последние 7 дней"
                       : settings.ratingPeriod === "month"
-                        ? "этот месяц"
+                        ? "последние 30 дней"
                         : settings.ratingPeriod === "quarter"
-                          ? "этот квартал"
-                          : "этот год"}
+                          ? "последние 90 дней"
+                          : "последние 365 дней"}
                 </div>
               </div>
               <p className="text-sm text-gray-500">Пример отображения в панели кассира</p>

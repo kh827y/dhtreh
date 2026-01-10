@@ -83,18 +83,18 @@ describe('PortalCatalogService', () => {
     };
     const service = new PortalCatalogService(prisma, metrics);
     const response = await service.bulkProductAction('m-42', {
-      action: ProductBulkAction.SHOW,
+      action: ProductBulkAction.ALLOW_REDEEM,
       ids: ['p1', 'p2'],
     });
 
     expect(prisma.product.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ['p1', 'p2'] }, merchantId: 'm-42', deletedAt: null },
-      data: { visible: true },
+      data: { allowRedeem: true },
     });
     expect(response).toEqual({ ok: true, updated: 2 });
     expect(metrics.inc).toHaveBeenCalledWith(
       'portal_catalog_products_changed_total',
-      { action: ProductBulkAction.SHOW },
+      { action: ProductBulkAction.ALLOW_REDEEM },
     );
   });
 
@@ -112,7 +112,6 @@ describe('PortalCatalogService', () => {
       priceEnabled: true,
       price: 0,
       allowCart: true,
-      visible: true,
       accruePoints: true,
       allowRedeem: true,
       redeemPercent: 100,

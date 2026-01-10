@@ -263,6 +263,18 @@ export default function StaffActivityPage() {
     };
   }, [staffRows]);
 
+  const hasActivity = React.useMemo(
+    () =>
+      staffRows.some(
+        (row) =>
+          row.revenue > 0 ||
+          row.salesCount > 0 ||
+          row.newClients > 0 ||
+          row.performanceScore > 0,
+      ),
+    [staffRows],
+  );
+
   const leaders = React.useMemo(() => {
     if (!staffRows.length) return null;
     const byScore = [...staffRows].sort((a, b) =>
@@ -274,6 +286,32 @@ export default function StaffActivityPage() {
     )[0];
     return { score: byScore, revenue: byRevenue, acquisition: byAcquisition };
   }, [staffRows]);
+
+  const scoreClasses = React.useMemo(() => {
+    if (!staffRows.length) return new Map<string, string>();
+    const sorted = [...staffRows].sort((a, b) => b.performanceScore - a.performanceScore);
+    const total = sorted.length;
+    const map = new Map<string, string>();
+    sorted.forEach((row, index) => {
+      const ratio = total > 1 ? index / (total - 1) : 0;
+      let color = "text-blue-600";
+      if (ratio <= 0.33) color = "text-green-600";
+      else if (ratio <= 0.66) color = "text-orange-500";
+      map.set(`${row.id}::${row.branch}`, color);
+    });
+    return map;
+  }, [staffRows]);
+
+  const leaderScoreClass = React.useMemo(() => {
+    if (!leaders?.score) return "text-gray-600";
+    if (!hasActivity) return "text-gray-600";
+    return scoreClasses.get(`${leaders.score.id}::${leaders.score.branch}`) ?? "text-gray-600";
+  }, [hasActivity, leaders, scoreClasses]);
+
+  const getScoreClass = React.useCallback(
+    (staff: StaffDisplayRow) => scoreClasses.get(`${staff.id}::${staff.branch}`) ?? "text-blue-600",
+    [scoreClasses],
+  );
 
   const periodLabel = React.useMemo(
     () => periodOptions.find((option) => option.value === period)?.label ?? "Период",
@@ -358,7 +396,7 @@ export default function StaffActivityPage() {
             </div>
           ))}
         </div>
-      ) : leaders ? (
+      ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-gradient-to-br from-white to-amber-50 p-5 rounded-xl border border-amber-100 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 right-0 p-3 opacity-10">
@@ -371,12 +409,18 @@ export default function StaffActivityPage() {
               <span className="text-sm font-semibold text-amber-900">Лучший сотрудник</span>
             </div>
             <div className="mt-2">
-              <h3 className="text-xl font-bold text-gray-900">{leaders.score?.name}</h3>
+              <h3 className="text-xl font-bold text-gray-900">
+                {hasActivity ? leaders?.score?.name : "Нет данных"}
+              </h3>
               <div className="flex items-baseline space-x-2 mt-1">
-                <span className="text-2xl font-bold text-amber-600">{formatNumber(leaders.score?.performanceScore ?? 0)}</span>
+                <span className={`text-2xl font-bold ${leaderScoreClass}`}>
+                  {hasActivity ? formatNumber(leaders?.score?.performanceScore ?? 0) : "—"}
+                </span>
                 <span className="text-sm text-gray-500">очков</span>
               </div>
-              <p className="text-xs text-gray-400 mt-1 line-clamp-1">{leaders.score?.branch}</p>
+              <p className="text-xs text-gray-400 mt-1 line-clamp-1">
+                {hasActivity ? leaders?.score?.branch : "—"}
+              </p>
             </div>
           </div>
 
@@ -391,9 +435,15 @@ export default function StaffActivityPage() {
               <span className="text-sm font-semibold text-purple-900">Лучший продавец</span>
             </div>
             <div className="mt-2">
-              <h3 className="text-xl font-bold text-gray-900">{leaders.revenue?.name}</h3>
-              <p className="text-2xl font-bold text-purple-700 mt-1">{formatCurrency(leaders.revenue?.revenue ?? 0)}</p>
-              <p className="text-xs text-gray-400 mt-1">{formatNumber(leaders.revenue?.salesCount ?? 0)} транзакций</p>
+              <h3 className="text-xl font-bold text-gray-900">
+                {hasActivity ? leaders?.revenue?.name : "Нет данных"}
+              </h3>
+              <p className="text-2xl font-bold text-purple-700 mt-1">
+                {hasActivity ? formatCurrency(leaders?.revenue?.revenue ?? 0) : "—"}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                {hasActivity ? `${formatNumber(leaders?.revenue?.salesCount ?? 0)} транзакций` : "—"}
+              </p>
             </div>
           </div>
 
@@ -408,16 +458,19 @@ export default function StaffActivityPage() {
               <span className="text-sm font-semibold text-blue-900">Лидер привлечения</span>
             </div>
             <div className="mt-2">
-              <h3 className="text-xl font-bold text-gray-900">{leaders.acquisition?.name}</h3>
+              <h3 className="text-xl font-bold text-gray-900">
+                {hasActivity ? leaders?.acquisition?.name : "Нет данных"}
+              </h3>
               <p className="text-2xl font-bold text-blue-700 mt-1">
-                +{formatNumber(leaders.acquisition?.newClients ?? 0)} <span className="text-sm font-normal text-blue-600">новых клиентов</span>
+                {hasActivity ? `+${formatNumber(leaders?.acquisition?.newClients ?? 0)}` : "—"}{" "}
+                <span className="text-sm font-normal text-blue-600">новых клиентов</span>
               </p>
-              <p className="text-xs text-gray-400 mt-1 line-clamp-1">{leaders.acquisition?.branch}</p>
+              <p className="text-xs text-gray-400 mt-1 line-clamp-1">
+                {hasActivity ? leaders?.acquisition?.branch : "—"}
+              </p>
             </div>
           </div>
         </div>
-      ) : (
-        <div className="p-6 text-center text-sm text-gray-500 border border-gray-100 rounded-xl bg-white">Нет данных за выбранный период</div>
       )}
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -467,11 +520,7 @@ export default function StaffActivityPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <span
-                          className={`font-bold ${
-                            staff.performanceScore >= 90 ? "text-green-600" : staff.performanceScore >= 80 ? "text-blue-600" : "text-amber-600"
-                          }`}
-                        >
+                        <span className={`font-bold ${getScoreClass(staff)}`}>
                           {formatNumber(staff.performanceScore)}
                         </span>
                       </td>

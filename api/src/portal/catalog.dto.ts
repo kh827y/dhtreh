@@ -54,9 +54,20 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsIn(['ACTIVE', 'ARCHIVED'])
   status?: 'ACTIVE' | 'ARCHIVED';
+  @ApiPropertyOptional({ type: () => [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  assignProductIds?: string[];
 }
 
-export class UpdateCategoryDto extends PartialType(CreateCategoryDto) {}
+export class UpdateCategoryDto extends PartialType(CreateCategoryDto) {
+  @ApiPropertyOptional({ type: () => [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  unassignProductIds?: string[];
+}
 
 export class ReorderCategoryDto {
   @ApiProperty() @IsString() id!: string;
@@ -193,10 +204,6 @@ export class CreateProductDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  visible?: boolean;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
   accruePoints?: boolean;
   @ApiPropertyOptional()
   @IsOptional()
@@ -274,7 +281,6 @@ export class ProductListItemDto {
   @ApiPropertyOptional() categoryId?: string | null;
   @ApiPropertyOptional() categoryName?: string | null;
   @ApiPropertyOptional() previewImage?: string | null;
-  @ApiProperty() visible!: boolean;
   @ApiProperty() accruePoints!: boolean;
   @ApiProperty() allowRedeem!: boolean;
   @ApiProperty() redeemPercent!: number;
@@ -316,8 +322,6 @@ export class ProductListResponseDto {
 }
 
 export enum ProductBulkAction {
-  SHOW = 'show',
-  HIDE = 'hide',
   ALLOW_REDEEM = 'allow_redeem',
   FORBID_REDEEM = 'forbid_redeem',
   DELETE = 'delete',
@@ -339,10 +343,6 @@ export class ListProductsQueryDto {
   @IsOptional()
   @IsString()
   categoryId?: string;
-  @ApiPropertyOptional({ enum: ['visible', 'hidden', 'all'] })
-  @IsOptional()
-  @IsIn(['visible', 'hidden', 'all'])
-  status?: 'visible' | 'hidden' | 'all';
   @ApiPropertyOptional({ enum: ['with_points', 'without_points', 'all'] })
   @IsOptional()
   @IsIn(['with_points', 'without_points', 'all'])

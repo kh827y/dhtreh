@@ -131,6 +131,11 @@ export type ListCustomersQuery = {
 
 const msPerDay = 24 * 60 * 60 * 1000;
 
+const normalizePhoneValue = (value?: string | null) => {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  return digits ? digits : null;
+};
+
 // После рефактора Customer = per-merchant модель, все поля напрямую
 const customerBaseSelect = (merchantId: string) =>
   ({
@@ -1177,6 +1182,7 @@ export class PortalCustomersService {
     const limit = Math.min(Math.max(query.limit ?? 50, 1), 200);
     const offset = Math.max(query.offset ?? 0, 0);
     const search = query.search?.trim();
+    const normalizedPhone = normalizePhoneValue(search);
     const registeredOnly = query.registeredOnly ?? true;
     const excludeMiniapp = query.excludeMiniapp ?? false;
 
@@ -1185,7 +1191,7 @@ export class PortalCustomersService {
           OR: [
             {
               phone: {
-                contains: search,
+                contains: normalizedPhone ?? search,
                 mode: Prisma.QueryMode.insensitive,
               },
             },
@@ -1337,6 +1343,9 @@ export class PortalCustomersService {
       },
     } satisfies Prisma.ReceiptSelect;
 
+    const lotsLimit = 200;
+    const receiptsLimit = 200;
+    const reviewsLimit = 100;
     const [
       lots,
       transactionsRaw,
@@ -1353,6 +1362,7 @@ export class PortalCustomersService {
           status: { in: ['ACTIVE', 'PENDING'] },
         },
         orderBy: [{ status: 'asc' }, { earnedAt: 'desc' }],
+        take: lotsLimit,
         select: {
           id: true,
           points: true,
@@ -1371,11 +1381,13 @@ export class PortalCustomersService {
       this.prisma.receipt.findMany({
         where: { merchantId, customerId },
         orderBy: { createdAt: 'desc' },
+        take: receiptsLimit,
         select: receiptSelect,
       }),
       this.prisma.review.findMany({
         where: { merchantId, customerId },
         orderBy: { createdAt: 'desc' },
+        take: reviewsLimit,
         select: {
           id: true,
           rating: true,
@@ -2126,7 +2138,7 @@ export class PortalCustomersService {
       lastName?: string;
     },
   ) {
-    const phone = dto.phone?.trim() || undefined;
+    const phone = normalizePhoneValue(dto.phone) || undefined;
     const email = dto.email?.trim()?.toLowerCase() || undefined;
     const fullName =
       dto.name?.trim() ||
@@ -2232,7 +2244,7 @@ export class PortalCustomersService {
     const updateCustomer: Prisma.CustomerUpdateInput = {};
 
     if (dto.phone !== undefined) {
-      const phone = dto.phone?.trim() || null;
+      const phone = normalizePhoneValue(dto.phone) || null;
       if (phone) {
         const clash = await prismaAny?.customer?.findUnique?.({
           where: { merchantId_phone: { merchantId, phone } },

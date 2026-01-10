@@ -35,16 +35,21 @@ export class PortalAuthController {
   @ApiUnauthorizedResponse({ description: 'Invalid credentials' })
   @ApiBadRequestResponse({ description: 'Bad request' })
   async login(
-    @Body() body: { email: string; password: string; code?: string },
+    @Body()
+    body: { email: string; password: string; code?: string; merchantId?: string },
   ) {
     const email = String(body?.email || '')
       .trim()
       .toLowerCase();
     const password = String(body?.password || '');
     const code = body?.code != null ? String(body.code) : undefined;
+    const merchantId =
+      typeof body?.merchantId === 'string' && body.merchantId.trim()
+        ? body.merchantId.trim()
+        : null;
     if (!email || !password) throw new UnauthorizedException('Unauthorized');
     const merchant = await (this.prisma.merchant as any).findFirst({
-      where: { portalEmail: email },
+      where: merchantId ? { id: merchantId, portalEmail: email } : { portalEmail: email },
     });
     let merchantAuthError: UnauthorizedException | null = null;
     if (merchant && merchant.portalLoginEnabled !== false) {
@@ -90,14 +95,23 @@ export class PortalAuthController {
       merchantAuthError = new UnauthorizedException('Unauthorized');
     }
 
-    const staff = await this.prisma.staff.findFirst({
-      where: {
-        email,
-        status: StaffStatus.ACTIVE,
-        portalAccessEnabled: true,
-        canAccessPortal: true,
-      },
+    const staffWhere = {
+      email,
+      status: StaffStatus.ACTIVE,
+      portalAccessEnabled: true,
+      canAccessPortal: true,
+      ...(merchantId ? { merchantId } : {}),
+    };
+    const staffMatches = await this.prisma.staff.findMany({
+      where: staffWhere,
+      take: merchantId ? 1 : 2,
     });
+    if (!merchantId && staffMatches.length > 1) {
+      throw new BadRequestException(
+        'Укажите мерчанта для входа с этим email',
+      );
+    }
+    const staff = staffMatches[0] ?? null;
     if (!staff) {
       if (merchantAuthError) throw merchantAuthError;
       throw new UnauthorizedException('Unauthorized');
@@ -151,6 +165,45 @@ export class PortalAuthController {
     const refreshToken = String(body?.refreshToken || '');
     if (!refreshToken) throw new BadRequestException('refreshToken required');
     const claims = await verifyPortalRefreshJwt(refreshToken);
+    if (claims.actor === 'MERCHANT') {
+      const merchant = await (this.prisma.merchant as any).findUnique({
+        where: { id: claims.merchantId },
+        select: { id: true, portalLoginEnabled: true },
+      });
+      if (!merchant || merchant.portalLoginEnabled === false) {
+        throw new UnauthorizedException('Unauthorized');
+      }
+    } else {
+      const staffId = claims.staffId || claims.sub;
+      if (!staffId) throw new UnauthorizedException('Unauthorized');
+      const staff = await this.prisma.staff.findFirst({
+        where: {
+          id: staffId,
+          merchantId: claims.merchantId,
+        },
+        select: {
+          id: true,
+          status: true,
+          portalAccessEnabled: true,
+          canAccessPortal: true,
+        },
+      });
+      if (
+        !staff ||
+        staff.status !== StaffStatus.ACTIVE ||
+        !staff.portalAccessEnabled ||
+        !staff.canAccessPortal
+      ) {
+        throw new UnauthorizedException('Unauthorized');
+      }
+      const merchant = await (this.prisma.merchant as any).findUnique({
+        where: { id: claims.merchantId },
+        select: { portalLoginEnabled: true },
+      });
+      if (!merchant || merchant.portalLoginEnabled === false) {
+        throw new UnauthorizedException('Unauthorized');
+      }
+    }
     const subject = claims.staffId || claims.sub || claims.merchantId;
     const token = await signPortalJwt({
       merchantId: claims.merchantId,

@@ -9,24 +9,9 @@
   - В итоге приглашённый клиент всегда получает регистрационные баллы даже при выключенном суммировании — прямой абуз баллов и рассинхрон настроек.
   - Где: `api/src/loyalty/loyalty.service.ts` (блок проверки реферала в `registrationBonus`).
 
-- **[SEC/данные] `POST /referral/activate` позволяет активировать код на чужого клиента**
-  - Контроллер принимает `refereeId` напрямую, а `TelegramMiniappGuard` сверяет только `customerId` (поле `refereeId` игнорируется), поэтому можно отправить `refereeId` другого пользователя и активировать реферал не для себя.
-  - Это даёт возможность создавать рефералов на «левые» аккаунты и некорректно начислять бонусы.
-  - Где: `api/src/referral/referral.controller.ts` (логика выбора `refereeId`), `api/src/guards/telegram-miniapp.guard.ts` (проверка только `customerId`).
-
 ## P2 — функциональные сбои/несоответствия настроек
 
-- **[Функционал] Настройка «За все покупки друга» не реализована**
-  - В портале доступен выбор `rewardTrigger = all`, но в бэкенде награда приглашающему начисляется только один раз при `completeReferral`, после чего статус становится `COMPLETED` и повторных начислений не происходит.
-  - Где: `merchant-portal/app/referrals/program/page.tsx`, `api/src/referral/referral.service.ts` (`completeReferral`).
-
-- **[Функционал] Многоуровневая система в UI есть, но в расчётах не используется**
-  - Портал позволяет включить multi-level и заполнить уровни, но бэкенд всегда начисляет бонус только пригласившему (уровень 1). Логики выплаты уровням 2–3 нет.
-  - Где: `merchant-portal/app/referrals/program/page.tsx`, `api/src/referral/referral.service.ts` (`completeReferral`, `computeReferrerReward`).
-
-- **[Ограничения] `maxReferrals` в программе не применяется**
-  - Поле `maxReferrals` записывается при создании программы, но нигде не проверяется при `activateReferral`. Клиенты могут приглашать бесконечно, независимо от лимитов.
-  - Где: `api/src/referral/referral.service.ts` (`createReferralProgram`, `activateReferral`).
+Нет актуальных пунктов.
 
 ## P3 — несоответствия интерфейса/данных
 

@@ -397,9 +397,13 @@ export default function AnalyticsDashboardPage() {
                     axisLine={false}
                     tickLine={false}
                     tick={{ fill: "#9CA3AF", fontSize: 12 }}
-                    tickFormatter={(value) =>
-                      chartMetric === "revenue" ? `${Math.round(Number(value) / 1000)}k` : value
-                    }
+                    tickFormatter={(value) => {
+                      if (chartMetric !== "revenue") return value;
+                      const numeric = Number(value);
+                      if (!Number.isFinite(numeric)) return value;
+                      if (Math.abs(numeric) < 1000) return formatNumber(numeric);
+                      return `${formatDecimal(numeric / 1000)}k`;
+                    }}
                   />
                   <Tooltip
                     contentStyle={{

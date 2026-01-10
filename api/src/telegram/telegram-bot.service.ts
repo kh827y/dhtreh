@@ -168,7 +168,7 @@ export class TelegramBotService {
           botId: String(botInfo.id),
           webhookUrl,
           webhookSecret: secret,
-          isActive: true,
+          isActive: false,
         },
         create: {
           merchantId,
@@ -177,20 +177,28 @@ export class TelegramBotService {
           botId: String(botInfo.id),
           webhookUrl,
           webhookSecret: secret,
-          isActive: true,
+          isActive: false,
         },
       });
 
       // Настраиваем webhook с секретом
       let webhookError: string | null = null;
+      let webhookOk = false;
       try {
         await this.setWebhook(botToken, webhookUrl, secret);
+        webhookOk = true;
       } catch (error: any) {
         webhookError = this.extractTelegramError(error);
         this.logger.error(
           `Не удалось установить webhook для ${merchantId}:`,
           error,
         );
+      }
+      if (webhookOk) {
+        await this.prisma.telegramBot.update({
+          where: { merchantId },
+          data: { isActive: true },
+        });
       }
 
       // Устанавливаем команды бота
@@ -247,16 +255,6 @@ export class TelegramBotService {
         .findUnique({ where: { merchantId } })
         .catch(() => null);
       let secret = botRow?.webhookSecret || undefined;
-      // Если бот деактивирован — не устанавливаем вебхук
-      if (botRow && botRow.isActive === false) {
-        try {
-          await this.deleteWebhook(bot.token);
-        } catch {}
-        this.logger.log(
-          `Бот ${merchantId} деактивирован — webhook удален/не устанавливается`,
-        );
-        return;
-      }
       if (!botRow || !secret) {
         secret = crypto.randomBytes(16).toString('hex');
         botRow = await this.prisma.telegramBot.upsert({
@@ -279,6 +277,14 @@ export class TelegramBotService {
         });
       }
       await this.setWebhook(bot.token, bot.webhookUrl, secret);
+      if (botRow?.isActive === false) {
+        await this.prisma.telegramBot
+          .update({
+            where: { merchantId },
+            data: { isActive: true },
+          })
+          .catch(() => null);
+      }
       this.logger.log(`Webhook установлен для ${merchantId}`);
     } catch (error) {
       this.logger.error(`Ошибка установки webhook для ${merchantId}:`, error);

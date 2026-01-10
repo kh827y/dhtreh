@@ -157,6 +157,11 @@ export default function OutletsActivityPage() {
     };
   }, [rows]);
 
+  const hasActivity = React.useMemo(
+    () => rows.some((row) => row.revenue > 0 || row.salesCount > 0 || row.newClients > 0),
+    [rows],
+  );
+
   const leaders = React.useMemo(() => {
     if (!rows.length) return null;
     const byRevenue = [...rows].sort((a, b) => b.revenue - a.revenue)[0];
@@ -207,7 +212,7 @@ export default function OutletsActivityPage() {
             </div>
           ))}
         </div>
-      ) : leaders ? (
+      ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-gradient-to-br from-white to-purple-50 p-5 rounded-xl border border-purple-100 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 right-0 p-3 opacity-10">
@@ -220,8 +225,12 @@ export default function OutletsActivityPage() {
               <span className="text-sm font-semibold text-purple-900">Лидер по выручке</span>
             </div>
             <div className="mt-2">
-              <h3 className="text-xl font-bold text-gray-900">{leaders.revenue?.name}</h3>
-              <p className="text-2xl font-bold text-purple-700 mt-1">{formatCurrency(leaders.revenue?.revenue ?? 0)}</p>
+              <h3 className="text-xl font-bold text-gray-900">
+                {hasActivity ? leaders?.revenue?.name : "Нет данных"}
+              </h3>
+              <p className="text-2xl font-bold text-purple-700 mt-1">
+                {hasActivity ? formatCurrency(leaders?.revenue?.revenue ?? 0) : "—"}
+              </p>
             </div>
           </div>
 
@@ -236,9 +245,14 @@ export default function OutletsActivityPage() {
               <span className="text-sm font-semibold text-blue-900">Лидер роста</span>
             </div>
             <div className="mt-2">
-              <h3 className="text-xl font-bold text-gray-900">{leaders.newClients?.name}</h3>
+              <h3 className="text-xl font-bold text-gray-900">
+                {hasActivity ? leaders?.newClients?.name : "Нет данных"}
+              </h3>
               <p className="text-2xl font-bold text-blue-700 mt-1">
-                +{formatNumber(leaders.newClients?.newClients ?? 0)} <span className="text-sm font-normal text-blue-600">новых клиентов</span>
+                {hasActivity
+                  ? `+${formatNumber(leaders?.newClients?.newClients ?? 0)}`
+                  : "—"}{" "}
+                <span className="text-sm font-normal text-blue-600">новых клиентов</span>
               </p>
             </div>
           </div>
@@ -254,15 +268,16 @@ export default function OutletsActivityPage() {
               <span className="text-sm font-semibold text-green-900">Макс. трафик</span>
             </div>
             <div className="mt-2">
-              <h3 className="text-xl font-bold text-gray-900">{leaders.traffic?.name}</h3>
+              <h3 className="text-xl font-bold text-gray-900">
+                {hasActivity ? leaders?.traffic?.name : "Нет данных"}
+              </h3>
               <p className="text-2xl font-bold text-green-700 mt-1">
-                {formatNumber(leaders.traffic?.salesCount ?? 0)} <span className="text-sm font-normal text-green-600">транзакций</span>
+                {hasActivity ? formatNumber(leaders?.traffic?.salesCount ?? 0) : "—"}{" "}
+                <span className="text-sm font-normal text-green-600">транзакций</span>
               </p>
             </div>
           </div>
         </div>
-      ) : (
-        <div className="p-6 text-center text-sm text-gray-500 border border-gray-100 rounded-xl bg-white">Нет данных за выбранный период</div>
       )}
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">

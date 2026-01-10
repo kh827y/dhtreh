@@ -11,7 +11,12 @@ export async function POST(req: NextRequest) {
     const r = await fetch(API_BASE + '/portal/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: String(body.email||'').toLowerCase(), password: String(body.password||''), code: body.code ? String(body.code) : undefined }),
+      body: JSON.stringify({
+        email: String(body.email || '').toLowerCase(),
+        password: String(body.password || ''),
+        code: body.code ? String(body.code) : undefined,
+        merchantId: body.merchantId ? String(body.merchantId) : undefined,
+      }),
     });
     const txt = await r.text();
     if (!r.ok) return new NextResponse(txt || 'Unauthorized', { status: r.status });

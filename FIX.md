@@ -452,16 +452,9 @@
 ## P3 — Low (улучшения/гигиена)
 
 - **[UI][Stub] В merchant-portal есть страницы-заглушки**
-  - **Проявления**: `merchant-portal/app/wallet/page.tsx` (“Раздел-заглушка”), `merchant-portal/app/loyalty/page.tsx` (“Форма настроек (TODO)”).
+  - **Проявления**: `merchant-portal/app/wallet/page.tsx` (“Раздел-заглушка”).
   - **Риск**: пользователи видят функционал, которого нет/не работает → недоверие и нагрузка на поддержку.
   - **Что сделать**: либо реализовать, либо убрать из меню/роутинга до готовности.
-
-- **[LEGACY][Merchant Portal] Мёртвые/неиспользуемые API routes и локальные дефолты**
-  - **Проявления**:
-    - `merchant-portal/app/api/portal/customers/route.ts` проксирует на `/customers` (без `/portal`) — в backend такого маршрута нет → 404 (и похоже не используется UI).
-    - `merchant-portal/app/api/customers/_lib.ts` содержит дефолт `CUSTOMERS_API_BASE=http://localhost:3004` и, похоже, не используется.
-  - **Риск**: путаница при поддержке/рефакторинге, случайные регрессии и утечки внутренних URL в прод.
-  - **Что сделать**: удалить как legacy или привести к актуальному API и покрыть реальным использованием.
 
 - **[LEGACY][Admin UI] Лишние/неиспользуемые роли и переменные окружения в админке**
   - **Наблюдение**: в `docker-compose.production.yml` и `admin/.env.local` есть `ADMIN_UI_MANAGER_PASSWORD`, а в коде `admin/app/api/auth/login/route.ts` роль фактически одна (`ADMIN`).

@@ -59,6 +59,12 @@ type Resp = {
   };
 };
 
+type LeaderboardResponse = {
+  items: TopRef[];
+};
+
+type PortalPermissions = Record<string, string[]>;
+
 const periodOptions: Array<{ value: PeriodPreset; label: string }> = [
   { value: "yesterday", label: "Вчера" },
   { value: "week", label: "Неделя" },
@@ -66,6 +72,46 @@ const periodOptions: Array<{ value: PeriodPreset; label: string }> = [
   { value: "quarter", label: "Квартал" },
   { value: "year", label: "Год" },
 ];
+
+const LEADERBOARD_PAGE_SIZE = 50;
+const READ_IMPLIED_ACTIONS = new Set(["create", "update", "delete", "manage", "*"]);
+
+const normalizePermissions = (payload: unknown): PortalPermissions => {
+  const out: PortalPermissions = {};
+  if (!payload || typeof payload !== "object") return out;
+  const raw = payload as Record<string, unknown>;
+  for (const key of Object.keys(raw)) {
+    const value = raw[key];
+    if (Array.isArray(value)) {
+      out[key] = Array.from(
+        new Set(
+          value
+            .map((item) => String(item || "").toLowerCase().trim())
+            .filter(Boolean),
+        ),
+      );
+    }
+  }
+  return out;
+};
+
+const hasPermission = (
+  permissions: PortalPermissions,
+  resource: string,
+  action: "read" | "create" | "update" | "delete" | "manage" | "*" = "read",
+) => {
+  if (!permissions) return false;
+  const all = permissions.__all__ || [];
+  if (all.includes("*") || all.includes("manage")) return true;
+  const actions = permissions[resource] || [];
+  if (!actions.length) return false;
+  if (actions.includes("*") || actions.includes("manage")) return true;
+  if (action === "read") {
+    if (actions.includes("read")) return true;
+    return actions.some((value) => READ_IMPLIED_ACTIONS.has(value));
+  }
+  return actions.includes(action);
+};
 
 const CardSkeleton = () => (
   <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm h-32 animate-pulse" />
@@ -88,9 +134,40 @@ export default function AnalyticsReferralsPage() {
   const [error, setError] = React.useState("");
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
+  const [leaderboardItems, setLeaderboardItems] = React.useState<TopRef[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = React.useState(false);
+  const [leaderboardError, setLeaderboardError] = React.useState("");
+  const [leaderboardHasMore, setLeaderboardHasMore] = React.useState(true);
+  const [canConfigure, setCanConfigure] = React.useState(true);
+  const leaderboardOffsetRef = React.useRef(0);
   const router = useRouter();
 
   React.useEffect(() => setMounted(true), []);
+
+  React.useEffect(() => {
+    let active = true;
+    const loadPermissions = async () => {
+      try {
+        const res = await fetch("/api/portal/me");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!active) return;
+        const actor = String(data?.actor ?? data?.role ?? "MERCHANT").toUpperCase();
+        if (actor !== "STAFF") {
+          setCanConfigure(true);
+          return;
+        }
+        const permissions = normalizePermissions(data?.permissions);
+        setCanConfigure(hasPermission(permissions, "mechanic_referral", "read"));
+      } catch {
+        setCanConfigure(true);
+      }
+    };
+    loadPermissions();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -118,6 +195,55 @@ export default function AnalyticsReferralsPage() {
       controller.abort();
     };
   }, [period]);
+
+  const loadLeaderboardPage = React.useCallback(
+    async (reset = false) => {
+      if (leaderboardLoading) return;
+      if (!reset && !leaderboardHasMore) return;
+      const offset = reset ? 0 : leaderboardOffsetRef.current;
+      setLeaderboardLoading(true);
+      setLeaderboardError("");
+      try {
+        const params = new URLSearchParams({
+          period,
+          offset: String(offset),
+          limit: String(LEADERBOARD_PAGE_SIZE),
+        });
+        const res = await fetch(`/api/portal/analytics/referral/leaderboard?${params.toString()}`);
+        const json = (await res.json()) as LeaderboardResponse;
+        if (!res.ok) throw new Error((json as any)?.message || "Не удалось загрузить полный отчёт");
+        const items = Array.isArray(json?.items) ? json.items : [];
+        leaderboardOffsetRef.current = offset + items.length;
+        setLeaderboardItems((prev) => (reset ? items : [...prev, ...items]));
+        setLeaderboardHasMore(items.length === LEADERBOARD_PAGE_SIZE);
+      } catch (err: any) {
+        setLeaderboardError(normalizeErrorMessage(err, "Не удалось загрузить полный отчёт"));
+      } finally {
+        setLeaderboardLoading(false);
+      }
+    },
+    [leaderboardHasMore, leaderboardLoading, period],
+  );
+
+  React.useEffect(() => {
+    if (!isModalOpen) return;
+    leaderboardOffsetRef.current = 0;
+    setLeaderboardItems([]);
+    setLeaderboardHasMore(true);
+    setLeaderboardError("");
+    loadLeaderboardPage(true);
+  }, [isModalOpen, period, loadLeaderboardPage]);
+
+  const handleLeaderboardScroll = React.useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      const target = event.currentTarget;
+      if (leaderboardLoading || !leaderboardHasMore) return;
+      if (target.scrollHeight - target.scrollTop - target.clientHeight < 120) {
+        loadLeaderboardPage();
+      }
+    },
+    [leaderboardHasMore, leaderboardLoading, loadLeaderboardPage],
+  );
 
   const timeline = React.useMemo(
     () => normalizeTimeline(data?.timeline),
@@ -200,13 +326,15 @@ export default function AnalyticsReferralsPage() {
             </select>
           </div>
 
-          <button
-            className="flex items-center space-x-2 bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition-colors shadow-sm"
-            onClick={() => router.push("/referrals/program")}
-          >
-            <Settings size={16} />
-            <span>Настроить</span>
-          </button>
+          {canConfigure && (
+            <button
+              className="flex items-center space-x-2 bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition-colors shadow-sm"
+              onClick={() => router.push("/referrals/program")}
+            >
+              <Settings size={16} />
+              <span>Настроить</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -453,7 +581,7 @@ export default function AnalyticsReferralsPage() {
         </div>
       </div>
 
-      {mounted && isModalOpen && data?.topReferrers
+      {mounted && isModalOpen
         ? createPortal(
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4 ">
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col relative z-[101]">
@@ -472,7 +600,13 @@ export default function AnalyticsReferralsPage() {
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-0">
+                {leaderboardError && (
+                  <div className="px-6 py-3 text-sm text-red-600 border-b border-red-100 bg-red-50">
+                    {leaderboardError}
+                  </div>
+                )}
+
+                <div className="flex-1 overflow-y-auto p-0" onScroll={handleLeaderboardScroll}>
                   <table className="w-full text-sm text-left">
                     <thead className="sticky top-0 bg-white shadow-sm z-10 text-xs text-gray-500 uppercase">
                       <tr>
@@ -484,13 +618,13 @@ export default function AnalyticsReferralsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {data.topReferrers.map((user) => {
+                      {leaderboardItems.map((user) => {
                         const conversion =
                           user.invited > 0 && (user.conversions || 0) >= 0
                             ? Math.min(100, ((user.conversions || 0) / user.invited) * 100)
                             : 0;
                         return (
-                          <tr key={user.rank} className="hover:bg-gray-50 transition-colors">
+                          <tr key={`${user.rank}-${user.customerId}`} className="hover:bg-gray-50 transition-colors">
                             <td className="px-6 py-4 font-medium text-gray-400 w-16 text-center">
                               {user.rank <= 3 ? (
                                 <div
@@ -528,6 +662,20 @@ export default function AnalyticsReferralsPage() {
                           </tr>
                         );
                       })}
+                      {!leaderboardLoading && !leaderboardItems.length && (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-6 text-center text-gray-500">
+                            Нет данных
+                          </td>
+                        </tr>
+                      )}
+                      {leaderboardLoading && (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-6 text-center text-gray-400">
+                            Загрузка...
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>

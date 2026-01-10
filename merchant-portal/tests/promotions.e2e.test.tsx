@@ -47,7 +47,7 @@ describe("product promotions page (new design)", () => {
       if (url.endsWith("/api/portal/catalog/categories") && method === "GET") {
         return new Response(JSON.stringify(categoriesPayload), { status: 200, headers: { "Content-Type": "application/json" } });
       }
-      if (url.endsWith("/api/portal/catalog/products?status=visible") && method === "GET") {
+      if (url.endsWith("/api/portal/catalog/products") && method === "GET") {
         return new Response(JSON.stringify(productsPayload), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url.endsWith("/api/portal/loyalty/promotions") && method === "GET") {
@@ -98,7 +98,7 @@ describe("product promotions page (new design)", () => {
       if (url.endsWith("/api/portal/catalog/categories") && method === "GET") {
         return new Response(JSON.stringify(categoriesPayload), { status: 200, headers: { "Content-Type": "application/json" } });
       }
-      if (url.endsWith("/api/portal/catalog/products?status=visible") && method === "GET") {
+      if (url.endsWith("/api/portal/catalog/products") && method === "GET") {
         return new Response(JSON.stringify(productsPayload), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url.endsWith("/api/portal/loyalty/promotions") && method === "GET") {
@@ -172,7 +172,7 @@ describe("product promotions page (new design)", () => {
       if (url.endsWith("/api/portal/catalog/categories") && method === "GET") {
         return new Response(JSON.stringify(categoriesPayload), { status: 200, headers: { "Content-Type": "application/json" } });
       }
-      if (url.endsWith("/api/portal/catalog/products?status=visible") && method === "GET") {
+      if (url.endsWith("/api/portal/catalog/products") && method === "GET") {
         return new Response(JSON.stringify(productsPayload), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url.endsWith("/api/portal/loyalty/promotions") && method === "GET") {
@@ -235,7 +235,7 @@ describe("product promotions page (new design)", () => {
       if (url.endsWith("/api/portal/catalog/categories") && method === "GET") {
         return new Response(JSON.stringify(categoriesPayload), { status: 200, headers: { "Content-Type": "application/json" } });
       }
-      if (url.endsWith("/api/portal/catalog/products?status=visible") && method === "GET") {
+      if (url.endsWith("/api/portal/catalog/products") && method === "GET") {
         return new Response(JSON.stringify(productsPayload), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url.endsWith("/api/portal/loyalty/promotions") && method === "GET") {

@@ -11,25 +11,12 @@ import {
   ExternalLink,
   ChevronRight,
 } from "lucide-react";
-import { normalizeErrorMessage } from "lib/portal-errors";
 
-type TelegramSummary = {
-  enabled: boolean;
-  botUsername: string | null;
-  botLink: string | null;
-  miniappUrl: string | null;
-  connectionHealthy: boolean;
-  tokenMask: string | null;
-  message?: string | null;
-};
-
-type RestApiSummary = {
-  enabled: boolean;
-  status?: string | null;
-  apiKeyMask: string | null;
-  baseUrl: string | null;
-  requireBridgeSignature: boolean;
-  message?: string | null;
+type IntegrationSummary = {
+  id: string;
+  provider?: string | null;
+  type?: string | null;
+  isActive?: boolean | null;
 };
 
 interface IntegrationItem {
@@ -41,65 +28,41 @@ interface IntegrationItem {
   color: string;
   docsUrl?: string;
   targetHref?: string;
-  error?: string;
 }
 
 export default function IntegrationsPage() {
   const router = useRouter();
-  const [telegram, setTelegram] = React.useState<TelegramSummary | null>(null);
-  const [telegramError, setTelegramError] = React.useState("");
-  const [restApi, setRestApi] = React.useState<RestApiSummary | null>(null);
-  const [restError, setRestError] = React.useState("");
+  const [integrationsData, setIntegrationsData] = React.useState<
+    IntegrationSummary[]
+  >([]);
 
-  async function loadTelegram() {
-    setTelegramError("");
+  async function loadIntegrations() {
     try {
-      const res = await fetch("/api/portal/integrations/telegram-mini-app");
+      const res = await fetch("/api/portal/integrations");
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setTelegram(null);
-        setTelegramError(
-          (data && typeof data?.message === "string" && data.message) ||
-            "Не удалось загрузить Telegram-интеграцию",
-        );
-      } else {
-        setTelegram(data ?? null);
-        setTelegramError(
-          (data && typeof data?.message === "string" && data.message) || "",
-        );
+        setIntegrationsData([]);
+        return;
       }
+      setIntegrationsData(Array.isArray(data) ? data : []);
     } catch (error: any) {
-      setTelegram(null);
-      setTelegramError(normalizeErrorMessage(error, "Не удалось загрузить Telegram-интеграцию"));
-    }
-  }
-
-  async function loadRestApi() {
-    setRestError("");
-    try {
-      const res = await fetch("/api/portal/integrations/rest-api");
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        setRestApi(null);
-        throw new Error(
-          (data && typeof data?.message === "string" && data.message) ||
-            "Не удалось загрузить REST API",
-        );
-      }
-      setRestApi(data ?? null);
-      setRestError(
-        (data && typeof data?.message === "string" && data.message) || "",
-      );
-    } catch (error: any) {
-      setRestApi(null);
-      setRestError(normalizeErrorMessage(error, "Не удалось загрузить REST API"));
+      setIntegrationsData([]);
     }
   }
 
   React.useEffect(() => {
-    loadTelegram();
-    loadRestApi();
+    loadIntegrations();
   }, []);
+
+  const integrationsByProvider = React.useMemo(() => {
+    const map = new Map<string, IntegrationSummary>();
+    for (const item of integrationsData) {
+      if (item?.provider) {
+        map.set(item.provider, item);
+      }
+    }
+    return map;
+  }, [integrationsData]);
 
   const integrations = React.useMemo<IntegrationItem[]>(
     () => [
@@ -108,36 +71,25 @@ export default function IntegrationsPage() {
         name: "REST API",
         description: "API для работы с баллами и интеграции во внешние системы",
         icon: Code,
-        connected: Boolean(
-          restApi?.status
-            ? String(restApi.status).toLowerCase() === "active"
-            : restApi?.enabled,
-        ),
+        connected: Boolean(integrationsByProvider.get("REST_API")?.isActive),
         color: "bg-blue-50 text-blue-600",
         docsUrl: "#",
         targetHref: "/integrations/rest-api",
-        error: restError || undefined,
       },
       {
         id: "telegram_miniapp",
         name: "Telegram Miniapp",
         description: "Программа лояльности в мини-приложении Telegram.",
         icon: Send,
-        connected: Boolean(telegram?.enabled && telegram?.connectionHealthy),
+        connected: Boolean(
+          integrationsByProvider.get("TELEGRAM_MINI_APP")?.isActive,
+        ),
         color: "bg-sky-50 text-sky-500",
         docsUrl: "#",
         targetHref: "/integrations/telegram-mini-app",
-        error: telegramError || undefined,
       },
     ],
-    [
-      restApi?.enabled,
-      restApi?.status,
-      telegram?.enabled,
-      telegram?.connectionHealthy,
-      restError,
-      telegramError,
-    ],
+    [integrationsByProvider],
   );
 
   const sortedIntegrations = React.useMemo(() => {
@@ -212,9 +164,6 @@ export default function IntegrationsPage() {
               <p className="text-sm text-gray-500 leading-relaxed">
                 {item.description}
               </p>
-              {item.error && (
-                <p className="text-xs text-orange-600 mt-2">{item.error}</p>
-              )}
             </div>
 
             <div className="pt-4 border-t border-gray-50 flex items-center justify-between">
