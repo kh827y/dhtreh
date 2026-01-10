@@ -1121,6 +1121,9 @@ export class MerchantPanelService {
       if (portalRequested && !email) {
         throw new BadRequestException('Email обязателен для доступа в портал');
       }
+      if (portalRequested && !trimmedPassword) {
+        throw new BadRequestException('Пароль обязателен для доступа в портал');
+      }
       const data: Prisma.StaffCreateInput = {
         merchant: { connect: { id: merchantId } },
         login: loginValue,
@@ -1237,6 +1240,13 @@ export class MerchantPanelService {
       Boolean(trimmedPassword);
     if (portalRequested && !(emailProvided ? normalizedEmail : staff.email)) {
       throw new BadRequestException('Email обязателен для доступа в портал');
+    }
+    if (
+      (payload.portalAccessEnabled === true || payload.canAccessPortal === true) &&
+      !trimmedPassword &&
+      !staff.hash
+    ) {
+      throw new BadRequestException('Пароль обязателен для доступа в портал');
     }
     const isMerchantStaff =
       staff.isOwner || staff.role === StaffRole.MERCHANT;
@@ -2166,5 +2176,13 @@ export class MerchantPanelService {
 
   revokeCashierActivationCode(merchantId: string, codeId: string) {
     return this.merchants.revokeCashierActivationCode(merchantId, codeId);
+  }
+
+  listCashierDeviceSessions(merchantId: string) {
+    return this.merchants.listCashierDeviceSessions(merchantId);
+  }
+
+  revokeCashierDeviceSession(merchantId: string, sessionId: string) {
+    return this.merchants.revokeCashierDeviceSession(merchantId, sessionId);
   }
 }

@@ -20,6 +20,7 @@ import {
 } from "../lib/reviewUtils";
 import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
 import { useDelayedRender } from "../lib/useDelayedRender";
+import { readTxCache, writeTxCache } from "../lib/txCache";
 
 const REVIEW_PLATFORM_LABELS: Record<string, string> = {
   yandex: "Яндекс.Карты",
@@ -270,8 +271,30 @@ export function FeedbackManager() {
   const loadTransactions = useCallback(async (opts?: { fresh?: boolean }) => {
     if (!merchantId || !customerId) return;
     try {
+      if (!opts?.fresh) {
+        const cached = readTxCache(merchantId, customerId);
+        if (cached) {
+          setTransactionsList(mapTransactions(cached));
+          return;
+        }
+        const pending =
+          typeof window !== "undefined"
+            ? (window as typeof window & { __miniappBootstrapPending?: { merchantId: string; customerId: string } })
+                .__miniappBootstrapPending
+            : undefined;
+        const waitMs = pending && pending.merchantId === merchantId && pending.customerId === customerId ? 1200 : 300;
+        await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+        const cachedAfter = readTxCache(merchantId, customerId);
+        if (cachedAfter) {
+          setTransactionsList(mapTransactions(cachedAfter));
+          return;
+        }
+      }
       const response = await transactions(merchantId, customerId, 20, undefined, { fresh: opts?.fresh });
-      setTransactionsList(mapTransactions(response.items as TransactionItem[]));
+      const items = response.items as TransactionItem[];
+      const mapped = mapTransactions(items);
+      setTransactionsList(mapped);
+      writeTxCache(merchantId, customerId, items);
     } catch (error) {
       setToast({ msg: `Не удалось обновить историю: ${resolveErrorMessage(error)}`, type: "error" });
     }

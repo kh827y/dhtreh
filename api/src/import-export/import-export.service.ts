@@ -15,6 +15,14 @@ export interface ImportCustomersDto {
   sendWelcome?: boolean;
 }
 
+export interface BulkUpdateCustomersDto {
+  merchantId: string;
+  format: 'csv' | 'excel';
+  data: Buffer;
+  operation: 'add_points' | 'set_balance' | 'add_tags' | 'update_fields';
+  value?: string | null;
+}
+
 export interface ExportCustomersDto {
   merchantId: string;
   format: 'csv' | 'excel';
@@ -418,6 +426,137 @@ export class ImportExportService {
       }
     }
 
+    await this.writeImportExportLog({
+      merchantId: dto.merchantId,
+      direction: 'IN',
+      endpoint: 'customers',
+      status: 'ok',
+      response: results,
+    });
+
+    return results;
+  }
+
+  /**
+   * Массовое обновление клиентов
+   */
+  async bulkUpdateCustomers(dto: BulkUpdateCustomersDto) {
+    if (dto.operation === 'update_fields') {
+      return this.importCustomers({
+        merchantId: dto.merchantId,
+        format: dto.format,
+        data: dto.data,
+        updateExisting: true,
+      });
+    }
+
+    let rows: CustomerImportRow[];
+    try {
+      if (dto.format === 'csv') {
+        rows = this.parseCsv(dto.data);
+      } else {
+        rows = this.parseExcel(dto.data);
+      }
+    } catch (error) {
+      throw new BadRequestException(`Ошибка парсинга файла: ${error.message}`);
+    }
+
+    if (rows.length === 0) {
+      throw new BadRequestException('Файл не содержит данных');
+    }
+
+    const totalRows = rows.reduce((count, row) => {
+      return count + (this.isEmptyRow(row as Record<string, any>) ? 0 : 1);
+    }, 0);
+
+    const results = {
+      total: totalRows,
+      updated: 0,
+      errors: [] as Array<{ row: number; error: string }>,
+    };
+
+    const valueRaw = this.asString(dto.value ?? null);
+    const valueAmount =
+      dto.operation === 'add_points' || dto.operation === 'set_balance'
+        ? valueRaw
+          ? this.parseInteger(valueRaw, 'value')
+          : null
+        : null;
+    const valueTags =
+      dto.operation === 'add_tags' ? this.parseTagsValue(valueRaw) : [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNumber = i + 2;
+      if (this.isEmptyRow(row as Record<string, any>)) {
+        continue;
+      }
+      try {
+        const normalized = this.normalizeRowKeys(row as Record<string, any>);
+        const customer = await this.findCustomerForBulkUpdate(
+          normalized,
+          dto.merchantId,
+        );
+        if (!customer) {
+          throw new Error('Клиент не найден');
+        }
+
+        if (dto.operation === 'add_points' || dto.operation === 'set_balance') {
+          const amount =
+            valueAmount ??
+            this.parseInteger(normalized.balance_points, 'balance_points');
+          if (amount === null) {
+            throw new Error('Сумма обязательна');
+          }
+          await this.prisma.$transaction(async (tx) => {
+            const wallet = await this.ensureWallet(
+              dto.merchantId,
+              customer.id,
+              tx,
+            );
+            if (dto.operation === 'add_points') {
+              const fresh = await tx.wallet.findUnique({
+                where: { id: wallet.id },
+              });
+              await tx.wallet.update({
+                where: { id: wallet.id },
+                data: { balance: (fresh?.balance ?? 0) + amount },
+              });
+            } else {
+              await tx.wallet.update({
+                where: { id: wallet.id },
+                data: { balance: amount },
+              });
+            }
+          });
+        }
+
+        if (dto.operation === 'add_tags') {
+          const tags =
+            valueTags.length > 0
+              ? valueTags
+              : this.parseTagsValue(normalized.tags);
+          if (!tags.length) {
+            throw new Error('Тэги обязательны');
+          }
+          const merged = Array.from(
+            new Set([...(customer.tags || []), ...tags]),
+          );
+          await this.prisma.customer.update({
+            where: { id: customer.id },
+            data: { tags: merged },
+          });
+        }
+
+        results.updated++;
+      } catch (error) {
+        results.errors.push({
+          row: rowNumber,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     return results;
   }
 
@@ -511,11 +650,29 @@ export class ImportExportService {
       return row;
     });
 
+    const exportCount = exportData.length;
+
     // Генерируем файл
     if (dto.format === 'csv') {
-      return this.generateCsv(exportData);
+      const buffer = this.generateCsv(exportData);
+      await this.writeImportExportLog({
+        merchantId: dto.merchantId,
+        direction: 'OUT',
+        endpoint: 'customers',
+        status: 'ok',
+        response: { exported: exportCount },
+      });
+      return buffer;
     } else {
-      return this.generateExcel(exportData);
+      const buffer = this.generateExcel(exportData);
+      await this.writeImportExportLog({
+        merchantId: dto.merchantId,
+        direction: 'OUT',
+        endpoint: 'customers',
+        status: 'ok',
+        response: { exported: exportCount },
+      });
+      return buffer;
     }
   }
 
@@ -561,6 +718,7 @@ export class ImportExportService {
         : allFields;
     res.write(fields.join(';') + '\n');
     let before: Date | undefined = undefined;
+    let exported = 0;
     while (true) {
       const page = await this.prisma.customer.findMany({
         where: Object.assign(
@@ -616,10 +774,19 @@ export class ImportExportService {
           .map((f) => this.csvCell(String(row[f] ?? '')))
           .join(';');
         res.write(line + '\n');
+        exported++;
       }
       before = page[page.length - 1].createdAt;
       if (page.length < batch) break;
     }
+
+    await this.writeImportExportLog({
+      merchantId: dto.merchantId,
+      direction: 'OUT',
+      endpoint: 'customers',
+      status: 'ok',
+      response: { exported },
+    });
   }
 
   /**
@@ -662,6 +829,7 @@ export class ImportExportService {
       ].join(';') + '\n',
     );
     let before: Date | undefined = undefined;
+    let exported = 0;
     while (true) {
       const page = await this.prisma.transaction.findMany({
         where: Object.assign(
@@ -693,10 +861,19 @@ export class ImportExportService {
           .map((v) => this.csvCell(String(v ?? '')))
           .join(';');
         res.write(row + '\n');
+        exported++;
       }
       before = page[page.length - 1].createdAt;
       if (page.length < batch) break;
     }
+
+    await this.writeImportExportLog({
+      merchantId: params.merchantId,
+      direction: 'OUT',
+      endpoint: 'transactions',
+      status: 'ok',
+      response: { exported },
+    });
   }
 
   /**
@@ -728,6 +905,8 @@ export class ImportExportService {
       errors: [] as Array<{ row: number; error: string }>,
     };
 
+    const allowedTypes = new Set(Object.values(TxnType));
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       if (this.isEmptyRow(row as Record<string, any>)) {
@@ -742,14 +921,43 @@ export class ImportExportService {
           throw new Error('Клиент не найден');
         }
 
+        const typeRaw = this.asString(
+          row['Тип'] ?? row['type'] ?? row['Type'],
+        );
+        if (!typeRaw) {
+          throw new Error('Тип обязателен');
+        }
+        const type = typeRaw.toUpperCase();
+        if (!allowedTypes.has(type as TxnType)) {
+          throw new Error('Неверный тип транзакции');
+        }
+
+        let amount = this.parseSignedInteger(
+          row['Сумма'] ?? row['Баллы'] ?? row['amount'],
+          'amount',
+        );
+        if (amount === null) {
+          throw new Error('Сумма обязательна');
+        }
+        if (amount === 0) {
+          throw new Error('Сумма не может быть 0');
+        }
+        if (type === TxnType.EARN && amount < 0) {
+          amount = Math.abs(amount);
+        }
+        if (type === TxnType.REDEEM && amount > 0) {
+          amount = -amount;
+        }
+
         // Создаем транзакцию
         await this.prisma.transaction.create({
           data: {
             merchantId,
             customerId: customer.id,
-            type: row['Тип'] || 'MANUAL',
-            amount: parseInt(row['Сумма'] || row['Баллы'] || '0'),
+            type: type as TxnType,
+            amount,
             orderId: row['ID заказа'] || `import_${Date.now()}_${i}`,
+            metadata: { source: 'IMPORT' },
           },
         });
 
@@ -762,7 +970,62 @@ export class ImportExportService {
       }
     }
 
+    await this.writeImportExportLog({
+      merchantId,
+      direction: 'IN',
+      endpoint: 'transactions',
+      status: 'ok',
+      response: results,
+    });
+
     return results;
+  }
+
+  async getImportExportStats(merchantId: string) {
+    const [lastImport, lastExport, totalImported, totalExported] =
+      await Promise.all([
+        this.prisma.syncLog.findFirst({
+          where: {
+            merchantId,
+            provider: 'IMPORT_EXPORT',
+            direction: 'IN',
+            status: 'ok',
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.syncLog.findFirst({
+          where: {
+            merchantId,
+            provider: 'IMPORT_EXPORT',
+            direction: 'OUT',
+            status: 'ok',
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.syncLog.count({
+          where: {
+            merchantId,
+            provider: 'IMPORT_EXPORT',
+            direction: 'IN',
+            status: 'ok',
+          },
+        }),
+        this.prisma.syncLog.count({
+          where: {
+            merchantId,
+            provider: 'IMPORT_EXPORT',
+            direction: 'OUT',
+            status: 'ok',
+          },
+        }),
+      ]);
+
+    return {
+      lastImport: lastImport?.createdAt ?? null,
+      lastExport: lastExport?.createdAt ?? null,
+      totalImported,
+      totalExported,
+    };
   }
 
   /**
@@ -848,6 +1111,31 @@ export class ImportExportService {
 
   // Вспомогательные методы
 
+  private async writeImportExportLog(params: {
+    merchantId: string;
+    direction: 'IN' | 'OUT';
+    endpoint: string;
+    status: 'ok' | 'error';
+    request?: any;
+    response?: any;
+    error?: any;
+  }) {
+    try {
+      await this.prisma.syncLog.create({
+        data: {
+          merchantId: params.merchantId,
+          provider: 'IMPORT_EXPORT',
+          direction: params.direction,
+          endpoint: params.endpoint,
+          status: params.status,
+          request: params.request ?? null,
+          response: params.response ?? null,
+          error: params.error ? String(params.error) : null,
+        },
+      });
+    } catch {}
+  }
+
   private parseCsv(buffer: Buffer): any[] {
     const content = buffer.toString('utf-8');
 
@@ -881,7 +1169,17 @@ export class ImportExportService {
       return Buffer.from('');
     }
 
-    const csv = csvStringify.stringify(data, {
+    const safeData = data.map((row) => {
+      if (!row || typeof row !== 'object') return row;
+      const sanitized: Record<string, any> = {};
+      for (const [key, value] of Object.entries(row)) {
+        const raw = value == null ? '' : String(value);
+        sanitized[key] = this.sanitizeCsvValue(raw);
+      }
+      return sanitized;
+    });
+
+    const csv = csvStringify.stringify(safeData, {
       header: true,
       delimiter: ';',
       bom: true, // Добавляем BOM для корректного отображения в Excel
@@ -890,8 +1188,17 @@ export class ImportExportService {
     return Buffer.from(csv, 'utf-8');
   }
 
+  private sanitizeCsvValue(value: string) {
+    const trimmed = value.replace(/^[\t\r\n ]+/, '');
+    if (trimmed && /^[=+\-@]/.test(trimmed)) {
+      return `'${value}`;
+    }
+    return value;
+  }
+
   private csvCell(s: string) {
-    const esc = s.replace(/"/g, '""');
+    const safe = this.sanitizeCsvValue(s);
+    const esc = safe.replace(/"/g, '""');
     return `"${esc}"`;
   }
 
@@ -984,6 +1291,10 @@ export class ImportExportService {
       id_операции: 'order_id',
       ид_операции: 'order_id',
       номер_чека: 'receipt_number',
+      теги: 'tags',
+      тэги: 'tags',
+      tags: 'tags',
+      tag: 'tags',
     };
     return map[header] ?? header;
   }
@@ -1009,6 +1320,21 @@ export class ImportExportService {
     }
     if (parsed < 0) {
       throw new Error(`Значение в поле ${field} не может быть отрицательным`);
+    }
+    if (!Number.isInteger(parsed)) {
+      throw new Error(`Значение в поле ${field} должно быть целым числом`);
+    }
+    return parsed;
+  }
+
+  private parseSignedInteger(value: unknown, field: string): number | null {
+    if (value == null) return null;
+    const raw = String(value).trim();
+    if (!raw) return null;
+    const normalized = raw.replace(',', '.');
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) {
+      throw new Error(`Неверное число в поле ${field}`);
     }
     if (!Number.isInteger(parsed)) {
       throw new Error(`Значение в поле ${field} должно быть целым числом`);
@@ -1248,6 +1574,14 @@ export class ImportExportService {
       .toLowerCase();
   }
 
+  private parseTagsValue(value?: string | null) {
+    if (!value) return [];
+    return value
+      .split(/[;,]/g)
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+  }
+
   private async ensureWallet(
     merchantId: string,
     customerId: string,
@@ -1346,6 +1680,42 @@ export class ImportExportService {
         lastSeenAt,
       },
     });
+  }
+
+  private async findCustomerForBulkUpdate(
+    row: Record<string, any>,
+    merchantId: string,
+  ) {
+    const externalId = this.asString(row.external_id);
+    const phoneRaw = this.asString(row.phone);
+    const emailRaw = this.asString(row.email);
+    const phone = this.normalizePhone(phoneRaw || undefined);
+    const email = this.normalizeEmail(emailRaw);
+
+    if (externalId) {
+      const found = await this.prisma.customer.findFirst({
+        where: { merchantId, externalId },
+        select: { id: true, tags: true },
+      });
+      if (found) return found;
+    }
+
+    if (phone) {
+      const found = await this.prisma.customer.findFirst({
+        where: { merchantId, phone },
+        select: { id: true, tags: true },
+      });
+      if (found) return found;
+    }
+
+    if (email) {
+      return this.prisma.customer.findFirst({
+        where: { merchantId, email },
+        select: { id: true, tags: true },
+      });
+    }
+
+    return null;
   }
 
   private async findCustomerByRow(row: any, merchantId: string) {

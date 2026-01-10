@@ -223,6 +223,10 @@ export class PromotionsController {
       [resolvePromotionResource(promotion)],
       'read',
     );
+    const canReadCustomers =
+      req.portalActor !== 'STAFF' ||
+      req.portalPermissions?.allowAll ||
+      hasPortalPermission(req.portalPermissions, 'customers', 'read');
     const participants = promotion.participants ?? [];
     const totalUsage =
       promotion.metrics?.participantsCount ?? participants.length;
@@ -245,8 +249,8 @@ export class PromotionsController {
         customer: participant.customer
           ? {
               id: participant.customer.id,
-              phone: participant.customer.phone ?? null,
-              name: participant.customer.name ?? null,
+              phone: canReadCustomers ? participant.customer.phone ?? null : null,
+              name: canReadCustomers ? participant.customer.name ?? null : null,
             }
           : null,
         rewardType: 'POINTS',

@@ -19,7 +19,6 @@ export interface CreateReferralProgramDto {
   refereeReward: number; // Баллы для приглашенного
   minPurchaseAmount?: number; // Минимальная сумма первой покупки
   maxReferrals?: number; // Максимум рефералов на человека
-  expiryDays?: number; // Срок действия реферальной ссылки
   status?: 'ACTIVE' | 'PAUSED' | 'COMPLETED';
   rewardTrigger?: 'first' | 'all';
   rewardType?: 'FIXED' | 'PERCENT';
@@ -101,7 +100,11 @@ export class ReferralService {
     const rewardTrigger: RewardTrigger =
       dto.rewardTrigger === 'all' ? 'all' : 'first';
     const multiLevel = Boolean(dto.multiLevel);
-    const baseReward = this.roundTwo(dto.referrerReward ?? 0);
+    const baseReward = this.normalizeBaseReward(
+      dto.referrerReward ?? 0,
+      rewardType,
+      multiLevel,
+    );
     const levels = this.normalizeLevels(
       dto.levelRewards,
       multiLevel,
@@ -122,7 +125,6 @@ export class ReferralService {
         refereeReward: this.roundTwo(dto.refereeReward ?? 0),
         minPurchaseAmount: dto.minPurchaseAmount || 0,
         maxReferrals: dto.maxReferrals || 100,
-        expiryDays: dto.expiryDays || 30,
         status: dto.status || 'ACTIVE',
         isActive: (dto.status || 'ACTIVE') === 'ACTIVE',
         rewardTrigger,
@@ -192,6 +194,15 @@ export class ReferralService {
     });
     if (!program) {
       throw new BadRequestException('Реферальная программа не активна');
+    }
+    if (personal.merchantId && personal.merchantId !== program.merchantId) {
+      throw new BadRequestException('Реферальная программа не активна');
+    }
+    const referee = await this.prisma.customer.findFirst({
+      where: { id: refereeId, merchantId: program.merchantId },
+    });
+    if (!referee) {
+      throw new BadRequestException('Клиент не найден');
     }
     const existingReferee = await this.prisma.referral.findFirst({
       where: { refereeId, programId },
@@ -301,14 +312,18 @@ export class ReferralService {
     }
 
     // Проверяем минимальную сумму покупки
-    if (purchaseAmount < referral.program.minPurchaseAmount) {
+    const normalizedAmount = Number(purchaseAmount);
+    if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+      return null;
+    }
+    if (normalizedAmount < referral.program.minPurchaseAmount) {
       return null; // Сумма покупки меньше минимальной
     }
 
     // Обновляем статус реферала
     const rewardAmount = this.computeReferrerReward(
       referral.program,
-      purchaseAmount,
+      normalizedAmount,
     );
 
     await this.prisma.referral.update({
@@ -316,7 +331,7 @@ export class ReferralService {
       data: {
         status: 'COMPLETED',
         completedAt: new Date(),
-        purchaseAmount,
+        purchaseAmount: normalizedAmount,
       },
     });
 
@@ -549,6 +564,9 @@ export class ReferralService {
    * Получить реферальную ссылку клиента
    */
   async getCustomerReferralLink(customerId: string, merchantId: string) {
+    if (!merchantId) {
+      throw new BadRequestException('merchantId required');
+    }
     // Проверяем активную программу
     const program = await this.prisma.referralProgram.findFirst({
       where: {
@@ -775,6 +793,17 @@ export class ReferralService {
     return normalized;
   }
 
+  private normalizeBaseReward(
+    value: number,
+    rewardType: RewardMode,
+    multiLevel: boolean,
+  ) {
+    let reward = Number.isFinite(value) ? value : 0;
+    if (reward < 0) reward = 0;
+    if (!multiLevel && rewardType === 'PERCENT' && reward > 100) reward = 100;
+    return this.roundTwo(reward);
+  }
+
   private computeReferrerReward(
     program: ReferralProgram,
     purchaseAmount?: number,
@@ -889,7 +918,7 @@ export class ReferralService {
     );
     const baseReward = multiLevel
       ? (normalizedLevels.find((level) => level.level === 1)?.reward ?? 0)
-      : payload.rewardValue;
+      : this.normalizeBaseReward(payload.rewardValue, rewardType, multiLevel);
     const friendReward = this.roundTwo(payload.friendReward);
     const status = payload.enabled ? 'ACTIVE' : 'PAUSED';
     const minPurchaseAmount = Math.max(
@@ -930,7 +959,6 @@ export class ReferralService {
           name: 'Реферальная программа',
           description: null,
           maxReferrals: 100,
-          expiryDays: 30,
           ...data,
         },
       });
@@ -980,7 +1008,7 @@ export class ReferralService {
     );
     const referrerReward = multiLevel
       ? (normalizedLevels.find((level) => level.level === 1)?.reward ?? 0)
-      : this.roundTwo(baseRewardInput ?? 0);
+      : this.normalizeBaseReward(baseRewardInput ?? 0, rewardType, multiLevel);
     const refereeReward =
       dto.refereeReward !== undefined
         ? dto.refereeReward
@@ -1003,7 +1031,6 @@ export class ReferralService {
         refereeReward: this.roundTwo(refereeReward ?? 0),
         minPurchaseAmount: dto.minPurchaseAmount ?? existing.minPurchaseAmount,
         maxReferrals: dto.maxReferrals ?? existing.maxReferrals,
-        expiryDays: dto.expiryDays ?? existing.expiryDays,
         status,
         isActive: status === 'ACTIVE',
         rewardTrigger,

@@ -78,6 +78,21 @@ export class PortalTelegramIntegrationService {
       const base = this.config.get<string>('MINIAPP_BASE_URL') || '';
       miniappUrl = base ? String(base) : null;
     }
+    if (miniappUrl) {
+      const trimmed = String(miniappUrl).trim();
+      const lowered = trimmed.toLowerCase();
+      if (
+        !trimmed ||
+        lowered === 'undefined' ||
+        lowered === 'null' ||
+        lowered.startsWith('undefined') ||
+        lowered.startsWith('null')
+      ) {
+        miniappUrl = null;
+      } else {
+        miniappUrl = trimmed;
+      }
+    }
     if (miniappUrl && !/[?&]merchant=/.test(miniappUrl)) {
       miniappUrl = `${miniappUrl.replace(/\/$/, '')}/?merchant=${encodeURIComponent(merchantId)}`;
     }

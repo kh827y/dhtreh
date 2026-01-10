@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { DeviceType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
@@ -355,23 +354,14 @@ export class ListProductsQueryDto {
   @IsOptional()
   @IsString()
   externalId?: string;
-}
-
-export class OutletScheduleDayDto {
-  @ApiProperty({ description: 'mon/tue/.../sun' })
-  @IsString()
-  day!: string;
-  @ApiProperty()
-  @IsBoolean()
-  enabled!: boolean;
-  @ApiPropertyOptional({ description: 'Формат HH:mm' })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  from?: string;
-  @ApiPropertyOptional({ description: 'Формат HH:mm' })
+  limit?: string;
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  to?: string;
+  offset?: string;
 }
 
 export class CreatePortalDeviceDto {
@@ -394,70 +384,9 @@ export class PortalDeviceDto {
   @ApiProperty() updatedAt!: Date;
 }
 
-export class OutletScheduleDto {
-  @ApiProperty({ enum: ['24_7', 'CUSTOM'] })
-  @IsIn(['24_7', 'CUSTOM'])
-  mode!: '24_7' | 'CUSTOM';
-  @ApiProperty({ type: () => [OutletScheduleDayDto] })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => OutletScheduleDayDto)
-  days!: OutletScheduleDayDto[];
-}
-
 export class CreatePortalOutletDto {
   @ApiProperty() @IsBoolean() works!: boolean;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  hidden?: boolean;
   @ApiProperty() @IsString() name!: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  description?: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  phone?: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  address?: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  manualLocation?: boolean;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  latitude?: number;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  longitude?: number;
-  @ApiPropertyOptional({ type: () => [String] })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  adminEmails?: string[];
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  timezone?: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  showSchedule?: boolean;
-  @ApiPropertyOptional({ type: () => OutletScheduleDto })
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => OutletScheduleDto)
-  schedule?: OutletScheduleDto;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  externalId?: string;
   @ApiPropertyOptional({ type: () => [CreatePortalDeviceDto] })
   @IsOptional()
   @IsArray()
@@ -478,30 +407,8 @@ export class UpdatePortalOutletDto extends PartialType(CreatePortalOutletDto) {}
 export class PortalOutletDto {
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
-  @ApiProperty() address!: string | null;
   @ApiProperty() works!: boolean;
-  @ApiProperty() hidden!: boolean;
-  @ApiProperty() status!: string;
   @ApiPropertyOptional() staffCount?: number;
-  @ApiPropertyOptional({ enum: ['VIRTUAL', 'PC_POS', 'SMART'], nullable: true })
-  posType?: DeviceType | string | null;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
-  posLastSeenAt?: Date | null;
-  @ApiProperty() bridgeSecretIssued!: boolean;
-  @ApiProperty() bridgeSecretNextIssued!: boolean;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
-  bridgeSecretUpdatedAt?: Date | null;
-  @ApiPropertyOptional() description?: string | null;
-  @ApiPropertyOptional() phone?: string | null;
-  @ApiProperty({ type: () => [String] }) adminEmails!: string[];
-  @ApiPropertyOptional() timezone?: string | null;
-  @ApiProperty() showSchedule!: boolean;
-  @ApiProperty({ type: () => OutletScheduleDto })
-  schedule!: OutletScheduleDto;
-  @ApiPropertyOptional() latitude?: number | null;
-  @ApiPropertyOptional() longitude?: number | null;
-  @ApiProperty() manualLocation!: boolean;
-  @ApiPropertyOptional() externalId?: string | null;
   @ApiProperty({ type: () => [PortalDeviceDto] })
   devices!: PortalDeviceDto[];
   @ApiPropertyOptional({
@@ -515,8 +422,6 @@ export class PortalOutletDto {
     twogis?: string | null;
     google?: string | null;
   } | null;
-  @ApiProperty() createdAt!: Date;
-  @ApiProperty() updatedAt!: Date;
 }
 
 export class PortalOutletListResponseDto {

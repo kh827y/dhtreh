@@ -1747,11 +1747,9 @@ model ReferralProgram {
   referrerReward        Float
   refereeReward         Float
   maxReferrals          Int?
-  validUntil            DateTime?
   isActive              Boolean   @default(true)
   status                String    @default("ACTIVE")
   minPurchaseAmount     Int       @default(0)
-  expiryDays            Int       @default(30)
   rewardTrigger         String    @default("first")
   rewardType            String    @default("FIXED")
   multiLevel            Boolean   @default(false)
@@ -1780,7 +1778,6 @@ model Referral {
   refereePhone   String?
   refereeEmail   String?
   channel        String?
-  expiresAt      DateTime?
   createdAt      DateTime  @default(now())
 
   program  ReferralProgram @relation(fields: [programId], references: [id])

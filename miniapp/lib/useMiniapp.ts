@@ -42,6 +42,28 @@ export async function waitForInitData(attempts = 8, delayMs = 150): Promise<stri
   return last;
 }
 
+export function decodeBase64UrlPayload(payload: string): string | null {
+  if (!payload) return null;
+  const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+  const padSize = normalized.length % 4 ? 4 - (normalized.length % 4) : 0;
+  const padded = normalized + (padSize ? '='.repeat(padSize) : '');
+  try {
+    const bin = (typeof atob === 'function') ? atob(padded) : '';
+    if (!bin) return null;
+    try {
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    } catch {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      return decodeURIComponent(escape(bin));
+    }
+  } catch {
+    return null;
+  }
+}
+
 export function getMerchantFromContext(initData: string | null): string | undefined {
   try {
     const q = new URLSearchParams(window.location.search);
@@ -59,24 +81,7 @@ export function getMerchantFromContext(initData: string | null): string | undefi
           if (looksLikeJwt) {
             try {
               const payload = parts[1];
-              const b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-              let jsonStr = '';
-              try {
-                // Browser-safe base64 decode
-                const bin = (typeof atob === 'function') ? atob(b64) : '';
-                if (bin) {
-                  try {
-                    const bytes = new Uint8Array(bin.length);
-                    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-                    jsonStr = new TextDecoder().decode(bytes);
-                  } catch {
-                    // Fallback for older browsers
-                    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                    // @ts-ignore
-                    jsonStr = decodeURIComponent(escape(bin));
-                  }
-                }
-              } catch {}
+              const jsonStr = decodeBase64UrlPayload(payload);
               if (jsonStr) {
                 const obj = JSON.parse(jsonStr);
                 const mid = typeof obj?.merchantId === 'string' ? obj.merchantId : undefined;

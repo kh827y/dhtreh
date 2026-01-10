@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ShoppingBag,
   Plus,
@@ -74,15 +74,20 @@ function mapPortalProduct(raw: any): Product {
   };
 }
 
+const PRODUCTS_PAGE_SIZE = 200;
+
 const ProductsPage: React.FC = () => {
   const [view, setView] = useState<"list" | "create" | "edit">("list");
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [total, setTotal] = useState(0);
 
   const [searchTerm, setSearchTerm] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("all");
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -95,48 +100,85 @@ const ProductsPage: React.FC = () => {
     maxPaymentPercent: 100,
   });
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadCategories = useCallback(async () => {
     try {
-      const [categoriesRes, productsRes] = await Promise.all([
-        fetch("/api/portal/catalog/categories"),
-        fetch("/api/portal/catalog/products"),
-      ]);
-      if (!categoriesRes.ok) {
-        throw new Error(await readErrorMessage(categoriesRes, "Не удалось загрузить категории"));
+      const res = await fetch("/api/portal/catalog/categories");
+      if (!res.ok) {
+        throw new Error(await readErrorMessage(res, "Не удалось загрузить категории"));
       }
-      if (!productsRes.ok) {
-        throw new Error(await readErrorMessage(productsRes, "Не удалось загрузить товары"));
-      }
-      const categoriesPayload = await categoriesRes.json();
-      const productsPayload = await productsRes.json();
-      const nextCategories = Array.isArray(categoriesPayload) ? categoriesPayload.map(mapPortalCategory) : [];
-      const nextProducts = Array.isArray(productsPayload?.items) ? productsPayload.items.map(mapPortalProduct) : [];
+      const payload = await res.json();
+      const nextCategories = Array.isArray(payload) ? payload.map(mapPortalCategory) : [];
       setCategories(nextCategories);
-      setProducts(nextProducts);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err || "Не удалось загрузить товары");
+      const message = err instanceof Error ? err.message : String(err || "Не удалось загрузить категории");
       setError(message);
-    } finally {
-      setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
+  const loadProducts = useCallback(
+    async (options?: { append?: boolean; offset?: number; search?: string; categoryId?: string }) => {
+      const append = options?.append === true;
+      const offset = Number(options?.offset ?? 0) || 0;
+      const search = String(options?.search ?? "").trim();
+      const categoryId = String(options?.categoryId ?? "all");
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        const params = new URLSearchParams();
+        params.set("limit", String(PRODUCTS_PAGE_SIZE));
+        params.set("offset", String(Math.max(0, offset)));
+        if (search) params.set("search", search);
+        if (categoryId && categoryId !== "all") params.set("categoryId", categoryId);
+        const res = await fetch(`/api/portal/catalog/products?${params.toString()}`);
+        if (!res.ok) {
+          throw new Error(await readErrorMessage(res, "Не удалось загрузить товары"));
+        }
+        const payload = await res.json().catch(() => ({}));
+        const items = Array.isArray(payload?.items)
+          ? payload.items
+          : Array.isArray(payload)
+            ? payload
+            : [];
+        const nextProducts = items.map(mapPortalProduct);
+        const nextTotal = Number(payload?.total ?? nextProducts.length) || 0;
+        setProducts((prev) => (append ? [...prev, ...nextProducts] : nextProducts));
+        setTotal(nextTotal);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err || "Не удалось загрузить товары");
+        setError(message);
+        if (!append) {
+          setProducts([]);
+          setTotal(0);
+        }
+      } finally {
+        if (append) {
+          setLoadingMore(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    [],
+  );
 
-  const filteredProducts = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
-    return products.filter((product) => {
-      const matchesSearch =
-        product.name.toLowerCase().includes(query) ||
-        product.externalId.toLowerCase().includes(query);
-      const matchesCategory = filterCategory === "all" || product.categoryId === filterCategory;
-      return matchesSearch && matchesCategory;
-    });
-  }, [products, searchTerm, filterCategory]);
+  useEffect(() => {
+    void loadCategories();
+  }, [loadCategories]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setAppliedSearch(searchTerm.trim());
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    void loadProducts({ offset: 0, search: appliedSearch, categoryId: filterCategory });
+  }, [loadProducts, appliedSearch, filterCategory]);
 
   const getCategoryName = (id: string) => categories.find((c) => c.id === id)?.name || "-";
 
@@ -201,14 +243,9 @@ const ProductsPage: React.FC = () => {
       if (!res.ok) {
         throw new Error(await readErrorMessage(res, "Не удалось сохранить товар"));
       }
-      const data = await res.json().catch(() => null);
-      const nextProduct = data ? mapPortalProduct(data) : mapPortalProduct({ ...payload, id: editingId || Date.now().toString() });
-      setProducts((prev) =>
-        view === "edit" && editingId
-          ? prev.map((item) => (item.id === editingId ? nextProduct : item))
-          : [...prev, nextProduct],
-      );
+      await res.json().catch(() => null);
       setView("list");
+      await loadProducts({ offset: 0, search: appliedSearch, categoryId: filterCategory });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err || "Не удалось сохранить товар");
       setError(message);
@@ -226,6 +263,7 @@ const ProductsPage: React.FC = () => {
         throw new Error(await readErrorMessage(res, "Не удалось удалить товар"));
       }
       setProducts((prev) => prev.filter((item) => item.id !== id));
+      setTotal((prev) => Math.max(0, prev - 1));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err || "Не удалось удалить товар");
       setError(message);
@@ -478,7 +516,7 @@ const ProductsPage: React.FC = () => {
                     Загрузка товаров...
                   </td>
                 </tr>
-              ) : filteredProducts.length === 0 ? (
+              ) : products.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                     <ShoppingBag size={48} className="mx-auto text-gray-300 mb-4" />
@@ -486,7 +524,7 @@ const ProductsPage: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((product) => (
+                products.map((product) => (
                   <tr key={product.id} className="hover:bg-gray-50 transition-colors group">
                     <td className="px-6 py-3 font-medium text-gray-900 break-words">
                       {product.name}
@@ -543,6 +581,24 @@ const ProductsPage: React.FC = () => {
             </tbody>
           </table>
         </div>
+        {products.length < total && (
+          <div className="border-t border-gray-100 px-6 py-4 flex items-center justify-center">
+            <button
+              onClick={() =>
+                loadProducts({
+                  append: true,
+                  offset: products.length,
+                  search: appliedSearch,
+                  categoryId: filterCategory,
+                })
+              }
+              disabled={loadingMore}
+              className="px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-60"
+            >
+              {loadingMore ? "Загрузка..." : "Показать ещё"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

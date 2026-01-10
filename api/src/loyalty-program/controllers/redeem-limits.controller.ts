@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Put, Req, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { assertPortalPermissions } from '../../portal-auth/portal-permissions.util';
 import { PrismaService } from '../../prisma.service';
@@ -8,6 +16,9 @@ function ensureObject(input: any): Record<string, any> {
     ? { ...input }
     : {};
 }
+
+const MAX_TTL_DAYS = 3650;
+const MAX_DELAY_DAYS = 3650;
 
 @UseGuards(PortalGuard)
 @Controller('portal/loyalty/redeem-limits')
@@ -64,15 +75,51 @@ export class RedeemLimitsController {
     const currentTtlDays = Number(s?.pointsTtlDays ?? 0) || 0;
     const currentDelayDays = Number(s?.earnDelayDays ?? 0) || 0;
 
-    const ttlEnabled = Boolean(body?.ttlEnabled);
-    const ttlDaysRaw = Number(body?.ttlDays ?? 0) || 0;
-    const pointsTtlDays = ttlEnabled ? Math.max(1, Math.floor(ttlDaysRaw)) : 0;
+    const hasTtlEnabled = Object.prototype.hasOwnProperty.call(
+      body,
+      'ttlEnabled',
+    );
+    const hasTtlDays = Object.prototype.hasOwnProperty.call(body, 'ttlDays');
+    let pointsTtlDays = currentTtlDays;
+    if (hasTtlEnabled || hasTtlDays) {
+      const ttlEnabled = hasTtlEnabled
+        ? Boolean(body?.ttlEnabled)
+        : currentTtlDays > 0;
+      const ttlDaysRaw = Number(
+        hasTtlDays ? body?.ttlDays : currentTtlDays,
+      );
+      pointsTtlDays = ttlEnabled
+        ? Math.min(
+            MAX_TTL_DAYS,
+            Math.max(1, Math.floor(Number(ttlDaysRaw) || 0)),
+          )
+        : 0;
+    }
 
-    const delayEnabled = Boolean(body?.delayEnabled);
-    const delayDaysRaw = Number(body?.delayDays ?? 0) || 0;
-    const earnDelayDays = delayEnabled
-      ? Math.max(1, Math.floor(delayDaysRaw))
-      : 0;
+    const hasDelayEnabled = Object.prototype.hasOwnProperty.call(
+      body,
+      'delayEnabled',
+    );
+    const hasDelayDays = Object.prototype.hasOwnProperty.call(
+      body,
+      'delayDays',
+    );
+    const delayRequested = hasDelayEnabled || hasDelayDays;
+    let earnDelayDays = currentDelayDays;
+    if (delayRequested) {
+      const delayEnabled = hasDelayEnabled
+        ? Boolean(body?.delayEnabled)
+        : currentDelayDays > 0;
+      const delayDaysRaw = Number(
+        hasDelayDays ? body?.delayDays : currentDelayDays,
+      );
+      earnDelayDays = delayEnabled
+        ? Math.min(
+            MAX_DELAY_DAYS,
+            Math.max(1, Math.floor(Number(delayDaysRaw) || 0)),
+          )
+        : 0;
+    }
 
     let allowSame = false;
     if (body && Object.prototype.hasOwnProperty.call(body, 'allowSameReceipt')) {
@@ -87,6 +134,16 @@ export class RedeemLimitsController {
       ) {
         allowSame = Boolean(rules.allowEarnRedeemSameReceipt);
       }
+    }
+
+    if (
+      delayRequested &&
+      earnDelayDays > 0 &&
+      process.env.EARN_LOTS_FEATURE !== '1'
+    ) {
+      throw new BadRequestException(
+        'Отложенное начисление недоступно без поддержки лотов',
+      );
     }
 
     const ttlChanged = pointsTtlDays !== currentTtlDays;

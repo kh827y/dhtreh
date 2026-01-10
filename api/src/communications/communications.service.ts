@@ -49,8 +49,14 @@ interface TaskListOptions {
 @Injectable()
 export class CommunicationsService {
   private readonly logger = new Logger(CommunicationsService.name);
-  private readonly activeStatuses = ['SCHEDULED', 'RUNNING', 'PAUSED'];
-  private readonly archivedStatuses = ['COMPLETED', 'CANCELED', 'ARCHIVED'];
+  private readonly activeStatuses = ['SCHEDULED', 'RUNNING'];
+  private readonly archivedStatuses = ['COMPLETED', 'FAILED'];
+  private readonly allowedTaskStatuses = new Set([
+    'SCHEDULED',
+    'RUNNING',
+    'COMPLETED',
+    'FAILED',
+  ]);
   private readonly maxTelegramTextLength = 4096;
   private readonly maxTelegramMediaBytes = 10 * 1024 * 1024;
   private readonly allowedTelegramMimeTypes = [
@@ -194,22 +200,15 @@ export class CommunicationsService {
     const baseWhere: Prisma.CommunicationTaskWhereInput = { merchantId };
     if (channel && channel !== 'ALL') baseWhere.channel = channel;
     if (scope === 'ACTIVE') {
-      baseWhere.archivedAt = null;
       baseWhere.status = { in: this.activeStatuses };
     }
+    if (scope === 'ARCHIVED' && !status) {
+      baseWhere.status = { in: this.archivedStatuses };
+    }
     if (status) baseWhere.status = status;
-    const orFilters =
-      scope === 'ARCHIVED' && !status
-        ? [
-            { archivedAt: { not: null } },
-            { status: { in: this.archivedStatuses } },
-          ]
-        : undefined;
-
-    const where = orFilters ? { ...baseWhere, OR: orFilters } : baseWhere;
 
     const tasks = await this.prisma.communicationTask.findMany({
-      where,
+      where: baseWhere,
       orderBy: { createdAt: 'desc' },
       include: { template: true, audience: true },
     });
@@ -424,12 +423,17 @@ export class CommunicationsService {
 
   async updateTaskStatus(merchantId: string, taskId: string, status: string) {
     const task = await this.findOwnedTask(merchantId, taskId);
+    const normalized = String(status || '').trim().toUpperCase();
+    if (!this.allowedTaskStatuses.has(normalized)) {
+      throw new BadRequestException('Некорректный статус рассылки');
+    }
 
     const now = new Date();
-    const data: Prisma.CommunicationTaskUpdateInput = { status };
-    if (status === 'COMPLETED' && !task.completedAt) data.completedAt = now;
-    if (status === 'FAILED' && !task.failedAt) data.failedAt = now;
-    if (this.archivedStatuses.includes(status) && !task.archivedAt)
+    const data: Prisma.CommunicationTaskUpdateInput = { status: normalized };
+    if (normalized === 'COMPLETED' && !task.completedAt)
+      data.completedAt = now;
+    if (normalized === 'FAILED' && !task.failedAt) data.failedAt = now;
+    if (this.archivedStatuses.includes(normalized) && !task.archivedAt)
       data.archivedAt = now;
 
     const updated = await this.prisma.communicationTask.update({
@@ -442,7 +446,7 @@ export class CommunicationsService {
           event: 'portal.communications.tasks.status',
           merchantId,
           taskId,
-          status,
+          status: normalized,
         }),
       );
       this.metrics.inc('portal_communications_tasks_changed_total', {
@@ -450,6 +454,24 @@ export class CommunicationsService {
       });
     } catch {}
     return updated;
+  }
+
+  async deleteTask(merchantId: string, taskId: string) {
+    await this.findOwnedTask(merchantId, taskId);
+    await this.prisma.communicationTask.delete({ where: { id: taskId } });
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.communications.tasks.delete',
+          merchantId,
+          taskId,
+        }),
+      );
+      this.metrics.inc('portal_communications_tasks_changed_total', {
+        action: 'delete',
+      });
+    } catch {}
+    return { ok: true };
   }
 
   async getTaskRecipients(merchantId: string, taskId: string) {

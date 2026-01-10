@@ -1474,9 +1474,10 @@ export class PortalController {
   @Post('push-campaigns/:campaignId/cancel')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   cancelPushCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
-    return this.communications
-      .updateTaskStatus(this.getMerchantId(req), campaignId, 'CANCELED')
-      .then((task) => this.mapPushTask(task));
+    return this.communications.deleteTask(
+      this.getMerchantId(req),
+      campaignId,
+    );
   }
 
   @Post('push-campaigns/:campaignId/archive')
@@ -1485,9 +1486,10 @@ export class PortalController {
     @Req() req: any,
     @Param('campaignId') campaignId: string,
   ) {
-    return this.communications
-      .updateTaskStatus(this.getMerchantId(req), campaignId, 'ARCHIVED')
-      .then((task) => this.mapPushTask(task));
+    return this.communications.deleteTask(
+      this.getMerchantId(req),
+      campaignId,
+    );
   }
 
   @Post('push-campaigns/:campaignId/duplicate')
@@ -1565,9 +1567,10 @@ export class PortalController {
     @Req() req: any,
     @Param('campaignId') campaignId: string,
   ) {
-    return this.communications
-      .updateTaskStatus(this.getMerchantId(req), campaignId, 'CANCELED')
-      .then((task) => this.mapTelegramTask(task));
+    return this.communications.deleteTask(
+      this.getMerchantId(req),
+      campaignId,
+    );
   }
 
   @Post('telegram-campaigns/:campaignId/archive')
@@ -1576,9 +1579,10 @@ export class PortalController {
     @Req() req: any,
     @Param('campaignId') campaignId: string,
   ) {
-    return this.communications
-      .updateTaskStatus(this.getMerchantId(req), campaignId, 'ARCHIVED')
-      .then((task) => this.mapTelegramTask(task));
+    return this.communications.deleteTask(
+      this.getMerchantId(req),
+      campaignId,
+    );
   }
 
   @Post('telegram-campaigns/:campaignId/duplicate')
@@ -1738,6 +1742,14 @@ export class PortalController {
     @Query('segmentId') segmentId?: string,
   ) {
     const merchantId = this.getMerchantId(req);
+    const periodKey = typeof period === 'string' ? period.trim().toLowerCase() : '';
+    if (periodKey === 'all' || periodKey === 'all-time' || periodKey === 'alltime') {
+      return this.analytics.getCustomerPortrait(
+        merchantId,
+        { from: new Date(0), to: new Date(), type: 'custom' },
+        segmentId,
+      );
+    }
     return this.analytics.getCustomerPortrait(
       merchantId,
       this.computePeriod(req, period, from, to),
@@ -1959,11 +1971,6 @@ export class PortalController {
     @Body() dto: UpdateRfmSettingsDto,
   ) {
     return this.analytics.updateRfmSettings(this.getMerchantId(req), dto);
-  }
-  @Get('analytics/rfm-heatmap')
-  rfmHeatmap(@Req() req: any) {
-    const merchantId = this.getMerchantId(req);
-    return this.analytics.getRfmHeatmap(merchantId);
   }
 
   // Integrations

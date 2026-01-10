@@ -23,8 +23,11 @@ type ReviewLinks = {
   google: string;
 };
 
-export default function CreateOutletPage() {
+type CreateOutletPageProps = { basePath?: string };
+
+export default function CreateOutletPage({ basePath }: CreateOutletPageProps) {
   const router = useRouter();
+  const listPath = (basePath || "/outlets").replace(/\/$/, "") || "/outlets";
   const [isActive, setIsActive] = React.useState(true);
   const [name, setName] = React.useState("");
   const [reviewLinks, setReviewLinks] = React.useState<ReviewLinks>({
@@ -109,7 +112,7 @@ export default function CreateOutletPage() {
         } catch {}
         throw new Error(message || "Не удалось создать торговую точку");
       }
-      router.push("/outlets");
+      router.push(listPath);
     } catch (e: any) {
       setFormError(normalizeErrorMessage(e, "Не удалось создать торговую точку"));
     } finally {
@@ -122,7 +125,7 @@ export default function CreateOutletPage() {
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center space-x-4">
           <button
-            onClick={() => router.push("/outlets")}
+            onClick={() => router.push(listPath)}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500"
           >
             <ArrowLeft size={24} />

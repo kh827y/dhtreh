@@ -39,10 +39,13 @@ const staffLabel = (staff: StaffItem) => {
   return staff.login || staff.email || staff.id;
 };
 
-export default function EditOutletPage() {
+type EditOutletPageProps = { basePath?: string };
+
+export default function EditOutletPage({ basePath }: EditOutletPageProps) {
   const params = useParams<{ id: string }>();
   const outletId = params?.id as string;
   const router = useRouter();
+  const listPath = (basePath || "/outlets").replace(/\/$/, "") || "/outlets";
 
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
@@ -196,7 +199,7 @@ export default function EditOutletPage() {
         } catch {}
         throw new Error(message || "Не удалось сохранить точку");
       }
-      router.push("/outlets");
+      router.push(listPath);
     } catch (e: any) {
       setError(normalizeErrorMessage(e, "Не удалось сохранить точку"));
     } finally {
@@ -212,7 +215,7 @@ export default function EditOutletPage() {
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center space-x-4">
           <button
-            onClick={() => router.push("/outlets")}
+            onClick={() => router.push(listPath)}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500"
           >
             <ArrowLeft size={24} />

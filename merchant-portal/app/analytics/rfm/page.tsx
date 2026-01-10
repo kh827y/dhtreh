@@ -82,6 +82,7 @@ export default function AnalyticsRfmPage() {
   const [error, setError] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [showInfo, setShowInfo] = React.useState(true);
+  const [saveNotice, setSaveNotice] = React.useState("");
 
   const [settings, setSettings] = React.useState<RfmSettingsState>(defaultSettings);
   const [draft, setDraft] = React.useState<RfmSettingsState>(defaultSettings);
@@ -104,6 +105,7 @@ export default function AnalyticsRfmPage() {
   const load = React.useCallback(async () => {
     setLoading(true);
     setError("");
+    setSaveNotice("");
     try {
       const data = await fetchAnalytics();
       const normalizedSettings = normalizeSettings(data.settings);
@@ -199,6 +201,7 @@ export default function AnalyticsRfmPage() {
   }, [draft, settings]);
 
   const applySettings = React.useCallback(async () => {
+    setSaveNotice("");
     if (draft.recencyMode === "manual") {
       if (draft.recencyDays == null || draft.recencyDays < 1) {
         return;
@@ -235,6 +238,7 @@ export default function AnalyticsRfmPage() {
       setAnalytics({ ...data, settings: normalizedSettings });
       setSettings(normalizedSettings);
       setDraft(normalizedSettings);
+      setSaveNotice("Сегменты обновятся автоматически раз в сутки (обычно ночью).");
     } catch (error) {
       console.error("Не удалось сохранить настройки RFM", error);
       setError(normalizeErrorMessage(error, "Не удалось сохранить настройки"));
@@ -331,6 +335,11 @@ export default function AnalyticsRfmPage() {
           {error}
         </div>
       )}
+      {saveNotice && !error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          {saveNotice}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
@@ -343,6 +352,8 @@ export default function AnalyticsRfmPage() {
             <button
               onClick={() => {
                 setSaving(true);
+                setError("");
+                setSaveNotice("");
                 setDraft((prev) => ({
                   ...prev,
                   recencyMode: "auto",
@@ -359,6 +370,7 @@ export default function AnalyticsRfmPage() {
                     setAnalytics({ ...data, settings: normalizedSettings });
                     setSettings(normalizedSettings);
                     setDraft(normalizedSettings);
+                    setSaveNotice("Сегменты обновятся автоматически раз в сутки (обычно ночью).");
                   })
                   .catch((err: any) => {
                     console.error("Не удалось сохранить настройки RFM", err);
@@ -383,6 +395,8 @@ export default function AnalyticsRfmPage() {
             <button
               onClick={() => {
                 setSaving(true);
+                setError("");
+                setSaveNotice("");
                 setDraft((prev) => {
                   const recencyDays =
                     prev.recencyDays ?? settings.recencyDays ?? 90;
@@ -437,6 +451,7 @@ export default function AnalyticsRfmPage() {
                     setAnalytics({ ...data, settings: normalizedSettings });
                     setSettings(normalizedSettings);
                     setDraft(normalizedSettings);
+                    setSaveNotice("Сегменты обновятся автоматически раз в сутки (обычно ночью).");
                   })
                   .catch((err: any) => {
                     console.error("Не удалось сохранить настройки RFM", err);
@@ -470,7 +485,7 @@ export default function AnalyticsRfmPage() {
         >
           <div className="space-y-3">
             <label className="text-sm font-medium text-gray-700 flex justify-between">
-              <span>Верхний предел Давности</span>
+              <span>Граница давности (R)</span>
               <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded">
                 Риск оттока
               </span>
@@ -498,7 +513,7 @@ export default function AnalyticsRfmPage() {
 
           <div className="space-y-3">
             <label className="text-sm font-medium text-gray-700 flex justify-between">
-              <span>Нижний предел Частоты</span>
+              <span>Граница частоты (F)</span>
               <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">
                 Лояльный
               </span>
@@ -526,7 +541,7 @@ export default function AnalyticsRfmPage() {
 
           <div className="space-y-3">
             <label className="text-sm font-medium text-gray-700 flex justify-between">
-              <span>Нижний предел Денег</span>
+              <span>Граница денег (M)</span>
               <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">
                 Лояльный
               </span>

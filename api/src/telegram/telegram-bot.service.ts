@@ -136,9 +136,14 @@ export class TelegramBotService {
       const secret = crypto.randomBytes(16).toString('hex');
 
       // Сохраняем настройки мерчанта (для MiniApp и бэкапа токена)
-      const baseUrl = String(this.configService.get('MINIAPP_BASE_URL') || '')
+      const baseUrlRaw = String(this.configService.get('MINIAPP_BASE_URL') || '')
         .trim()
         .replace(/\/$/, '');
+      const baseUrl =
+        baseUrlRaw &&
+        !['undefined', 'null'].includes(baseUrlRaw.toLowerCase())
+          ? baseUrlRaw
+          : '';
       const nextSettings: Record<string, any> = {
         telegramBotToken: botToken,
         telegramBotUsername: botInfo.username,

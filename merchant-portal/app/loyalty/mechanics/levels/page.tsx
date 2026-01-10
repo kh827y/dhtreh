@@ -295,36 +295,7 @@ export default function LevelsPage() {
       setSaving(true);
       setFormError(null);
 
-      const unsetInitial = async () => {
-        if (!payload.isInitial) return;
-        const currentInitial = levels.find(
-          (lvl) => lvl.isInitial && lvl.id !== editingId,
-        );
-        if (!currentInitial) return;
-        const res = await fetch(
-          `/api/portal/loyalty/tiers/${encodeURIComponent(currentInitial.id)}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isInitial: false }),
-          },
-        );
-        if (!res.ok)
-          throw new Error(
-            (await res.text().catch(() => "")) ||
-              "Не удалось снять статус стартового уровня",
-          );
-        const updated = mapTier(await res.json());
-        setLevels((prev) =>
-          prev.map((lvl) =>
-            lvl.id === updated.id ? { ...lvl, isInitial: updated.isInitial } : lvl,
-          ),
-        );
-      };
-
       try {
-        await unsetInitial();
-
         const endpoint = editingId
           ? `/api/portal/loyalty/tiers/${encodeURIComponent(editingId)}`
           : "/api/portal/loyalty/tiers";

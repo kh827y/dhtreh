@@ -12,7 +12,6 @@ import {
 import { PortalGuard } from '../portal-auth/portal.guard';
 import {
   CustomerAudiencesService,
-  type CustomerFilters,
   type SegmentPayload,
 } from './customer-audiences.service';
 
@@ -23,45 +22,6 @@ export class CustomerAudiencesController {
 
   private merchantId(req: any) {
     return String(req.portalMerchantId);
-  }
-
-  @Get('customers')
-  listCustomers(
-    @Req() req: any,
-    @Query()
-    query: {
-      search?: string;
-      segmentId?: string;
-      tags?: string;
-      gender?: string;
-      minVisits?: string;
-      maxVisits?: string;
-      rfmClasses?: string;
-      limit?: string;
-      offset?: string;
-    },
-  ) {
-    const filters: CustomerFilters = {
-      search: query.search,
-      segmentId: query.segmentId,
-      tags: query.tags ? query.tags.split(',').filter(Boolean) : undefined,
-      gender: query.gender
-        ? query.gender.split(',').filter(Boolean)
-        : undefined,
-      minVisits: query.minVisits ? Number(query.minVisits) : undefined,
-      maxVisits: query.maxVisits ? Number(query.maxVisits) : undefined,
-      rfmClasses: query.rfmClasses
-        ? query.rfmClasses.split(',').filter(Boolean)
-        : undefined,
-      limit: query.limit ? Number(query.limit) : undefined,
-      offset: query.offset ? Number(query.offset) : undefined,
-    };
-    return this.service.listCustomers(this.merchantId(req), filters);
-  }
-
-  @Get('customers/:id')
-  getCustomer(@Req() req: any, @Param('id') id: string) {
-    return this.service.getCustomer(this.merchantId(req), id);
   }
 
   @Get('audiences')

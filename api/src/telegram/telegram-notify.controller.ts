@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Headers, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TelegramNotifyService } from './telegram-notify.service';
+import { AdminGuard } from '../admin.guard';
+import { AdminIpGuard } from '../admin-ip.guard';
 
 @Controller()
 export class TelegramNotifyController {
@@ -28,6 +30,7 @@ export class TelegramNotifyController {
 
   // Health: webhook info (admin/diagnostics)
   @Get('telegram/notify/webhook-info')
+  @UseGuards(AdminGuard, AdminIpGuard)
   async webhookInfo() {
     const info = await this.notify.getWebhookInfo();
     return { ok: true, info } as const;

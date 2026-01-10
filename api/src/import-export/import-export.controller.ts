@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Body,
+  Param,
   Query,
   UseGuards,
   UploadedFile,
@@ -72,9 +73,14 @@ export class ImportExportController {
       throw new BadRequestException('Файл не загружен');
     }
 
+    const normalizedFormat = String(format || '').toLowerCase();
+    if (normalizedFormat !== 'csv' && normalizedFormat !== 'excel') {
+      throw new BadRequestException('Неверный формат файла');
+    }
+
     const dto: ImportCustomersDto = {
       merchantId,
-      format,
+      format: normalizedFormat as 'csv' | 'excel',
       data: file.buffer,
       updateExisting: updateExisting === 'true',
     };
@@ -204,9 +210,14 @@ export class ImportExportController {
       throw new BadRequestException('Файл не загружен');
     }
 
+    const normalizedFormat = String(format || '').toLowerCase();
+    if (normalizedFormat !== 'csv' && normalizedFormat !== 'excel') {
+      throw new BadRequestException('Неверный формат файла');
+    }
+
     return this.importExportService.importTransactions(
       merchantId,
-      format,
+      normalizedFormat as 'csv' | 'excel',
       file.buffer,
     );
   }
@@ -221,14 +232,23 @@ export class ImportExportController {
     @Query('format') format: 'csv' | 'excel' = 'excel',
     @Res() res?: Response,
   ) {
+    const normalizedType = String(type || '').toLowerCase();
+    if (normalizedType !== 'customers' && normalizedType !== 'transactions') {
+      throw new BadRequestException('Неверный тип шаблона');
+    }
+    const normalizedFormat = String(format || '').toLowerCase();
+    if (normalizedFormat !== 'csv' && normalizedFormat !== 'excel') {
+      throw new BadRequestException('Неверный формат файла');
+    }
+
     const buffer = await this.importExportService.getImportTemplate(
-      type,
-      format,
+      normalizedType as 'customers' | 'transactions',
+      normalizedFormat as 'csv' | 'excel',
     );
 
-    const filename = `template_${type}.${format === 'csv' ? 'csv' : 'xlsx'}`;
+    const filename = `template_${normalizedType}.${normalizedFormat === 'csv' ? 'csv' : 'xlsx'}`;
     const contentType =
-      format === 'csv'
+      normalizedFormat === 'csv'
         ? 'text/csv; charset=utf-8'
         : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -260,15 +280,32 @@ export class ImportExportController {
       throw new BadRequestException('Файл не загружен');
     }
 
-    // Здесь можно расширить логику для различных операций
-    const dto: ImportCustomersDto = {
-      merchantId,
-      format,
-      data: file.buffer,
-      updateExisting: true,
-    };
+    const normalizedFormat = String(format || '').toLowerCase();
+    if (normalizedFormat !== 'csv' && normalizedFormat !== 'excel') {
+      throw new BadRequestException('Неверный формат файла');
+    }
+    const normalizedOperation = String(operation || '').toLowerCase();
+    const allowedOperations = [
+      'add_points',
+      'set_balance',
+      'add_tags',
+      'update_fields',
+    ];
+    if (!allowedOperations.includes(normalizedOperation)) {
+      throw new BadRequestException('Неверная операция');
+    }
 
-    return this.importExportService.importCustomers(dto);
+    return this.importExportService.bulkUpdateCustomers({
+      merchantId,
+      format: normalizedFormat as 'csv' | 'excel',
+      data: file.buffer,
+      operation: normalizedOperation as
+        | 'add_points'
+        | 'set_balance'
+        | 'add_tags'
+        | 'update_fields',
+      value,
+    });
   }
 
   /**
@@ -276,13 +313,10 @@ export class ImportExportController {
    */
   @Get('stats/:merchantId')
   @ApiOperation({ summary: 'Получить статистику импорта/экспорта' })
-  async getImportExportStats(@Query('merchantId') merchantId: string) {
-    // Можно добавить статистику из БД
-    return {
-      lastImport: null,
-      lastExport: null,
-      totalImported: 0,
-      totalExported: 0,
-    };
+  async getImportExportStats(@Param('merchantId') merchantId: string) {
+    if (!merchantId) {
+      throw new BadRequestException('merchantId required');
+    }
+    return this.importExportService.getImportExportStats(merchantId);
   }
 }

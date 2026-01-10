@@ -2,13 +2,7 @@
 
 ## Высокий приоритет
 
-- **Конфликт маршрутов `/portal/customers` и `/portal/customers/:id` между двумя контроллерами.**
-  - В `CustomerAudiencesController` определены `GET /portal/customers` и `GET /portal/customers/:id`, но эти же пути уже есть в `PortalController`. В NestJS это приводит к неоднозначной маршрутизации и «плавающему» поведению (какой контроллер обработает запрос зависит от порядка регистрации модулей). В результате один и тот же URL может возвращать **разные форматы данных и разные фильтры** (например, без `registeredOnly/excludeMiniapp`), что ломает UI и делает API непредсказуемым для клиентов интеграций.
-  - Где: `api/src/customer-audiences/customer-audiences.controller.ts`, `api/src/portal/portal.controller.ts`.
-
-- **Отсутствие валидации числовых query‑параметров в `GET /portal/customers` (customer‑audiences).**
-  - `limit/offset/minVisits/maxVisits` и прочие параметры приводятся через `Number()`, но значение `NaN` не отфильтровывается. Это приводит к `take/skip = NaN` или фильтрам Prisma с `NaN`, что даёт 500 вместо понятной ошибки запроса. Достаточно передать `limit=abc` или `minVisits=abc`.
-  - Где: `api/src/customer-audiences/customer-audiences.controller.ts`, `api/src/customer-audiences/customer-audiences.service.ts`.
+Нет актуальных пунктов.
 
 ## Средний приоритет
 

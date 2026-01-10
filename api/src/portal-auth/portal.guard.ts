@@ -229,9 +229,6 @@ export class PortalGuard implements CanActivate {
     if (path.startsWith('/portal/analytics/rfm/settings')) {
       return { resources: ['rfm_analysis'], action };
     }
-    if (path.startsWith('/portal/analytics/rfm-heatmap')) {
-      return { resources: ['rfm_analysis'], action };
-    }
     if (path.startsWith('/portal/analytics/rfm')) {
       return { resources: ['rfm_analysis'], action };
     }

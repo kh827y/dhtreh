@@ -30,7 +30,7 @@ export function getTransactionMeta(type: string, source?: string | null): Transa
   const lower = type.toLowerCase();
   if (lower === "adjust") return { title: "Баллы сгорели", kind: "burn" };
   if (lower.includes('referral')) return { title: 'Реферальная программа', kind: 'referral' };
-  if (lower.includes('registration')) return { title: 'Бонус за регистрацию', kind: 'earn' };
+  if (lower.includes('registration')) return { title: 'Регистрация в программе', kind: 'earn' };
   if (lower.includes("promo")) return { title: "Промокод", kind: "promo" };
   if (lower.includes("campaign") || lower.includes("promotion")) {
     return { title: "Акция", kind: "campaign" };

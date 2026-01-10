@@ -154,7 +154,7 @@ export class EmailService {
   ) {
     const [merchant, customer] = await Promise.all([
       this.prisma.merchant.findUnique({ where: { id: merchantId } }),
-      this.prisma.customer.findUnique({ where: { id: customerId } }),
+      this.prisma.customer.findFirst({ where: { id: customerId, merchantId } }),
     ]);
 
     if (!merchant || !customer) return;
@@ -255,6 +255,7 @@ export class EmailService {
     const customers = await this.prisma.customer.findMany({
       where: {
         id: { in: customerIds },
+        merchantId: promotion.merchantId,
         email: { not: null },
       },
     });

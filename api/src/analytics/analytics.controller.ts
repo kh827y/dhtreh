@@ -436,15 +436,6 @@ export class AnalyticsController {
   }
 
   /**
-   * Тепловая карта RFM (5x5)
-   */
-  @Get('rfm/:merchantId/heatmap')
-  @ApiOperation({ summary: 'RFM heatmap 5x5 (как в GetMeBack)' })
-  async getRfmHeatmap(@Param('merchantId') merchantId: string) {
-    return this.analyticsService.getRfmHeatmap(merchantId);
-  }
-
-  /**
    * Операционные метрики
    */
   @Get('operations/:merchantId')
@@ -520,18 +511,19 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Получить данные для виджетов дашборда' })
   @ApiResponse({ status: 200, description: 'Данные виджетов' })
   async getWidgetData(@Param('merchantId') merchantId: string) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const timezone = await this.analyticsService.resolveTimezone(merchantId);
+    const offsetMs = timezone.utcOffsetMinutes * 60 * 1000;
+    const now = new Date();
+    const localNow = new Date(now.getTime() + offsetMs);
+    localNow.setUTCHours(0, 0, 0, 0);
+    const today = new Date(localNow.getTime() - offsetMs);
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
 
     const period: DashboardPeriod = {
       from: today,
       to: tomorrow,
       type: 'day',
     };
-
-    const timezone = await this.analyticsService.resolveTimezone(merchantId);
     const [revenue, customers, loyalty] = await Promise.all([
       this.analyticsService.getRevenueMetrics(
         merchantId,

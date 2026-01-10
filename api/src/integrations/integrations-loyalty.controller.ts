@@ -1106,7 +1106,7 @@ export class IntegrationsLoyaltyController {
       }
 
       const txns = await this.prisma.transaction.findMany({
-        where: { merchantId, customerId: { in: customerIds } },
+        where: { merchantId, customerId: { in: customerIds }, canceledAt: null },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         select: {
           id: true,
@@ -1482,6 +1482,13 @@ export class IntegrationsLoyaltyController {
       operationDate,
       requestId: req.requestId,
     });
+    await this.logIntegrationSync(req, 'POST /api/integrations/bonus', 'ok', {
+      invoice_num: result.invoiceNum ?? invoiceNum ?? null,
+      order_id: result.orderId ?? null,
+      idempotency_key: idempotencyKey,
+      outlet_id: effectiveOutletId,
+      device_id: deviceCode,
+    });
     return {
       result: 'ok',
       invoice_num: result.invoiceNum ?? invoiceNum ?? null,
@@ -1571,6 +1578,12 @@ export class IntegrationsLoyaltyController {
       result.customerId && result.customerId.length
         ? (await this.loyalty.balance(merchantId, result.customerId)).balance
         : null;
+    await this.logIntegrationSync(req, 'POST /api/integrations/refund', 'ok', {
+      invoice_num: receipt.orderId,
+      order_id: receipt.id,
+      outlet_id: effectiveOutletId,
+      device_id: dto.device_id ?? null,
+    });
     return {
       result: 'ok',
       invoice_num: receipt.orderId,

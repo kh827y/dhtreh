@@ -116,10 +116,19 @@ export class LoyaltyProgramService {
 
   // ===== Loyalty tiers =====
 
+  private assertNonNegativeNumber(value: unknown, field: string) {
+    if (value === undefined || value === null) return;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new BadRequestException(`Некорректное значение ${field}`);
+    }
+  }
+
   private sanitizePercent(value: number | null | undefined, fallbackBps = 0) {
     if (value == null) return fallbackBps;
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed < 0) return fallbackBps;
+    if (parsed > 100) return 10000;
     return Math.round(parsed * 100);
   }
 
@@ -560,6 +569,14 @@ export class LoyaltyProgramService {
     if (!payload?.name?.trim())
       throw new BadRequestException('Название обязательно');
     const name = payload.name.trim();
+    this.assertNonNegativeNumber(payload.thresholdAmount, 'thresholdAmount');
+    this.assertNonNegativeNumber(payload.earnRatePercent, 'earnRatePercent');
+    if (payload.redeemRatePercent !== null && payload.redeemRatePercent !== undefined) {
+      this.assertNonNegativeNumber(payload.redeemRatePercent, 'redeemRatePercent');
+    }
+    if (payload.minPaymentAmount !== null && payload.minPaymentAmount !== undefined) {
+      this.assertNonNegativeNumber(payload.minPaymentAmount, 'minPaymentAmount');
+    }
     const thresholdAmount = this.sanitizeAmount(payload.thresholdAmount, 0);
     const earnRateBps = this.sanitizePercent(payload.earnRatePercent, 0);
     const redeemRateBps =
@@ -576,13 +593,14 @@ export class LoyaltyProgramService {
     const isHidden = !!payload.isHidden;
 
     const created = await this.prisma.$transaction(async (tx) => {
+      if (isInitial && isHidden) {
+        throw new BadRequestException('Нельзя скрыть стартовый уровень');
+      }
       if (isInitial) {
-        const exists = await tx.loyaltyTier.findFirst({
+        await tx.loyaltyTier.updateMany({
           where: { merchantId, isInitial: true },
+          data: { isInitial: false, isDefault: false },
         });
-        if (exists) {
-          throw new BadRequestException('Стартовая группа уже существует');
-        }
       }
       const nameExists = await tx.loyaltyTier.findFirst({
         where: {
@@ -645,6 +663,18 @@ export class LoyaltyProgramService {
     if (!tier) throw new NotFoundException('Уровень не найден');
 
     const name = payload.name?.trim();
+    if (payload.thresholdAmount !== null && payload.thresholdAmount !== undefined) {
+      this.assertNonNegativeNumber(payload.thresholdAmount, 'thresholdAmount');
+    }
+    if (payload.earnRatePercent !== null && payload.earnRatePercent !== undefined) {
+      this.assertNonNegativeNumber(payload.earnRatePercent, 'earnRatePercent');
+    }
+    if (payload.redeemRatePercent !== null && payload.redeemRatePercent !== undefined) {
+      this.assertNonNegativeNumber(payload.redeemRatePercent, 'redeemRatePercent');
+    }
+    if (payload.minPaymentAmount !== null && payload.minPaymentAmount !== undefined) {
+      this.assertNonNegativeNumber(payload.minPaymentAmount, 'minPaymentAmount');
+    }
     const thresholdAmount =
       payload.thresholdAmount != null
         ? this.sanitizeAmount(payload.thresholdAmount, tier.thresholdAmount)
@@ -686,13 +716,17 @@ export class LoyaltyProgramService {
       payload.isHidden != null ? !!payload.isHidden : tier.isHidden;
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      if (tier.isInitial && payload.isInitial === false) {
+        throw new BadRequestException('Нельзя снять статус стартового уровня');
+      }
+      if (isInitial && isHidden) {
+        throw new BadRequestException('Нельзя скрыть стартовый уровень');
+      }
       if (isInitial && !tier.isInitial) {
-        const exists = await tx.loyaltyTier.findFirst({
+        await tx.loyaltyTier.updateMany({
           where: { merchantId, isInitial: true, NOT: { id: tierId } },
+          data: { isInitial: false, isDefault: false },
         });
-        if (exists) {
-          throw new BadRequestException('Стартовая группа уже существует');
-        }
       }
       if (name) {
         const nameExists = await tx.loyaltyTier.findFirst({
@@ -761,6 +795,9 @@ export class LoyaltyProgramService {
       where: { merchantId, id: tierId },
     });
     if (!tier) throw new NotFoundException('Уровень не найден');
+    if (tier.isInitial) {
+      throw new BadRequestException('Нельзя удалить стартовый уровень');
+    }
     const assignments = await this.prisma.loyaltyTierAssignment.count({
       where: {
         merchantId,

@@ -126,6 +126,8 @@ export default function ClientPortraitPage() {
         }
         const options: AudienceOption[] = [defaultAudience];
         for (const item of Array.isArray(json) ? json : []) {
+          const archivedAt = (item as any)?.archivedAt ?? (item as any)?.archived_at;
+          if (archivedAt) continue;
           const value =
             item?.id ?? item?.segmentId ?? item?.segmentID ?? item?.value;
           const label = item?.name || item?.title || value;
@@ -166,7 +168,7 @@ export default function ClientPortraitPage() {
     setError("");
 
     const params = new URLSearchParams();
-    params.set("period", "month");
+    params.set("period", "all");
     if (selectedAudience) params.set("segmentId", selectedAudience);
 
     fetch(`/api/portal/analytics/portrait?${params.toString()}`, {

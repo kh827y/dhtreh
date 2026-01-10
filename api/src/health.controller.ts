@@ -1,4 +1,5 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { PrismaService } from './prisma.service';
 import { OutboxDispatcherWorker } from './outbox-dispatcher.worker';
 import { HoldGcWorker } from './hold-gc.worker';
@@ -20,9 +21,10 @@ export class HealthController {
   ) {}
 
   @Get('healthz')
-  async health() {
+  async health(@Res({ passthrough: true }) res: Response) {
     try {
       await this.prisma.$queryRaw`SELECT 1`;
+      res.status(200);
       return {
         ok: true,
         version: process.env.APP_VERSION || 'dev',
@@ -54,6 +56,7 @@ export class HealthController {
         },
       };
     } catch (e: any) {
+      res.status(503);
       return {
         ok: false,
         error: String(e?.message || e),
@@ -63,7 +66,7 @@ export class HealthController {
   }
 
   @Get('readyz')
-  async ready() {
+  async ready(@Res({ passthrough: true }) res: Response) {
     try {
       await this.prisma.$queryRaw`SELECT 1`;
       // можно добавить проверку иных зависимостей (очередей и т.д.)
@@ -75,6 +78,7 @@ export class HealthController {
         );
         migrations = { applied: Number(rows?.[0]?.c || 0) };
       } catch {}
+      res.status(200);
       return {
         ready: true,
         version: process.env.APP_VERSION || 'dev',
@@ -107,6 +111,7 @@ export class HealthController {
         },
       };
     } catch (e: any) {
+      res.status(503);
       return {
         ready: false,
         error: String(e?.message || e),

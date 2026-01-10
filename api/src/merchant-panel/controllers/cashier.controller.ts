@@ -108,4 +108,17 @@ export class CashierController {
       String(body?.id || ''),
     );
   }
+
+  @Get('device-sessions')
+  async deviceSessions(@Req() req: any) {
+    return this.service.listCashierDeviceSessions(this.getMerchantId(req));
+  }
+
+  @Post('device-sessions/revoke')
+  async revokeDeviceSession(@Req() req: any, @Body() body: { id?: string }) {
+    return this.service.revokeCashierDeviceSession(
+      this.getMerchantId(req),
+      String(body?.id || ''),
+    );
+  }
 }

@@ -33,11 +33,12 @@ import {
   type CustomerProfile,
 } from "../lib/api";
 import { useMiniappAuthContext } from "../lib/MiniappAuthContext";
-import { isValidInitData, waitForInitData } from "../lib/useMiniapp";
+import { decodeBase64UrlPayload, isValidInitData, waitForInitData } from "../lib/useMiniapp";
 import { getProgressPercent, type LevelInfo } from "../lib/levels";
 import { getTransactionMeta } from "../lib/transactionMeta";
 import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
 import { type TransactionItem } from "../lib/reviewUtils";
+import { writeTxCache } from "../lib/txCache";
 import { getTelegramWebApp } from "../lib/telegram";
 import {
   QrCode,
@@ -527,8 +528,10 @@ function buildHistoryTransactions(items: TransactionItem[]): HistoryTransaction[
   for (const item of sorted) {
     const meta = getTransactionMeta(item.type, item.source);
     const orderId = typeof item.orderId === "string" && item.orderId.trim() ? item.orderId.trim() : null;
+    const typeLower = item.type ? item.type.toLowerCase() : "";
+    const isRegistration = typeLower.includes("registration") || orderId === "registration_bonus";
 
-    if (orderId && (meta.kind === "earn" || meta.kind === "redeem")) {
+    if (!isRegistration && orderId && (meta.kind === "earn" || meta.kind === "redeem")) {
       const key = `purchase:${orderId}`;
       const group = purchaseGroups.get(key) || {
         id: key,
@@ -587,8 +590,8 @@ function buildHistoryTransactions(items: TransactionItem[]): HistoryTransaction[
     let pointsBurned: number | undefined;
 
     if (item.pending) {
-      type = item.type === "REGISTRATION" ? "signup" : "admin_bonus";
-      title = item.type === "REGISTRATION" ? "Бонус за регистрацию" : "Начисление";
+      type = isRegistration ? "signup" : "admin_bonus";
+      title = isRegistration ? "Регистрация в программе" : "Начисление";
       const days =
         typeof item.daysUntilMature === "number"
           ? item.daysUntilMature
@@ -641,10 +644,25 @@ function buildHistoryTransactions(items: TransactionItem[]): HistoryTransaction[
     } else if (meta.kind === "complimentary") {
       type = "admin_bonus";
       cashback = Math.max(0, item.amount);
-    } else if (item.type === "REGISTRATION") {
+    } else if (isRegistration) {
       type = "signup";
-      title = "Бонус за регистрацию";
+      title = "Регистрация в программе";
+      const note = description || "Приветственный бонус";
       cashback = Math.max(0, item.amount);
+      singles.push({
+        sortKey: new Date(createdAt).getTime(),
+        tx: {
+          id: item.id,
+          title,
+          description: note,
+          date,
+          amount: 0,
+          cashback,
+          pointsBurned,
+          type,
+        },
+      });
+      continue;
     } else if (meta.kind === "earn") {
       type = "admin_bonus";
       cashback = Math.max(0, item.amount);
@@ -762,6 +780,8 @@ function MiniappPage() {
   const [cachedBonusCount, setCachedBonusCount] = useState<number | null>(() =>
     typeof cachedState?.bonusCount === "number" ? cachedState.bonusCount : null,
   );
+  const [bootstrapReady, setBootstrapReady] = useState(false);
+  const [bootstrapAttempted, setBootstrapAttempted] = useState(false);
   const [view, setView] = useState<ViewState>("HOME");
   const [qrOpen, setQrOpen] = useState(false);
   const [qrToken, setQrToken] = useState("");
@@ -777,6 +797,7 @@ function MiniappPage() {
   const [showCodeCopied, setShowCodeCopied] = useState(false);
 
   const pendingProfileSync = useRef(false);
+  const bootstrapInFlightRef = useRef(false);
   const txLoadSeq = useRef(0);
   const txLoadingMoreRef = useRef(false);
   const txLoadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -784,6 +805,18 @@ function MiniappPage() {
   useEffect(() => {
     setLocalOnboarded(readStoredOnboardFlag(merchantId));
   }, [merchantId]);
+
+  useEffect(() => {
+    setBootstrapReady(false);
+    setBootstrapAttempted(false);
+    bootstrapInFlightRef.current = false;
+    if (typeof window !== "undefined") {
+      const w = window as typeof window & { __miniappBootstrapPending?: { merchantId: string; customerId: string } };
+      if (w.__miniappBootstrapPending) {
+        w.__miniappBootstrapPending = undefined;
+      }
+    }
+  }, [merchantId, customerId]);
 
   useEffect(() => {
     if (!merchantId) return;
@@ -866,6 +899,7 @@ function MiniappPage() {
 
   useEffect(() => {
     setPromotionsResolved(false);
+    setBootstrapReady(false);
   }, [customerId]);
 
   const applyServerProfile = useCallback(
@@ -912,6 +946,7 @@ function MiniappPage() {
   useEffect(() => {
     if (!merchantId || !customerId) return;
     if (teleOnboarded === false) return;
+    if (!bootstrapAttempted || bootstrapReady || bootstrapInFlightRef.current) return;
     let cancelled = false;
     (async () => {
       try {
@@ -925,7 +960,7 @@ function MiniappPage() {
     return () => {
       cancelled = true;
     };
-  }, [merchantId, customerId, teleOnboarded, applyServerProfile]);
+  }, [merchantId, customerId, teleOnboarded, bootstrapAttempted, bootstrapReady, applyServerProfile]);
 
   useEffect(() => {
     if (!merchantId || !customerId) return;
@@ -1001,16 +1036,7 @@ function MiniappPage() {
       const looksLikeJwt = parts.length === 3 && parts.every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
       if (looksLikeJwt) {
         const payload = parts[1];
-        const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
-        let jsonStr = "";
-        try {
-          const bin = typeof atob === "function" ? atob(b64) : "";
-          if (bin) {
-            const bytes = new Uint8Array(bin.length);
-            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-            jsonStr = new TextDecoder().decode(bytes);
-          }
-        } catch {}
+        const jsonStr = decodeBase64UrlPayload(payload);
         if (jsonStr) {
           const obj = JSON.parse(jsonStr);
           const code = typeof obj?.referralCode === "string" ? obj.referralCode : "";
@@ -1060,6 +1086,7 @@ function MiniappPage() {
       const items = resp.items as TransactionItem[];
       setTx(items);
       setTxNextBefore(resolveTxNextBefore(items, resp.nextBefore));
+      writeTxCache(merchantId, customerId, items);
     } catch (error) {
       setToast({ msg: `Не удалось загрузить историю: ${resolveErrorMessage(error)}`, type: "error" });
     }
@@ -1075,7 +1102,11 @@ function MiniappPage() {
       const resp = await transactions(merchantId, customerId, TX_PAGE_LIMIT, txNextBefore, { fresh: true });
       if (txLoadSeq.current !== requestId) return;
       const items = resp.items as TransactionItem[];
-      setTx((prev) => mergeTransactionItems(prev, items));
+      setTx((prev) => {
+        const merged = mergeTransactionItems(prev, items);
+        writeTxCache(merchantId, customerId, merged);
+        return merged;
+      });
       setTxNextBefore(resolveTxNextBefore(items, resp.nextBefore));
     } catch (error) {
       setToast({ msg: `Не удалось загрузить историю: ${resolveErrorMessage(error)}`, type: "error" });
@@ -1119,6 +1150,12 @@ function MiniappPage() {
 
   const loadBootstrap = useCallback(async () => {
     if (!merchantId || !customerId) return false;
+    if (bootstrapInFlightRef.current) return false;
+    bootstrapInFlightRef.current = true;
+    if (typeof window !== "undefined") {
+      const w = window as typeof window & { __miniappBootstrapPending?: { merchantId: string; customerId: string } };
+      w.__miniappBootstrapPending = { merchantId, customerId };
+    }
     try {
       const resp = await bootstrap(merchantId, customerId, { transactionsLimit: TX_PAGE_LIMIT });
       if (resp.profile) applyServerProfile(resp.profile);
@@ -1139,31 +1176,56 @@ function MiniappPage() {
         const items = resp.transactions.items as TransactionItem[];
         setTx(items);
         setTxNextBefore(resolveTxNextBefore(items, resp.transactions.nextBefore));
+        writeTxCache(merchantId, customerId, items);
       }
       if (resp.promotions) {
         setPromotions(resp.promotions);
         setPromotionsResolved(true);
       }
+      setBootstrapReady(true);
       return true;
     } catch {
       return false;
+    } finally {
+      setBootstrapAttempted(true);
+      bootstrapInFlightRef.current = false;
+      if (typeof window !== "undefined") {
+        const w = window as typeof window & { __miniappBootstrapPending?: { merchantId: string; customerId: string } };
+        if (
+          w.__miniappBootstrapPending?.merchantId === merchantId &&
+          w.__miniappBootstrapPending?.customerId === customerId
+        ) {
+          w.__miniappBootstrapPending = undefined;
+        }
+      }
     }
   }, [merchantId, customerId, applyServerProfile]);
 
   useEffect(() => {
-    if (!auth.loading && customerId) {
-      (async () => {
-        const ok = await loadBootstrap();
-        if (!ok) {
-          syncConsent();
-          loadBalance();
-          loadTx({ fresh: true });
-          loadLevels();
-          loadPromotions();
-        }
-      })();
-    }
-  }, [auth.loading, customerId, loadBootstrap, syncConsent, loadBalance, loadTx, loadLevels, loadPromotions]);
+    if (auth.loading || !customerId) return;
+    if (bootstrapAttempted) return;
+    if (bootstrapInFlightRef.current) return;
+    (async () => {
+      const ok = await loadBootstrap();
+      if (!ok) {
+        syncConsent();
+        loadBalance();
+        loadTx({ fresh: true });
+        loadLevels();
+        loadPromotions();
+      }
+    })();
+  }, [
+    auth.loading,
+    customerId,
+    bootstrapAttempted,
+    loadBootstrap,
+    syncConsent,
+    loadBalance,
+    loadTx,
+    loadLevels,
+    loadPromotions,
+  ]);
 
   useEffect(() => {
     if (!auth.loading) {
@@ -1487,7 +1549,31 @@ function MiniappPage() {
           localStorage.removeItem(pendingKey);
           localStorage.setItem(onboardKey(merchantId), "1");
         } catch {}
-        setToast({ msg: "Профиль сохранён", type: "success" });
+
+        const inviteCode = profileForm.inviteCode.trim();
+        if (inviteCode) {
+          try {
+            await referralActivate(inviteCode, effectiveCustomerId);
+            setProfileForm((prev) => ({ ...prev, inviteCode: "" }));
+          } catch (err) {
+            const description = resolveErrorMessage(err);
+            const isInvalid =
+              /400\\s+Bad\\s+Request/i.test(description) ||
+              /Недействител|expired|invalid/i.test(description);
+            const isAlready =
+              /участвуете|already\\s+participat|already\\s+joined/i.test(description);
+            if (isInvalid) {
+              setProfileError("Недействительный пригласительный код");
+              setPhoneShareStage("idle");
+              return false;
+            }
+            if (isAlready) {
+              setProfileForm((prev) => ({ ...prev, inviteCode: "" }));
+            } else {
+              setToast({ msg: `Не удалось проверить код: ${description}`, type: "error" });
+            }
+          }
+        }
         setAuthTeleHasPhone(true);
         setAuthTeleOnboarded(true);
         setLocalOnboarded(true);
@@ -1748,24 +1834,8 @@ function MiniappPage() {
           } catch {}
         }
         pendingProfileSync.current = false;
-        setToast({ msg: "Профиль сохранён, синхронизируем после завершения авторизации Telegram", type: "info" });
         setProfileSaving(false);
         return;
-      }
-    }
-
-    if (profileForm.inviteCode.trim() && effectiveCustomerId) {
-      try {
-        await referralActivate(profileForm.inviteCode.trim(), effectiveCustomerId);
-      } catch (err) {
-        const description = resolveErrorMessage(err);
-        const isInvalid = /400\s+Bad\s+Request/i.test(description) || /Недействитель|expired|invalid/i.test(description);
-        if (isInvalid) {
-          setProfileError("Недействительный пригласительный код");
-          setProfileSaving(false);
-          return;
-        }
-        setToast({ msg: `Не удалось проверить код: ${description}`, type: "error" });
       }
     }
 

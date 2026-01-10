@@ -10,7 +10,9 @@ export class CrmService {
   async getCustomerCard(merchantId: string, customerId: string) {
     const [customer, wallet, stats, recentTx, recentRc, segments] =
       await Promise.all([
-        this.prisma.customer.findUnique({ where: { id: customerId } }),
+        this.prisma.customer.findFirst({
+          where: { id: customerId, merchantId },
+        }),
         this.prisma.wallet.findUnique({
           where: {
             customerId_merchantId_type: {
@@ -34,25 +36,26 @@ export class CrmService {
           take: 5,
         }),
         this.prisma.segmentCustomer.findMany({
-          where: { customerId },
+          where: { customerId, segment: { merchantId } },
           include: { segment: true },
         }),
       ]);
+    if (!customer) {
+      throw new NotFoundException('Клиент не найден');
+    }
 
     return {
-      customer: customer
-        ? {
-            id: customer.id,
-            phone: customer.phone,
-            email: customer.email,
-            name: customer.name,
-            birthday: customer.birthday,
-            gender: customer.gender,
-            city: customer.city,
-            tags: customer.tags,
-            createdAt: customer.createdAt,
-          }
-        : null,
+      customer: {
+        id: customer.id,
+        phone: customer.phone,
+        email: customer.email,
+        name: customer.name,
+        birthday: customer.birthday,
+        gender: customer.gender,
+        city: customer.city,
+        tags: customer.tags,
+        createdAt: customer.createdAt,
+      },
       balance: wallet?.balance ?? 0,
       stats: stats
         ? {

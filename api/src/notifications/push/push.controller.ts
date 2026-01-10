@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   Query,
+  BadRequestException,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -90,13 +91,18 @@ export class PushController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const period =
-      from && to
-        ? {
-            from: new Date(from),
-            to: new Date(to),
-          }
-        : undefined;
+    let period: { from: Date; to: Date } | undefined;
+    if (from || to) {
+      if (!from || !to) {
+        throw new BadRequestException('from и to обязательны');
+      }
+      const fromDate = new Date(from);
+      const toDate = new Date(to);
+      if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+        throw new BadRequestException('Неверный формат даты');
+      }
+      period = { from: fromDate, to: toDate };
+    }
 
     return this.pushService.getPushStats(merchantId, period);
   }

@@ -37,7 +37,6 @@ import {
   ProductImageInputDto,
   ProductVariantInputDto,
   ProductStockInputDto,
-  OutletScheduleDto,
   ImportCatalogDto,
   ImportProductDto,
 } from './catalog.dto';
@@ -175,11 +174,6 @@ export class PortalCatalogService {
       externalMappings?: ProductExternalId[];
     },
   ): ProductListItemDto {
-    const externalMappings = (product as any).externalMappings as
-      | ProductExternalId[]
-      | undefined;
-    const primaryExt = externalMappings?.[0];
-    const externalId = product.externalId ?? primaryExt?.externalId ?? null;
     return {
       id: product.id,
       name: product.name,
@@ -191,7 +185,7 @@ export class PortalCatalogService {
       redeemPercent: product.redeemPercent,
       purchasesMonth: product.purchasesMonth,
       purchasesTotal: product.purchasesTotal,
-      externalId,
+      externalId: product.externalId ?? null,
     };
   }
 
@@ -251,25 +245,6 @@ export class PortalCatalogService {
       images,
       variants,
       stocks,
-    };
-  }
-
-  private parseSchedule(entity: Outlet): OutletScheduleDto {
-    const json = (entity.scheduleJson as any) || {};
-    const days = Array.isArray(json.days)
-      ? json.days.map((day: any) => ({
-          day: String(day?.day || ''),
-          enabled: Boolean(day?.enabled),
-          from: day?.from ?? undefined,
-          to: day?.to ?? undefined,
-        }))
-      : [];
-    return {
-      mode:
-        (json.mode as '24_7' | 'CUSTOM') ||
-        (entity.scheduleMode as '24_7' | 'CUSTOM') ||
-        'CUSTOM',
-      days,
     };
   }
 
@@ -378,27 +353,9 @@ export class PortalCatalogService {
     return {
       id: entity.id,
       name: entity.name,
-      address: entity.address ?? null,
       works: entity.status !== 'INACTIVE',
-      hidden: entity.hidden,
-      status: entity.status,
       staffCount:
         typeof entity.staffCount === 'number' ? entity.staffCount : undefined,
-      posType: entity.posType ?? null,
-      posLastSeenAt: entity.posLastSeenAt ?? null,
-      bridgeSecretIssued: !!entity.bridgeSecret,
-      bridgeSecretNextIssued: !!entity.bridgeSecretNext,
-      bridgeSecretUpdatedAt: entity.bridgeSecretUpdatedAt ?? null,
-      description: entity.description ?? null,
-      phone: entity.phone ?? null,
-      adminEmails: entity.adminEmails ?? [],
-      timezone: entity.timezone ?? null,
-      showSchedule: entity.scheduleEnabled,
-      schedule: this.parseSchedule(entity),
-      latitude: this.decimalToNumber(entity.latitude),
-      longitude: this.decimalToNumber(entity.longitude),
-      manualLocation: entity.manualLocation,
-      externalId: entity.externalId ?? null,
       devices: this.mapDevices((entity as any).devices),
       reviewsShareLinks: (() => {
         const links = this.extractReviewLinks(entity.reviewLinks as any);
@@ -409,8 +366,6 @@ export class PortalCatalogService {
           google: links['google'] ?? null,
         };
       })(),
-      createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt,
     };
   }
 
@@ -897,6 +852,14 @@ export class PortalCatalogService {
     query: ListProductsQueryDto,
   ): Promise<ProductListResponseDto> {
     const where: Prisma.ProductWhereInput = { merchantId, deletedAt: null };
+    const limitRaw = query.limit ? Number(query.limit) : NaN;
+    const offsetRaw = query.offset ? Number(query.offset) : NaN;
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(500, Math.max(1, Math.floor(limitRaw)))
+      : null;
+    const offset = Number.isFinite(offsetRaw)
+      ? Math.max(0, Math.floor(offsetRaw))
+      : 0;
     if (query.categoryId) where.categoryId = query.categoryId;
     if (query.points === 'with_points') where.accruePoints = true;
     if (query.points === 'without_points') where.accruePoints = false;
@@ -952,6 +915,8 @@ export class PortalCatalogService {
       this.prisma.product.findMany({
         where,
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+        take: limit ?? undefined,
+        skip: offset || undefined,
         include: {
           category: true,
           images: { orderBy: { position: 'asc' } },
@@ -1656,39 +1621,16 @@ export class PortalCatalogService {
     dto: CreatePortalOutletDto,
   ): Promise<PortalOutletDto> {
     const name = dto.name?.trim();
-    const address = dto.address?.trim() || null;
     if (!name) throw new BadRequestException('Outlet name is required');
     await this.assertOutletLimit(merchantId);
     const devices = this.normalizeDevicesInput(dto.devices);
-    const scheduleEnabled = dto.showSchedule ?? false;
-    const schedule =
-      dto.schedule && scheduleEnabled
-        ? dto.schedule
-        : { mode: 'CUSTOM', days: [] };
     try {
       const created = await this.prisma.$transaction(async (tx) => {
         const createdOutlet = await tx.outlet.create({
           data: {
             merchantId,
             name,
-            address,
             status: dto.works === false ? 'INACTIVE' : 'ACTIVE',
-            hidden: dto.hidden ?? false,
-            description: dto.description ?? null,
-            phone: dto.phone ?? null,
-            adminEmails:
-              dto.adminEmails?.map((email) => email.trim()).filter(Boolean) ??
-              [],
-            timezone: dto.timezone ?? null,
-            scheduleEnabled,
-            scheduleMode: schedule.mode,
-            scheduleJson: scheduleEnabled
-              ? (schedule as unknown as Prisma.InputJsonValue)
-              : (Prisma.DbNull as Prisma.NullableJsonNullValueInput),
-            externalId: dto.externalId?.trim() || null,
-            manualLocation: dto.manualLocation ?? false,
-            latitude: this.toDecimal(dto.latitude),
-            longitude: this.toDecimal(dto.longitude),
             reviewLinks: (() => {
               const patch = this.prepareReviewLinksPatch(dto.reviewsShareLinks);
               if (!patch)
@@ -1766,29 +1708,8 @@ export class PortalCatalogService {
       if (!name) throw new BadRequestException('Outlet name cannot be empty');
       data.name = name;
     }
-    if (dto.address !== undefined) {
-      const address = dto.address.trim();
-      data.address = address ? address : null;
-    }
-    if (dto.description !== undefined)
-      data.description = dto.description ?? null;
-    if (dto.phone !== undefined) data.phone = dto.phone ?? null;
-    if (dto.adminEmails !== undefined) {
-      data.adminEmails =
-        dto.adminEmails?.map((email) => email.trim()).filter(Boolean) ?? [];
-    }
-    if (dto.timezone !== undefined) data.timezone = dto.timezone ?? null;
     if (dto.works !== undefined)
       data.status = dto.works ? 'ACTIVE' : 'INACTIVE';
-    if (dto.hidden !== undefined) data.hidden = dto.hidden;
-    if (dto.manualLocation !== undefined)
-      data.manualLocation = dto.manualLocation;
-    if (dto.latitude !== undefined)
-      data.latitude = this.toDecimal(dto.latitude);
-    if (dto.longitude !== undefined)
-      data.longitude = this.toDecimal(dto.longitude);
-    if (dto.externalId !== undefined)
-      data.externalId = dto.externalId?.trim() || null;
     if (dto.reviewsShareLinks !== undefined) {
       const patch = this.prepareReviewLinksPatch(dto.reviewsShareLinks) || {};
       const merged = this.applyReviewLinksPatch(
@@ -1798,20 +1719,6 @@ export class PortalCatalogService {
       data.reviewLinks = Object.keys(merged).length
         ? (merged as unknown as Prisma.InputJsonValue)
         : (Prisma.JsonNull as Prisma.NullableJsonNullValueInput);
-    }
-    const showSchedule =
-      dto.showSchedule !== undefined
-        ? dto.showSchedule
-        : outlet.scheduleEnabled;
-    if (dto.showSchedule !== undefined) data.scheduleEnabled = showSchedule;
-    if (dto.schedule !== undefined) {
-      const schedule = dto.schedule ?? { mode: 'CUSTOM', days: [] };
-      data.scheduleMode = schedule.mode;
-      data.scheduleJson = showSchedule
-        ? (schedule as unknown as Prisma.InputJsonValue)
-        : (Prisma.DbNull as Prisma.NullableJsonNullValueInput);
-    } else if (dto.showSchedule !== undefined && !showSchedule) {
-      data.scheduleJson = Prisma.DbNull as Prisma.NullableJsonNullValueInput;
     }
     try {
       const updated = await this.prisma.$transaction(async (tx) => {

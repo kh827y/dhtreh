@@ -11,6 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
+import { hasPortalPermission } from '../../portal-auth/portal-permissions.util';
 import { LoyaltyProgramService } from '../loyalty-program.service';
 import type { TierDto, TierPayload } from '../loyalty-program.service';
 
@@ -53,7 +54,7 @@ export class TiersController {
   }
 
   @Get(':tierId/customers')
-  members(
+  async members(
     @Req() req: any,
     @Param('tierId') tierId: string,
     @Query('limit') limit?: string,
@@ -62,9 +63,25 @@ export class TiersController {
     const parsed = limit
       ? Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200)
       : undefined;
-    return this.service.listTierCustomers(this.merchantId(req), tierId, {
+    const result = await this.service.listTierCustomers(this.merchantId(req), tierId, {
       limit: parsed,
       cursor: cursor?.trim() || undefined,
     });
+    const canReadCustomers =
+      req.portalActor !== 'STAFF' ||
+      req.portalPermissions?.allowAll ||
+      hasPortalPermission(req.portalPermissions, 'customers', 'read');
+    if (canReadCustomers) {
+      return result;
+    }
+    return {
+      ...result,
+      items: result.items.map((item) => ({
+        ...item,
+        name: null,
+        phone: null,
+        totalSpent: null,
+      })),
+    };
   }
 }

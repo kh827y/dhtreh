@@ -7,16 +7,5 @@
    - Риск: реальные точки с историей продаж невозможно удалить (ошибка без понятного сообщения), либо случайно удалить исторические данные, что критично для продакшена.
    - Где смотреть: `merchant-portal/app/outlets/page.tsx` (кнопка удаления), `merchant-portal/app/api/portal/outlets/[id]/route.ts`, `api/src/portal/portal.controller.ts`, `api/src/merchants/merchants.service.ts`, связи `Outlet` в `api/prisma/schema.prisma`.
 
-## P2 — Средняя
-
-1. **В форме создания/редактирования точки отсутствуют важные поля, которые уже поддерживаются backend.**
-   - В портале можно менять только название, статус, устройства и ссылки на отзывы, но нет адреса, телефона, таймзоны, расписания, координат, внешнего ID и т.п., хотя эти поля есть в `PortalOutletDto` и в модели `Outlet`.
-   - Риск: точки, созданные через портал, остаются «неполными», что ломает сценарии, где используются адрес/расписание/геолокация/интеграции (например, отображение в других интерфейсах или в интеграциях).
-   - Где смотреть: `merchant-portal/app/outlets/new/page.tsx`, `merchant-portal/app/outlets/[id]/page.tsx`, `api/src/portal/catalog.service.ts` (`mapOutlet`, `createOutlet`, `updateOutlet`), `api/prisma/schema.prisma`.
-
 ## P3 — Низкая
-
-1. **Страница настроек `/settings/outlets` переиспользует `/outlets`, но действия уводят из раздела настроек.**
-   - Обёртка `SettingsOutletsWrapper` рендерит `OutletsPage`, а все переходы (`Добавить точку`, `Редактировать`) ведут на `/outlets/*`.
-   - Риск: пользователь теряет контекст «Настроек» (меню/хлебные крошки), что ухудшает UX.
-   - Где смотреть: `merchant-portal/app/settings/outlets/page.tsx`, `merchant-portal/app/outlets/page.tsx`.
+Нет актуальных пунктов.

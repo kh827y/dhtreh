@@ -33,6 +33,7 @@ const MECHANIC_RESOURCES = [
   'mechanic_referral',
   'loyalty',
 ];
+const MECHANIC_STATUSES = new Set(Object.values(MechanicStatus));
 
 @Controller('portal/loyalty/mechanics')
 @UseGuards(PortalGuard)
@@ -45,8 +46,11 @@ export class MechanicsController {
 
   @Get()
   async list(@Req() req: any, @Query('status') status?: string) {
+    const statusRaw = typeof status === 'string' ? status.trim() : '';
     const normalized =
-      status && status !== 'ALL' ? (status as MechanicStatus) : 'ALL';
+      statusRaw && statusRaw !== 'ALL' && MECHANIC_STATUSES.has(statusRaw as MechanicStatus)
+        ? (statusRaw as MechanicStatus)
+        : 'ALL';
     const items = await this.service.listMechanics(
       this.merchantId(req),
       normalized as any,

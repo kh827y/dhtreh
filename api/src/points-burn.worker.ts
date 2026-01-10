@@ -97,7 +97,7 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
             map.set(lot.customerId, (map.get(lot.customerId) || 0) + remain);
         }
         for (const [customerId, burnReq] of map.entries()) {
-          await this.prisma.$transaction(async (tx) => {
+          const burnedAmount = await this.prisma.$transaction(async (tx) => {
             // актуальный баланс кошелька
             const wallet = await tx.wallet.findFirst({
               where: {
@@ -106,9 +106,10 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
                 type: 'POINTS' as any,
               },
             });
-            if (!wallet) return;
-            let toBurn = Math.min(wallet.balance || 0, burnReq);
-            if (toBurn <= 0) return;
+            if (!wallet) return 0;
+            const initialBurn = Math.min(wallet.balance || 0, burnReq);
+            let toBurn = initialBurn;
+            if (toBurn <= 0) return 0;
             // отмечаем lot'ы как «сгоревшие» (увеличиваем consumedPoints)
             const expLots = await tx.earnLot.findMany({
               where: {
@@ -131,11 +132,13 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
               });
               toBurn -= take;
             }
-            const burnAmount = Math.min(wallet.balance || 0, burnReq);
+            const burnedByLots = Math.max(0, initialBurn - toBurn);
             // списываем из кошелька
             const fresh = await tx.wallet.findUnique({
               where: { id: wallet.id },
             });
+            const burnAmount = Math.min(fresh?.balance || 0, burnedByLots);
+            if (burnAmount <= 0) return 0;
             const newBal = Math.max(0, (fresh!.balance || 0) - burnAmount);
             await tx.wallet.update({
               where: { id: wallet.id },
@@ -176,13 +179,16 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
                 } as any,
               },
             });
+            return burnAmount;
           });
-          this.metrics.inc('loyalty_points_ttl_burned_total');
-          this.metrics.inc(
-            'loyalty_points_ttl_burned_amount_total',
-            {},
-            burnReq,
-          );
+          if (burnedAmount > 0) {
+            this.metrics.inc('loyalty_points_ttl_burned_total');
+            this.metrics.inc(
+              'loyalty_points_ttl_burned_amount_total',
+              {},
+              burnedAmount,
+            );
+          }
         }
       }
     } finally {

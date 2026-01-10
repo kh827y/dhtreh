@@ -39,6 +39,16 @@ type CashierActivationCode = {
   status: string;
 };
 
+type CashierDeviceSession = {
+  id: string;
+  createdAt: string;
+  lastSeenAt: string | null;
+  expiresAt: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  status: string;
+};
+
 function extractInitials(source: string) {
   const parts = String(source || "")
     .trim()
@@ -70,6 +80,11 @@ function formatDateTime(value: string) {
   } catch {
     return value;
   }
+}
+
+function formatDateTimeOptional(value?: string | null) {
+  if (!value) return "—";
+  return formatDateTime(value);
 }
 
 function mapActivationStatus(status: string) {
@@ -109,6 +124,7 @@ export default function CashierPanelPage() {
   const [loading, setLoading] = React.useState(true);
   const [busyIssue, setBusyIssue] = React.useState(false);
   const [busyRevokeId, setBusyRevokeId] = React.useState<string | null>(null);
+  const [busyRevokeSessionId, setBusyRevokeSessionId] = React.useState<string | null>(null);
 
   const [appLogin, setAppLogin] = React.useState("");
   const [issueCount, setIssueCount] = React.useState(6);
@@ -124,6 +140,7 @@ export default function CashierPanelPage() {
   const [visiblePins, setVisiblePins] = React.useState<Record<string, boolean>>(
     {},
   );
+  const [deviceSessions, setDeviceSessions] = React.useState<CashierDeviceSession[]>([]);
 
   const loadCreds = React.useCallback(async (): Promise<CashierCreds | null> => {
     const response = await fetch("/api/portal/cashier", {
@@ -191,26 +208,55 @@ export default function CashierPanelPage() {
     }));
   }, []);
 
+  const loadDeviceSessions = React.useCallback(async () => {
+    const response = await fetch("/api/portal/cashier/device-sessions", {
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(
+        await readErrorMessage(
+          response,
+          "Не удалось загрузить активные устройства кассы",
+        ),
+      );
+    }
+    const data = (await response.json().catch(() => null)) as any;
+    if (!Array.isArray(data)) return [] as CashierDeviceSession[];
+    return data.map((item: any) => ({
+      id: String(item?.id ?? ""),
+      createdAt: typeof item?.createdAt === "string" ? item.createdAt : "",
+      lastSeenAt: typeof item?.lastSeenAt === "string" ? item.lastSeenAt : null,
+      expiresAt: typeof item?.expiresAt === "string" ? item.expiresAt : "",
+      ipAddress: typeof item?.ipAddress === "string" ? item.ipAddress : null,
+      userAgent: typeof item?.userAgent === "string" ? item.userAgent : null,
+      status: typeof item?.status === "string" ? item.status : "",
+    }));
+  }, []);
+
   const reload = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [nextCreds, nextPins, nextCodes] = await Promise.all([
+      const [nextCreds, nextPins, nextCodes, nextSessions] = await Promise.all([
         loadCreds(),
         loadPins(),
         loadActivationCodes(),
+        loadDeviceSessions(),
       ]);
       setAppLogin(nextCreds?.login ?? "");
       setStaffPins(nextPins);
       setActivationCodes(nextCodes);
+      setDeviceSessions(nextSessions);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || "");
       alert(readApiError(message) || "Не удалось загрузить данные панели кассира");
       setStaffPins([]);
       setActivationCodes([]);
+      setDeviceSessions([]);
     } finally {
       setLoading(false);
     }
-  }, [loadActivationCodes, loadCreds, loadPins]);
+  }, [loadActivationCodes, loadCreds, loadPins, loadDeviceSessions]);
 
   React.useEffect(() => {
     void reload();
@@ -285,6 +331,37 @@ export default function CashierPanelPage() {
       }
     },
     [busyRevokeId, reload],
+  );
+
+  const revokeDeviceSession = React.useCallback(
+    async (id: string) => {
+      const sessionId = String(id || "").trim();
+      if (!sessionId || busyRevokeSessionId) return;
+      if (!confirm("Отозвать доступ у выбранного устройства?")) return;
+      setBusyRevokeSessionId(sessionId);
+      try {
+        const response = await fetch(
+          "/api/portal/cashier/device-sessions/revoke",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: sessionId }),
+          },
+        );
+        if (!response.ok) {
+          throw new Error(
+            await readErrorMessage(response, "Не удалось отозвать устройство"),
+          );
+        }
+        await reload();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error || "");
+        alert(readApiError(message) || "Не удалось отозвать устройство");
+      } finally {
+        setBusyRevokeSessionId(null);
+      }
+    },
+    [busyRevokeSessionId, reload],
   );
 
   const filteredPins = React.useMemo(
@@ -471,7 +548,7 @@ export default function CashierPanelPage() {
         </div>
 
         {/* Right Col: Staff PINs */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
             <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
               <div className="flex items-center space-x-2">
@@ -560,6 +637,49 @@ export default function CashierPanelPage() {
                   ) : null}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-100 flex items-center space-x-2">
+              <MonitorSmartphone className="text-purple-600" size={20} />
+              <h3 className="text-lg font-bold text-gray-900">Активные устройства кассы</h3>
+            </div>
+            <div className="p-6 space-y-3">
+              {deviceSessions.length ? (
+                deviceSessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-lg px-4 py-3"
+                  >
+                    <div className="space-y-1 text-sm text-gray-600">
+                      <div>
+                        <span className="text-gray-500">Последняя активность:</span>{" "}
+                        <span className="text-gray-800">
+                          {formatDateTimeOptional(session.lastSeenAt || session.createdAt)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Истекает:</span>{" "}
+                        <span className="text-gray-800">{formatDateTimeOptional(session.expiresAt)}</span>
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {session.ipAddress || "IP —"} · {session.userAgent || "устройство —"}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={Boolean(busyRevokeSessionId)}
+                      onClick={() => revokeDeviceSession(session.id)}
+                      className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                    >
+                      Отозвать
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-gray-500">Активных устройств нет.</div>
+              )}
             </div>
           </div>
         </div>

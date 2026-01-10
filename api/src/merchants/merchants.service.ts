@@ -8,6 +8,7 @@ import { hashPassword, verifyPassword } from '../password.util';
 import { PrismaService } from '../prisma.service';
 import {
   DeviceType,
+  TxnType,
   StaffOutletAccessStatus,
   StaffStatus,
   StaffRole,
@@ -306,6 +307,53 @@ export class MerchantsService {
     });
     if (result.count === 0) {
       throw new NotFoundException('Activation code not found or inactive');
+    }
+    return { ok: true };
+  }
+
+  async listCashierDeviceSessions(merchantId: string, limit = 50) {
+    const take = Math.max(1, Math.min(200, Math.floor(Number(limit) || 0)));
+    const now = new Date();
+    const rows = await this.prisma.cashierDeviceSession.findMany({
+      where: {
+        merchantId,
+        revokedAt: null,
+        expiresAt: { gt: now },
+      },
+      orderBy: { createdAt: 'desc' },
+      take,
+      select: {
+        id: true,
+        createdAt: true,
+        lastSeenAt: true,
+        expiresAt: true,
+        ipAddress: true,
+        userAgent: true,
+        activationCodeId: true,
+      },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      createdAt: row.createdAt.toISOString(),
+      lastSeenAt: row.lastSeenAt ? row.lastSeenAt.toISOString() : null,
+      expiresAt: row.expiresAt.toISOString(),
+      ipAddress: row.ipAddress ?? null,
+      userAgent: row.userAgent ?? null,
+      activationCodeId: row.activationCodeId ?? null,
+      status: row.expiresAt.getTime() <= now.getTime() ? 'EXPIRED' : 'ACTIVE',
+    }));
+  }
+
+  async revokeCashierDeviceSession(merchantId: string, sessionId: string) {
+    const id = String(sessionId || '').trim();
+    if (!id) throw new BadRequestException('sessionId required');
+    const result = await this.prisma.cashierDeviceSession.updateMany({
+      where: { merchantId, id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    if (result.count === 0) {
+      throw new NotFoundException('Device session not found or inactive');
     }
     return { ok: true };
   }
@@ -2132,22 +2180,35 @@ export class MerchantsService {
       staffId?: string;
     },
   ) {
+    const normalizeDate = (value?: Date) => {
+      if (!value) return undefined;
+      const ts = value.getTime();
+      return Number.isFinite(ts) ? value : undefined;
+    };
+    const allowedTypes = new Set(Object.values(TxnType));
+    const type = params.type && allowedTypes.has(params.type as TxnType)
+      ? (params.type as TxnType)
+      : undefined;
+    const before = normalizeDate(params.before);
+    const from = normalizeDate(params.from);
+    const to = normalizeDate(params.to);
+
     const where: any = { merchantId };
-    if (params.type) where.type = params.type as any;
+    if (type) where.type = type;
     if (params.customerId) where.customerId = params.customerId;
     if (params.outletId) where.outletId = params.outletId;
     if (params.staffId) where.staffId = params.staffId;
-    if (params.before)
+    if (before)
       where.createdAt = Object.assign(where.createdAt || {}, {
-        lt: params.before,
+        lt: before,
       });
-    if (params.from)
+    if (from)
       where.createdAt = Object.assign(where.createdAt || {}, {
-        gte: params.from,
+        gte: from,
       });
-    if (params.to)
+    if (to)
       where.createdAt = Object.assign(where.createdAt || {}, {
-        lte: params.to,
+        lte: to,
       });
     const items = await this.prisma.transaction.findMany({
       where,

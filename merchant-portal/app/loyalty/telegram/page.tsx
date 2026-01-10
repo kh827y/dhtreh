@@ -72,7 +72,7 @@ const MAX_SYMBOLS = 4096;
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png"]);
 const DEFAULT_SCOPE_STATE: CampaignScopeState = { active: [], archived: [] };
-const ACTIVE_STATUSES = new Set(["SCHEDULED", "RUNNING", "PAUSED"]);
+const ACTIVE_STATUSES = new Set(["SCHEDULED", "RUNNING"]);
 const ARCHIVED_STATUSES = new Set(["COMPLETED", "FAILED"]);
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -125,7 +125,7 @@ function buildLocalDate(dateValue: string, timeValue: string) {
 function normalizeStatus(status: string): "scheduled" | "sending" | "sent" {
   const raw = String(status || "").toUpperCase();
   if (raw === "RUNNING") return "sending";
-  if (raw === "SCHEDULED" || raw === "PAUSED") return "scheduled";
+  if (raw === "SCHEDULED") return "scheduled";
   return "sent";
 }
 

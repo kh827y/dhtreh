@@ -20,9 +20,13 @@ type OutletListResponse = {
 };
 
 type TabKey = "active" | "inactive";
+type OutletsPageProps = { basePath?: string };
 
-export default function OutletsPage() {
+export default function OutletsPage({ basePath }: OutletsPageProps) {
   const router = useRouter();
+  const normalizedBase = (basePath || "/outlets").replace(/\/$/, "");
+  const listPath = normalizedBase || "/outlets";
+  const createPath = `${listPath}/new`;
   const [activeTab, setActiveTab] = React.useState<TabKey>("active");
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
@@ -104,7 +108,7 @@ export default function OutletsPage() {
         </div>
 
         <button
-          onClick={() => router.push("/outlets/new")}
+          onClick={() => router.push(createPath)}
           className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm"
         >
           <Plus size={18} />
@@ -184,7 +188,7 @@ export default function OutletsPage() {
                 </div>
                 <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
-                    onClick={() => router.push(`/outlets/${encodeURIComponent(outlet.id)}`)}
+                    onClick={() => router.push(`${listPath}/${encodeURIComponent(outlet.id)}`)}
                     className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
                     aria-label="Редактировать"
                   >

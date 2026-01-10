@@ -729,33 +729,43 @@ export class AnalyticsService {
     merchantId: string,
     withinDays = 30,
     limit = 100,
+    timezone?: string | RussiaTimezone,
   ): Promise<BirthdayItem[]> {
+    const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const offsetMs = tz.utcOffsetMinutes * 60 * 1000;
+    const now = new Date();
+    const localNow = new Date(now.getTime() + offsetMs);
+    const localYear = localNow.getUTCFullYear();
+    const localMonth = localNow.getUTCMonth();
+    const localDay = localNow.getUTCDate();
+    const localTodayEpoch = Date.UTC(localYear, localMonth, localDay);
+    const endLocalEpoch =
+      localTodayEpoch + withinDays * 24 * 60 * 60 * 1000;
+
     const customers = await this.prisma.customer.findMany({
       where: { birthday: { not: null }, wallets: { some: { merchantId } } },
       select: { id: true, name: true, phone: true, birthday: true },
-      take: 5000,
     });
-    const now = new Date();
-    const end = new Date(now);
-    end.setDate(end.getDate() + withinDays);
-
-    const nextDate = (b: Date) => {
-      const y = now.getFullYear();
-      let d = new Date(y, b.getMonth(), b.getDate());
-      if (d < now) d = new Date(y + 1, b.getMonth(), b.getDate());
-      return d;
-    };
 
     const items: BirthdayItem[] = [];
     for (const c of customers) {
-      const nb = nextDate(c.birthday!);
-      if (nb <= end) {
-        const age = nb.getFullYear() - c.birthday!.getFullYear();
+      const birthday = c.birthday!;
+      const birthMonth = birthday.getUTCMonth();
+      const birthDay = birthday.getUTCDate();
+      let nextLocalEpoch = Date.UTC(localYear, birthMonth, birthDay);
+      if (nextLocalEpoch < localTodayEpoch) {
+        nextLocalEpoch = Date.UTC(localYear + 1, birthMonth, birthDay);
+      }
+      if (nextLocalEpoch <= endLocalEpoch) {
+        const nextBirthdayUtc = new Date(nextLocalEpoch - offsetMs);
+        const age =
+          new Date(nextLocalEpoch).getUTCFullYear() -
+          birthday.getUTCFullYear();
         items.push({
           customerId: c.id,
           name: c.name || undefined,
           phone: c.phone || undefined,
-          nextBirthday: nb.toISOString(),
+          nextBirthday: nextBirthdayUtc.toISOString(),
           age,
         });
       }
@@ -1181,27 +1191,6 @@ export class AnalyticsService {
     }
 
     return results;
-  }
-
-  /**
-   * RFM heatmap 5x5: матрица по R и F (или можно по R и M) с количеством клиентов
-   */
-  async getRfmHeatmap(
-    merchantId: string,
-  ): Promise<{ grid: number[][]; totals: { count: number } }> {
-    const rows = await this.prisma.customerStats.findMany({
-      where: { merchantId },
-      select: { rfmR: true, rfmF: true },
-    });
-    const grid: number[][] = Array.from({ length: 5 }, () =>
-      Array.from({ length: 5 }, () => 0),
-    );
-    for (const r of rows) {
-      const R = Math.min(Math.max(r.rfmR || 1, 1), 5);
-      const F = Math.min(Math.max(r.rfmF || 1, 1), 5);
-      grid[R - 1][F - 1]++;
-    }
-    return { grid, totals: { count: rows.length } };
   }
 
   private toJsonObject(

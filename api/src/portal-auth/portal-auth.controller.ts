@@ -245,6 +245,41 @@ export class PortalAuthController {
     const actor = claims.actor ?? 'MERCHANT';
     const staffId =
       actor === 'STAFF' ? claims.staffId || claims.sub || null : undefined;
+    if (actor === 'MERCHANT') {
+      const merchantId = claims.merchantId || claims.sub;
+      const merchant = await (this.prisma.merchant as any).findUnique({
+        where: { id: merchantId },
+        select: { portalLoginEnabled: true },
+      });
+      if (!merchant || merchant.portalLoginEnabled === false) {
+        throw new UnauthorizedException();
+      }
+    } else {
+      if (!staffId) throw new UnauthorizedException();
+      const staff = await this.prisma.staff.findFirst({
+        where: { id: staffId, merchantId: claims.merchantId },
+        select: {
+          status: true,
+          portalAccessEnabled: true,
+          canAccessPortal: true,
+        },
+      });
+      if (
+        !staff ||
+        staff.status !== StaffStatus.ACTIVE ||
+        !staff.portalAccessEnabled ||
+        !staff.canAccessPortal
+      ) {
+        throw new UnauthorizedException();
+      }
+      const merchant = await (this.prisma.merchant as any).findUnique({
+        where: { id: claims.merchantId },
+        select: { portalLoginEnabled: true },
+      });
+      if (!merchant || merchant.portalLoginEnabled === false) {
+        throw new UnauthorizedException();
+      }
+    }
     return {
       merchantId: claims.merchantId || claims.sub || '',
       role: claims.role || (actor === 'STAFF' ? 'STAFF' : 'MERCHANT'),

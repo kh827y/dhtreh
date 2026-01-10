@@ -4,21 +4,9 @@
 
 ## P1 — Высокая важность
 
-### 1) Отменённые/архивированные рассылки «теряются» в UI
-**Риск:** пользователи не видят отменённые кампании (они пропадают из обоих табов), что ломает контроль/аудит рассылок и вводит в заблуждение по аналитике (кажется, что рассылки «исчезли»).
-**Причина:** backend возвращает задачи со статусами `CANCELED`/`ARCHIVED` в архивной выборке, но UI фильтрует архив только по `COMPLETED`/`FAILED` и отбрасывает всё остальное.
-**Где:**
-- API возвращает архивные задачи через `listChannelTasks`/`listTasks` (`api/src/communications/communications.service.ts`).
-- UI фильтрует архив: `ARCHIVED_STATUSES = ["COMPLETED", "FAILED"]` (`merchant-portal/app/loyalty/push/page.tsx`, `merchant-portal/app/loyalty/telegram/page.tsx`).
-**Что проверить/сделать:** согласовать статусы между UI и backend: либо добавить `CANCELED`/`ARCHIVED` в UI, либо не возвращать их в архивной выборке (если это legacy).
+Нет актуальных пунктов.
 
 ## P2 — Средняя важность
-
-### 2) `/portal/communications/tasks/:id/status` принимает произвольный статус
-**Риск:** портал-юзер может записать любой статус (в т.ч. невалидный), что ломает консистентность задач, скрывает рассылки из UI и искажает аналитику. Также можно руками «завершить» рассылку без фактической отправки.
-**Причина:** статус — строка без enum‑валидации на уровне БД и сервиса, а эндпоинт принимает любой `body.status`.
-**Где:** `api/src/communications/communications.controller.ts`, `api/src/communications/communications.service.ts`, модель `CommunicationTask.status` (`api/prisma/schema.prisma`).
-**Что проверить/сделать:** в сервисе разрешить только whitelist статусов (например, `SCHEDULED/RUNNING/PAUSED/CANCELED/COMPLETED/FAILED/ARCHIVED`) и отклонять остальные.
 
 ### 3) Можно подделывать аналитику через `stats` при создании задач
 **Риск:** отправитель может записать произвольные значения `totalRecipients/sent/failed` и подделать аналитику рассылки.
