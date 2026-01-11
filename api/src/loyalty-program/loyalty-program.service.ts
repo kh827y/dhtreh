@@ -1668,12 +1668,12 @@ export class LoyaltyProgramService {
       logs.promoCodes = await this.prisma.promoCodeUsage.findMany({
         where: {
           merchantId,
-          createdAt: {
+          usedAt: {
             ...(from ? { gte: from } : {}),
             ...(to ? { lte: to } : {}),
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { usedAt: 'desc' },
         take: 200,
       });
     }
@@ -1681,12 +1681,12 @@ export class LoyaltyProgramService {
       logs.promotions = await this.prisma.promotionParticipant.findMany({
         where: {
           merchantId,
-          createdAt: {
+          joinedAt: {
             ...(from ? { gte: from } : {}),
             ...(to ? { lte: to } : {}),
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { joinedAt: 'desc' },
         take: 200,
       });
     }

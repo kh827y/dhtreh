@@ -17,18 +17,6 @@ export class CashierCredentialsDto {
   @Field(() => String, { nullable: true })
   @ApiPropertyOptional({ description: 'Логин кассира (slug мерчанта)' })
   login?: string | null;
-
-  @Field(() => Boolean)
-  @ApiProperty({ description: 'Установлен ли пароль' })
-  hasPassword!: boolean;
-
-  @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({
-    description: 'Текущий 9-значный пароль',
-    minLength: 9,
-    maxLength: 9,
-  })
-  password?: string | null;
 }
 
 @ObjectType()
@@ -36,10 +24,6 @@ export class CashierRotationResultDto {
   @Field(() => String)
   @ApiProperty({ description: 'Новый логин кассира' })
   login!: string;
-
-  @Field(() => String)
-  @ApiProperty({ description: 'Новый пароль' })
-  password!: string;
 }
 
 @InputType()

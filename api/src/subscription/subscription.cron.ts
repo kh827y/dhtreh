@@ -240,25 +240,6 @@ export class SubscriptionCronService {
     console.log('[CRON] Starting cleanup process...');
 
     try {
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-      // Удаляем старые неактивные триал подписки
-      const deletedTrials = await this.prisma.subscription.deleteMany({
-        where: {
-          status: 'trial',
-          createdAt: {
-            lt: sixMonthsAgo,
-          },
-        },
-      });
-
-      if (deletedTrials.count > 0) {
-        console.log(
-          `[CRON] Deleted ${deletedTrials.count} old trial subscriptions`,
-        );
-      }
-
       // Сброс флагов напоминаний для новых периодов
       await this.prisma.subscription.updateMany({
         where: {

@@ -147,18 +147,8 @@ export async function previewRules(merchantId: string, args: { channel: 'SMART'|
 }
 
 // ===== CRM helpers =====
-export type CustomerSummary = {
-  balance: number;
-  recentTx: Array<{ id: string; type: string; amount: number; orderId?: string; createdAt: string; outletId?: string; outletPosType?: string | null; outletLastSeenAt?: string | null; staffId?: string }>;
-  recentReceipts: Array<{ id: string; orderId: string; customerId: string; total: number; redeemApplied: number; earnApplied: number; createdAt: string; outletId?: string; outletPosType?: string | null; outletLastSeenAt?: string | null; staffId?: string }>;
-};
-
 export async function customerSearch(merchantId: string, phone: string): Promise<{ customerId: string; phone: string; balance: number } | null> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/customer/search?phone=${encodeURIComponent(phone)}`);
-}
-
-export async function customerSummary(merchantId: string, customerId: string): Promise<CustomerSummary> {
-  return http(`/merchants/${encodeURIComponent(merchantId)}/customer/summary?customerId=${encodeURIComponent(customerId)}`);
 }
 
 export function transactionsCsvUrl(merchantId: string, params: { limit?: number; before?: string; from?: string; to?: string; type?: string; customerId?: string; outletId?: string; staffId?: string }): string {

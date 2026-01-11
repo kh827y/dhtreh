@@ -14,7 +14,6 @@ export const FULL_PLAN_ID = 'plan_full';
 export interface CreateSubscriptionDto {
   merchantId: string;
   planId: string;
-  trialDays?: number;
   metadata?: any;
 }
 
@@ -107,15 +106,9 @@ export class SubscriptionService {
       };
     }
     const end: Date | null =
-      subscription.currentPeriodEnd ??
-      subscription.trialEnd ??
-      subscription.cancelAt ??
-      null;
+      subscription.currentPeriodEnd ?? subscription.cancelAt ?? null;
     const statusRaw = String(subscription.status || '').toLowerCase();
-    const statusAllows =
-      statusRaw === 'active' ||
-      statusRaw === 'trialing' ||
-      statusRaw === 'trial';
+    const statusAllows = statusRaw === 'active';
     const expiredByDate = !end || end.getTime() <= now.getTime();
     const expired =
       !statusAllows ||
@@ -328,10 +321,6 @@ export class SubscriptionService {
 
     // Рассчитываем даты
     const now = new Date();
-    const trialEnd = dto.trialDays
-      ? new Date(now.getTime() + dto.trialDays * 24 * 60 * 60 * 1000)
-      : null;
-
     const currentPeriodStart = now;
     const currentPeriodEnd = this.calculatePeriodEnd(
       currentPeriodStart,
@@ -345,10 +334,10 @@ export class SubscriptionService {
         data: {
           merchantId: dto.merchantId,
           planId: dto.planId,
-          status: trialEnd ? 'trialing' : 'active',
+          status: 'active',
           currentPeriodStart,
           currentPeriodEnd,
-          trialEnd,
+          trialEnd: null,
           metadata: dto.metadata,
           autoRenew: false,
         },
@@ -373,7 +362,7 @@ export class SubscriptionService {
           subscriptionId: subscription.id,
           planId: subscription.planId,
           status: subscription.status,
-          trialEnd: subscription.trialEnd,
+          trialEnd: null,
         },
       },
     });
@@ -661,42 +650,6 @@ export class SubscriptionService {
       currentPeriodEnd: subscription.currentPeriodEnd,
       cancelAt: subscription.cancelAt,
     };
-  }
-
-  /**
-   * Обработка истекших trial периодов
-   */
-  // @Cron(CronExpression.EVERY_DAY_AT_NOON)
-  async processExpiredTrials() {
-    const prismaAny = this.prisma as any;
-    const expiredTrials = await prismaAny.subscription.findMany({
-      where: {
-        status: 'trialing',
-        trialEnd: {
-          lte: new Date(),
-        },
-      },
-    });
-
-    for (const subscription of expiredTrials) {
-      await this.prisma.subscription.update({
-        where: { id: subscription.id },
-        data: {
-          status: 'expired',
-        },
-      });
-
-      // Уведомление о завершении trial
-      await this.prisma.eventOutbox.create({
-        data: {
-          merchantId: subscription.merchantId,
-          eventType: 'trial.expired',
-          payload: {
-            subscriptionId: subscription.id,
-          },
-        },
-      });
-    }
   }
 
   /**

@@ -245,7 +245,7 @@ function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscrip
   const [pwd, setPwd] = React.useState('');
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
-  const [cashier, setCashier] = React.useState<{ login: string|null; hasPassword: boolean }|null>(null);
+  const [cashier, setCashier] = React.useState<{ login: string|null }|null>(null);
   const [cashierMsg, setCashierMsg] = React.useState('');
   const [subscriptionDays, setSubscriptionDays] = React.useState(30);
   const [subscriptionMsg, setSubscriptionMsg] = React.useState('');
@@ -263,13 +263,12 @@ function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscrip
     setCashierMsg('');
     try { setCashier(await getCashier(row.id)); } catch (e: any) { setCashierMsg(String(e?.message || e)); }
   }
-  async function genPassword(regenLogin?: boolean) {
+  async function rotateLogin(regenLogin?: boolean) {
     setCashierMsg('');
     try {
       const r = await rotateCashier(row.id, !!regenLogin);
-      setCashier({ login: r.login, hasPassword: true });
-      // Показать пароль один раз (в уведомлении)
-      setCashierMsg(`Пароль кассира: ${r.password}`);
+      setCashier({ login: r.login });
+      setCashierMsg('Логин кассира обновлён');
     } catch (e: any) { setCashierMsg(String(e?.message || e)); }
   }
   async function grantSubscription() {
@@ -349,14 +348,11 @@ function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscrip
         <div style={{ fontSize:13, opacity:.8 }}>Учётные данные кассира</div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
           <button onClick={loadCashier} className="btn">Показать логин</button>
-          <button onClick={()=>genPassword(false)} className="btn btn-primary">Сгенерировать пароль</button>
-          <button onClick={()=>genPassword(true)} className="btn">Регенерировать логин+пароль</button>
+          <button onClick={()=>rotateLogin(true)} className="btn">Регенерировать логин</button>
           {cashier && (
             <div style={{ display:'flex', gap:8, alignItems:'center' }}>
               <span style={{ opacity:.7 }}>Логин:</span>
               <code>{cashier.login || '—'}</code>
-              <span style={{ opacity:.7 }}>Пароль:</span>
-              <code>{cashier.hasPassword ? 'установлен' : '—'}</code>
             </div>
           )}
         </div>

@@ -34,6 +34,7 @@ export class AdminNotificationsController {
     if (!base)
       return { ok: false, error: 'API_BASE_URL is not configured' } as any;
     const r = await this.notify.setWebhook(base);
+    if (!r) return { ok: false, error: 'Webhook setup failed' } as any;
     return { ok: true, ...r } as any;
   }
 

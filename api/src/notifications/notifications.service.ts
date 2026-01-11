@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { isSystemAllAudience } from '../customer-audiences/audience.utils';
@@ -45,9 +49,13 @@ export class NotificationsService {
       await this.prisma.eventOutbox.create({
         data: { merchantId, eventType: 'notify.broadcast', payload },
       });
-      try {
-        this.metrics.inc('notifications_enqueued_total', { type: channel });
-      } catch {}
+    } catch (error) {
+      throw new InternalServerErrorException(
+        'Не удалось поставить рассылку в очередь',
+      );
+    }
+    try {
+      this.metrics.inc('notifications_enqueued_total', { type: channel });
     } catch {}
     return { ok: true };
   }
@@ -61,6 +69,9 @@ export class NotificationsService {
     if (!merchantId) throw new BadRequestException('merchantId required');
     if (!channel) throw new BadRequestException('channel required');
     if (!to) throw new BadRequestException('to required');
+    if (channel === 'PUSH') {
+      throw new BadRequestException('PUSH тест не поддерживается');
+    }
     const payload = {
       type: 'test',
       channel,
@@ -73,9 +84,13 @@ export class NotificationsService {
       await this.prisma.eventOutbox.create({
         data: { merchantId, eventType: 'notify.test', payload },
       });
-      try {
-        this.metrics.inc('notifications_enqueued_total', { type: channel });
-      } catch {}
+    } catch (error) {
+      throw new InternalServerErrorException(
+        'Не удалось поставить тест в очередь',
+      );
+    }
+    try {
+      this.metrics.inc('notifications_enqueued_total', { type: channel });
     } catch {}
     return { ok: true };
   }

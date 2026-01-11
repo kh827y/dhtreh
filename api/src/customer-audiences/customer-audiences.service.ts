@@ -880,7 +880,7 @@ export class CustomerAudiencesService {
 
   async getCustomer(merchantId: string, customerId: string) {
     const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId },
+      where: { id: customerId, merchantId },
       include: {
         customerStats: { where: { merchantId }, take: 1 },
         segments: { include: { segment: true } },
@@ -925,7 +925,7 @@ export class CustomerAudiencesService {
     if (!options.includeSystem) where.isSystem = false;
     const segments = await this.prisma.customerSegment.findMany({
       where,
-      orderBy: [{ archivedAt: 'asc' }, { createdAt: 'desc' }],
+      orderBy: [{ createdAt: 'desc' }],
     });
     try {
       this.logger.log(
@@ -1110,7 +1110,7 @@ export class CustomerAudiencesService {
 
   async evaluateCustomerSegments(merchantId: string, customerId: string) {
     const segments = await this.prisma.customerSegment.findMany({
-      where: { merchantId, archivedAt: null },
+      where: { merchantId },
       select: {
         id: true,
         filters: true,
@@ -1232,30 +1232,45 @@ export class CustomerAudiencesService {
     return updated;
   }
 
-  async archiveSegment(merchantId: string, segmentId: string) {
+  async deleteSegment(merchantId: string, segmentId: string) {
     const segment = await this.prisma.customerSegment.findFirst({
       where: { merchantId, id: segmentId },
     });
     if (!segment) throw new NotFoundException('Сегмент не найден');
     if (isSystemAllAudience(segment)) {
-      throw new BadRequestException('Системную аудиторию нельзя архивировать');
+      throw new BadRequestException('Системную аудиторию нельзя удалить');
     }
 
-    const archived = await this.prisma.customerSegment.update({
-      where: { id: segmentId },
-      data: { archivedAt: new Date(), isActive: false },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.communicationTask.updateMany({
+        where: { audienceId: segment.id },
+        data: { audienceId: null },
+      });
+      await tx.loyaltyPromotion.updateMany({
+        where: { segmentId: segment.id },
+        data: { segmentId: null },
+      });
+      await tx.promoCode.updateMany({
+        where: { segmentId: segment.id },
+        data: { segmentId: null },
+      });
+      await tx.segmentCustomer.deleteMany({
+        where: { segmentId: segment.id },
+      });
+      await tx.customerSegment.delete({ where: { id: segment.id } });
     });
+
     try {
       this.logger.log(
         JSON.stringify({
-          event: 'portal.audiences.archive',
+          event: 'portal.audiences.delete',
           merchantId,
           segmentId,
         }),
       );
-      this.metrics.inc('portal_audiences_changed_total', { action: 'archive' });
+      this.metrics.inc('portal_audiences_changed_total', { action: 'delete' });
     } catch {}
-    return archived;
+    return { ok: true };
   }
 
   async refreshSegmentMetrics(merchantId: string, segmentId: string) {

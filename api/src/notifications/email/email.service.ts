@@ -252,9 +252,32 @@ export class EmailService {
       rewardMeta.kind || promotion.rewardType || '',
     );
 
+    let allowedCustomerIds = customerIds;
+    try {
+      const consentCount = await this.prisma.customerConsent.count({
+        where: { merchantId: promotion.merchantId, channel: 'EMAIL' },
+      });
+      if (consentCount > 0) {
+        const consentRows = await this.prisma.customerConsent.findMany({
+          where: {
+            merchantId: promotion.merchantId,
+            channel: 'EMAIL',
+            status: 'GRANTED',
+            customerId: { in: customerIds },
+          },
+          select: { customerId: true },
+        });
+        allowedCustomerIds = consentRows.map((row) => row.customerId);
+      }
+    } catch {}
+
+    if (!allowedCustomerIds.length) {
+      return { sent: 0, failed: 0, total: 0 };
+    }
+
     const customers = await this.prisma.customer.findMany({
       where: {
-        id: { in: customerIds },
+        id: { in: allowedCustomerIds },
         merchantId: promotion.merchantId,
         email: { not: null },
       },

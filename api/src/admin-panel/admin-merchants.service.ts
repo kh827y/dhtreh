@@ -297,7 +297,6 @@ export class AdminMerchantsService {
             : null,
           portalLoginEnabled: true,
           cashierLogin: await this.ensureUniqueCashierLogin(tx, payload.name!),
-          cashierPassword9: this.randomDigits(9),
         },
       });
 
@@ -450,16 +449,13 @@ export class AdminMerchantsService {
         regenerateLogin || !merchant.cashierLogin
           ? await this.ensureUniqueCashierLogin(tx, merchant.name)
           : merchant.cashierLogin;
-      const cashierPassword9 = this.randomDigits(9);
       await tx.merchant.update({
         where: { id: merchantId },
         data: {
           cashierLogin,
-          cashierPassword9,
-          cashierPasswordUpdatedAt: new Date(),
         },
       });
-      return { login: cashierLogin, password: cashierPassword9 };
+      return { login: cashierLogin };
     });
     return result;
   }

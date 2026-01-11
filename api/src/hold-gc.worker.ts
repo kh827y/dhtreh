@@ -26,7 +26,14 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
     const intervalMs = Number(process.env.HOLD_GC_INTERVAL_MS || '30000');
-    this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    this.timer = setInterval(() => {
+      this.tick().catch((error) => {
+        this.logger.error('HoldGcWorker tick failed', error as Error);
+        try {
+          this.metrics.inc('loyalty_hold_gc_errors_total');
+        } catch {}
+      });
+    }, intervalMs);
     try {
       if (this.timer && typeof this.timer.unref === 'function')
         this.timer.unref();
@@ -66,8 +73,21 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
             data: { status: HoldStatus.CANCELED },
           });
           this.metrics.inc('loyalty_hold_gc_canceled_total');
-        } catch {}
+        } catch (error) {
+          this.logger.error(
+            `HoldGcWorker failed to cancel hold ${h.id}`,
+            error as Error,
+          );
+          try {
+            this.metrics.inc('loyalty_hold_gc_errors_total');
+          } catch {}
+        }
       }
+    } catch (error) {
+      this.logger.error('HoldGcWorker tick error', error as Error);
+      try {
+        this.metrics.inc('loyalty_hold_gc_errors_total');
+      } catch {}
     } finally {
       this.running = false;
       await pgAdvisoryUnlock(this.prisma, lock.key);

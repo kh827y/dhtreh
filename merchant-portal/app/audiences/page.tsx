@@ -557,9 +557,7 @@ export default function AudiencesPage() {
     try {
       const list = await fetchJson<any[]>("/api/portal/audiences?includeSystem=1");
       const items = Array.isArray(list) ? list : [];
-      const mapped = items
-        .filter((segment) => !segment?.archivedAt)
-        .map(mapSegmentToAudience);
+      const mapped = items.map(mapSegmentToAudience);
       setAudiences(mapped);
     } catch (err) {
       setError(readApiError(err) || "Не удалось загрузить аудитории");
@@ -733,9 +731,8 @@ export default function AudiencesPage() {
     if (!confirm("Вы уверены, что хотите удалить эту аудиторию?")) return;
     setError(null);
     try {
-      await fetchJson(`/api/portal/audiences/${encodeURIComponent(audience.id)}/archive`, {
-        method: "POST",
-        body: JSON.stringify({}),
+      await fetchJson(`/api/portal/audiences/${encodeURIComponent(audience.id)}`, {
+        method: "DELETE",
       });
       await loadAudiences();
     } catch (err) {

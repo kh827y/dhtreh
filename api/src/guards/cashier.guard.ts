@@ -1,7 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import * as crypto from 'crypto';
-import { verifyBridgeSignature } from '../loyalty/bridge.util';
 import {
   readTelegramInitDataFromHeader,
   resolveTelegramAuthContext,
@@ -174,248 +173,6 @@ export class CashierGuard implements CanActivate {
     };
   }
 
-  private async resolveOperationContext(
-    normalizedPath: string,
-    req: any,
-    merchantIdHint?: string,
-  ): Promise<{
-    merchantId?: string;
-    outletId?: string | null;
-    payload?: string | null;
-  }> {
-    const body = req?.body || {};
-    let merchantId: string | undefined = merchantIdHint || undefined;
-    let outletId: string | null = null;
-    let payload: string | null = null;
-    let outletLocked = false;
-
-    if (normalizedPath === '/loyalty/quote') {
-      merchantId = merchantId || body?.merchantId;
-      outletId = body?.outletId ?? null;
-      if (merchantId) {
-        payload = JSON.stringify({
-          merchantId,
-          mode: body?.mode,
-          userToken: body?.userToken,
-          orderId: body?.orderId,
-          total: body?.total,
-          outletId: body?.outletId ?? undefined,
-          staffId: body?.staffId ?? undefined,
-        });
-      }
-    } else if (normalizedPath === '/loyalty/commit') {
-      const holdId: string | undefined = body?.holdId;
-      if (!holdId) {
-        merchantId = merchantId || body?.merchantId;
-        outletId = body?.outletId ?? null;
-      } else {
-        let hold: { merchantId: string; outletId: string | null } | null = null;
-        try {
-          hold = await this.prisma.hold.findUnique({
-            where: { id: holdId },
-            select: { merchantId: true, outletId: true },
-          });
-        } catch {}
-        outletLocked = true;
-        merchantId = merchantId || hold?.merchantId || body?.merchantId;
-        outletId = hold?.outletId ?? null;
-        if (merchantId && body?.orderId) {
-          payload = JSON.stringify({
-            merchantId,
-            holdId,
-            orderId: body.orderId,
-            receiptNumber: body?.receiptNumber ?? undefined,
-          });
-        }
-      }
-    } else if (normalizedPath === '/loyalty/refund') {
-      merchantId = merchantId || body?.merchantId;
-      const hasTotals =
-        body?.refundTotal !== undefined && body?.refundTotal !== null;
-      if (merchantId && hasTotals) {
-        let resolvedOrderId: string | null = null;
-        if (typeof body?.orderId === 'string') {
-          const trimmed = body.orderId.trim();
-          if (trimmed) resolvedOrderId = trimmed;
-        }
-        const receiptNumber =
-          typeof body?.receiptNumber === 'string' && body.receiptNumber
-            ? String(body.receiptNumber).trim()
-            : '';
-        if (!resolvedOrderId && receiptNumber) {
-          try {
-            const receipt = await this.prisma.receipt.findFirst({
-              where: { merchantId, receiptNumber },
-              select: { orderId: true, outletId: true },
-            });
-            if (receipt?.orderId) {
-              resolvedOrderId = receipt.orderId;
-              outletId = receipt.outletId ?? null;
-            }
-          } catch {}
-        }
-        if (merchantId && !outletId && resolvedOrderId) {
-          try {
-            const receipt = await this.prisma.receipt.findUnique({
-              where: {
-                merchantId_orderId: { merchantId, orderId: resolvedOrderId },
-              },
-              select: { outletId: true },
-            });
-            outletId = receipt?.outletId ?? outletId ?? null;
-          } catch {}
-        }
-        if (resolvedOrderId) {
-          payload = JSON.stringify({
-            merchantId,
-            invoice_num: resolvedOrderId,
-            order_id: body?.order_id ?? undefined,
-          });
-        }
-      }
-    } else if (normalizedPath === '/loyalty/cancel') {
-      const holdId: string | undefined = body?.holdId;
-      if (holdId) {
-        let hold: { merchantId: string; outletId: string | null } | null = null;
-        try {
-          hold = await this.prisma.hold.findUnique({
-            where: { id: holdId },
-            select: { merchantId: true, outletId: true },
-          });
-        } catch {}
-        outletLocked = true;
-        merchantId = merchantId || hold?.merchantId || body?.merchantId;
-        outletId = hold?.outletId ?? null;
-        if (merchantId) {
-          payload = JSON.stringify({ merchantId, holdId });
-        }
-      } else {
-        merchantId = merchantId || body?.merchantId;
-      }
-    } else if (normalizedPath === '/loyalty/qr') {
-      merchantId = merchantId || body?.merchantId;
-      if (merchantId && body?.customerId) {
-        payload = JSON.stringify({
-          merchantId,
-          customerId: body.customerId,
-        });
-      }
-    }
-
-    if (!outletLocked && outletId === null && body?.outletId !== undefined)
-      outletId = body.outletId ?? null;
-
-    return { merchantId, outletId, payload };
-  }
-
-  private async getBridgeSecrets(
-    merchantId: string,
-    outletId: string | null,
-    settingsHint?: any,
-  ): Promise<{ primary: string | null; secondary: string | null }> {
-    let primary: string | null = null;
-    let secondary: string | null = null;
-
-    if (outletId) {
-      try {
-        const outlet = await this.prisma.outlet.findFirst({
-          where: { id: outletId, merchantId },
-          select: { bridgeSecret: true, bridgeSecretNext: true },
-        });
-        if (outlet) {
-          primary = outlet.bridgeSecret ?? null;
-          secondary = outlet.bridgeSecretNext ?? null;
-        }
-      } catch {}
-    }
-
-    let settings = settingsHint;
-    if (!settings) {
-      try {
-        settings = await this.prisma.merchantSettings.findUnique({
-          where: { merchantId },
-        });
-      } catch {}
-    }
-
-    if (!primary && settings?.bridgeSecret) primary = settings.bridgeSecret;
-    if (!secondary && settings?.bridgeSecretNext)
-      secondary = settings.bridgeSecretNext;
-
-    return { primary, secondary };
-  }
-
-  private verifyWithSecrets(
-    sig: string,
-    payload: string,
-    primary: string | null,
-    secondary: string | null,
-  ): boolean {
-    if (!sig || !payload) return false;
-    if (primary && verifyBridgeSignature(sig, payload, primary)) return true;
-    if (secondary && verifyBridgeSignature(sig, payload, secondary))
-      return true;
-    return false;
-  }
-
-  private async validateBridgeSignature(
-    normalizedPath: string,
-    req: any,
-    merchantIdHint?: string,
-    settingsHint?: any,
-  ): Promise<{
-    ok: boolean;
-    context?: { merchantId?: string; outletId?: string | null };
-  }> {
-    const sig =
-      (req?.headers?.['x-bridge-signature'] as string | undefined) || '';
-    if (!sig) return { ok: false };
-
-    const context = await this.resolveOperationContext(
-      normalizedPath,
-      req,
-      merchantIdHint,
-    );
-    let merchantId = context.merchantId;
-    const outletId = context.outletId ?? null;
-    let payload = context.payload;
-
-    if (!merchantId) {
-      merchantId =
-        merchantIdHint ||
-        req?.body?.merchantId ||
-        req?.params?.merchantId ||
-        req?.query?.merchantId ||
-        undefined;
-    }
-
-    // Для простых QR-запросов и случаев без заранее сформированного payload
-    if (!payload && merchantId && req?.body) {
-      try {
-        payload = JSON.stringify({ ...req.body, merchantId });
-      } catch {
-        payload = null;
-      }
-    }
-
-    if (!merchantId || !payload) return { ok: false, context };
-
-    const { primary, secondary } = await this.getBridgeSecrets(
-      merchantId,
-      outletId,
-      merchantIdHint && merchantIdHint === merchantId
-        ? settingsHint
-        : undefined,
-    );
-
-    if (!primary && !secondary) return { ok: false, context };
-
-    return {
-      ok: this.verifyWithSecrets(sig, payload, primary, secondary),
-      context,
-    };
-  }
-
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
     const body = req.body || {};
@@ -423,19 +180,13 @@ export class CashierGuard implements CanActivate {
     const path: string =
       req?.route?.path || req?.path || req?.originalUrl || '';
     const normalizedPath = this.normalizePath(path || '');
-    const key = (req.headers['x-staff-key'] as string | undefined) || '';
-    const hasBridgeSignature =
-      typeof req.headers['x-bridge-signature'] === 'string' &&
-      req.headers['x-bridge-signature'].length > 0;
     // whitelist публичных GET маршрутов (всегда разрешены): balance, settings, transactions, публичные списки
     const isPublicGet =
       method === 'GET' && path.startsWith('/loyalty/settings/');
     const isAlwaysPublic =
       path === '/loyalty/teleauth' ||
-      path === '/loyalty/cashier/login' ||
       path === '/loyalty/cashier/activate' ||
       path === '/loyalty/cashier/device' ||
-      path === '/loyalty/cashier/staff-token' ||
       path === '/loyalty/cashier/staff-access' ||
       path === '/loyalty/cashier/session';
     if (isPublicGet || isAlwaysPublic) return true;
@@ -452,18 +203,16 @@ export class CashierGuard implements CanActivate {
       staffId: string;
       outletId: string | null;
     } | null = null;
-    if (!key) {
-      try {
-        sessionContext = await this.resolveCashierSession(
-          req,
-          merchantIdFromRequest,
-        );
-      } catch {
-        sessionContext = null;
-      }
-      if (!merchantIdFromRequest && sessionContext) {
-        merchantIdFromRequest = sessionContext.merchantId;
-      }
+    try {
+      sessionContext = await this.resolveCashierSession(
+        req,
+        merchantIdFromRequest,
+      );
+    } catch {
+      sessionContext = null;
+    }
+    if (!merchantIdFromRequest && sessionContext) {
+      merchantIdFromRequest = sessionContext.merchantId;
     }
 
     let merchantSettings: any = null;
@@ -486,132 +235,61 @@ export class CashierGuard implements CanActivate {
     const requiresTelegramCustomer =
       this.requiresTelegramCustomer(normalizedPath);
 
-    if (!key) {
-      if (sessionContext) {
-        const bodyIsObject = body && typeof body === 'object';
-        const requestedOutletIdRaw =
-          (bodyIsObject ? body?.outletId : undefined) ||
-          req?.params?.outletId ||
-          req?.query?.outletId ||
-          undefined;
-        const requestedOutletId =
-          requestedOutletIdRaw != null
-            ? String(requestedOutletIdRaw)
-            : undefined;
-        if (
-          sessionContext.outletId &&
-          requestedOutletId &&
-          requestedOutletId !== sessionContext.outletId
-        ) {
-          return false;
-        }
-        if (
-          bodyIsObject &&
-          body?.staffId != null &&
-          String(body.staffId) !== sessionContext.staffId
-        ) {
-          return false;
-        }
-        if (bodyIsObject) {
-          body.merchantId = sessionContext.merchantId;
-          body.staffId = sessionContext.staffId;
-          if (sessionContext.outletId) {
-            body.outletId = sessionContext.outletId;
-          }
-        }
-        req.cashierSession = sessionContext;
-        return true;
-      }
-      const qrWithInitData =
-        normalizedPath === '/loyalty/qr' &&
-        typeof body?.merchantId === 'string' &&
-        typeof body?.initData === 'string' &&
-        body.initData.trim();
-      if (qrWithInitData) return true;
+    const qrWithInitData =
+      normalizedPath === '/loyalty/qr' &&
+      typeof body?.merchantId === 'string' &&
+      typeof body?.initData === 'string' &&
+      body.initData.trim();
+    if (qrWithInitData) return true;
 
-      if (requiresTelegramCustomer && !teleauthContext) return false;
-      if (requiresTelegramCustomer && teleauthContext) {
-        const requestedCustomerId = this.extractCustomerId(req);
-        if (
-          requestedCustomerId &&
-          requestedCustomerId !== teleauthContext.customerId
-        ) {
-          return false;
-        }
+    if (requiresTelegramCustomer) {
+      if (!teleauthContext) return false;
+      const requestedCustomerId = this.extractCustomerId(req);
+      if (
+        requestedCustomerId &&
+        requestedCustomerId !== teleauthContext.customerId
+      ) {
+        return false;
       }
-
-      if (hasBridgeSignature) {
-        const { ok } = await this.validateBridgeSignature(
-          normalizedPath,
-          req,
-          merchantIdFromRequest,
-          merchantSettings,
-        );
-        if (!ok) return false;
-      }
-
-      if (!sessionContext && !teleauthContext && !hasBridgeSignature) {
-        return Boolean(merchantIdFromRequest);
-      }
-
       return true;
     }
-    const hash = crypto.createHash('sha256').update(key, 'utf8').digest('hex');
-    let merchantIdForStaff = merchantIdFromRequest;
-    let contextForStaff:
-      | { merchantId?: string; outletId?: string | null }
-      | undefined;
-    if (!merchantIdForStaff) {
-      const resolved = await this.resolveOperationContext(
-        normalizedPath,
-        req,
-        undefined,
-      );
-      contextForStaff = resolved;
-      if (resolved.merchantId) merchantIdForStaff = resolved.merchantId;
-    }
-    const staff = await this.prisma.staff.findFirst({
-      where: {
-        merchantId: merchantIdForStaff,
-        apiKeyHash: hash,
-        status: 'ACTIVE',
-      },
-      include: {
-        accesses: { where: { status: 'ACTIVE' }, select: { outletId: true } },
-      },
-    });
-    if (!staff) return false;
-    const requestedOutletIdRaw =
-      body?.outletId ||
-      req?.params?.outletId ||
-      req?.query?.outletId ||
-      undefined;
-    let requestedOutletId =
-      requestedOutletIdRaw != null ? String(requestedOutletIdRaw) : undefined;
-    if (!contextForStaff) {
-      contextForStaff = await this.resolveOperationContext(
-        normalizedPath,
-        req,
-        merchantIdForStaff,
-      );
-    }
-    if (contextForStaff?.outletId) {
-      requestedOutletId = String(contextForStaff.outletId);
-    }
-    if (String(staff.role || '').toUpperCase() === 'CASHIER') {
-      const allowedOutletId: string | undefined =
-        staff.allowedOutletId || undefined;
-      const outletAccesses: string[] = Array.isArray(staff.accesses)
-        ? staff.accesses.map((acc: any) => acc?.outletId).filter(Boolean)
-        : [];
-      if (allowedOutletId) {
-        if (!requestedOutletId) return false;
-        if (allowedOutletId !== requestedOutletId) return false;
-      } else if (outletAccesses.length > 0) {
-        if (!requestedOutletId) return false;
-        if (!outletAccesses.includes(requestedOutletId)) return false;
+
+    if (sessionContext) {
+      const bodyIsObject = body && typeof body === 'object';
+      const requestedOutletIdRaw =
+        (bodyIsObject ? body?.outletId : undefined) ||
+        req?.params?.outletId ||
+        req?.query?.outletId ||
+        undefined;
+      const requestedOutletId =
+        requestedOutletIdRaw != null
+          ? String(requestedOutletIdRaw)
+          : undefined;
+      if (
+        sessionContext.outletId &&
+        requestedOutletId &&
+        requestedOutletId !== sessionContext.outletId
+      ) {
+        return false;
       }
+      if (
+        bodyIsObject &&
+        body?.staffId != null &&
+        String(body.staffId) !== sessionContext.staffId
+      ) {
+        return false;
+      }
+      if (bodyIsObject) {
+        body.merchantId = sessionContext.merchantId;
+        body.staffId = sessionContext.staffId;
+        if (sessionContext.outletId) {
+          body.outletId = sessionContext.outletId;
+        }
+      }
+      req.cashierSession = sessionContext;
+      return true;
     }
-    return true;
+
+    return false;
   }
 }

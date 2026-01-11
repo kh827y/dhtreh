@@ -25,13 +25,6 @@ describe('MerchantsService cashier sessions', () => {
 
     const prisma: any = {
       $transaction: jest.fn(async (ops: any[]) => Promise.all(ops)),
-      merchant: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'M-123',
-          cashierLogin: 'greenmarket-01',
-          cashierPassword9: '123456789',
-        }),
-      },
       staffOutletAccess: {
         findMany: jest.fn().mockResolvedValue([access]),
       },
@@ -67,11 +60,7 @@ describe('MerchantsService cashier sessions', () => {
     const prisma = makePrisma();
     const svc = new MerchantsService(prisma);
 
-    await svc.startCashierSession('GreenMarket-01', '123456789', '1234', false);
-
-    expect(prisma.merchant.findFirst).toHaveBeenCalledWith({
-      where: { cashierLogin: 'greenmarket-01' },
-    });
+    await svc.startCashierSessionByMerchantId('M-123', '1234', false);
 
     const createArgs = prisma.cashierSession.create.mock.calls[0]?.[0];
     expect(createArgs.data.rememberPin).toBe(false);
@@ -85,7 +74,7 @@ describe('MerchantsService cashier sessions', () => {
     const prisma = makePrisma();
     const svc = new MerchantsService(prisma);
 
-    await svc.startCashierSession('GreenMarket-01', '123456789', '1234', true);
+    await svc.startCashierSessionByMerchantId('M-123', '1234', true);
 
     const createArgs = prisma.cashierSession.create.mock.calls[0]?.[0];
     expect(createArgs.data.rememberPin).toBe(true);

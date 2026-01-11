@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -87,8 +88,25 @@ export class CommunicationsController {
   }
 
   @Get('tasks/:id/recipients')
-  recipients(@Req() req: any, @Param('id') id: string) {
-    return this.service.getTaskRecipients(this.merchantId(req), id);
+  recipients(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query() query: { limit?: string; offset?: string },
+  ) {
+    const limit =
+      query.limit === undefined ? undefined : Number(query.limit ?? 0);
+    const offset =
+      query.offset === undefined ? undefined : Number(query.offset ?? 0);
+    if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
+      throw new BadRequestException('Некорректный limit');
+    }
+    if (offset !== undefined && (!Number.isFinite(offset) || offset < 0)) {
+      throw new BadRequestException('Некорректный offset');
+    }
+    return this.service.getTaskRecipients(this.merchantId(req), id, {
+      limit,
+      offset,
+    });
   }
 
   @Get('assets/:id')

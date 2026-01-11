@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -62,13 +63,13 @@ export class CustomerAudiencesController {
     );
   }
 
-  @Post('audiences/:id/archive')
-  archiveAudience(@Req() req: any, @Param('id') id: string) {
-    return this.service.archiveSegment(this.merchantId(req), id);
-  }
-
   @Post('audiences/:id/refresh')
   refreshAudience(@Req() req: any, @Param('id') id: string) {
     return this.service.refreshSegmentMetrics(this.merchantId(req), id);
+  }
+
+  @Delete('audiences/:id')
+  deleteAudience(@Req() req: any, @Param('id') id: string) {
+    return this.service.deleteSegment(this.merchantId(req), id);
   }
 }

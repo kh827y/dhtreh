@@ -87,10 +87,10 @@ export async function impersonatePortal(merchantId: string): Promise<{ token: st
 }
 
 // Cashier credentials
-export async function getCashier(merchantId: string): Promise<{ login: string|null; hasPassword: boolean }> {
+export async function getCashier(merchantId: string): Promise<{ login: string|null }> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/cashier`);
 }
-export async function rotateCashier(merchantId: string, regenerateLogin?: boolean): Promise<{ login: string; password: string }> {
+export async function rotateCashier(merchantId: string, regenerateLogin?: boolean): Promise<{ login: string }> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/cashier/rotate`, { method: 'POST', body: JSON.stringify({ regenerateLogin: !!regenerateLogin }) });
 }
 

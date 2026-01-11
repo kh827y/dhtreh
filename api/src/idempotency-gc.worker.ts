@@ -23,7 +23,11 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
     const intervalMs = Number(
       process.env.IDEMPOTENCY_GC_INTERVAL_MS || '60000',
     );
-    this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    this.timer = setInterval(() => {
+      this.tick().catch((error) => {
+        this.logger.error('IdempotencyGcWorker tick failed', error as Error);
+      });
+    }, intervalMs);
     try {
       if (this.timer && typeof this.timer.unref === 'function')
         this.timer.unref();
@@ -55,6 +59,8 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
           ],
         },
       });
+    } catch (error) {
+      this.logger.error('IdempotencyGcWorker tick error', error as Error);
     } finally {
       this.running = false;
       await pgAdvisoryUnlock(this.prisma, lock.key);

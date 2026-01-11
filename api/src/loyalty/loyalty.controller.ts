@@ -61,7 +61,6 @@ import {
 } from '../guards/subscription.guard';
 import type { Request, Response } from 'express';
 import { createHmac } from 'crypto';
-import { verifyBridgeSignature as verifyBridgeSigUtil } from './bridge.util';
 import { validateTelegramInitData } from './telegram.util';
 import { PromoCodesService } from '../promocodes/promocodes.service';
 import { ReviewService } from '../reviews/review.service';
@@ -1074,7 +1073,15 @@ export class LoyaltyController {
   // Plain ID, 9-digit short code, or JWT
   private async resolveFromToken(userToken: string) {
     if (looksLikeJwt(userToken)) {
-      const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
+      const envSecret = process.env.QR_JWT_SECRET || '';
+      if (
+        !envSecret ||
+        (process.env.NODE_ENV === 'production' &&
+          envSecret === 'dev_change_me')
+      ) {
+        throw new BadRequestException('QR_JWT_SECRET not configured');
+      }
+      const secret = envSecret;
       try {
         const v = await verifyQrToken(secret, userToken);
         return { ...v, kind: 'jwt' as const };
@@ -1394,29 +1401,6 @@ export class LoyaltyController {
   }
 
   // ===== Cashier Auth (public) =====
-  @Post('cashier/login')
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @ApiOkResponse({
-    schema: {
-      type: 'object',
-      properties: { ok: { type: 'boolean' }, merchantId: { type: 'string' } },
-    },
-  })
-  async cashierLogin(
-    @Body() body: { merchantLogin?: string; password9?: string },
-  ) {
-    const merchantLogin = String(body?.merchantLogin || '');
-    const password9 = String(body?.password9 || '');
-    if (!merchantLogin || !password9 || password9.length !== 9)
-      throw new BadRequestException(
-        'merchantLogin and 9-digit password required',
-      );
-    const r = await this.merchants.authenticateCashier(
-      merchantLogin,
-      password9,
-    );
-    return { ok: true, merchantId: r.merchantId } as any;
-  }
 
   @Post('cashier/activate')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
@@ -1507,41 +1491,6 @@ export class LoyaltyController {
     }
     this.clearCashierDeviceCookie(res);
     return { ok: true };
-  }
-  @Post('cashier/staff-token')
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @ApiOkResponse({
-    schema: { type: 'object', properties: { token: { type: 'string' } } },
-  })
-  async cashierStaffToken(
-    @Body()
-    body: {
-      merchantLogin?: string;
-      password9?: string;
-      staffIdOrLogin?: string;
-      outletId?: string;
-      pinCode?: string;
-    },
-  ) {
-    const merchantLogin = String(body?.merchantLogin || '');
-    const password9 = String(body?.password9 || '');
-    const staffIdOrLogin =
-      body?.staffIdOrLogin != null ? String(body.staffIdOrLogin) : '';
-    const outletId = String(body?.outletId || '');
-    const pinCode = String(body?.pinCode || '');
-    if (!merchantLogin || !password9 || password9.length !== 9)
-      throw new BadRequestException(
-        'merchantLogin and 9-digit password required',
-      );
-    if (!outletId) throw new BadRequestException('outletId required');
-    if (!pinCode) throw new BadRequestException('pinCode required');
-    return this.merchants.issueStaffTokenByPin(
-      merchantLogin,
-      password9,
-      staffIdOrLogin,
-      outletId,
-      pinCode,
-    );
   }
   @Post('cashier/staff-access')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
@@ -1921,171 +1870,109 @@ export class LoyaltyController {
     return this.service.outletTransactions(merchantId, outletId, limit, before);
   }
 
-  private async verifyStaffKey(
-    merchantId: string,
-    key: string,
-  ): Promise<boolean> {
-    if (!key) return false;
-    try {
-      const crypto = require('crypto');
-      const hash = crypto
-        .createHash('sha256')
-        .update(key, 'utf8')
-        .digest('hex');
-      const staff = await this.prisma.staff.findFirst({
-        where: {
-          merchantId,
-          apiKeyHash: hash,
-          status: 'ACTIVE',
-        },
-      });
-      return !!staff;
-    } catch {
-      return false;
-    }
-  }
-
-  private async enforceRequireStaffKey(
-    merchantId: string,
-    req: Request,
-  ): Promise<void> {
-    const settings = await this.prisma.merchantSettings.findUnique({
-      where: { merchantId },
-    });
-    if (!settings?.requireStaffKey) return;
-
-    const staffKey = req.headers['x-staff-key'] as string | undefined;
-    const bridgeSig = req.headers['x-bridge-signature'] as string | undefined;
-
-    // Для кассы staff-key необязателен; если передан — валидируем, иначе пропускаем
-    if (staffKey) {
-      const valid = await this.verifyStaffKey(merchantId, staffKey);
-      if (!valid) throw new UnauthorizedException('Invalid staff key');
-    }
-    // Bridge-подпись для интеграций; в кассе не требуем, но если пришла — проверяем валидность ниже по коду
-    if (!staffKey && bridgeSig) {
-      // в этом методе не валидируем подпись, проверка выполняется в конкретных хендлерах при наличии заголовка
-      return;
-    }
-  }
-
   @Post('qr')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @ApiHeader({
-    name: 'X-Bridge-Signature',
-    required: false,
-    description: 'Bridge signature (if requireBridgeSig enabled)',
-  })
-  @ApiHeader({
-    name: 'X-Staff-Key',
-    required: false,
-    description: 'Staff API key',
-  })
   @ApiOkResponse({ type: QrMintRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiBadRequestResponse({ type: ErrorDto })
   async mintQr(@Body() dto: QrMintDto, @Req() req: Request) {
-    // Optional authentication signals: teleauth or staff key or bridge signature; enforce only if merchant requires
-    const hasTeleauth = !!(req as any).teleauth?.customerId;
-    const hasInitData =
-      typeof dto.initData === 'string' && dto.initData.trim().length > 0;
-    const hasAuth = hasTeleauth || hasInitData;
-    const staffKey = req.headers['x-staff-key'] as string | undefined;
-    const bridgeSig = req.headers['x-bridge-signature'] as string | undefined;
     const merchantId =
       typeof dto.merchantId === 'string' ? dto.merchantId.trim() : '';
     if (!merchantId) throw new BadRequestException('merchantId required');
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
     });
-
-    // Verify staff key if provided
-    if (staffKey && !hasAuth) {
-      const valid = await this.verifyStaffKey(merchantId, staffKey);
-      if (!valid) throw new UnauthorizedException('Invalid staff key');
+    const teleauthCustomerId = (req as any).teleauth?.customerId || null;
+    let customerId =
+      typeof dto.customerId === 'string' ? dto.customerId.trim() : '';
+    if (!customerId && teleauthCustomerId) {
+      customerId = String(teleauthCustomerId);
     }
 
-    // If merchant requires Bridge signature for QR minting, enforce it
-    if (!hasAuth && !staffKey && dto.customerId) {
-      if (settings?.requireBridgeSig) {
-        if (!bridgeSig)
-          throw new UnauthorizedException('X-Bridge-Signature required');
-        const bodyForSig = JSON.stringify({
-          merchantId,
-          customerId: dto.customerId,
-        });
-        let verified = false;
-        if (
-          settings.bridgeSecret &&
-          verifyBridgeSigUtil(bridgeSig, bodyForSig, settings.bridgeSecret)
-        )
-          verified = true;
-        else if (
-          (settings as any)?.bridgeSecretNext &&
-          verifyBridgeSigUtil(
-            bridgeSig,
-            bodyForSig,
-            (settings as any).bridgeSecretNext,
-          )
-        )
-          verified = true;
-        if (!verified)
-          throw new UnauthorizedException('Invalid bridge signature');
-      }
-    }
-
-    // Если указаны merchantId и initData — валидируем Telegram initData токеном мерчанта
-    const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
+    // Если передан initData — валидируем и берём customerId из Telegram
     if (dto.initData) {
-      const botToken =
-        (settings as any)?.telegramBotToken ||
-        process.env.TELEGRAM_BOT_TOKEN ||
-        '';
+      const botToken = (settings as any)?.telegramBotToken || '';
       if (!botToken) throw new BadRequestException('Bot token not configured');
       const r = validateTelegramInitData(botToken, dto.initData);
-      if (!r.ok) throw new BadRequestException('Invalid initData');
-      // опционально: если включено требование start_param, проверим соответствие merchantId
+      if (!r.ok || !r.userId) throw new BadRequestException('Invalid initData');
       if ((settings as any)?.telegramStartParamRequired) {
-        try {
-          const p = new URLSearchParams(dto.initData);
-          const sp = p.get('start_param') || p.get('startapp') || '';
-          if (sp && sp !== merchantId)
+        const p = new URLSearchParams(dto.initData);
+        const sp = p.get('start_param') || p.get('startapp') || '';
+        if (!sp) {
+          throw new BadRequestException('start_param required');
+        }
+        const parts = sp.split('.');
+        const looksLikeJwt =
+          parts.length === 3 &&
+          parts.every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
+        if (looksLikeJwt) {
+          const secret = process.env.TMA_LINK_SECRET || '';
+          if (!secret)
+            throw new BadRequestException(
+              'Server misconfigured: TMA_LINK_SECRET not set',
+            );
+          const [h, pld, sig] = parts;
+          const data = `${h}.${pld}`;
+          const expected = createHmac('sha256', secret)
+            .update(data)
+            .digest('base64')
+            .replace(/=/g, '')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_');
+          if (expected !== sig) {
+            throw new BadRequestException('Invalid start_param signature');
+          }
+          const json = JSON.parse(
+            Buffer.from(
+              pld.replace(/-/g, '+').replace(/_/g, '/'),
+              'base64',
+            ).toString('utf8'),
+          );
+          const claimedMerchant =
+            typeof json?.merchantId === 'string' ? json.merchantId : '';
+          if (claimedMerchant && claimedMerchant !== merchantId) {
             throw new BadRequestException(
               'merchantId mismatch with start_param',
             );
-        } catch {}
+          }
+        } else if (sp !== merchantId) {
+          throw new BadRequestException('merchantId mismatch with start_param');
+        }
       }
-    } else {
-      // Нет initData: допускаем только если у мерчанта явно НЕ требуется staff key
-      const requireStaffKey = Boolean(settings?.requireStaffKey);
-      if (requireStaffKey) {
-        // Guard заблокирует без X-Staff-Key; здесь оставим явную проверку для ясности ответов
-        throw new BadRequestException('Staff key required');
-      }
+      const tgId = String(r.userId);
+      const ensured = await this.ensureCustomerByTelegram(
+        merchantId,
+        tgId,
+        dto.initData,
+      );
+      customerId = ensured.customerId;
     }
+
+    if (!customerId) {
+      throw new BadRequestException('customerId required');
+    }
+
+    const envSecret = process.env.QR_JWT_SECRET || '';
+    if (
+      !envSecret ||
+      (process.env.NODE_ENV === 'production' && envSecret === 'dev_change_me')
+    ) {
+      throw new BadRequestException('QR_JWT_SECRET not configured');
+    }
+    const secret = envSecret;
 
     let ttl = dto.ttlSec ?? 300;
     if (!dto.ttlSec && settings?.qrTtlSec) ttl = settings.qrTtlSec;
-    await this.ensureCustomer(merchantId, dto.customerId);
+    await this.ensureCustomer(merchantId, customerId);
     const requireJwtForQuote = Boolean(settings?.requireJwtForQuote);
     const token = requireJwtForQuote
-      ? await signQrToken(secret, dto.customerId, merchantId, ttl)
-      : await this.mintShortCode(merchantId, dto.customerId, ttl);
+      ? await signQrToken(secret, customerId, merchantId, ttl)
+      : await this.mintShortCode(merchantId, customerId, ttl);
     return { token, ttl };
   }
 
   @Post('quote')
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
-  @ApiHeader({
-    name: 'X-Staff-Key',
-    required: false,
-    description: 'Ключ кассира (если включено requireStaffKey)',
-  })
-  @ApiHeader({
-    name: 'X-Bridge-Signature',
-    required: false,
-    description: 'Подпись Bridge (если включено requireBridgeSig)',
-  })
   @ApiOkResponse({
     schema: {
       oneOf: [
@@ -2129,28 +2016,7 @@ export class LoyaltyController {
         });
         throw new BadRequestException('QR выписан для другого мерчанта');
       }
-      // атрибуция staffId по x-staff-key, если не передан явно
-      let staffId = dto.staffId;
-      if (!staffId) {
-        const key =
-          (req.headers['x-staff-key'] as string | undefined) || undefined;
-        if (key) {
-          try {
-            const hash = require('crypto')
-              .createHash('sha256')
-              .update(key, 'utf8')
-              .digest('hex');
-            const staff = await this.prisma.staff.findFirst({
-              where: {
-                merchantId: dto.merchantId,
-                apiKeyHash: hash,
-                status: 'ACTIVE',
-              },
-            });
-            if (staff) staffId = staff.id;
-          } catch {}
-        }
-      }
+      const staffId = dto.staffId;
       const outlet = await this.resolveOutlet(
         dto.merchantId,
         dto.outletId ?? null,
@@ -2159,24 +2025,6 @@ export class LoyaltyController {
         v.kind === 'jwt' || v.kind === 'short'
           ? { jti: v.jti, iat: v.iat, exp: v.exp, kind: v.kind }
           : undefined;
-      // проверка подписи Bridge при необходимости
-      if (s?.requireBridgeSig) {
-        const sig =
-          (req.headers['x-bridge-signature'] as string | undefined) || '';
-        if (sig) {
-          let secret: string | null = outlet?.bridgeSecret ?? null;
-          let alt: string | null = outlet?.bridgeSecretNext ?? null;
-          if (!secret && !alt) {
-            secret = s?.bridgeSecret || null;
-            alt = (s as any)?.bridgeSecretNext || null;
-          }
-          const bodyForSig = JSON.stringify(dto);
-          let ok = false;
-          if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
-          else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
-          if (!ok) throw new UnauthorizedException('Invalid bridge signature');
-        }
-      }
       // Расчёт quote без внешних промо-скидок (используем исходные суммы)
       const adjTotal = Math.max(0, Math.floor(dto.total));
       const normalizedOutletId = dto.outletId ?? outlet?.id ?? undefined;
@@ -2211,11 +2059,6 @@ export class LoyaltyController {
     required: false,
     description: 'Идемпотентность COMMIT',
   })
-  @ApiHeader({
-    name: 'X-Bridge-Signature',
-    required: false,
-    description: 'Подпись Bridge (если включено requireBridgeSig)',
-  })
   @ApiOkResponse({ type: CommitRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiBadRequestResponse({ type: ErrorDto })
@@ -2234,14 +2077,6 @@ export class LoyaltyController {
       });
     } catch {}
     const merchantIdEff = dto.merchantId || holdCached?.merchantId;
-    // staff-key больше не требуется для кассы; проверяем только при явном заголовке
-    if (merchantIdEff) {
-      const staffKeyHeader = req.headers['x-staff-key'] as string | undefined;
-      if (staffKeyHeader) {
-        const valid = await this.verifyStaffKey(merchantIdEff, staffKeyHeader);
-        if (!valid) throw new UnauthorizedException('Invalid staff key');
-      }
-    }
 
     let customerId: string | null = null;
     if (holdCached?.customerId && merchantIdEff) {
@@ -2251,40 +2086,6 @@ export class LoyaltyController {
       );
       customerId = customer.id;
     }
-    // проверка подписи Bridge до выполнения, с учётом outlet из hold
-    try {
-      const s = merchantIdEff
-        ? await this.prisma.merchantSettings.findUnique({
-            where: { merchantId: merchantIdEff },
-          })
-        : null;
-      if (s?.requireBridgeSig) {
-        const sig =
-          (req.headers['x-bridge-signature'] as string | undefined) || '';
-        if (sig) {
-          const outlet = await this.resolveOutlet(
-            merchantIdEff,
-            holdCached?.outletId ?? null,
-          );
-          let secret: string | null = outlet?.bridgeSecret ?? null;
-          let alt: string | null = outlet?.bridgeSecretNext ?? null;
-          if (!secret && !alt) {
-            secret = s?.bridgeSecret || null;
-            alt = (s as any)?.bridgeSecretNext || null;
-          }
-          const bodyForSig = JSON.stringify({
-            merchantId: merchantIdEff,
-            holdId: dto.holdId,
-            orderId: dto.orderId,
-            receiptNumber: dto.receiptNumber ?? undefined,
-          });
-          let ok = false;
-          if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
-          else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
-          if (!ok) throw new UnauthorizedException('Invalid bridge signature');
-        }
-      }
-    } catch {}
     try {
       const idemKey =
         (req.headers['idempotency-key'] as string | undefined) || undefined;
@@ -2393,17 +2194,6 @@ export class LoyaltyController {
   @ApiOkResponse({ type: OkDto })
   async cancel(@Body('holdId') holdId: string, @Req() req: Request) {
     if (!holdId) throw new BadRequestException('holdId required');
-    try {
-      const hold = await this.prisma.hold.findUnique({ where: { id: holdId } });
-      const merchantId = hold?.merchantId;
-      if (merchantId) {
-        const staffKeyHeader = req.headers['x-staff-key'] as string | undefined;
-        if (staffKeyHeader) {
-          const valid = await this.verifyStaffKey(merchantId, staffKeyHeader);
-          if (!valid) throw new UnauthorizedException('Invalid staff key');
-        }
-      }
-    } catch {}
     return this.service.cancel(holdId);
   }
 
@@ -2502,11 +2292,6 @@ export class LoyaltyController {
     required: false,
     description: 'Идемпотентность REFUND',
   })
-  @ApiHeader({
-    name: 'X-Bridge-Signature',
-    required: false,
-    description: 'Подпись Bridge (если включено requireBridgeSig)',
-  })
   @ApiOkResponse({ type: RefundRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiBadRequestResponse({ type: ErrorDto })
@@ -2541,15 +2326,21 @@ export class LoyaltyController {
       if (!receiptNumber) {
         throw new BadRequestException('invoice_num или order_id обязательны');
       }
-      const receipt = await this.prisma.receipt.findFirst({
+      const receipts = await this.prisma.receipt.findMany({
         where: { merchantId, receiptNumber },
         select: { orderId: true, id: true },
+        take: 2,
       });
-      if (!receipt?.orderId) {
+      if (receipts.length === 0 || !receipts[0]?.orderId) {
         throw new BadRequestException('Receipt not found');
       }
-      invoiceNum = receipt.orderId;
-      orderId = receipt.id ?? '';
+      if (receipts.length > 1) {
+        throw new BadRequestException(
+          'Multiple receipts found for receiptNumber',
+        );
+      }
+      invoiceNum = receipts[0].orderId;
+      orderId = receipts[0].id ?? '';
     }
     let operationDate: Date | null = null;
     if (dto.operationDate) {
@@ -2562,54 +2353,8 @@ export class LoyaltyController {
     (dto as any).merchantId = merchantId;
     (dto as any).invoice_num = invoiceNum;
     (dto as any).order_id = orderId;
-    const staffKeyHeader = req.headers['x-staff-key'] as string | undefined;
-    if (staffKeyHeader) {
-      const valid = await this.verifyStaffKey(merchantId, staffKeyHeader);
-      if (!valid) throw new UnauthorizedException('Invalid staff key');
-    }
     let customerId: string | null = null;
     let data: any;
-    // проверка подписи Bridge до выполнения
-    try {
-      const s = await this.prisma.merchantSettings.findUnique({
-        where: { merchantId },
-      });
-      if (s?.requireBridgeSig) {
-        const sig =
-          (req.headers['x-bridge-signature'] as string | undefined) || '';
-        if (sig) {
-          let receiptOutletId: string | null = null;
-          try {
-            const rcp = await this.prisma.receipt.findUnique({
-              where: {
-                merchantId_orderId: {
-                  merchantId,
-                  orderId,
-                },
-              },
-              select: { outletId: true },
-            });
-            receiptOutletId = rcp?.outletId ?? null;
-          } catch {}
-          const outlet = await this.resolveOutlet(merchantId, receiptOutletId);
-          let secret: string | null = outlet?.bridgeSecret ?? null;
-          let alt: string | null = outlet?.bridgeSecretNext ?? null;
-          if (!secret && !alt) {
-            secret = s?.bridgeSecret || null;
-            alt = (s as any)?.bridgeSecretNext || null;
-          }
-          const bodyForSig = JSON.stringify({
-            merchantId,
-            invoice_num: invoiceNum,
-            order_id: orderId || undefined,
-          });
-          let ok = false;
-          if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
-          else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
-          if (!ok) throw new UnauthorizedException('Invalid bridge signature');
-        }
-      }
-    } catch {}
     try {
       const idemKey =
         (req.headers['idempotency-key'] as string | undefined) || undefined;
@@ -2735,85 +2480,69 @@ export class LoyaltyController {
   @Post('teleauth')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async teleauth(@Body() body: { merchantId?: string; initData?: string }) {
-    const merchantId = body?.merchantId;
+    const merchantId =
+      typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
     const initData = body?.initData || '';
-    if (!initData) throw new BadRequestException('initData is required');
-    // определяем токен бота: из настроек мерчанта или глобальный (dev)
-    let token = process.env.TELEGRAM_BOT_TOKEN || '';
-    let startParamRequired = false;
-    if (merchantId) {
-      try {
-        const s = await this.prisma.merchantSettings.findUnique({
-          where: { merchantId },
-        });
-        if (s && (s as any).telegramBotToken)
-          token = (s as any).telegramBotToken as string;
-        // если включено требование start_param — сверим merchantId с deep-link параметром
-        startParamRequired = Boolean((s as any)?.telegramStartParamRequired);
-        if (startParamRequired) {
-          try {
-            const p = new URLSearchParams(initData);
-            const sp = p.get('start_param') || p.get('startapp') || '';
-            if (sp && sp !== merchantId)
-              throw new BadRequestException(
-                'merchantId mismatch with start_param',
-              );
-          } catch {}
-        }
-      } catch {}
-    }
-    if (!token) throw new BadRequestException('Bot token not configured');
-    const r = validateTelegramInitData(token, initData || '');
-    if (!r.ok || !r.userId) throw new BadRequestException('Invalid initData');
-    // Validate optional signed start_param (JWT-like HS256) when present
-    try {
-      const p = new URLSearchParams(initData);
-      const sp = p.get('start_param') || p.get('startapp') || '';
-      if (sp) {
-        const parts = sp.split('.');
-        const looksLikeJwt =
-          parts.length === 3 &&
-          parts.every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
-        if (looksLikeJwt) {
-          const secret = process.env.TMA_LINK_SECRET || '';
-          if (!secret)
-            throw new BadRequestException(
-              'Server misconfigured: TMA_LINK_SECRET not set',
-            );
-          const [h, pld, sig] = parts;
-          const data = `${h}.${pld}`;
-          const expected = createHmac('sha256', secret)
-            .update(data)
-            .digest('base64')
-            .replace(/=/g, '')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_');
-          if (expected !== sig)
-            throw new BadRequestException('Invalid start_param signature');
-          const json = JSON.parse(
-            Buffer.from(
-              pld.replace(/-/g, '+').replace(/_/g, '/'),
-              'base64',
-            ).toString('utf8'),
-          );
-          const claimedMerchant =
-            typeof json?.merchantId === 'string' ? json.merchantId : '';
-          if (merchantId && claimedMerchant && claimedMerchant !== merchantId) {
-            throw new BadRequestException(
-              'merchantId mismatch with start_param',
-            );
-          }
-        }
-      }
-    } catch (e) {
-      if (e instanceof BadRequestException) throw e;
-      // ignore malformed start_param
-    }
-    // Customer теперь per-merchant модель
-    const tgId = String(r.userId);
     if (!merchantId) {
       throw new BadRequestException('merchantId required');
     }
+    if (!initData) throw new BadRequestException('initData is required');
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { telegramBotToken: true, telegramStartParamRequired: true },
+    });
+    const token =
+      typeof settings?.telegramBotToken === 'string'
+        ? settings.telegramBotToken.trim()
+        : '';
+    if (!token) throw new BadRequestException('Bot token not configured');
+    const startParamRequired = Boolean(settings?.telegramStartParamRequired);
+    const params = new URLSearchParams(initData);
+    const startParam = params.get('start_param') || params.get('startapp') || '';
+    const looksLikeJwt =
+      !!startParam &&
+      startParam.split('.').length === 3 &&
+      startParam.split('.').every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
+    if (startParamRequired) {
+      if (!startParam) {
+        throw new BadRequestException('start_param is required');
+      }
+      if (looksLikeJwt) {
+        const secret = process.env.TMA_LINK_SECRET || '';
+        if (!secret)
+          throw new BadRequestException(
+            'Server misconfigured: TMA_LINK_SECRET not set',
+          );
+        const [h, pld, sig] = startParam.split('.');
+        const data = `${h}.${pld}`;
+        const expected = createHmac('sha256', secret)
+          .update(data)
+          .digest('base64')
+          .replace(/=/g, '')
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_');
+        if (expected !== sig)
+          throw new BadRequestException('Invalid start_param signature');
+        const json = JSON.parse(
+          Buffer.from(pld.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString(
+            'utf8',
+          ),
+        );
+        const claimedMerchant =
+          typeof json?.merchantId === 'string' ? json.merchantId : '';
+        if (claimedMerchant && claimedMerchant !== merchantId) {
+          throw new BadRequestException(
+            'merchantId mismatch with start_param',
+          );
+        }
+      } else if (startParam !== merchantId) {
+        throw new BadRequestException('merchantId mismatch with start_param');
+      }
+    }
+    const r = validateTelegramInitData(token, initData || '');
+    if (!r.ok || !r.userId) throw new BadRequestException('Invalid initData');
+    // Customer теперь per-merchant модель
+    const tgId = String(r.userId);
 
     // Ищем или создаём Customer по tgId для данного мерчанта
     let customer = await this.prisma.customer.findUnique({

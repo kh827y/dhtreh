@@ -302,8 +302,6 @@ model Merchant {
   portalLastLoginAt           DateTime?
   // Cashier credentials (admin-managed)
   cashierLogin                String?                      @unique
-  cashierPassword9            String?
-  cashierPasswordUpdatedAt    DateTime?
   archivedAt                  DateTime?
 }
 

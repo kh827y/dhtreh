@@ -125,10 +125,6 @@ export class MerchantsService {
     }
     return `${slug}${this.letterSuffix(Math.floor(Math.random() * 1000) + 260)}`;
   }
-  private random9(): string {
-    return this.randomDigitsSecure(9);
-  }
-
   private randomDigitsSecure(length: number): string {
     const crypto = require('crypto');
     const len = Math.max(1, Math.min(64, Math.floor(Number(length) || 0)));
@@ -167,13 +163,11 @@ export class MerchantsService {
   async getCashierCredentials(merchantId: string) {
     const m = await this.prisma.merchant.findUnique({
       where: { id: merchantId },
-      select: { cashierLogin: true, cashierPassword9: true },
+      select: { cashierLogin: true },
     });
     if (!m) throw new NotFoundException('Merchant not found');
     return {
       login: m.cashierLogin || null,
-      password: m.cashierPassword9 || null,
-      hasPassword: !!m.cashierPassword9,
     } as any;
   }
   async rotateCashierCredentials(
@@ -191,20 +185,11 @@ export class MerchantsService {
         this.slugify(m.name || 'merchant'),
       );
     }
-    const password = this.random9();
     await this.prisma.merchant.update({
       where: { id: merchantId },
-      data: { cashierLogin: login, cashierPassword9: password },
+      data: { cashierLogin: login },
     });
-    return { login, password } as any;
-  }
-  async authenticateCashier(merchantLogin: string, password9: string) {
-    const m = await this.prisma.merchant.findFirst({
-      where: { cashierLogin: merchantLogin },
-    });
-    if (!m || !m.cashierPassword9 || m.cashierPassword9 !== password9)
-      throw new UnauthorizedException('Invalid cashier credentials');
-    return { merchantId: m.id } as any;
+    return { login } as any;
   }
 
   async issueCashierActivationCodes(merchantId: string, count: number) {
@@ -507,61 +492,6 @@ export class MerchantsService {
 
     return this.createCashierSessionRecord(mid, staff, access, rememberPin, context);
   }
-  async issueStaffTokenByPin(
-    merchantLogin: string,
-    password9: string,
-    staffIdOrLogin: string,
-    outletId: string,
-    pinCode: string,
-  ) {
-    const auth = await this.authenticateCashier(merchantLogin, password9);
-    const merchantId = auth.merchantId;
-    const searchValue = String(staffIdOrLogin || '').trim();
-    let staffRecord: Staff | null = searchValue
-      ? await this.prisma.staff.findFirst({
-          where: {
-            merchantId,
-            OR: [{ id: searchValue }, { login: searchValue }],
-          },
-        })
-      : null;
-
-    let access = null as any;
-    if (staffRecord) {
-      access = await this.prisma.staffOutletAccess.findUnique({
-        where: {
-          merchantId_staffId_outletId: {
-            merchantId,
-            staffId: staffRecord.id,
-            outletId,
-          },
-        },
-      });
-      if (
-        !access ||
-        access.pinCode !== pinCode ||
-        access.status !== StaffOutletAccessStatus.ACTIVE
-      ) {
-        throw new UnauthorizedException('Invalid PIN or outlet access');
-      }
-    } else {
-      const resolved = await this.resolveActiveAccessByPin(merchantId, pinCode);
-      access = resolved.access;
-      staffRecord = resolved.staff;
-      if (access.outletId !== outletId) {
-        throw new UnauthorizedException('PIN assigned to another outlet');
-      }
-    }
-
-    if (!access || !staffRecord || staffRecord.merchantId !== merchantId) {
-      throw new NotFoundException('Staff not found');
-    }
-    if (staffRecord.status && staffRecord.status !== StaffStatus.ACTIVE) {
-      throw new UnauthorizedException('Staff inactive');
-    }
-
-    return this.issueStaffToken(merchantId, staffRecord.id);
-  }
   private ajv: {
     validate: (schema: any, data: any) => boolean;
     errorsText: (errs?: any, opts?: any) => string;
@@ -781,12 +711,13 @@ export class MerchantsService {
     // JSON Schema валидация правил (если переданы) — выполняем до любых DB операций
     this.validateRules(normalizedRulesJson);
 
-    // убедимся, что мерчант есть
-    await this.prisma.merchant.upsert({
+    const merchant = await this.prisma.merchant.findUnique({
       where: { id: merchantId },
-      update: {},
-      create: { id: merchantId, name: merchantId, initialName: merchantId },
+      select: { id: true },
     });
+    if (!merchant) {
+      throw new NotFoundException('Merchant not found');
+    }
 
     const updateData: Prisma.MerchantSettingsUpdateInput = {
       qrTtlSec: qrTtlSec ?? undefined,
@@ -1833,9 +1764,10 @@ export class MerchantsService {
     const until = untilISO
       ? new Date(untilISO)
       : new Date(Date.now() + Math.max(1, minutes || 60) * 60 * 1000);
-    await this.prisma.merchantSettings.update({
+    await this.prisma.merchantSettings.upsert({
       where: { merchantId },
-      data: { outboxPausedUntil: until, updatedAt: new Date() },
+      update: { outboxPausedUntil: until, updatedAt: new Date() },
+      create: { merchantId, outboxPausedUntil: until, updatedAt: new Date() },
     });
     // Отложим текущие pending, чтобы worker их не схватил ранее
     await this.prisma.eventOutbox.updateMany({
@@ -1848,9 +1780,10 @@ export class MerchantsService {
     return { ok: true, until: until.toISOString() };
   }
   async resumeOutbox(merchantId: string) {
-    await this.prisma.merchantSettings.update({
+    await this.prisma.merchantSettings.upsert({
       where: { merchantId },
-      data: { outboxPausedUntil: null, updatedAt: new Date() },
+      update: { outboxPausedUntil: null, updatedAt: new Date() },
+      create: { merchantId, outboxPausedUntil: null, updatedAt: new Date() },
     });
     await this.prisma.eventOutbox.updateMany({
       where: { merchantId, status: 'PENDING' },
@@ -2033,53 +1966,6 @@ export class MerchantsService {
         rememberPin: !!rememberPin,
       },
     };
-  }
-
-  async startCashierSession(
-    merchantLogin: string,
-    password9: string,
-    pinCode: string,
-    rememberPin?: boolean,
-    context?: { ip?: string | null; userAgent?: string | null },
-  ) {
-    const normalizedLogin = String(merchantLogin || '')
-      .trim()
-      .toLowerCase();
-    const normalizedPassword = String(password9 || '').trim();
-    if (
-      !normalizedLogin ||
-      !normalizedPassword ||
-      normalizedPassword.length !== 9
-    )
-      throw new BadRequestException(
-        'merchantLogin and 9-digit password required',
-      );
-    const normalizedPin = String(pinCode || '').trim();
-    if (!normalizedPin || normalizedPin.length !== 4)
-      throw new BadRequestException('pinCode (4 digits) required');
-
-    const auth = await this.authenticateCashier(
-      normalizedLogin,
-      normalizedPassword,
-    );
-    const merchantId = auth.merchantId;
-    const { access, staff } = await this.resolveActiveAccessByPin(
-      merchantId,
-      normalizedPin,
-    );
-    if (!access.outletId)
-      throw new BadRequestException('Outlet for PIN access not found');
-
-    return this.createCashierSessionRecord(
-      merchantId,
-      staff,
-      { id: access.id, outletId: access.outletId },
-      rememberPin,
-      context,
-      {
-        merchantLogin: normalizedLogin,
-      } as Prisma.InputJsonValue,
-    );
   }
 
   async getCashierSessionByToken(token: string) {

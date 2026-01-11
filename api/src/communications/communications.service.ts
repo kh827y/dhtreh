@@ -474,11 +474,23 @@ export class CommunicationsService {
     return { ok: true };
   }
 
-  async getTaskRecipients(merchantId: string, taskId: string) {
+  async getTaskRecipients(
+    merchantId: string,
+    taskId: string,
+    options?: { limit?: number; offset?: number },
+  ) {
     await this.findOwnedTask(merchantId, taskId);
+    const limit =
+      options?.limit !== undefined
+        ? Math.min(Math.max(options.limit, 1), 500)
+        : undefined;
+    const offset =
+      options?.offset !== undefined ? Math.max(options.offset, 0) : undefined;
     const recipients = await this.prisma.communicationTaskRecipient.findMany({
       where: { taskId },
       orderBy: { createdAt: 'desc' },
+      ...(limit ? { take: limit } : {}),
+      ...(offset ? { skip: offset } : {}),
     });
     try {
       this.logger.log(
@@ -487,6 +499,8 @@ export class CommunicationsService {
           merchantId,
           taskId,
           total: recipients.length,
+          limit: limit ?? null,
+          offset: offset ?? null,
         }),
       );
       this.metrics.inc('portal_communications_task_recipients_total');
@@ -531,7 +545,7 @@ export class CommunicationsService {
   ): Prisma.CommunicationTaskUncheckedCreateInput {
     const scheduledAt = this.normalizeScheduledAt(payload.scheduledAt);
     const { statsJson, totalRecipients, sentCount, failedCount } =
-      this.normalizeStats(payload.stats);
+      this.normalizeStats(null);
     const { audienceName, snapshot } = this.buildAudienceSnapshot(payload);
 
     const data: Prisma.CommunicationTaskUncheckedCreateInput = {

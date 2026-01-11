@@ -1,4 +1,10 @@
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  Inject,
+  forwardRef,
+  OnModuleInit,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { TelegramStaffNotificationsService } from './staff-notifications.service';
@@ -36,7 +42,7 @@ type SendQueueItem = {
 };
 
 @Injectable()
-export class TelegramNotifyService {
+export class TelegramNotifyService implements OnModuleInit {
   private readonly logger = new Logger(TelegramNotifyService.name);
   private readonly sendQueue: SendQueueItem[] = [];
   private sending = false;
@@ -52,6 +58,23 @@ export class TelegramNotifyService {
     @Inject(forwardRef(() => TelegramStaffNotificationsService))
     private staffNotifications: TelegramStaffNotificationsService,
   ) {}
+
+  async onModuleInit() {
+    const apiBase = (this.config.get<string>('API_BASE_URL') || '').trim();
+    if (!apiBase || !this.token) return;
+    if (!this.webhookSecret) {
+      this.logger.warn(
+        'TELEGRAM_NOTIFY_WEBHOOK_SECRET is not set, skip webhook setup',
+      );
+      return;
+    }
+    const result = await this.setWebhook(apiBase);
+    if (!result) {
+      this.logger.warn('Auto webhook setup failed');
+    } else {
+      this.logger.log(`Webhook configured: ${result.url}`);
+    }
+  }
 
   private get token(): string | undefined {
     const v = this.config.get<string>('TELEGRAM_NOTIFY_BOT_TOKEN');
@@ -243,7 +266,13 @@ export class TelegramNotifyService {
   async setWebhook(apiBaseUrl: string): Promise<{ url: string } | null> {
     try {
       if (!this.token) return null;
-      const url = `${apiBaseUrl.replace(/\/$/, '')}/telegram/notify/webhook`;
+      const base = apiBaseUrl.trim();
+      if (!base) return null;
+      if (!this.webhookSecret) {
+        this.logger.warn('Webhook secret missing, skip setWebhook');
+        return null;
+      }
+      const url = `${base.replace(/\/$/, '')}/telegram/notify/webhook`;
       await this.api('setWebhook', {
         url,
         secret_token: this.webhookSecret,

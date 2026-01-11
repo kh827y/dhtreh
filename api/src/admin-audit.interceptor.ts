@@ -44,15 +44,46 @@ export class AdminAuditInterceptor implements NestInterceptor {
   }
 }
 
+const REDACT_KEYS = [
+  'password',
+  'pass',
+  'passwd',
+  'token',
+  'access_token',
+  'refresh_token',
+  'api_key',
+  'apikey',
+  'secret',
+  'authorization',
+  'webhooksecret',
+  'bridgesecret',
+];
+
+function isSensitiveKey(key: string) {
+  const normalized = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  return REDACT_KEYS.some((entry) => normalized.includes(entry));
+}
+
+function redactValue(value: any, depth = 0, seen = new WeakSet()): any {
+  if (!value || typeof value !== 'object') return value;
+  if (seen.has(value)) return null;
+  if (depth > 6) return null;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => redactValue(item, depth + 1, seen));
+  }
+  const result: Record<string, any> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (isSensitiveKey(key)) continue;
+    result[key] = redactValue(entry, depth + 1, seen);
+  }
+  return result;
+}
+
 function sanitizePayload(body: any) {
   try {
     if (!body || typeof body !== 'object') return null;
-    const clone: any = { ...body };
-    // вырежем секреты и длинные поля
-    delete clone.webhookSecret;
-    delete clone.webhookSecretNext;
-    delete clone.bridgeSecret;
-    delete clone.bridgeSecretNext;
+    const clone = redactValue(body);
     const json = JSON.stringify(clone);
     return json.length > 10_000 ? { truncated: true } : clone;
   } catch {

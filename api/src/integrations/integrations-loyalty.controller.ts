@@ -248,7 +248,15 @@ export class IntegrationsLoyaltyController {
 
   private async resolveFromToken(userToken: string) {
     if (looksLikeJwt(userToken)) {
-      const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
+      const envSecret = process.env.QR_JWT_SECRET || '';
+      if (
+        !envSecret ||
+        (process.env.NODE_ENV === 'production' &&
+          envSecret === 'dev_change_me')
+      ) {
+        throw new BadRequestException('QR_JWT_SECRET not configured');
+      }
+      const secret = envSecret;
       try {
         const v = await verifyQrToken(secret, userToken);
         return { ...v, kind: 'jwt' as const };

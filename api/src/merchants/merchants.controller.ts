@@ -603,7 +603,6 @@ export class MerchantsController {
       type: 'object',
       properties: {
         login: { type: 'string', nullable: true },
-        hasPassword: { type: 'boolean' },
       },
     },
   })
@@ -614,7 +613,7 @@ export class MerchantsController {
   @ApiOkResponse({
     schema: {
       type: 'object',
-      properties: { login: { type: 'string' }, password: { type: 'string' } },
+      properties: { login: { type: 'string' } },
     },
   })
   rotateCashier(
@@ -912,33 +911,6 @@ export class MerchantsController {
   }
 
   // CRM helpers
-  @Get(':id/customer/summary')
-  @ApiOkResponse({
-    schema: {
-      type: 'object',
-      properties: {
-        balance: { type: 'number' },
-        recentTx: {
-          type: 'array',
-          items: { $ref: getSchemaPath(TransactionItemDto) },
-        },
-        recentReceipts: {
-          type: 'array',
-          items: { $ref: getSchemaPath(ReceiptDto) },
-        },
-      },
-    },
-  })
-  @ApiUnauthorizedResponse({ type: ErrorDto })
-  async customerSummary(
-    @Param('id') id: string,
-    @Query('customerId') customerId: string,
-  ) {
-    const bal = await this.service.getBalance(id, customerId);
-    const tx = await this.service.listTransactions(id, { limit: 10 });
-    const rc = await this.service.listReceipts(id, { limit: 5, customerId });
-    return { balance: bal, recentTx: tx, recentReceipts: rc };
-  }
   @Get(':id/customer/search')
   @ApiOkResponse({
     schema: {

@@ -21,35 +21,27 @@ Local: http://localhost:3000
 
 ## Аутентификация
 
-### Staff Key (legacy)
-Для старых POS/Bridge‑интеграций по-прежнему доступен ключ сотрудника (устаревающая механика, используется только для обратной совместимости):
-```http
-X-Staff-Key: sk_live_xxxxxxxxxxxxxx
-```
-В новых интеграциях рекомендуется опираться на подпись Bridge (`X-Bridge-Signature`) и/или cookie‑сессии кассира. Флаг `requireStaffKey` по умолчанию выключен и не управляется из админ‑UI.
-
 ### Cashier Session Authentication
 Фронтенд кассира проходит двухшаговую авторизацию:
 
-1. **Вход мерчанта** — `POST /loyalty/cashier/login`
+1. **Активация устройства** — `POST /loyalty/cashier/activate`
    ```json
    {
      "merchantLogin": "market123",
-     "password9": "123456789"
+     "activationCode": "123456789"
    }
    ```
-   Возвращает `merchantId`, фронт сохраняет логин/пароль в куках (для автозаполнения).
+   При успешной активации ставится HTTP-only кука `cashier_device`.
 
 2. **Запуск сессии сотрудника** — `POST /loyalty/cashier/session`
    ```json
    {
      "merchantLogin": "market123",
-     "password9": "123456789",
      "pinCode": "0421",
      "rememberPin": true
    }
    ```
-   При успешном запросе устанавливается HTTP-only кука `cashier_session`, а в ответе возвращаются данные сотрудника и торговой точки. Если пользователь выбрал `rememberPin=true`, фронт хранит PIN в своей cookie для автоподстановки.
+   Требует активную `cashier_device` cookie. При успешном запросе устанавливается HTTP-only кука `cashier_session`, а в ответе возвращаются данные сотрудника и торговой точки. Если пользователь выбрал `rememberPin=true`, фронт хранит PIN в своей cookie для автоподстановки.
 
 3. **Проверка активной сессии** — `GET /loyalty/cashier/session`
    Возвращает `{ "active": true, ... }` и сведения о текущем сотруднике; при отсутствии сессии — `{ "active": false }`.

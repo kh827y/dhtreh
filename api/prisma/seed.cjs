@@ -27,8 +27,6 @@ async function ensureMerchant() {
       portalLoginEnabled: true,
       portalLastLoginAt: nowMinus({ days: 1 }),
       cashierLogin: 'demomerchant',
-      cashierPassword9: '123-456-789',
-      cashierPasswordUpdatedAt: new Date(),
     },
     create: {
       id: 'M-1',
@@ -39,8 +37,6 @@ async function ensureMerchant() {
       portalTotpEnabled: false,
       portalLastLoginAt: nowMinus({ days: 1 }),
       cashierLogin: 'demomerchant',
-      cashierPassword9: '123-456-789',
-      cashierPasswordUpdatedAt: new Date(),
       settings: {
         create: {
           earnBps: 300,

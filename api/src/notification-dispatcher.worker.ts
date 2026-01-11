@@ -270,38 +270,59 @@ export class NotificationDispatcherWorker
         if (ch === 'EMAIL' || ch === 'ALL') {
           try {
             if (customerIds.length > 0) {
-              // Send basic campaign email one-by-one to avoid template mismatch
-              const customers = await this.prisma.customer.findMany({
-                where: { id: { in: customerIds }, email: { not: null } },
-                select: { id: true, email: true, name: true },
-              });
-              const merchant = await this.prisma.merchant.findUnique({
-                where: { id: merchantId },
-                select: { name: true },
-              });
-              for (const c of customers) {
-                emailAttempted += 1;
-                const ctx = {
-                  ...dataVars,
-                  customerName: c.name || 'Клиент',
-                  merchantName: merchant?.name || 'Merchant',
-                };
-                const subj = this.applyVars(titleRaw, ctx) || 'Сообщение';
-                const content = this.applyVars(htmlRaw || textRaw, ctx) || '';
-                const ok = await this.email.sendEmail({
-                  to: c.email!,
-                  subject: subj,
-                  template: 'campaign',
-                  data: {
-                    customerName: ctx.customerName,
-                    merchantName: ctx.merchantName,
-                    campaignName: subj,
-                    content,
-                  },
-                  merchantId,
+              let emailCustomerIds = customerIds;
+              try {
+                const consentCount = await this.prisma.customerConsent.count({
+                  where: { merchantId, channel: 'EMAIL' },
                 });
-                if (ok) emailSent += 1;
-                else emailFailed += 1;
+                if (consentCount > 0) {
+                  const consentRows =
+                    await this.prisma.customerConsent.findMany({
+                      where: {
+                        merchantId,
+                        channel: 'EMAIL',
+                        status: 'GRANTED',
+                        customerId: { in: customerIds },
+                      },
+                      select: { customerId: true },
+                    });
+                  emailCustomerIds = consentRows.map((row) => row.customerId);
+                }
+              } catch {}
+              if (emailCustomerIds.length) {
+                // Send basic campaign email one-by-one to avoid template mismatch
+                const customers = await this.prisma.customer.findMany({
+                  where: { id: { in: emailCustomerIds }, email: { not: null } },
+                  select: { id: true, email: true, name: true },
+                });
+                const merchant = await this.prisma.merchant.findUnique({
+                  where: { id: merchantId },
+                  select: { name: true },
+                });
+                for (const c of customers) {
+                  emailAttempted += 1;
+                  const ctx = {
+                    ...dataVars,
+                    customerName: c.name || 'Клиент',
+                    merchantName: merchant?.name || 'Merchant',
+                  };
+                  const subj = this.applyVars(titleRaw, ctx) || 'Сообщение';
+                  const content = this.applyVars(htmlRaw || textRaw, ctx) || '';
+                  const ok = await this.email.sendEmail({
+                    to: c.email!,
+                    subject: subj,
+                    template: 'campaign',
+                    data: {
+                      customerName: ctx.customerName,
+                      merchantName: ctx.merchantName,
+                      campaignName: subj,
+                      content,
+                    },
+                    merchantId,
+                  });
+                  if (ok) emailSent += 1;
+                  else emailFailed += 1;
+                }
               }
             }
           } catch {}
@@ -527,7 +548,21 @@ export class NotificationDispatcherWorker
             merchantId,
           });
         } else if (ch === 'PUSH') {
-          // No direct token send; mark as sent
+          await this.prisma.eventOutbox.update({
+            where: { id: row.id },
+            data: {
+              status: 'FAILED',
+              updatedAt: new Date(),
+              lastError: 'push test not supported',
+            },
+          });
+          try {
+            this.metrics.inc('notifications_processed_total', {
+              type: 'test',
+              result: 'failed',
+            });
+          } catch {}
+          return;
         }
         await this.prisma.eventOutbox.update({
           where: { id: row.id },

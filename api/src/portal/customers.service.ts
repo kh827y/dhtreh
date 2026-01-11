@@ -1278,8 +1278,8 @@ export class PortalCustomersService {
   }
 
   async get(merchantId: string, customerId: string) {
-    const customer = await this.prisma.customer.findUnique({
-      where: { id: customerId },
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, merchantId },
       select: customerBaseSelect(merchantId),
     });
     if (!customer) throw new NotFoundException('Customer not found');
@@ -2236,8 +2236,8 @@ export class PortalCustomersService {
     },
   ) {
     const prismaAny = this.prisma as any;
-    const customer = await this.prisma.customer.findUnique({
-      where: { id: customerId },
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, merchantId },
     });
     if (!customer) throw new NotFoundException('Customer not found');
 
@@ -2374,15 +2374,14 @@ export class PortalCustomersService {
     customerId: string,
     mode: 'earn' | 'redeem',
   ) {
-    const profile = await this.prisma.customer.findUnique({
-      where: { id: customerId },
+    const profile = await this.prisma.customer.findFirst({
+      where: { id: customerId, merchantId },
       select: {
-        merchantId: true,
         accrualsBlocked: true,
         redemptionsBlocked: true,
       },
     });
-    if (!profile || profile.merchantId !== merchantId) return;
+    if (!profile) throw new NotFoundException('Customer not found');
     if (mode === 'earn' && profile.accrualsBlocked) {
       throw new BadRequestException('Начисления заблокированы администратором');
     }

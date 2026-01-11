@@ -10,3 +10,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     body,
   });
 }
+
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return portalFetch(req, `/portal/audiences/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}

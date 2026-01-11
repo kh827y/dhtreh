@@ -50,7 +50,6 @@ export class SubscriptionController {
     dto: {
       merchantId: string;
       planId: string;
-      trialDays?: number;
       metadata?: any;
     },
   ) {
@@ -101,9 +100,14 @@ export class SubscriptionController {
   @ApiResponse({ status: 404, description: 'Подписка не найдена' })
   async cancelSubscription(
     @Param('merchantId') merchantId: string,
-    @Query('immediately') immediately?: boolean,
+    @Query('immediately') immediately?: string,
   ) {
-    return this.subscriptionService.cancelSubscription(merchantId, immediately);
+    const normalized = String(immediately || '').toLowerCase();
+    const cancelImmediately = normalized === '1' || normalized === 'true';
+    return this.subscriptionService.cancelSubscription(
+      merchantId,
+      cancelImmediately,
+    );
   }
 
   /**

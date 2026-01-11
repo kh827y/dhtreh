@@ -244,7 +244,6 @@ Validates if current usage fits within plan limits.
 ```
 
 ## Subscription Status Values
-- `trialing` - In trial period
 - `active` - Active subscription
 - `canceled` - Canceled (may still be active until period end)
 - `expired` - Expired subscription
@@ -286,7 +285,6 @@ When webhooks are enabled for a plan, the following events are sent:
 - `subscription.canceled`
 - `payment.succeeded`
 - `payment.failed`
-- `trial.expired`
 
 Webhook payload example:
 ```json
@@ -296,8 +294,7 @@ Webhook payload example:
   "payload": {
     "subscriptionId": "sub_abc123",
     "planId": "plan_starter",
-    "status": "trialing",
-    "trialEnd": "2024-12-26T00:00:00Z"
+    "status": "active"
   },
   "createdAt": "2024-12-12T00:00:00Z"
 }

@@ -45,9 +45,7 @@ enum AccessScope {
 }
 
 type CashierCredentialsDto {
-  hasPassword: Boolean!
   login: String
-  password: String
 }
 
 type CashierPinDto {
@@ -63,7 +61,6 @@ type CashierPinDto {
 
 type CashierRotationResultDto {
   login: String!
-  password: String!
 }
 
 input ChangeStaffStatusInput {

@@ -20,7 +20,7 @@ export class CustomerAudiencesWorker {
     });
     for (const merchant of merchants) {
       const segments = await this.prisma.customerSegment.findMany({
-        where: { merchantId: merchant.id, archivedAt: null },
+        where: { merchantId: merchant.id },
       });
       for (const segment of segments) {
         try {

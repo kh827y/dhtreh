@@ -5,6 +5,8 @@ import {
   UseGuards,
   Param,
   NotFoundException,
+  BadRequestException,
+  Header,
 } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { AdminGuard } from './admin.guard';
@@ -14,6 +16,15 @@ import { AdminIpGuard } from './admin-ip.guard';
 @UseGuards(AdminGuard, AdminIpGuard)
 export class AdminAuditController {
   constructor(private prisma: PrismaService) {}
+
+  private parseBefore(beforeStr?: string) {
+    if (!beforeStr) return null;
+    const parsed = new Date(beforeStr);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException('Некорректная дата before');
+    }
+    return parsed;
+  }
 
   @Get()
   async list(
@@ -26,7 +37,8 @@ export class AdminAuditController {
       : 50;
     const where: any = {};
     if (merchantId) where.merchantId = merchantId;
-    if (beforeStr) where.createdAt = { lt: new Date(beforeStr) };
+    const before = this.parseBefore(beforeStr);
+    if (before) where.createdAt = { lt: before };
     const items = await this.prisma.adminAudit.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -44,6 +56,8 @@ export class AdminAuditController {
   }
 
   @Get('csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="admin-audit.csv"')
   async exportCsv(
     @Query('merchantId') merchantId?: string,
     @Query('limit') limitStr?: string,
@@ -54,7 +68,8 @@ export class AdminAuditController {
       : 1000;
     const where: any = {};
     if (merchantId) where.merchantId = merchantId;
-    if (beforeStr) where.createdAt = { lt: new Date(beforeStr) };
+    const before = this.parseBefore(beforeStr);
+    if (before) where.createdAt = { lt: before };
     const items = await this.prisma.adminAudit.findMany({
       where,
       orderBy: { createdAt: 'desc' },
