@@ -8,7 +8,7 @@ type Summary = { outboxPending: number; outboxDead: number; http5xx: number; htt
 export default function OutboxMonitorPage() {
   const { merchantId, setMerchantId } = usePreferredMerchantId();
   const [since, setSince] = useState<string>('');
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<Awaited<ReturnType<typeof outboxStats>> | null>(null);
   const [metrics, setMetrics] = useState<Summary | null>(null);
   const [err, setErr] = useState<string>('');
   const sinceValue = since.trim();
@@ -25,7 +25,7 @@ export default function OutboxMonitorPage() {
       }
       const [st, met] = await Promise.all([
         outboxStats(merchantId, sinceValue || undefined),
-        fetch('/api/metrics').then(r=>r.json()),
+        fetch('/api/metrics').then(r=>r.json() as Promise<Summary>),
       ]);
       setStats(st); setMetrics(met); setErr('');
     } catch (e: any) { setErr(String(e?.message || e)); }

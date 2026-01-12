@@ -144,8 +144,8 @@ describe("product promotions page (new design)", () => {
     assert.equal(lastPost.rewardType, "POINTS");
     assert.equal(lastPost.segmentId, "seg-1");
     assert.equal(lastPost.metadata?.usageLimit, "once_per_day");
-    assert.ok(String(lastPost.startAt).startsWith("2024-02-10"));
-    assert.ok(String(lastPost.endAt).startsWith("2024-03-01"));
+    assert.equal(new Date(lastPost.startAt).toLocaleDateString("en-CA"), "2024-02-10");
+    assert.equal(new Date(lastPost.endAt).toLocaleDateString("en-CA"), "2024-03-01");
     assert.equal(lastPost.rewardValue, 0);
     assert.deepEqual(lastPost.rewardMetadata?.productIds, ["p1"]);
     assert.equal(lastPost.rewardMetadata?.pointsRuleType, "multiplier");

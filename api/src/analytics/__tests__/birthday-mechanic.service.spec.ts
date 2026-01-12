@@ -91,4 +91,55 @@ describe('AnalyticsService.getBirthdayMechanicMetrics', () => {
     ]);
     expect(result.revenue).toEqual([{ date: '2025-11-03', revenue: 1800 }]);
   });
+
+  it('не учитывает покупки после истечения подарочных баллов', async () => {
+    prisma.merchantSettings.findUnique.mockResolvedValue({
+      rulesJson: {
+        birthday: { daysBefore: 5, giftPoints: 200, giftTtlDays: 2 },
+      },
+    });
+
+    prisma.transaction.findMany.mockResolvedValue([]);
+
+    const greetingsInPeriod = [
+      { customerId: 'c10', sendDate: new Date('2025-11-01T00:00:00.000Z') },
+    ];
+    const giftSources = [
+      {
+        customerId: 'c10',
+        giftPoints: 200,
+        giftExpiresAt: new Date('2025-11-02T00:00:00.000Z'),
+        sendDate: new Date('2025-11-01T00:00:00.000Z'),
+      },
+    ];
+    prisma.birthdayGreeting.findMany.mockImplementation((params: any) => {
+      if (params?.where?.giftPoints) return giftSources;
+      return greetingsInPeriod;
+    });
+
+    const receiptsInPeriod = [
+      {
+        id: 'r10',
+        customerId: 'c10',
+        orderId: 'order-expired',
+        total: 1500,
+        redeemApplied: 100,
+        createdAt: new Date('2025-11-04T10:00:00.000Z'),
+      },
+    ];
+
+    prisma.receipt.findMany.mockImplementation((params: any) => {
+      if (params?.where?.customerId) return receiptsInPeriod;
+      return receiptsInPeriod;
+    });
+
+    const result = await service.getBirthdayMechanicMetrics('m1', period);
+
+    expect(result.summary.greetings).toBe(1);
+    expect(result.summary.giftPurchasers).toBe(0);
+    expect(result.summary.giftPointsSpent).toBe(0);
+    expect(result.summary.revenueNet).toBe(0);
+    expect(result.timeline).toEqual([{ date: '2025-11-01', greetings: 1, purchases: 0 }]);
+    expect(result.revenue).toEqual([]);
+  });
 });

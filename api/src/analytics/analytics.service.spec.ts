@@ -36,7 +36,7 @@ describe('AnalyticsService — RFM segmentation', () => {
     prisma.merchantSettings.findUnique.mockResolvedValue({
       rulesJson: {
         rfm: {
-          recencyDays: 365,
+          recency: { mode: 'manual', days: 365 },
           frequency: { mode: 'manual', threshold: 10 },
           monetary: { mode: 'manual', threshold: 1000 },
         },

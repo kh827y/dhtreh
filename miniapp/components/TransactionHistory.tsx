@@ -144,8 +144,10 @@ const TransactionHistory: React.FC<Props> = ({
     }
 
     if (t.amount === 0 && elements.length === 1) {
-      return React.cloneElement(elements[0], {
-        className: elements[0].props.className.replace("text-sm", "text-base font-bold"),
+      const first = elements[0] as React.ReactElement<{ className?: string }>;
+      const className = first.props.className || "";
+      return React.cloneElement(first, {
+        className: className.replace("text-sm", "text-base font-bold"),
       });
     }
 

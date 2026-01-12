@@ -20,17 +20,6 @@ export function EffectiveRatesPopover({ merchantId, levelName, className }: { me
       const rules = await r.json();
       let earnBps = Number(rules.earnBps || 500);
       let redeemBps = Number(rules.redeemLimitBps || 5000);
-      const s = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/settings`);
-      if (s.ok) {
-        const st = await s.json();
-        const lb = st?.rulesJson?.levelBenefits || {};
-        const earnMap = lb.earnBpsBonusByLevel || {};
-        const redeemMap = lb.redeemLimitBpsBonusByLevel || {};
-        if (levelName) {
-          earnBps += Number(earnMap?.[levelName] || 0);
-          redeemBps += Number(redeemMap?.[levelName] || 0);
-        }
-      }
       setEarnPct((earnBps/100).toFixed(2));
       setRedeemPct((redeemBps/100).toFixed(2));
     } catch (e) {

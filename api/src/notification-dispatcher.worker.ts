@@ -199,6 +199,7 @@ export class NotificationDispatcherWorker
         const textRaw = String(template.text || '');
         const htmlRaw = String(template.html || '');
         const dataVars = (payload.variables || {}) as Record<string, any>;
+        const dispatchErrors: string[] = [];
 
         // derive recipients by segment if provided
         let customerIds: string[] = [];
@@ -263,7 +264,11 @@ export class NotificationDispatcherWorker
               pushSent += r.success ? 1 : 0;
               pushFailed += r.success ? 0 : 1;
             }
-          } catch {}
+          } catch (error: any) {
+            dispatchErrors.push(
+              `push: ${String(error?.message || error || 'unknown error')}`,
+            );
+          }
         }
 
         // EMAIL (best-effort)
@@ -325,7 +330,11 @@ export class NotificationDispatcherWorker
                 }
               }
             }
-          } catch {}
+          } catch (error: any) {
+            dispatchErrors.push(
+              `email: ${String(error?.message || error || 'unknown error')}`,
+            );
+          }
         }
         // Metrics per channel
         try {
@@ -366,6 +375,10 @@ export class NotificationDispatcherWorker
               emailFailed,
             );
         } catch {}
+
+        if (dispatchErrors.length) {
+          throw new Error(dispatchErrors.join('; '));
+        }
 
         await this.prisma.eventOutbox.update({
           where: { id: row.id },
@@ -668,6 +681,22 @@ export class NotificationDispatcherWorker
         );
       } catch {}
       const now = new Date();
+      const staleMs = Number(process.env.NOTIFY_SENDING_STALE_MS || '300000');
+      if (Number.isFinite(staleMs) && staleMs > 0) {
+        const staleBefore = new Date(Date.now() - staleMs);
+        await this.prisma.eventOutbox.updateMany({
+          where: {
+            status: 'SENDING',
+            eventType: { startsWith: 'notify.' },
+            updatedAt: { lt: staleBefore },
+          },
+          data: {
+            status: 'PENDING',
+            updatedAt: new Date(),
+            lastError: 'stale sending',
+          },
+        });
+      }
       const batch = Number(process.env.NOTIFY_WORKER_BATCH || '10');
       const items = (await this.prisma.eventOutbox.findMany({
         where: {

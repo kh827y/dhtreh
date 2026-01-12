@@ -33,7 +33,6 @@ import {
   WalletType,
   LedgerAccount,
   HoldMode,
-  DeviceType,
   Prisma,
   PromotionStatus,
   PromotionRewardType,
@@ -1764,6 +1763,22 @@ export class LoyaltyService {
         : null;
     if (!merchantId) throw new BadRequestException('merchantId required');
     if (!customerId) throw new BadRequestException('customerId required');
+    let resolvedOutletId = outletId;
+    if (resolvedOutletId) {
+      const outlet = await this.prisma.outlet.findFirst({
+        where: { id: resolvedOutletId, merchantId },
+        select: { id: true },
+      });
+      if (!outlet) resolvedOutletId = null;
+    }
+    let resolvedStaffId = staffId;
+    if (resolvedStaffId) {
+      const staff = await this.prisma.staff.findFirst({
+        where: { id: resolvedStaffId, merchantId },
+        select: { id: true },
+      });
+      if (!staff) resolvedStaffId = null;
+    }
 
     // Read registration mechanic from settings
     const settings = await this.prisma.merchantSettings.findUnique({
@@ -1856,183 +1871,273 @@ export class LoyaltyService {
       } as const;
     }
 
-    const context = await this.ensureCustomerContext(merchantId, customerId);
-    if (context.accrualsBlocked) {
-      throw new BadRequestException('Начисления заблокированы администратором');
+    let idempotencyCreated = false;
+    try {
+      await this.prisma.idempotencyKey.create({
+        data: {
+          merchantId,
+          scope: 'registration_bonus',
+          key: customerId,
+        },
+      });
+      idempotencyCreated = true;
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const retryTxn = await this.prisma.transaction.findFirst({
+          where: { merchantId, customerId, orderId: 'registration_bonus' },
+        });
+        const retryLot = await this.prisma.earnLot.findFirst({
+          where: { merchantId, customerId, orderId: 'registration_bonus' },
+        });
+        if (retryTxn || retryLot) {
+          const walletEx = await this.prisma.wallet.findFirst({
+            where: { merchantId, customerId, type: WalletType.POINTS },
+          });
+          return {
+            ok: true,
+            alreadyGranted: true,
+            pointsIssued: 0,
+            pending: !!(retryLot && retryLot.status === 'PENDING'),
+            maturesAt: retryLot?.maturesAt
+              ? retryLot.maturesAt.toISOString()
+              : null,
+            pointsExpireInDays: ttlDays,
+            expiresInDays: ttlDays,
+            pointsExpireAt: retryLot?.expiresAt
+              ? retryLot.expiresAt.toISOString()
+              : null,
+            balance: walletEx?.balance ?? 0,
+          } as const;
+        }
+        throw new ConflictException(
+          'Регистрационный бонус уже обрабатывается',
+        );
+      }
+      throw error;
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      // Ensure wallet
-      let wallet = await tx.wallet.findFirst({
-        where: { merchantId, customerId, type: WalletType.POINTS },
-      });
-      if (!wallet)
-        wallet = await tx.wallet.create({
-          data: { merchantId, customerId, type: WalletType.POINTS, balance: 0 },
-        });
-
-      const now = new Date();
-
-      if (delayMs > 0) {
-        // Create pending lot
-        const maturesAt = new Date(now.getTime() + delayMs);
-        const expiresAt = ttlDays
-          ? new Date(maturesAt.getTime() + ttlDays * 24 * 60 * 60 * 1000)
-          : null;
-        const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
-        if (!earnLot?.create)
-          throw new BadRequestException('earn lots not available');
-        await earnLot.create({
-          data: {
-            merchantId,
-            customerId,
-            points,
-            consumedPoints: 0,
-            earnedAt: maturesAt,
-            maturesAt,
-            expiresAt,
-            orderId: 'registration_bonus',
-            receiptId: null,
-            outletId,
-            staffId,
-            status: 'PENDING',
-          },
-        });
-
-        await tx.eventOutbox.create({
-          data: {
-            merchantId,
-            eventType: 'loyalty.registration.scheduled',
-            payload: {
-              merchantId,
-              customerId,
-              points,
-              maturesAt: maturesAt.toISOString(),
-              outletId: outletId ?? null,
-              staffId: staffId ?? null,
+    try {
+      const context = await this.ensureCustomerContext(merchantId, customerId);
+      if (context.accrualsBlocked) {
+        throw new BadRequestException(
+          'Начисления заблокированы администратором',
+        );
+      }
+    } catch (error) {
+      if (idempotencyCreated) {
+        await this.prisma.idempotencyKey
+          .delete({
+            where: {
+              merchantId_scope_key: {
+                merchantId,
+                scope: 'registration_bonus',
+                key: customerId,
+              },
             },
-          },
-        });
+          })
+          .catch(() => {});
+      }
+      throw error;
+    }
 
-        return {
-          ok: true,
-          pointsIssued: points,
-          pending: true,
-          maturesAt: maturesAt.toISOString(),
-          pointsExpireInDays: ttlDays,
-          expiresInDays: ttlDays,
-          pointsExpireAt: expiresAt ? expiresAt.toISOString() : null,
-          balance: (await tx.wallet.findUnique({ where: { id: wallet.id } }))!
-            .balance,
-        } as const;
-      } else {
-        // Immediate award
-        const updatedWallet = await tx.wallet.update({
-          where: { id: wallet.id },
-          data: { balance: { increment: points } },
-          select: { balance: true },
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Ensure wallet
+        let wallet = await tx.wallet.findFirst({
+          where: { merchantId, customerId, type: WalletType.POINTS },
         });
-        const balance = updatedWallet.balance;
-
-        const earnTx = await tx.transaction.create({
-          data: {
-            merchantId,
-            customerId,
-            type: TxnType.EARN,
-            amount: points,
-            orderId: 'registration_bonus',
-            outletId,
-            staffId,
-          },
-        });
-
-        if (process.env.LEDGER_FEATURE === '1' && points > 0) {
-          await tx.ledgerEntry.create({
+        if (!wallet)
+          wallet = await tx.wallet.create({
             data: {
               merchantId,
               customerId,
-              debit: LedgerAccount.MERCHANT_LIABILITY,
-              credit: LedgerAccount.CUSTOMER_BALANCE,
-              amount: points,
-              orderId: 'registration_bonus',
-              outletId,
-              staffId,
-              meta: { mode: 'REGISTRATION' },
+              type: WalletType.POINTS,
+              balance: 0,
             },
           });
-          this.metrics.inc('loyalty_ledger_entries_total', { type: 'earn' });
-          this.metrics.inc(
-            'loyalty_ledger_amount_total',
-            { type: 'earn' },
-            points,
-          );
-        }
 
-        if (process.env.EARN_LOTS_FEATURE === '1' && points > 0) {
+        const now = new Date();
+
+        if (delayMs > 0) {
+          // Create pending lot
+          const maturesAt = new Date(now.getTime() + delayMs);
+          const expiresAt = ttlDays
+            ? new Date(maturesAt.getTime() + ttlDays * 24 * 60 * 60 * 1000)
+            : null;
           const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
-          if (earnLot?.create) {
-            await earnLot.create({
-              data: {
+          if (!earnLot?.create)
+            throw new BadRequestException('earn lots not available');
+          await earnLot.create({
+            data: {
+              merchantId,
+              customerId,
+              points,
+              consumedPoints: 0,
+              earnedAt: maturesAt,
+              maturesAt,
+              expiresAt,
+              orderId: 'registration_bonus',
+              receiptId: null,
+              outletId: resolvedOutletId,
+              staffId: resolvedStaffId,
+              status: 'PENDING',
+            },
+          });
+
+          await tx.eventOutbox.create({
+            data: {
+              merchantId,
+              eventType: 'loyalty.registration.scheduled',
+              payload: {
                 merchantId,
                 customerId,
                 points,
-                consumedPoints: 0,
-                earnedAt: now,
-                maturesAt: null,
-                expiresAt: ttlDays
-                  ? new Date(now.getTime() + ttlDays * 24 * 60 * 60 * 1000)
-                  : null,
+                maturesAt: maturesAt.toISOString(),
+                outletId: resolvedOutletId ?? null,
+                staffId: resolvedStaffId ?? null,
+              },
+            },
+          });
+
+          return {
+            ok: true,
+            pointsIssued: points,
+            pending: true,
+            maturesAt: maturesAt.toISOString(),
+            pointsExpireInDays: ttlDays,
+            expiresInDays: ttlDays,
+            pointsExpireAt: expiresAt ? expiresAt.toISOString() : null,
+            balance: (await tx.wallet.findUnique({ where: { id: wallet.id } }))!
+              .balance,
+          } as const;
+        } else {
+          // Immediate award
+          const updatedWallet = await tx.wallet.update({
+            where: { id: wallet.id },
+            data: { balance: { increment: points } },
+            select: { balance: true },
+          });
+          const balance = updatedWallet.balance;
+
+          await tx.transaction.create({
+            data: {
+              merchantId,
+              customerId,
+              type: TxnType.EARN,
+              amount: points,
+              orderId: 'registration_bonus',
+              outletId: resolvedOutletId,
+              staffId: resolvedStaffId,
+            },
+          });
+
+          if (process.env.LEDGER_FEATURE === '1' && points > 0) {
+            await tx.ledgerEntry.create({
+              data: {
+                merchantId,
+                customerId,
+                debit: LedgerAccount.MERCHANT_LIABILITY,
+                credit: LedgerAccount.CUSTOMER_BALANCE,
+                amount: points,
                 orderId: 'registration_bonus',
-                receiptId: null,
-                outletId,
-                staffId,
-                status: 'ACTIVE',
+                outletId: resolvedOutletId,
+                staffId: resolvedStaffId,
+                meta: { mode: 'REGISTRATION' },
               },
             });
+            this.metrics.inc('loyalty_ledger_entries_total', { type: 'earn' });
+            this.metrics.inc(
+              'loyalty_ledger_amount_total',
+              { type: 'earn' },
+              points,
+            );
           }
+
+          if (process.env.EARN_LOTS_FEATURE === '1' && points > 0) {
+            const earnLot =
+              (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
+            if (earnLot?.create) {
+              await earnLot.create({
+                data: {
+                  merchantId,
+                  customerId,
+                  points,
+                  consumedPoints: 0,
+                  earnedAt: now,
+                  maturesAt: null,
+                  expiresAt: ttlDays
+                    ? new Date(now.getTime() + ttlDays * 24 * 60 * 60 * 1000)
+                    : null,
+                  orderId: 'registration_bonus',
+                  receiptId: null,
+                  outletId: resolvedOutletId,
+                  staffId: resolvedStaffId,
+                  status: 'ACTIVE',
+                },
+              });
+            }
+          }
+
+          await tx.eventOutbox.create({
+            data: {
+              merchantId,
+              eventType: 'loyalty.registration.awarded',
+              payload: {
+                merchantId,
+                customerId,
+                points,
+                outletId: resolvedOutletId ?? null,
+                staffId: resolvedStaffId ?? null,
+              },
+            },
+          });
+          await tx.eventOutbox.create({
+            data: {
+              merchantId,
+              eventType: 'notify.registration_bonus',
+              payload: {
+                merchantId,
+                customerId,
+                points,
+              },
+            },
+          });
+
+          return {
+            ok: true,
+            pointsIssued: points,
+            pending: false,
+            maturesAt: null,
+            pointsExpireInDays: ttlDays,
+            expiresInDays: ttlDays,
+            pointsExpireAt: ttlDays
+              ? new Date(
+                  now.getTime() + ttlDays * 24 * 60 * 60 * 1000,
+                ).toISOString()
+              : null,
+            balance,
+          } as const;
         }
-
-        await tx.eventOutbox.create({
-          data: {
-            merchantId,
-            eventType: 'loyalty.registration.awarded',
-            payload: {
-              merchantId,
-              customerId,
-              points,
-              outletId: outletId ?? null,
-              staffId: staffId ?? null,
+      });
+    } catch (error) {
+      if (idempotencyCreated) {
+        await this.prisma.idempotencyKey
+          .delete({
+            where: {
+              merchantId_scope_key: {
+                merchantId,
+                scope: 'registration_bonus',
+                key: customerId,
+              },
             },
-          },
-        });
-        await tx.eventOutbox.create({
-          data: {
-            merchantId,
-            eventType: 'notify.registration_bonus',
-            payload: {
-              merchantId,
-              customerId,
-              points,
-            },
-          },
-        });
-
-        return {
-          ok: true,
-          pointsIssued: points,
-          pending: false,
-          maturesAt: null,
-          pointsExpireInDays: ttlDays,
-          expiresInDays: ttlDays,
-          pointsExpireAt: ttlDays
-            ? new Date(
-                now.getTime() + ttlDays * 24 * 60 * 60 * 1000,
-              ).toISOString()
-            : null,
-          balance,
-        } as const;
+          })
+          .catch(() => {});
       }
-    });
+      throw error;
+    }
   }
 
   async redeem(params: {
@@ -2491,31 +2596,21 @@ export class LoyaltyService {
     };
   }
 
-  private normalizeChannel(
-    raw: DeviceType | null | undefined,
-  ): 'VIRTUAL' | 'PC_POS' | 'SMART' {
-    if (!raw) return 'VIRTUAL';
-    if (raw === DeviceType.SMART) return 'SMART';
-    if (raw === DeviceType.PC_POS) return 'PC_POS';
-    return 'VIRTUAL';
-  }
-
   private async resolveOutletContext(
     merchantId: string,
     input: { outletId?: string | null },
   ) {
     const { outletId } = input;
-    let outlet: { id: string; posType: DeviceType | null } | null = null;
-    if (outletId) {
-      try {
-        outlet = await this.prisma.outlet.findFirst({
-          where: { id: outletId, merchantId },
-          select: { id: true, posType: true },
-        });
-      } catch {}
+    if (!outletId) return { outletId: null };
+    try {
+      const outlet = await this.prisma.outlet.findFirst({
+        where: { id: outletId, merchantId },
+        select: { id: true },
+      });
+      return { outletId: outlet?.id ?? null };
+    } catch {
+      return { outletId: null };
     }
-    const channel = this.normalizeChannel(outlet?.posType ?? null);
-    return { outletId: outlet?.id ?? null, channel };
   }
 
   private async resolveTierRatesForCustomer(
@@ -4421,16 +4516,6 @@ export class LoyaltyService {
             deviceId: hold.deviceId ?? null,
           });
         } catch {}
-        // обновим lastSeen у торговой точки/устройства
-        const touchTs = operationDateObj;
-        if (hold.outletId) {
-          try {
-            await tx.outlet.update({
-              where: { id: hold.outletId },
-              data: { posLastSeenAt: touchTs },
-            });
-          } catch {}
-        }
         // Пишем событие в outbox (минимально)
         await tx.eventOutbox.create({
           data: {
@@ -5626,7 +5711,7 @@ export class LoyaltyService {
           total: true,
           earnApplied: true,
           redeemApplied: true,
-          outlet: { select: { name: true, code: true } },
+          outlet: { select: { name: true } },
           staff: { select: { firstName: true, lastName: true, login: true } },
           staffId: true,
           device: { select: { code: true } },
@@ -5651,10 +5736,7 @@ export class LoyaltyService {
           staffId: receipt.staffId ?? null,
           deviceCode: formatDevice(receipt.device ?? undefined),
           customerName: formatCustomer(receipt.customer ?? undefined),
-          outletName:
-            receipt.outlet?.name?.trim() ||
-            receipt.outlet?.code?.trim() ||
-            null,
+          outletName: receipt.outlet?.name?.trim() || null,
         });
       }
     }
@@ -5839,7 +5921,6 @@ export class LoyaltyService {
       orderBy: { createdAt: 'desc' },
       take: hardLimit,
       include: {
-        outlet: { select: { posType: true, posLastSeenAt: true } },
         device: { select: { code: true } },
         reviews: { select: { id: true, rating: true, createdAt: true } },
       },
@@ -5916,26 +5997,6 @@ export class LoyaltyService {
         device: { select: { code: true } },
       },
     });
-    // Подтянем outlet данные одним запросом
-    const outletIds = Array.from(
-      new Set(pendingLots.map((l) => l.outletId).filter(Boolean)),
-    ) as string[];
-    const outletsMap = new Map<
-      string,
-      { posType: any; posLastSeenAt: Date | null }
-    >();
-    if (outletIds.length > 0) {
-      const outlets = await this.prisma.outlet.findMany({
-        where: { id: { in: outletIds } },
-        select: { id: true, posType: true, posLastSeenAt: true },
-      });
-      for (const o of outlets)
-        outletsMap.set(o.id, {
-          posType: o.posType,
-          posLastSeenAt: o.posLastSeenAt ?? null,
-        });
-    }
-
     const orderIdsForReceipts = Array.from(
       new Set(
         txItems
@@ -6067,10 +6128,6 @@ export class LoyaltyService {
         customerId: entity.customerId,
         createdAt: entity.createdAt.toISOString(),
         outletId: entity.outletId ?? null,
-        outletPosType: entity.outlet?.posType ?? null,
-        outletLastSeenAt: entity.outlet?.posLastSeenAt
-          ? entity.outlet.posLastSeenAt.toISOString()
-          : null,
         staffId: entity.staffId ?? null,
         deviceId: entity.device?.code ?? null,
         reviewId: entity.reviews?.[0]?.id ?? null,
@@ -6095,7 +6152,6 @@ export class LoyaltyService {
     });
 
     const normalizedPending = pendingLots.map((lot) => {
-      const outlet = lot.outletId ? outletsMap.get(lot.outletId) : null;
       const mat = lot.maturesAt ?? null;
       const daysUntil = mat
         ? Math.max(
@@ -6111,10 +6167,6 @@ export class LoyaltyService {
         customerId: lot.customerId,
         createdAt: lot.createdAt.toISOString(),
         outletId: lot.outletId ?? null,
-        outletPosType: outlet?.posType ?? null,
-        outletLastSeenAt: outlet?.posLastSeenAt
-          ? outlet.posLastSeenAt.toISOString()
-          : null,
         staffId: lot.staffId ?? null,
         deviceId: lot.device?.code ?? null,
         reviewId: null,

@@ -54,18 +54,10 @@
   - `NEXT_PUBLIC_QR_TTL=60`
 - `pnpm i` → `pnpm dev` (http://localhost:3003)
 
-### Торговые точки: агрегированные POS‑поля
+### Торговые точки
 
-- `Outlet.posType` — тип устройства, которое последнее выходило на связь (`lastSeenAt`). Если все устройства молчат, берём запись с максимальным `createdAt`.
-- `Outlet.posLastSeenAt` — дата/время последнего события от выбранного устройства; при отсутствии `lastSeenAt` используем `createdAt`.
-- Обновление POS-статуса: `PUT /merchants/:id/outlets/:outletId/pos` (поля `posType`, `posLastSeenAt`).
 - Переключение точки (ACTIVE/INACTIVE): `PUT /merchants/:id/outlets/:outletId/status`.
-
-> API работает с устройствами `Device`, привязанными к `Outlet`: идентификатор устройства передаётся в операции и антифрод, наряду с `outletId`.
-> DTO портала возвращают список устройств точки, журналы/отзывы показывают код устройства; ограничения сотрудников по-прежнему задаются через `allowedOutletId`.
-> Антифрод по точкам и устройствам настраивается через ENV `AF_LIMIT_OUTLET/AF_WINDOW_OUTLET_SEC/AF_DAILY_CAP_OUTLET/AF_WEEKLY_CAP_OUTLET` и `AF_LIMIT_DEVICE/AF_WINDOW_DEVICE_SEC/AF_DAILY_CAP_DEVICE/AF_WEEKLY_CAP_DEVICE` (outlet — общий лимит для всех устройств/сотрудников точки, device — персональный лимит устройства).
-
-> Миграция `20251210120000_device_restore` создаёт таблицу `Device` и поля `deviceId` в операциях/чеков/лотах, коды устройств уникальны на мерчанте и каскадно привязаны к точкам.
+- API работает с устройствами `Device`, привязанными к `Outlet`: идентификатор устройства передаётся в операции и антифрод, наряду с `outletId`.
 
 ## Проверка E2E (понятно и по шагам)
 

@@ -309,6 +309,12 @@ const resolveCustomerIdFromToken = (token: string): string | null => {
   }
 };
 
+const buildOrderId = () => {
+  const stamp = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `O-${stamp}-${rand}`;
+};
+
 const qrKeyFromToken = (token: string): string | null => {
   const trimmed = token.trim();
   const parts = trimmed.split('.');
@@ -368,7 +374,7 @@ const ClientHeader = React.memo(function ClientHeader({
   client: ClientProfile;
 }) {
   return (
-    <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between mb-6 animate-fade-in">
+    <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between mb-6">
       <div className="flex items-center space-x-3">
         <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold text-sm">
           {client.avatar}
@@ -796,7 +802,7 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    setOrderId('O-' + Math.floor(Date.now() % 1_000_000));
+    setOrderId(buildOrderId());
   }, []);
 
   const emitLoyaltyEvent = (payload: {
@@ -1164,7 +1170,7 @@ export default function Page() {
     setActionError('');
     resetTransaction();
     setUserToken(token);
-    setOrderId('O-' + Math.floor(Date.now() % 1_000_000));
+    setOrderId(buildOrderId());
     const profile = await fetchCustomerOverview(token);
     if (!profile) return;
     setCheckoutStep('amount');
@@ -1264,10 +1270,14 @@ export default function Page() {
         setCustomerId(data.customerId);
       }
       if (data?.ok) {
+        const eventCustomerId =
+          typeof data?.customerId === 'string'
+            ? data.customerId
+            : resolveCustomerIdFromToken(userToken);
         emitLoyaltyEvent({
           type: 'loyalty.commit',
           merchantId: activeMerchantId,
-          customerId: resolveCustomerIdFromToken(userToken),
+          customerId: eventCustomerId,
           orderId,
           receiptNumber: normalizedReceiptNumber || undefined,
           redeemApplied: typeof data?.redeemApplied === 'number' ? data.redeemApplied : undefined,
@@ -1288,7 +1298,7 @@ export default function Page() {
           scannedTokensRef.current.add(scannedKey);
           saveScanned();
         }
-        setOrderId('O-' + Math.floor(Math.random() * 100000));
+        setOrderId(buildOrderId());
         await fetchCustomerOverview(userToken);
         await loadHistory(true);
         return data;
@@ -1678,11 +1688,11 @@ export default function Page() {
       if (!outletId) throw new Error('Нет выбранной торговой точки');
       let found: Txn | null = null;
       let nextBefore: string | null = null;
-      for (let page = 0; page < 5 && !found; page += 1) {
+      while (!found) {
         const url = buildApiUrl('/loyalty/cashier/outlet-transactions');
         url.searchParams.set('merchantId', activeMerchantId);
         url.searchParams.set('outletId', outletId);
-        url.searchParams.set('limit', '50');
+        url.searchParams.set('limit', '100');
         if (nextBefore) url.searchParams.set('before', nextBefore);
         const r = await fetch(url.toString(), { credentials: 'include' });
         if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось найти чек'));
@@ -1955,7 +1965,7 @@ export default function Page() {
   if (authStep === 'app_login') {
     return (
       <div className="min-h-screen bg-[#F1F5F9] flex items-center justify-center p-4 [@media(max-height:700px)]:py-3 [@media(max-height:600px)]:py-2">
-        <div className="w-full max-w-sm bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden animate-fade-in">
+        <div className="w-full max-w-sm bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden">
           <div className="p-10 [@media(max-height:700px)]:p-8 [@media(max-height:600px)]:p-6">
             <div className="flex justify-center mb-8 [@media(max-height:700px)]:mb-6 [@media(max-height:600px)]:mb-4">
               <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center shadow-md shadow-purple-200 [@media(max-height:700px)]:w-14 [@media(max-height:700px)]:h-14 [@media(max-height:600px)]:w-12 [@media(max-height:600px)]:h-12">
@@ -2015,7 +2025,7 @@ export default function Page() {
               </div>
 
               {authError && (
-                <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-xl text-xs font-medium border border-red-100 animate-in fade-in slide-in-from-top-1 [@media(max-height:600px)]:p-2.5 [@media(max-height:600px)]:text-[11px]">
+                <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-xl text-xs font-medium border border-red-100 [@media(max-height:600px)]:p-2.5 [@media(max-height:600px)]:text-[11px]">
                   <AlertTriangle size={14} className="flex-shrink-0" />
                   <span>{authError}</span>
                 </div>
@@ -2046,7 +2056,7 @@ export default function Page() {
           <ArrowLeft size={20} /> <span>Сменить терминал</span>
         </button>
 
-        <div className="w-full max-w-sm text-center space-y-8 animate-fade-in [@media(max-height:700px)]:space-y-6 [@media(max-height:600px)]:space-y-4">
+        <div className="w-full max-w-sm text-center space-y-8 [@media(max-height:700px)]:space-y-6 [@media(max-height:600px)]:space-y-4">
           <div>
             <div className="w-20 h-20 bg-white rounded-full mx-auto flex items-center justify-center shadow-sm mb-4 [@media(max-height:700px)]:w-16 [@media(max-height:700px)]:h-16 [@media(max-height:600px)]:w-14 [@media(max-height:600px)]:h-14 [@media(max-height:600px)]:mb-3">
               <Lock size={32} className="text-purple-600" />
@@ -2068,7 +2078,7 @@ export default function Page() {
 
           <div className="h-6 [@media(max-height:600px)]:h-5">
             {(pinError || pinMessage) && (
-              <p className="text-red-500 text-sm font-medium animate-fade-in [@media(max-height:600px)]:text-xs">
+              <p className="text-red-500 text-sm font-medium [@media(max-height:600px)]:text-xs">
                 {pinMessage || 'Неверный PIN-код'}
               </p>
             )}
@@ -2130,7 +2140,7 @@ export default function Page() {
   const renderDesktop = () => (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden relative">
       {scanOpen && (
-        <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center animate-fade-in">
+        <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center">
           <div className="relative w-72 h-72 rounded-2xl overflow-hidden bg-gray-900 shadow-2xl ring-4 ring-white/10">
             <QrScanner
               onResult={onScan}
@@ -2283,13 +2293,13 @@ export default function Page() {
           <main className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-100/50">
             <div className="w-full max-w-md">
               {actionError && (
-                <div className="mb-4 flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-xl text-xs font-medium border border-red-100 animate-in fade-in slide-in-from-top-1">
+                <div className="mb-4 flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-xl text-xs font-medium border border-red-100">
                   <AlertCircle size={14} className="flex-shrink-0" />
                   <span>{actionError}</span>
                 </div>
               )}
               {checkoutStep === 'search' && (
-                <div className="space-y-4 animate-fade-in">
+                <div className="space-y-4">
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 h-32 flex flex-col items-center justify-center relative overflow-hidden focus-within:border-purple-500 focus-within:ring-1 focus-within:ring-purple-500 transition-all">
                     <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Поиск клиента</label>
                     <input
@@ -2353,7 +2363,7 @@ export default function Page() {
               )}
 
               {checkoutStep === 'amount' && (
-                <div className="animate-fade-in">
+                <div>
                   {currentClient && <ClientHeader client={currentClient} />}
                   <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-6">
                     <div>
@@ -2404,7 +2414,7 @@ export default function Page() {
               )}
 
               {checkoutStep === 'mode' && (
-                <div className="animate-fade-in">
+                <div>
                   {currentClient && <ClientHeader client={currentClient} />}
                   <div className="grid grid-cols-1 gap-4">
                     <button
@@ -2447,7 +2457,7 @@ export default function Page() {
               )}
 
               {checkoutStep === 'redeem' && currentClient && (
-                <div className="animate-fade-in">
+                <div>
                   {currentClient && <ClientHeader client={currentClient} />}
                   <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-6">
                     <div>
@@ -2515,7 +2525,7 @@ export default function Page() {
               )}
 
               {checkoutStep === 'precheck' && (
-                <div className="animate-fade-in">
+                <div>
                   {currentClient && <ClientHeader client={currentClient} />}
                   <div className="bg-white rounded-2xl border border-purple-100 shadow-lg overflow-hidden">
                     <div className="bg-purple-600 p-4 text-white text-center">
@@ -2575,7 +2585,7 @@ export default function Page() {
               )}
 
               {checkoutStep === 'success' && (
-                <div className="animate-fade-in flex flex-col items-center justify-center h-full">
+                <div className="flex flex-col items-center justify-center h-full">
                   <div className="w-full max-w-sm bg-white rounded-t-2xl shadow-xl overflow-hidden relative pb-2 mb-6">
                     <div className="bg-emerald-500 p-6 text-center text-white relative overflow-hidden">
                       <div
@@ -2670,7 +2680,7 @@ export default function Page() {
           <main className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-100">
             <div className="w-full max-w-md space-y-6">
               {returnTx ? (
-                <div className="bg-white rounded-2xl shadow-xl shadow-red-900/5 border border-red-100 overflow-hidden animate-fade-in">
+                <div className="bg-white rounded-2xl shadow-xl shadow-red-900/5 border border-red-100 overflow-hidden">
                   <div className="bg-red-50 p-6 border-b border-red-100 flex items-center justify-between">
                     <div>
                       <h3 className="text-xl font-bold text-red-900">Подтверждение возврата</h3>
@@ -2718,7 +2728,7 @@ export default function Page() {
                       )}
                     </div>
                     {refundError && (
-                      <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-xl text-xs font-medium border border-red-100 animate-in fade-in slide-in-from-top-1">
+                      <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-xl text-xs font-medium border border-red-100">
                         <AlertTriangle size={14} className="flex-shrink-0" />
                         <span>{refundError}</span>
                       </div>
@@ -3062,7 +3072,7 @@ export default function Page() {
                                       {tx.date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                                     </span>
                                     {copiedId === tx.id && (
-                                      <span className="absolute -bottom-4 left-0 text-[10px] text-green-600 font-medium bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded border border-green-100 shadow-sm animate-fade-in z-10 pointer-events-none">
+                                      <span className="absolute -bottom-4 left-0 text-[10px] text-green-600 font-medium bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded border border-green-100 shadow-sm z-10 pointer-events-none">
                                         Скопировано!
                                       </span>
                                     )}
@@ -3351,7 +3361,7 @@ export default function Page() {
   const renderCheckout = () => {
     if (mobileMode === 'landing') {
       return (
-        <div className="flex-1 flex flex-col bg-gray-50 p-4 space-y-4 animate-in fade-in">
+        <div className="flex-1 flex flex-col bg-gray-50 p-4 space-y-4">
           <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm flex flex-col gap-4">
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Ваши операции за сегодня</h2>
             <div className="flex items-end justify-between">
@@ -3464,7 +3474,7 @@ export default function Page() {
 
     if (mobileMode === 'profile' && currentClient) {
       return (
-        <div className="flex-1 flex flex-col bg-gray-50 animate-in slide-in-from-right">
+        <div className="flex-1 flex flex-col bg-gray-50">
           <div className="bg-white p-6 border-b border-gray-200">
             <div className="flex justify-between items-start mb-4">
               <button onClick={() => setMobileMode('landing')} className="p-2 -ml-2 text-gray-400 hover:text-gray-600">
@@ -3765,7 +3775,7 @@ export default function Page() {
           </div>
 
           <button
-            onClick={resetAll}
+            onClick={() => resetAll()}
             className="w-full max-w-sm h-14 bg-gray-900 text-white rounded-xl font-semibold shadow-md [@media(max-height:700px)]:h-12 [@media(max-height:600px)]:h-10 [@media(max-height:600px)]:text-sm"
           >
             Закрыть
@@ -3860,10 +3870,10 @@ export default function Page() {
       {isFilterOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
           <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in"
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setIsFilterOpen(false)}
           ></div>
-          <div className="w-full bg-white rounded-t-2xl relative z-10 animate-in slide-in-from-bottom duration-300 max-h-[85vh] flex flex-col">
+          <div className="w-full bg-white rounded-t-2xl relative z-10 duration-300 max-h-[85vh] flex flex-col">
             <div className="p-4 border-b border-gray-100 flex justify-between items-center">
               <h3 className="font-bold text-lg">Фильтры</h3>
               <button onClick={() => setIsFilterOpen(false)} className="p-1.5 bg-gray-100 rounded-full">
@@ -3951,10 +3961,10 @@ export default function Page() {
 
       {selectedTx && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in" onClick={closeModal}></div>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeModal}></div>
 
           <div
-            className="w-full bg-white rounded-t-2xl relative z-10 animate-in slide-in-from-bottom duration-300 pb-safe shadow-2xl flex flex-col max-h-[90vh]"
+            className="w-full bg-white rounded-t-2xl relative z-10 duration-300 pb-safe shadow-2xl flex flex-col max-h-[90vh]"
             style={{ transform: `translateY(${dragY}px)`, transition: isDragging ? 'none' : 'transform 0.2s' }}
           >
             <div
@@ -4150,7 +4160,7 @@ export default function Page() {
           </button>
         </div>
       ) : returnTx && !returnSuccess ? (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-in fade-in">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="bg-red-50 p-4 border-b border-red-100 flex items-center justify-between">
             <h3 className="font-bold text-red-900">Подтверждение возврата</h3>
             <div className="p-2 bg-white rounded-full text-red-600 shadow-sm">
@@ -4199,7 +4209,7 @@ export default function Page() {
             </div>
 
             {refundError && (
-              <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-xl text-xs font-medium border border-red-100 animate-in fade-in slide-in-from-top-1">
+              <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-xl text-xs font-medium border border-red-100">
                 <AlertTriangle size={14} className="flex-shrink-0" />
                 <span>{refundError}</span>
               </div>
@@ -4228,14 +4238,14 @@ export default function Page() {
           </div>
         </div>
       ) : (
-        <div className="bg-green-50 text-green-700 p-6 rounded-xl flex flex-col items-center justify-center text-center border border-green-100 animate-in fade-in">
+        <div className="bg-green-50 text-green-700 p-6 rounded-xl flex flex-col items-center justify-center text-center border border-green-100">
           <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-3 shadow-sm text-green-600">
             <Check size={24} strokeWidth={3} />
           </div>
           <h3 className="font-bold text-lg mb-1">Возврат оформлен</h3>
           <p className="text-sm opacity-90 mb-4">Операция успешно отменена, баллы скорректированы.</p>
           <button
-            onClick={resetAll}
+            onClick={() => resetAll()}
             className="px-6 py-2 bg-white text-green-700 font-bold rounded-lg shadow-sm text-sm border border-green-200"
           >
             Закрыть

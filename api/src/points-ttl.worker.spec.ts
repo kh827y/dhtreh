@@ -60,6 +60,7 @@ describe('PointsTtlWorker (unit)', () => {
         ]),
       },
       eventOutbox: {
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn(async (args: any) => {
           created.push(args.data);
           return args.data;
@@ -114,6 +115,7 @@ describe('PointsTtlWorker (unit)', () => {
         aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 30 } }),
       },
       eventOutbox: {
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn(async (args: any) => {
           created.push(args.data);
           return args.data;

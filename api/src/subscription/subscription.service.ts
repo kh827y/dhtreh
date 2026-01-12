@@ -71,22 +71,15 @@ export class SubscriptionService {
 
   async ensurePlan(planId: string) {
     const prismaAny = this.prisma as any;
-    const predefined =
-      planId === FULL_PLAN_ID ? { ...this.buildFullPlan(), id: planId } : null;
-    if (predefined) {
-      return prismaAny.plan.upsert({
-        where: { id: predefined.id },
-        update: predefined,
-        create: predefined,
-      });
+    if (planId !== FULL_PLAN_ID) {
+      throw new BadRequestException('Доступен только тариф FULL');
     }
-    const existing = await prismaAny.plan.findUnique({
-      where: { id: planId },
+    const predefined = { ...this.buildFullPlan(), id: planId };
+    return prismaAny.plan.upsert({
+      where: { id: predefined.id },
+      update: predefined,
+      create: predefined,
     });
-    if (!existing) throw new NotFoundException('План не найден');
-    if (existing.isActive === false)
-      throw new BadRequestException('План отключён');
-    return existing;
   }
 
   private computeState(
@@ -484,55 +477,6 @@ export class SubscriptionService {
    * Проверка лимитов плана
    */
   async validatePlanLimits(merchantId: string, plan: any): Promise<boolean> {
-    const checks = [];
-
-    // Проверка лимита транзакций
-    if (plan.maxTransactions) {
-      const transactionCount = await this.prisma.transaction.count({
-        where: {
-          merchantId,
-          createdAt: {
-            gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // За последние 30 дней
-          },
-        },
-      });
-
-      if (transactionCount > plan.maxTransactions) {
-        throw new BadRequestException(
-          `Превышен лимит транзакций плана (${transactionCount}/${plan.maxTransactions})`,
-        );
-      }
-    }
-
-    // Проверка лимита клиентов
-    if (plan.maxCustomers) {
-      // Подсчет уникальных клиентов через группировку
-      const customers = await this.prisma.wallet.groupBy({
-        by: ['customerId'],
-        where: { merchantId },
-      });
-      const customerCount = customers.length;
-
-      if (customerCount > plan.maxCustomers) {
-        throw new BadRequestException(
-          `Превышен лимит клиентов плана (${customerCount}/${plan.maxCustomers})`,
-        );
-      }
-    }
-
-    // Проверка лимита точек продаж
-    if (plan.maxOutlets) {
-      const outletCount = await this.prisma.outlet.count({
-        where: { merchantId },
-      });
-
-      if (outletCount > plan.maxOutlets) {
-        throw new BadRequestException(
-          `Превышен лимит точек продаж плана (${outletCount}/${plan.maxOutlets})`,
-        );
-      }
-    }
-
     return true;
   }
 
@@ -594,56 +538,24 @@ export class SubscriptionService {
     }
 
     const plan = subscription.plan;
-    const period = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-    const [transactions, uniqueCustomers, outlets] = await Promise.all([
-      this.prisma.transaction.count({
-        where: {
-          merchantId,
-          createdAt: { gte: period },
-        },
-      }),
-      this.prisma.wallet.groupBy({
-        by: ['customerId'],
-        where: { merchantId },
-      }),
-      this.prisma.outlet.count({
-        where: { merchantId },
-      }),
-    ]);
-    const customers = uniqueCustomers.length;
+    const outlets = await this.prisma.outlet.count({
+      where: { merchantId },
+    });
 
     return {
       plan: {
         id: plan.id,
         name: plan.displayName,
         limits: {
-          transactions: plan.maxTransactions,
-          customers: plan.maxCustomers,
-          outlets: plan.maxOutlets,
+          outlets: null,
         },
       },
       usage: {
-        transactions: {
-          used: transactions,
-          limit: plan.maxTransactions || 'unlimited',
-          percentage: plan.maxTransactions
-            ? Math.round((transactions / plan.maxTransactions) * 100)
-            : null,
-        },
-        customers: {
-          used: customers,
-          limit: plan.maxCustomers || 'unlimited',
-          percentage: plan.maxCustomers
-            ? Math.round((customers / plan.maxCustomers) * 100)
-            : null,
-        },
         outlets: {
           used: outlets,
-          limit: plan.maxOutlets || 'unlimited',
-          percentage: plan.maxOutlets
-            ? Math.round((outlets / plan.maxOutlets) * 100)
-            : null,
+          limit: 'unlimited',
+          percentage: null,
         },
       },
       status: subscription.status,
@@ -685,7 +597,7 @@ export class SubscriptionService {
   async getAvailablePlans() {
     await this.ensurePlan(FULL_PLAN_ID);
     return (this.prisma as any).plan.findMany({
-      where: { isActive: true },
+      where: { id: FULL_PLAN_ID, isActive: true },
       orderBy: { price: 'asc' },
     });
   }

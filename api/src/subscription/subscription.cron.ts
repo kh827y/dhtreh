@@ -299,78 +299,8 @@ export class SubscriptionCronService {
    */
   @Cron(CronExpression.EVERY_HOUR)
   async checkUsageLimits() {
-    if (process.env.WORKERS_ENABLED === '0') return;
-    const lock = await pgTryAdvisoryLock(
-      this.prisma,
-      'cron:subscription_usage_limits',
-    );
-    if (!lock.ok) return;
-    console.log('[CRON] Checking subscription usage limits...');
-
-    try {
-      const subscriptions = await this.prisma.subscription.findMany({
-        where: {
-          status: 'active',
-        },
-        include: {
-          merchant: true,
-          plan: true,
-        },
-      });
-
-      for (const subscription of subscriptions) {
-        const plan = subscription.plan as any;
-
-        // Проверяем лимит транзакций за месяц
-        if (plan.maxTransactions) {
-          const startOfMonth = new Date();
-          startOfMonth.setDate(1);
-          startOfMonth.setHours(0, 0, 0, 0);
-
-          const transactionCount = await this.prisma.transaction.count({
-            where: {
-              merchantId: subscription.merchantId,
-              createdAt: {
-                gte: startOfMonth,
-              },
-            },
-          });
-
-          // Если достигнут 90% лимита - отправляем предупреждение
-          if (transactionCount >= plan.maxTransactions * 0.9) {
-            await this.sendLimitWarning(
-              subscription.merchantId,
-              'transactions',
-              transactionCount,
-              plan.maxTransactions,
-            );
-          }
-        }
-
-        // Проверяем лимит клиентов
-        if (plan.maxCustomers) {
-          const customerCount = await this.prisma.wallet.count({
-            where: {
-              merchantId: subscription.merchantId,
-            },
-          });
-
-          if (customerCount >= plan.maxCustomers * 0.9) {
-            await this.sendLimitWarning(
-              subscription.merchantId,
-              'customers',
-              customerCount,
-              plan.maxCustomers,
-            );
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[CRON] Error checking usage limits:', error);
-      this.metrics.increment('usage_check_errors');
-    } finally {
-      await pgAdvisoryUnlock(this.prisma, lock.key);
-    }
+    // Лимиты по тарифам отключены.
+    return;
   }
 
   // Вспомогательные методы

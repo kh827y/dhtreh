@@ -7,6 +7,11 @@ const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || '';
 const ADMIN_UI_PASSWORD = process.env.ADMIN_UI_PASSWORD || '';
 
+function getClientIp(req: NextRequest) {
+  const forwarded = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '';
+  return forwarded.split(',')[0]?.trim() || '';
+}
+
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> | { path: string[] } }) {
   if (!API_BASE) return new Response('API_BASE not configured', { status: 500 });
   if (!ADMIN_KEY) return new Response('ADMIN_KEY not configured', { status: 500 });
@@ -39,7 +44,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   const sess = getSession(req);
   // Audit hint via header (для логов API)
   try {
-    const ip = (req.headers.get('x-forwarded-for') || req.ip || '').split(',')[0].trim();
+    const ip = getClientIp(req);
     headers['x-admin-actor'] = `${sess?.sub || 'admin'}@${ip || 'unknown'}`;
     const mi = (() => { const i = parts.indexOf('merchants'); return i >= 0 ? parts[i+1] : undefined; })();
     if (mi) headers['x-merchant-id'] = mi;

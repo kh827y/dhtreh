@@ -152,10 +152,13 @@ const CategoriesPage: React.FC = () => {
       map[cat.id] = { ...cat, children: [] };
     });
     categories.forEach((cat) => {
-      if (cat.parentId && map[cat.parentId]) {
-        map[cat.parentId].children.push(map[cat.id]);
+      const node = map[cat.id];
+      if (!node) return;
+      const parent = cat.parentId ? map[cat.parentId] : undefined;
+      if (parent) {
+        parent.children.push(node);
       } else {
-        tree.push(map[cat.id]);
+        tree.push(node);
       }
     });
     return tree;

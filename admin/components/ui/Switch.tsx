@@ -2,7 +2,11 @@
 
 import { HTMLAttributes } from "react";
 
-type Props = HTMLAttributes<HTMLSpanElement> & { checked: boolean; onChange: (v: boolean)=>void; label?: string };
+type Props = Omit<HTMLAttributes<HTMLSpanElement>, "onChange"> & {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label?: string;
+};
 
 export default function Switch({ checked, onChange, label, className = "", ...rest }: Props) {
   return (

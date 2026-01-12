@@ -96,27 +96,12 @@ input OutletDeviceInput {
 }
 
 type OutletDto {
-  address: String
-  adminEmails: [String!]!
-  description: String
   devices: [OutletDeviceDto!]
-  externalId: String
-  hidden: Boolean!
   id: ID!
-  integrationLocationCode: String
-  integrationProvider: String
-  latitude: Float
-  longitude: Float
-  manualLocation: Boolean!
   name: String!
-  phone: String
   reviewsShareLinks: OutletReviewsShareLinksDto
-  schedule: [OutletScheduleItemDto!]
-  scheduleEnabled: Boolean!
-  scheduleMode: String!
   staffCount: Int
   status: String!
-  timezone: String
 }
 
 type OutletListResponseDto {
@@ -136,25 +121,6 @@ input OutletReviewsShareLinksInput {
   yandex: String
 }
 
-input OutletScheduleInput {
-  days: [OutletScheduleItemInput!]!
-  mode: String!
-}
-
-type OutletScheduleItemDto {
-  closesAt: String
-  day: Int!
-  enabled: Boolean!
-  opensAt: String
-}
-
-input OutletScheduleItemInput {
-  closesAt: String
-  day: Int!
-  enabled: Boolean!
-  opensAt: String
-}
-
 type PageMetaDto {
   page: Int!
   pageSize: Int!
@@ -168,7 +134,7 @@ type Query {
   portalCashierCredentials: CashierCredentialsDto!
   portalCashierPins: [CashierPinDto!]!
   portalOutlet(id: ID!): OutletDto!
-  portalOutlets(hidden: Boolean, page: Int = 1, pageSize: Int = 20, search: String, status: String): OutletListResponseDto!
+  portalOutlets(page: Int = 1, pageSize: Int = 20, search: String, status: String): OutletListResponseDto!
   portalStaff(id: ID!): StaffDetailDto!
   portalStaffList(groupId: ID, outletId: ID, page: Int = 1, pageSize: Int = 20, portalOnly: Boolean, search: String, status: String): StaffListResponseDto!
 }
@@ -192,6 +158,7 @@ type StaffCountersDto {
 
 type StaffDetailDto {
   accesses: [StaffOutletAccessDto!]!
+  avatarUrl: String
   canAccessPortal: Boolean!
   comment: String
   email: String
@@ -257,6 +224,7 @@ enum StaffStatus {
 
 type StaffSummaryDto {
   accesses: [StaffOutletAccessDto!]!
+  avatarUrl: String
   canAccessPortal: Boolean!
   email: String
   firstName: String
@@ -278,28 +246,15 @@ type StaffSummaryDto {
 }
 
 input UpsertOutletInput {
-  address: String
-  adminEmails: [String!]
-  description: String
   devices: [OutletDeviceInput!]
-  externalId: String
-  hidden: Boolean
-  integrationLocationCode: String
-  integrationPayload: String
-  integrationProvider: String
-  latitude: Float
-  longitude: Float
-  manualLocation: Boolean
   name: String!
-  phone: String
   reviewsShareLinks: OutletReviewsShareLinksInput
-  schedule: OutletScheduleInput
-  timezone: String
   works: Boolean
 }
 
 input UpsertStaffInput {
   accessGroupIds: [ID!]
+  avatarUrl: String
   canAccessPortal: Boolean
   comment: String
   currentPassword: String

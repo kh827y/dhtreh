@@ -74,7 +74,6 @@ export default function SettingsPage() {
         redeemDailyCap: s.redeemDailyCap ?? null,
         earnDailyCap: s.earnDailyCap ?? null,
         pointsTtlDays: s.pointsTtlDays ?? null,
-        earnDelayDays: s.earnDelayDays ?? null,
         maxOutlets: s.maxOutlets ?? null,
         timezone: s.timezone ?? undefined,
         rulesJson,
@@ -217,16 +216,6 @@ export default function SettingsPage() {
               min={0}
               value={s.pointsTtlDays ?? ''}
               onChange={e=>setS({ ...s, pointsTtlDays: num(e.target.value, null) })}
-              style={{ marginLeft: 8, width: 120 }}
-            />
-          </div>
-          <div>
-            <label>Задержка начисления (дни):</label>
-            <input
-              type="number"
-              min={0}
-              value={s.earnDelayDays ?? ''}
-              onChange={e=>setS({ ...s, earnDelayDays: num(e.target.value, null) })}
               style={{ marginLeft: 8, width: 120 }}
             />
           </div>

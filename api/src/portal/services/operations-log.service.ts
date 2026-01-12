@@ -661,7 +661,7 @@ export class OperationsLogService {
         : null;
 
     const outlet = tx.outlet
-      ? { id: tx.outlet.id, name: tx.outlet.name ?? tx.outlet.code ?? null }
+      ? { id: tx.outlet.id, name: tx.outlet.name ?? tx.outlet.id }
       : null;
 
     return {
@@ -702,7 +702,7 @@ export class OperationsLogService {
         : outlet
           ? {
               type: 'OUTLET',
-              code: tx.outlet?.code ?? tx.outlet?.id ?? null,
+              code: tx.outlet?.id ?? null,
               label: outlet.name,
             }
           : null,
@@ -1395,11 +1395,9 @@ export class OperationsLogService {
       };
     }
     if (receipt.outlet) {
-      const posType = (receipt.outlet.posType as string | null) ?? null;
       return {
-        type: posType ?? 'OUTLET',
-        code:
-          receipt.outlet.code ?? receipt.outlet.externalId ?? receipt.outlet.id,
+        type: 'OUTLET',
+        code: receipt.outlet.id,
         label: receipt.outlet.name ?? null,
       };
     }

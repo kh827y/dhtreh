@@ -30,6 +30,10 @@ function createPrismaMock(overrides: PrismaMock = {}) {
     },
     wallet: {
       upsert: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    transaction: {
+      count: jest.fn().mockResolvedValue(0),
     },
   };
   return Object.assign(prisma, overrides);

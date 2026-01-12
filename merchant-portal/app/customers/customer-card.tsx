@@ -39,6 +39,7 @@ import {
   getBadgeClass,
   getCustomerLevelLabel,
   getCustomerLevelRank,
+  type LevelRank,
 } from "./level-utils";
 import { readApiError } from "lib/portal-errors";
 
@@ -158,6 +159,7 @@ const renderPagination = (totalItems: number, currentPage: number, setPage: (p: 
 type CustomerCardProps = {
   customerId: string;
   initialCustomer?: CustomerRecord | null;
+  initialLevelRank?: LevelRank | null;
   onBack: () => void;
   onNavigateToCustomer: (id: string) => void;
   onCustomerUpdated?: (customer: CustomerRecord) => void;
@@ -166,6 +168,7 @@ type CustomerCardProps = {
 export default function CustomerCard({
   customerId,
   initialCustomer = null,
+  initialLevelRank = null,
   onBack,
   onNavigateToCustomer,
   onCustomerUpdated,
@@ -387,16 +390,18 @@ export default function CustomerCard({
     );
   }
 
-  const fullName = getFullName(customer) || customer.phone || customer.login || "—";
-  const levelLabel = getCustomerLevelLabel(customer, levelLookups);
-  const levelRank = getCustomerLevelRank(customer, levelLookups);
-  const avatarClass = getAvatarClass(levelRank);
-  const badgeClass = getBadgeClass(levelRank);
+  const customerSafe = customer;
+  const fullName = getFullName(customerSafe) || customerSafe.phone || customerSafe.login || "—";
+  const levelLabel = getCustomerLevelLabel(customerSafe, levelLookups);
+  const levelRank = getCustomerLevelRank(customerSafe, levelLookups);
+  const effectiveRank = levelLookups.byId.size > 0 ? levelRank : initialLevelRank ?? levelRank;
+  const avatarClass = getAvatarClass(effectiveRank);
+  const badgeClass = getBadgeClass(effectiveRank);
   const genderLabel =
-    customer.gender === "male" ? "Мужской" : customer.gender === "female" ? "Женский" : "—";
-  const ageValue = customer.age ?? calculateAge(customer.birthday);
-  const isBlocked = customer.blocked || customer.redeemBlocked;
-  const blockType = customer.redeemBlocked ? "full" : "accrual";
+    customerSafe.gender === "male" ? "Мужской" : customerSafe.gender === "female" ? "Женский" : "—";
+  const ageValue = customerSafe.age ?? calculateAge(customerSafe.birthday);
+  const isBlocked = customerSafe.blocked || customerSafe.redeemBlocked;
+  const blockType = customerSafe.redeemBlocked ? "full" : "accrual";
 
   function handleCopy(value?: string | null) {
     if (!value) return;
@@ -408,7 +413,7 @@ export default function CustomerCard({
   }
 
   function openBlockModal() {
-    setBlockForm(customer.redeemBlocked ? "full" : "accrual");
+    setBlockForm(customerSafe.redeemBlocked ? "full" : "accrual");
     setModalType("block");
   }
 
@@ -419,11 +424,11 @@ export default function CustomerCard({
         accrualsBlocked: true,
         redemptionsBlocked: blockForm === "full",
       };
-      const saved = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`, {
+      const saved = await api<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}`, {
         method: "PUT",
         body: JSON.stringify(payload),
       });
-      setCustomer(normalizeCustomer(saved ?? { ...customer, ...payload }));
+      setCustomer(normalizeCustomer(saved ?? { ...customerSafe, ...payload }));
       setToast(blockForm === "full" ? "Заблокированы начисления и списания" : "Заблокированы только начисления");
       setModalType(null);
     } catch (error: any) {
@@ -437,11 +442,11 @@ export default function CustomerCard({
     try {
       setBlockSubmitting(true);
       const payload = { accrualsBlocked: false, redemptionsBlocked: false };
-      const saved = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`, {
+      const saved = await api<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}`, {
         method: "PUT",
         body: JSON.stringify(payload),
       });
-      setCustomer(normalizeCustomer(saved ?? { ...customer, ...payload }));
+      setCustomer(normalizeCustomer(saved ?? { ...customerSafe, ...payload }));
       setToast("Блокировка снята");
       setModalType(null);
     } catch (error: any) {
@@ -489,11 +494,11 @@ export default function CustomerCard({
       levelId: payload.levelId || undefined,
     };
     try {
-      const saved = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`, {
+      const saved = await api<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}`, {
         method: "PUT",
         body: JSON.stringify(baseBody),
       });
-      const normalized = normalizeCustomer(saved ?? { ...customer, ...baseBody });
+      const normalized = normalizeCustomer(saved ?? { ...customerSafe, ...baseBody });
       setCustomer(normalized);
       onCustomerUpdated?.(normalized);
       setToast("Данные клиента обновлены");
@@ -815,9 +820,14 @@ export default function CustomerCard({
                             paginate(customer.transactions, pages.history).map((operation, idx) => {
                               const meta = buildOperationMeta(operation, customer, refundContext);
                               const globalIdx = (pages.history - 1) * ITEMS_PER_PAGE + idx + 1;
-                              const pointsValue = Number(operation.change ?? 0);
-                              const pointsSign = pointsValue > 0 ? "+" : pointsValue < 0 ? "−" : "";
-                              const pointsClass = meta.isInactive ? "text-gray-400" : pointsValue > 0 ? "text-green-600" : pointsValue < 0 ? "text-red-500" : "text-gray-400";
+                              const earnedAmount = Math.max(0, Number(operation.earnAmount ?? 0));
+                              const spentAmount = Math.max(0, Number(operation.redeemAmount ?? 0));
+                              const hasSplit = earnedAmount > 0 || spentAmount > 0;
+                              const changeValue = Number(operation.change ?? 0);
+                              const earned = hasSplit ? earnedAmount : Math.max(0, changeValue);
+                              const spent = hasSplit ? spentAmount : Math.max(0, -changeValue);
+                              const earnedClass = meta.isInactive ? "text-gray-400" : "text-green-600";
+                              const spentClass = meta.isInactive ? "text-gray-400" : "text-red-500";
                               const { date, time } = formatDateTimeParts(operation.datetime);
 
                               return (
@@ -826,9 +836,16 @@ export default function CustomerCard({
                                   <td className="px-6 py-4 text-right font-medium text-gray-900">
                                     {operation.purchaseAmount > 0 ? formatCurrency(operation.purchaseAmount) : <span className="text-gray-300">—</span>}
                                   </td>
-                                  <td className={`px-6 py-4 text-right font-bold ${pointsClass}`}>
-                                    {pointsSign}
-                                    {formatPoints(Math.abs(pointsValue))}
+                                  <td className="px-6 py-4 text-right">
+                                    <div className="flex flex-col items-end gap-1">
+                                      {earned > 0 && (
+                                        <span className={`font-bold ${earnedClass}`}>+{formatPoints(earned)}</span>
+                                      )}
+                                      {spent > 0 && (
+                                        <span className={`font-bold ${spentClass}`}>-{formatPoints(spent)}</span>
+                                      )}
+                                      {earned === 0 && spent === 0 && <span className="text-gray-300">—</span>}
+                                    </div>
                                   </td>
                                   <td className="px-6 py-4">
                                     <div className="font-medium text-gray-900">{meta.title}</div>

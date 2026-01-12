@@ -251,7 +251,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
       stateByCustomer.set(attempt.customerId, entry);
     }
 
-    // Resume pending attempts (with already credited points but push not sent)
+    // Resume pending attempts
     const pendingAttempts = attempts.filter(
       (attempt) => attempt.status === 'PENDING',
     );
@@ -302,6 +302,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
           merchantId,
           customerId: attempt.customerId,
           createdAt: { gt: attempt.invitedAt },
+          canceledAt: null,
         },
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true },
@@ -357,6 +358,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
             merchantId,
             customerId,
             createdAt: { gt: active.invitedAt },
+            canceledAt: null,
           },
           select: { id: true },
         });
@@ -370,6 +372,13 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
               active.lastPurchaseAt.getTime(),
         );
         if (hasNewer) continue;
+        const hasRepeatForPurchase = entry.attempts.some(
+          (attempt) =>
+            attempt.lastPurchaseAt.getTime() ===
+              active.lastPurchaseAt.getTime() &&
+            attempt.completionReason === 'repeat_scheduled',
+        );
+        if (hasRepeatForPurchase) continue;
 
         await this.prisma.autoReturnAttempt.update({
           where: { id: active.id },
@@ -411,6 +420,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
         SELECT "customerId", MAX("createdAt") AS "lastPurchaseAt"
         FROM "Receipt"
         WHERE "merchantId" = ${merchantId}
+          AND "canceledAt" IS NULL
         GROUP BY "customerId"
         HAVING MAX("createdAt") <= ${thresholdDate}
         ORDER BY MAX("createdAt") ASC
@@ -424,13 +434,17 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
         entry.active &&
         (entry.active.status === 'PENDING' || entry.active.status === 'SENT');
       if (hasActive) continue;
-      const alreadyAttempted =
-        entry &&
-        entry.attempts.some(
-          (attempt) =>
-            attempt.lastPurchaseAt.getTime() === row.lastPurchaseAt.getTime(),
-        );
-      if (alreadyAttempted) continue;
+      const attemptsForPurchase = entry
+        ? entry.attempts.filter(
+            (attempt) =>
+              attempt.lastPurchaseAt.getTime() === row.lastPurchaseAt.getTime(),
+          )
+        : [];
+      const hasNonFailedAttempt = attemptsForPurchase.some(
+        (attempt) => attempt.status !== 'FAILED',
+      );
+      if (hasNonFailedAttempt) continue;
+      if (attemptsForPurchase.length >= 2) continue;
 
       const nextAttempt =
         entry && entry.maxAttempt > 0 ? entry.maxAttempt + 1 : 1;
@@ -490,13 +504,11 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
       bonus: bonusValue,
     });
 
-    let created: AutoReturnAttempt | null = null;
-    let giftTransactionId: string | null = null;
-    let giftExpiresAt: Date | null = null;
+    let created: AutoReturnAttempt;
 
     try {
-      await this.prisma.$transaction(async (tx) => {
-        created = await tx.autoReturnAttempt.create({
+      created = await this.prisma.$transaction((tx) =>
+        tx.autoReturnAttempt.create({
           data: {
             merchantId,
             customerId,
@@ -514,104 +526,8 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
               ? new Date(invitedAt.getTime() + config.giftTtlDays * DAY_MS)
               : null,
           },
-        });
-
-        if (config.giftPoints > 0) {
-          let wallet = await tx.wallet.findFirst({
-            where: {
-              merchantId,
-              customerId,
-              type: WalletType.POINTS,
-            },
-          });
-          if (!wallet) {
-            wallet = await tx.wallet.create({
-              data: {
-                merchantId,
-                customerId,
-                type: WalletType.POINTS,
-                balance: 0,
-              },
-            });
-          }
-          const freshWallet = await tx.wallet.findUnique({
-            where: { id: wallet.id },
-          });
-          const balance = (freshWallet?.balance || 0) + config.giftPoints;
-          await tx.wallet.update({
-            where: { id: wallet.id },
-            data: { balance },
-          });
-
-          const transaction = await tx.transaction.create({
-            data: {
-              merchantId,
-              customerId,
-              type: TxnType.CAMPAIGN,
-              amount: config.giftPoints,
-              orderId: `auto_return:${created.id}`,
-              outletId: null,
-              staffId: null,
-            },
-          });
-          giftTransactionId = transaction.id;
-
-          if (process.env.LEDGER_FEATURE === '1') {
-            await tx.ledgerEntry.create({
-              data: {
-                merchantId,
-                customerId,
-                debit: LedgerAccount.MERCHANT_LIABILITY,
-                credit: LedgerAccount.CUSTOMER_BALANCE,
-                amount: config.giftPoints,
-                orderId: `auto_return:${created.id}`,
-                meta: { mode: 'AUTO_RETURN', attemptId: created.id },
-              },
-            });
-            this.metrics.inc('loyalty_ledger_entries_total', {
-              type: 'earn',
-              source: 'auto_return',
-            });
-            this.metrics.inc(
-              'loyalty_ledger_amount_total',
-              { type: 'earn', source: 'auto_return' },
-              config.giftPoints,
-            );
-          }
-
-          if (process.env.EARN_LOTS_FEATURE === '1' && config.giftPoints > 0) {
-            const earnLot = tx.earnLot ?? (this.prisma as any).earnLot;
-            if (earnLot?.create) {
-              const expiresAt = config.giftTtlDays
-                ? new Date(invitedAt.getTime() + config.giftTtlDays * DAY_MS)
-                : null;
-              giftExpiresAt = expiresAt;
-              await earnLot.create({
-                data: {
-                  merchantId,
-                  customerId,
-                  points: config.giftPoints,
-                  consumedPoints: 0,
-                  earnedAt: invitedAt,
-                  maturesAt: null,
-                  expiresAt,
-                  orderId: `auto_return:${created.id}`,
-                  receiptId: null,
-                  status: 'ACTIVE',
-                },
-              });
-            }
-          }
-
-          await tx.autoReturnAttempt.update({
-            where: { id: created.id },
-            data: {
-              giftTransactionId,
-              giftExpiresAt,
-            },
-          });
-        }
-      });
+        }),
+      );
     } catch (error: any) {
       const code = error?.code;
       if (code === 'P2002') {
@@ -628,8 +544,6 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
       return null;
     }
 
-    if (!created) return null;
-
     this.metrics.inc(
       'auto_return_attempts_created_total',
       {
@@ -638,26 +552,11 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
       },
       1,
     );
-    if (config.giftPoints > 0) {
-      this.metrics.inc(
-        'auto_return_points_issued_total',
-        { merchantId },
-        config.giftPoints,
-      );
-    }
 
-    const baseAttempt = created as AutoReturnAttempt;
-    const attemptWithGift: AutoReturnAttempt = {
-      ...baseAttempt,
-      giftTransactionId:
-        giftTransactionId ?? baseAttempt.giftTransactionId ?? null,
-      giftExpiresAt: giftExpiresAt ?? baseAttempt.giftExpiresAt ?? null,
-    };
-
-    await this.sendAttemptPush(merchant, attemptWithGift);
+    await this.sendAttemptPush(merchant, created);
 
     return (await this.prisma.autoReturnAttempt.findUnique({
-      where: { id: attemptWithGift.id },
+      where: { id: created.id },
     })) as AutoReturnAttempt;
   }
 
@@ -684,11 +583,143 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
         priority: 'high',
       });
       if (result.sent > 0) {
+        let giftTransactionId = attempt.giftTransactionId ?? null;
+        let giftExpiresAt = attempt.giftExpiresAt ?? null;
+        const giftPoints = Math.max(
+          0,
+          Math.floor(Number(attempt.giftPoints || 0)),
+        );
+
+        if (!giftTransactionId && giftPoints > 0) {
+          const issued = await this.prisma.$transaction(async (tx) => {
+            const fresh = await tx.autoReturnAttempt.findUnique({
+              where: { id: attempt.id },
+            });
+            if (!fresh) {
+              return { giftTransactionId: null, giftExpiresAt: null, issued: false };
+            }
+            if (fresh.giftTransactionId) {
+              return {
+                giftTransactionId: fresh.giftTransactionId,
+                giftExpiresAt: fresh.giftExpiresAt ?? null,
+                issued: false,
+              };
+            }
+
+            const expiresAt =
+              fresh.giftExpiresAt ??
+              (merchant.config.giftTtlDays
+                ? new Date(
+                    fresh.invitedAt.getTime() +
+                      merchant.config.giftTtlDays * DAY_MS,
+                  )
+                : null);
+
+            await tx.wallet.upsert({
+              where: {
+                customerId_merchantId_type: {
+                  customerId: fresh.customerId,
+                  merchantId: fresh.merchantId,
+                  type: WalletType.POINTS,
+                } as any,
+              },
+              update: { balance: { increment: giftPoints } },
+              create: {
+                merchantId: fresh.merchantId,
+                customerId: fresh.customerId,
+                type: WalletType.POINTS,
+                balance: giftPoints,
+              },
+            } as any);
+
+            const transaction = await tx.transaction.create({
+              data: {
+                merchantId: fresh.merchantId,
+                customerId: fresh.customerId,
+                type: TxnType.CAMPAIGN,
+                amount: giftPoints,
+                orderId: `auto_return:${fresh.id}`,
+                outletId: null,
+                staffId: null,
+              },
+            });
+
+            if (process.env.LEDGER_FEATURE === '1') {
+              await tx.ledgerEntry.create({
+                data: {
+                  merchantId: fresh.merchantId,
+                  customerId: fresh.customerId,
+                  debit: LedgerAccount.MERCHANT_LIABILITY,
+                  credit: LedgerAccount.CUSTOMER_BALANCE,
+                  amount: giftPoints,
+                  orderId: `auto_return:${fresh.id}`,
+                  meta: { mode: 'AUTO_RETURN', attemptId: fresh.id },
+                },
+              });
+              this.metrics.inc('loyalty_ledger_entries_total', {
+                type: 'earn',
+                source: 'auto_return',
+              });
+              this.metrics.inc(
+                'loyalty_ledger_amount_total',
+                { type: 'earn', source: 'auto_return' },
+                giftPoints,
+              );
+            }
+
+            if (process.env.EARN_LOTS_FEATURE === '1') {
+              const earnLot = (tx as any).earnLot ?? (this.prisma as any).earnLot;
+              if (earnLot?.create) {
+                await earnLot.create({
+                  data: {
+                    merchantId: fresh.merchantId,
+                    customerId: fresh.customerId,
+                    points: giftPoints,
+                    consumedPoints: 0,
+                    earnedAt: fresh.invitedAt,
+                    maturesAt: null,
+                    expiresAt,
+                    orderId: `auto_return:${fresh.id}`,
+                    receiptId: null,
+                    status: 'ACTIVE',
+                  },
+                });
+              }
+            }
+
+            await tx.autoReturnAttempt.update({
+              where: { id: fresh.id },
+              data: {
+                giftTransactionId: transaction.id,
+                giftExpiresAt: expiresAt,
+              },
+            });
+
+            return {
+              giftTransactionId: transaction.id,
+              giftExpiresAt: expiresAt,
+              issued: true,
+            };
+          });
+
+          if (issued.issued) {
+            giftTransactionId = issued.giftTransactionId;
+            giftExpiresAt = issued.giftExpiresAt;
+            this.metrics.inc(
+              'auto_return_points_issued_total',
+              { merchantId: merchant.id },
+              giftPoints,
+            );
+          }
+        }
+
         await this.prisma.autoReturnAttempt.update({
           where: { id: attempt.id },
           data: {
             status: 'SENT',
             lastError: null,
+            giftTransactionId,
+            giftExpiresAt,
           },
         });
         this.metrics.inc(

@@ -1,54 +1,58 @@
 "use client";
 
-import React, { Suspense } from "react";
+import React from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button, Card, CardBody, Chart, Skeleton } from "@loyalty/ui";
-import Toggle from "../../../../components/Toggle";
-import { ChartGroup, formatBucketLabel, groupRevenue, groupTimeline } from "./stats-utils";
+import {
+  ArrowLeft,
+  BarChart3,
+  Cake,
+  Calendar,
+  Clock,
+  Gift,
+  MessageSquare,
+  Settings,
+  Save,
+  ShoppingBag,
+} from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
 
-const quickRanges = [
-  { label: "Вчера", value: "yesterday" },
-  { label: "Неделя", value: "week" },
-  { label: "Месяц", value: "month" },
-  { label: "Квартал", value: "quarter" },
-  { label: "Год", value: "year" },
-] as const;
+const DEFAULT_TEXT = "С днём рождения! Мы подготовили для вас подарок в любимой кофейне.";
 
-type QuickRange = (typeof quickRanges)[number];
+type TabKey = "main" | "stats";
 
-type OutletOption = { value: string; label: string };
-
-type BirthdayStats = {
-  period: {
-    from: string;
-    to: string;
-    type: string;
-    daysBefore: number;
-    onlyBuyers: boolean;
-    giftPoints: number;
-    giftTtlDays: number;
-    purchaseWindowDays: number;
-  };
-  summary: {
-    greetings: number;
-    giftPurchasers: number;
-    revenueNet: number;
-    averageCheck: number;
-    giftPointsSpent: number;
-    receiptsWithGifts: number;
-  };
-  timeline: Array<{ date: string; greetings: number; purchases: number }>;
-  revenue: Array<{ date: string; revenue: number }>;
+type BirthdaySettings = {
+  enabled: boolean;
+  daysBefore: number;
+  onlyBuyers: boolean;
+  text: string;
+  giftEnabled: boolean;
+  giftPoints: number;
+  giftBurnEnabled: boolean;
+  giftTtlDays: number;
 };
-
-type Banner = { type: "success" | "error"; text: string };
 
 function BirthdayPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const initialTab = searchParams.get("tab") === "stats" ? "stats" : "main";
-  const [tab, setTab] = React.useState<"main" | "stats">(initialTab);
+  const [tab, setTab] = React.useState<TabKey>(initialTab);
+
+  const [loading, setLoading] = React.useState(true);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [success, setSuccess] = React.useState<string | null>(null);
+
+  const [settings, setSettings] = React.useState<BirthdaySettings>({
+    enabled: false,
+    daysBefore: 5,
+    onlyBuyers: false,
+    text: DEFAULT_TEXT,
+    giftEnabled: false,
+    giftPoints: 0,
+    giftBurnEnabled: false,
+    giftTtlDays: 7,
+  });
 
   React.useEffect(() => {
     const next = searchParams.get("tab") === "stats" ? "stats" : "main";
@@ -56,7 +60,7 @@ function BirthdayPageInner() {
   }, [searchParams]);
 
   const handleTabChange = React.useCallback(
-    (next: "main" | "stats") => {
+    (next: TabKey) => {
       const params = new URLSearchParams(searchParams?.toString() ?? "");
       if (next === "stats") {
         params.set("tab", "stats");
@@ -69,754 +73,516 @@ function BirthdayPageInner() {
     [router, searchParams],
   );
 
-  return (
-    <div style={{ display: "grid", gap: 24 }}>
-      <nav style={{ fontSize: 13, opacity: 0.75 }}>
-        <a href="/loyalty/mechanics" style={{ color: "inherit", textDecoration: "none" }}>
-          Механики
-        </a>
-        <span style={{ margin: "0 8px" }}>→</span>
-        <span style={{ color: "var(--brand-primary)" }}>Поздравить клиентов с днём рождения</span>
-      </nav>
+  const load = React.useCallback(async (options?: { keepSuccess?: boolean }) => {
+    setLoading(true);
+    setError(null);
+    if (!options?.keepSuccess) setSuccess(null);
+    try {
+      const res = await fetch("/api/portal/loyalty/birthday", { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.message || "Не удалось загрузить настройки");
+      setSettings((prev) => ({
+        ...prev,
+        enabled: Boolean(json?.enabled),
+        daysBefore: Math.max(0, Math.floor(Number(json?.daysBefore ?? prev.daysBefore) || 0)),
+        onlyBuyers: Boolean(json?.onlyBuyers),
+        text: typeof json?.text === "string" ? json.text : prev.text,
+        giftEnabled: Boolean(json?.giftEnabled),
+        giftPoints: Math.max(0, Math.floor(Number(json?.giftPoints ?? prev.giftPoints) || 0)),
+        giftBurnEnabled: Boolean(json?.giftBurnEnabled),
+        giftTtlDays: Math.max(1, Math.floor(Number(json?.giftTtlDays ?? prev.giftTtlDays) || 0)),
+      }));
+    } catch (e: any) {
+      setError(normalizeErrorMessage(e, "Не удалось загрузить настройки"));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 700 }}>Поздравить клиентов с днём рождения</div>
-          <div style={{ fontSize: 13, opacity: 0.7 }}>
-            Автоматические поздравления с подарочными баллами через Telegram-бота
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+
+  const controlsDisabled = loading || saving;
+  const detailDisabled = !settings.enabled || controlsDisabled;
+
+  const handleSave = React.useCallback(async () => {
+    if (saving) return;
+    setError(null);
+    setSuccess(null);
+
+    const daysBefore = Math.max(0, Math.floor(Number(settings.daysBefore) || 0));
+    const textValue = String(settings.text || "").trim();
+    const giftPoints = Math.max(0, Math.floor(Number(settings.giftPoints) || 0));
+    const giftTtlDays = Math.max(1, Math.floor(Number(settings.giftTtlDays) || 0));
+
+    if (settings.enabled && !textValue) {
+      setError("Введите текст Push-уведомления");
+      return;
+    }
+
+    if (settings.giftEnabled && giftPoints <= 0) {
+      setError("Укажите количество подарочных баллов");
+      return;
+    }
+
+    if (settings.giftEnabled && settings.giftBurnEnabled && giftTtlDays <= 0) {
+      setError("Срок сгорания должен быть положительным числом дней");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch("/api/portal/loyalty/birthday", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: settings.enabled,
+          daysBefore,
+          onlyBuyers: settings.onlyBuyers,
+          text: textValue,
+          giftEnabled: settings.giftEnabled,
+          giftPoints: settings.giftEnabled ? giftPoints : 0,
+          giftBurnEnabled: settings.giftEnabled ? settings.giftBurnEnabled : false,
+          giftTtlDays: settings.giftEnabled && settings.giftBurnEnabled ? giftTtlDays : 0,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.message || "Не удалось сохранить настройки");
+      setSuccess("Настройки сохранены");
+      await load({ keepSuccess: true });
+    } catch (e: any) {
+      setError(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
+    } finally {
+      setSaving(false);
+    }
+  }, [load, saving, settings]);
+
+  const appendPlaceholder = React.useCallback((token: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      text: `${prev.text}${prev.text && !prev.text.endsWith(" ") ? " " : ""}${token}`,
+    }));
+  }, []);
+
+  return (
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8">
+      {error ? (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-start space-x-3">
+          <div className="font-semibold">Ошибка</div>
+          <div className="flex-1 whitespace-pre-wrap break-words">{error}</div>
+          <button type="button" className="text-red-700 underline underline-offset-2" onClick={() => void load()}>
+            Повторить
+          </button>
+        </div>
+      ) : null}
+
+      {success ? (
+        <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 text-sm flex items-start space-x-3">
+          <div className="font-semibold">Готово</div>
+          <div className="flex-1 whitespace-pre-wrap break-words">{success}</div>
+        </div>
+      ) : null}
+
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <Link
+            href="/loyalty/mechanics"
+            className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 text-gray-600 transition-all"
+            aria-label="Назад к механикам"
+          >
+            <ArrowLeft size={20} />
+          </Link>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 leading-tight">День рождения</h2>
+            <div className="flex items-center space-x-2 text-sm text-gray-500">
+              <span className="font-medium">Механики</span>
+              <span>/</span>
+              <span>Поздравления</span>
+            </div>
           </div>
         </div>
+
+        {tab === "main" && (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || loading}
+            className="flex items-center space-x-2 bg-black text-white px-5 py-2.5 rounded-xl font-bold hover:bg-gray-800 transition-all shadow-sm hover:shadow-md text-sm disabled:opacity-60"
+          >
+            <Save size={16} />
+            <span>{saving ? "Сохраняем…" : "Сохранить"}</span>
+          </button>
+        )}
       </div>
 
-      <div style={{ display: "flex", gap: 12, borderBottom: "1px solid rgba(148,163,184,0.2)", flexWrap: "wrap" }}>
-        <TabButton active={tab === "main"} onClick={() => handleTabChange("main")}>
-          Основное
-        </TabButton>
-        <TabButton active={tab === "stats"} onClick={() => handleTabChange("stats")}>
-          Статистика
-        </TabButton>
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            type="button"
+            onClick={() => handleTabChange("main")}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center ${
+              tab === "main"
+                ? "border-black text-black"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <Settings size={16} className="mr-2" />
+            Настройки
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange("stats")}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center ${
+              tab === "stats"
+                ? "border-black text-black"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <BarChart3 size={16} className="mr-2" />
+            Аналитика
+          </button>
+        </nav>
       </div>
 
-      {tab === "main" ? <SettingsTab /> : <StatisticsTab />}
+      {tab === "stats" ? (
+        <div className="flex flex-col items-center justify-center h-96 text-gray-400 bg-white rounded-2xl border border-gray-200 border-dashed">
+          <div className="bg-gray-50 p-4 rounded-full mb-4">
+            <BarChart3 size={32} />
+          </div>
+          <h3 className="text-lg font-bold text-gray-900 mb-1">Статистика в разработке</h3>
+          <p className="text-sm text-center max-w-md text-gray-500 px-4">
+            Данные о количестве поздравленных клиентов и конверсии подарков появятся здесь после запуска.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div
+            className={`rounded-xl border ${
+              settings.enabled ? "bg-pink-50 border-pink-200" : "bg-white border-gray-200"
+            }`}
+          >
+            <div className="p-6 flex items-center justify-between">
+              <div className="flex items-start space-x-4">
+                <div
+                  className={`p-3 rounded-lg ${
+                    settings.enabled ? "bg-white text-pink-600 shadow-sm" : "bg-gray-100 text-gray-400"
+                  }`}
+                >
+                  <Cake size={20} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <h3 className={`font-bold text-base ${settings.enabled ? "text-pink-900" : "text-gray-700"}`}>
+                    {settings.enabled ? "Поздравления активны" : "Сценарий отключен"}
+                  </h3>
+                  <p className={`text-sm ${settings.enabled ? "text-pink-800" : "text-gray-500"}`}>
+                    {settings.enabled
+                      ? "Система автоматически отправляет поздравления и начисляет подарки клиентам в их день рождения."
+                      : "Включите, чтобы радовать клиентов персональными подарками и повышать лояльность."}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  settings.enabled ? "bg-pink-500" : "bg-gray-200"
+                }`}
+                disabled={controlsDisabled}
+              >
+                <span className="sr-only">Toggle Birthday Greeting</span>
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    settings.enabled ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div
+            className={`grid grid-cols-1 xl:grid-cols-12 gap-6 transition-opacity duration-200 ${
+              detailDisabled ? "opacity-60 pointer-events-none" : "opacity-100"
+            }`}
+          >
+            <div className="xl:col-span-7 space-y-6">
+              <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                <div className="flex items-center space-x-3 mb-6">
+                  <div className="bg-purple-50 p-2 rounded-lg text-purple-600">
+                    <Clock size={18} />
+                  </div>
+                  <h3 className="text-base font-bold text-gray-900">Время отправки</h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">
+                      За сколько дней
+                    </label>
+                    <div className="flex items-center space-x-3">
+                      <div className="relative w-24">
+                        <input
+                          type="number"
+                          min={0}
+                          value={settings.daysBefore}
+                          onChange={(event) =>
+                            setSettings((prev) => ({
+                              ...prev,
+                              daysBefore: Math.max(0, Number(event.target.value) || 0),
+                            }))
+                          }
+                          className="w-full bg-gray-50 border-transparent focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 rounded-lg px-3 py-2 text-center text-lg font-bold text-gray-900 transition-all outline-none"
+                          disabled={controlsDisabled}
+                        />
+                      </div>
+                      <span className="text-sm text-gray-600 font-medium">до Дня Рождения</span>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-2 flex items-center">
+                      <Calendar size={12} className="mr-1.5" />
+                      {settings.daysBefore === 0 ? "Отправим прямо в праздник." : "Отправим заранее."}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100 self-start">
+                    <div className="mr-4">
+                      <span className="block font-bold text-gray-900 mb-1 text-sm">Только активным</span>
+                      <p className="text-xs text-gray-500 leading-relaxed">
+                        Поздравлять только тех, кто совершил хотя бы одну покупку.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.onlyBuyers}
+                        onChange={(event) =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            onlyBuyers: event.target.checked,
+                          }))
+                        }
+                        className="sr-only peer"
+                        disabled={controlsDisabled}
+                      />
+                      <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                <div className="flex items-center space-x-3 mb-6">
+                  <div className="bg-blue-50 p-2 rounded-lg text-blue-600">
+                    <MessageSquare size={18} />
+                  </div>
+                  <h3 className="text-base font-bold text-gray-900">Поздравление</h3>
+                </div>
+
+                <div className="space-y-5">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">
+                      Текст Push-уведомления
+                    </label>
+                    <textarea
+                      rows={3}
+                      maxLength={150}
+                      value={settings.text}
+                      onChange={(event) => setSettings((prev) => ({ ...prev, text: event.target.value }))}
+                      className="w-full bg-gray-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-lg p-3 text-sm text-gray-900 resize-none transition-all outline-none"
+                      placeholder="С днём рождения!..."
+                      disabled={controlsDisabled}
+                    />
+                    <div className="flex justify-between items-center mt-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-gray-400 font-medium">Вставить:</span>
+                        <button
+                          type="button"
+                          onClick={() => appendPlaceholder("%username%")}
+                          className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-[10px] font-medium text-gray-600 rounded transition-colors"
+                          disabled={controlsDisabled}
+                        >
+                          Имя клиента
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => appendPlaceholder("%bonus%")}
+                          className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-[10px] font-medium text-gray-600 rounded transition-colors"
+                          disabled={controlsDisabled}
+                        >
+                          Размер бонуса
+                        </button>
+                      </div>
+                      <span
+                        className={`text-xs ${settings.text.length > 140 ? "text-red-500 font-bold" : "text-gray-400"}`}
+                      >
+                        {settings.text.length}/150
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 text-center">
+                      Предпросмотр
+                    </div>
+                    <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 max-w-sm mx-auto flex items-start gap-3">
+                      <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-500 rounded-lg flex items-center justify-center text-white text-sm shadow-sm flex-shrink-0">
+                        <Gift size={16} fill="currentColor" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-baseline mb-0.5">
+                          <span className="font-bold text-gray-900 text-xs">Loyalty App</span>
+                          <span className="text-[9px] text-gray-400">Только что</span>
+                        </div>
+                        <p className="text-xs text-gray-600 leading-snug break-words">
+                          {settings.text || "Текст уведомления..."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="xl:col-span-5 space-y-6">
+              <div
+                className={`bg-white rounded-xl border shadow-sm transition-all duration-200 ${
+                  settings.giftEnabled ? "border-pink-200 ring-1 ring-pink-100" : "border-gray-100"
+                }`}
+              >
+                <div className="p-4 border-b border-gray-100/50 flex items-center justify-between bg-gray-50/30 rounded-t-xl">
+                  <div className="flex items-center space-x-2">
+                    <div
+                      className={`p-1.5 rounded-md transition-colors ${
+                        settings.giftEnabled ? "bg-pink-100 text-pink-600" : "bg-gray-100 text-gray-400"
+                      }`}
+                    >
+                      <Gift size={16} />
+                    </div>
+                    <h3 className={`font-bold text-sm ${settings.giftEnabled ? "text-gray-900" : "text-gray-500"}`}>
+                      Подарок имениннику
+                    </h3>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        giftEnabled: !prev.giftEnabled,
+                        giftPoints: !prev.giftEnabled && prev.giftPoints <= 0 ? 300 : prev.giftPoints,
+                        giftBurnEnabled: !prev.giftEnabled ? prev.giftBurnEnabled : false,
+                      }))
+                    }
+                    className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      settings.giftEnabled ? "bg-pink-500" : "bg-gray-200"
+                    }`}
+                    disabled={controlsDisabled}
+                  >
+                    <span className="sr-only">Toggle Gift</span>
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        settings.giftEnabled ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div
+                  className={`p-5 space-y-5 ${settings.giftEnabled ? "" : "opacity-50 pointer-events-none"}`}
+                >
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase">Начислить баллы</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={0}
+                        value={settings.giftPoints}
+                        onChange={(event) =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            giftPoints: Math.max(0, Number(event.target.value) || 0),
+                          }))
+                        }
+                        className="w-full bg-gray-50 border-transparent focus:bg-white focus:border-pink-500 focus:ring-2 focus:ring-pink-500/20 rounded-lg px-3 py-2 font-bold text-gray-900 transition-all outline-none"
+                        disabled={controlsDisabled}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">
+                        pts
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-orange-50/50 rounded-lg p-3 border border-orange-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-orange-900">Сгорание подарка</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            giftBurnEnabled: !prev.giftBurnEnabled,
+                            giftTtlDays:
+                              !prev.giftBurnEnabled && prev.giftTtlDays <= 0 ? 7 : prev.giftTtlDays,
+                          }))
+                        }
+                        className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          settings.giftBurnEnabled ? "bg-orange-500" : "bg-gray-200"
+                        }`}
+                        disabled={controlsDisabled}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            settings.giftBurnEnabled ? "translate-x-3" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {settings.giftBurnEnabled && (
+                      <div className="flex items-center space-x-2">
+                        <div className="relative w-20">
+                          <input
+                            type="number"
+                            min={1}
+                            value={settings.giftTtlDays}
+                            onChange={(event) =>
+                              setSettings((prev) => ({
+                                ...prev,
+                                giftTtlDays: Math.max(1, Number(event.target.value) || 0),
+                              }))
+                            }
+                            className="w-full bg-white border border-orange-200 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 rounded-md px-2 py-1 text-center font-semibold text-gray-900 text-sm outline-none"
+                            disabled={controlsDisabled}
+                          />
+                        </div>
+                        <span className="text-xs text-orange-800">дней</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-start space-x-3">
+                <div className="text-blue-500 mt-0.5">
+                  <ShoppingBag size={16} />
+                </div>
+                <div className="text-xs text-blue-900/80 leading-relaxed">
+                  <span className="font-bold text-blue-900 block mb-1">Полезный совет</span>
+                  Ограниченный срок действия подарка (7-14 дней) значительно повышает вероятность визита клиента в
+                  праздничные дни.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function BirthdayPage() {
-  return (
-    <Suspense fallback={<Skeleton height={400} />}>
-      <BirthdayPageInner />
-    </Suspense>
-  );
-}
-
-type SettingsState = {
-  loading: boolean;
-  saving: boolean;
-  error: string;
-  banner: Banner | null;
-  enabled: boolean;
-  daysBefore: string;
-  onlyBuyers: boolean;
-  text: string;
-  giftEnabled: boolean;
-  giftPoints: string;
-  giftBurnEnabled: boolean;
-  giftTtlDays: string;
-};
-
-function SettingsTab() {
-  const [state, setState] = React.useState<SettingsState>({
-    loading: true,
-    saving: false,
-    error: "",
-    banner: null,
-    enabled: false,
-    daysBefore: "5",
-    onlyBuyers: false,
-    text: "С днём рождения! Мы подготовили для вас подарок в любимой кофейне.",
-    giftEnabled: false,
-    giftPoints: "300",
-    giftBurnEnabled: false,
-    giftTtlDays: "30",
-  });
-
-  const load = React.useCallback(async () => {
-    setState((prev) => ({ ...prev, loading: true, error: "", banner: null }));
-    try {
-      const res = await fetch("/api/portal/loyalty/birthday");
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json?.message || "Не удалось загрузить настройки");
-      }
-      setState((prev) => ({
-        ...prev,
-        loading: false,
-        enabled: Boolean(json?.enabled),
-        daysBefore: String(Number(json?.daysBefore ?? json?.days ?? 5) || 5),
-        onlyBuyers: Boolean(json?.onlyBuyers),
-        text: typeof json?.text === "string" ? json.text : prev.text,
-        giftEnabled: Boolean(json?.giftEnabled),
-        giftPoints: String(Number(json?.giftPoints ?? 0) || 0),
-        giftBurnEnabled: Boolean(json?.giftBurnEnabled),
-        giftTtlDays: String(Number(json?.giftTtlDays ?? 0) || 0),
-      }));
-    } catch (error: any) {
-      setState((prev) => ({
-        ...prev,
-        loading: false,
-        error: normalizeErrorMessage(error, "Ошибка загрузки"),
-      }));
-    }
-  }, []);
-
-  React.useEffect(() => {
-    load();
-  }, [load]);
-
-  const charsLeft = Math.max(0, 300 - state.text.length);
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (state.saving || state.loading || state.error) return;
-
-    const payload = {
-      enabled: state.enabled,
-      daysBefore: Number(state.daysBefore) || 0,
-      onlyBuyers: state.onlyBuyers,
-      text: state.text,
-      giftEnabled: state.giftEnabled,
-      giftPoints: Number(state.giftPoints) || 0,
-      giftBurnEnabled: state.giftEnabled ? state.giftBurnEnabled : false,
-      giftTtlDays: Number(state.giftTtlDays) || 0,
-    };
-
-    setState((prev) => ({ ...prev, saving: true, error: "", banner: null }));
-    try {
-      const res = await fetch("/api/portal/loyalty/birthday", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json?.message || "Не удалось сохранить настройки");
-      }
-      setState((prev) => ({ ...prev, saving: false, banner: { type: "success", text: "Настройки сохранены" } }));
-      load();
-    } catch (error: any) {
-      setState((prev) => ({
-        ...prev,
-        saving: false,
-        error: normalizeErrorMessage(error, "Не удалось сохранить настройки"),
-      }));
-    }
-  }
-
-  return (
-    <div style={{ display: "grid", gap: 20 }}>
-      {state.banner && (
-        <div
-          style={{
-            borderRadius: 12,
-            padding: "12px 16px",
-            background: state.banner.type === "success" ? "rgba(34,197,94,0.15)" : "rgba(248,113,113,0.15)",
-            border: `1px solid ${state.banner.type === "success" ? "rgba(34,197,94,0.4)" : "rgba(248,113,113,0.4)"}`,
-            color: state.banner.type === "success" ? "#bbf7d0" : "#fecaca",
-          }}
-        >
-          {state.banner.text}
-        </div>
-      )}
-
-      {state.error && (
-        <div style={{ borderRadius: 12, border: "1px solid rgba(248,113,113,.35)", padding: "12px 16px", color: "#f87171" }}>
-          {state.error}
-        </div>
-      )}
-
-      <Card>
-        <CardBody>
-          <form onSubmit={handleSubmit} style={{ display: "grid", gap: 20 }}>
-            <Toggle
-              checked={state.enabled}
-              onChange={(value) => setState((prev) => ({ ...prev, enabled: value }))}
-              label={state.enabled ? "Сценарий включён" : "Сценарий выключен"}
-              disabled={state.loading || state.saving}
-            />
-
-            <label style={{ display: "grid", gap: 6, maxWidth: 280 }}>
-              <span>За сколько дней поздравлять клиента</span>
-              <input
-                type="number"
-                min="0"
-                value={state.daysBefore}
-                onChange={(event) => setState((prev) => ({ ...prev, daysBefore: event.target.value }))}
-                disabled={state.loading || state.saving}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid rgba(148,163,184,0.35)",
-                  background: "rgba(15,23,42,0.6)",
-                  color: "#e2e8f0",
-                }}
-              />
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Введите 0, если хотите поздравлять клиента ровно в день рождения.</span>
-            </label>
-
-            <Toggle
-              checked={state.onlyBuyers}
-              onChange={(value) => setState((prev) => ({ ...prev, onlyBuyers: value }))}
-              label="Поздравлять только клиентов с покупками"
-              disabled={state.loading || state.saving}
-              title="Для рассылки будут выбраны клиенты, совершавшие покупки ранее"
-            />
-
-            <label style={{ display: "grid", gap: 6 }}>
-              <span>Текст push-уведомления</span>
-              <textarea
-                value={state.text}
-                onChange={(event) => setState((prev) => ({ ...prev, text: event.target.value }))}
-                maxLength={300}
-                rows={4}
-                disabled={state.loading || state.saving}
-                style={{
-                  padding: "12px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(148,163,184,0.35)",
-                  background: "rgba(15,23,42,0.6)",
-                  color: "#e2e8f0",
-                }}
-              />
-              <div style={{ fontSize: 12, opacity: 0.7, display: "flex", justifyContent: "space-between", flexWrap: "wrap" }}>
-                <span>Осталось символов: {charsLeft}</span>
-                <span>Плейсхолдеры: %username%, %bonus%</span>
-              </div>
-            </label>
-
-            <div style={{ display: "grid", gap: 16 }}>
-              <Toggle
-                checked={state.giftEnabled}
-                onChange={(value) =>
-                  setState((prev) => ({
-                    ...prev,
-                    giftEnabled: value,
-                    giftPoints: value ? prev.giftPoints || "100" : "0",
-                  }))
-                }
-                label="Подарить баллы клиенту"
-                disabled={state.loading || state.saving}
-              />
-              {state.giftEnabled && (
-                <label style={{ display: "grid", gap: 6, maxWidth: 260 }}>
-                  <span>Сколько баллов подарить клиенту</span>
-                  <input
-                    type="number"
-                    min="1"
-                    value={state.giftPoints}
-                    onChange={(event) => setState((prev) => ({ ...prev, giftPoints: event.target.value }))}
-                    disabled={state.loading || state.saving}
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "1px solid rgba(148,163,184,0.35)",
-                      background: "rgba(15,23,42,0.6)",
-                      color: "#e2e8f0",
-                    }}
-                  />
-                </label>
-              )}
-            </div>
-
-            {state.giftEnabled && (
-              <div style={{ display: "grid", gap: 16 }}>
-                <Toggle
-                  checked={state.giftBurnEnabled}
-                  onChange={(value) =>
-                    setState((prev) => ({
-                      ...prev,
-                      giftBurnEnabled: value,
-                      giftTtlDays: value ? prev.giftTtlDays || "30" : "0",
-                    }))
-                  }
-                  label="Сделать подарочные баллы сгораемыми"
-                  disabled={state.loading || state.saving}
-                />
-                {state.giftBurnEnabled && (
-                  <label style={{ display: "grid", gap: 6, maxWidth: 260 }}>
-                    <span>Через сколько дней баллы сгорят</span>
-                    <input
-                      type="number"
-                      min="1"
-                      value={state.giftTtlDays}
-                      onChange={(event) => setState((prev) => ({ ...prev, giftTtlDays: event.target.value }))}
-                      disabled={state.loading || state.saving}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: 10,
-                        border: "1px solid rgba(148,163,184,0.35)",
-                        background: "rgba(15,23,42,0.6)",
-                        color: "#e2e8f0",
-                      }}
-                    />
-                  </label>
-                )}
-              </div>
-            )}
-
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <Button type="submit" variant="primary" disabled={state.loading || state.saving || Boolean(state.error)}>
-                {state.saving ? "Сохранение…" : "Сохранить"}
-              </Button>
-            </div>
-          </form>
-        </CardBody>
-      </Card>
-    </div>
-  );
-}
-
-function StatisticsTab() {
-  const defaultOutlet: OutletOption = { value: "all", label: "Все торговые точки" };
-  const [outlets, setOutlets] = React.useState<OutletOption[]>([defaultOutlet]);
-  const [selectedOutlet, setSelectedOutlet] = React.useState<OutletOption>(defaultOutlet);
-  const [range, setRange] = React.useState<QuickRange>(quickRanges[2] ?? { label: "Год", days: 365 });
-  const [customRangeDraft, setCustomRangeDraft] = React.useState<{ from: string; to: string }>({ from: "", to: "" });
-  const [appliedCustom, setAppliedCustom] = React.useState<{ from: string; to: string } | null>(null);
-  const [stats, setStats] = React.useState<BirthdayStats | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState("");
-  const [timelineGroup, setTimelineGroup] = React.useState<ChartGroup>("day");
-  const [revenueGroup, setRevenueGroup] = React.useState<ChartGroup>("day");
-
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/portal/outlets?status=active");
-        const json = await res.json();
-        if (!cancelled && Array.isArray(json?.items)) {
-          const items = json.items as Array<{ id: string; name: string }>;
-          setOutlets([
-            { value: "all", label: "Все торговые точки" },
-            ...items.map((item) => ({ value: item.id, label: item.name })),
-          ]);
-        }
-      } catch {
-        // ignore
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  React.useEffect(() => {
-    setSelectedOutlet((prev) => {
-      const match = outlets.find((item) => item.value === prev.value);
-      return match ?? outlets[0] ?? prev;
-    });
-  }, [outlets]);
-
-  const loadStats = React.useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const params = new URLSearchParams();
-      if (appliedCustom) {
-        params.set("from", appliedCustom.from);
-        params.set("to", appliedCustom.to);
-      } else {
-        params.set("period", range.value);
-      }
-      if (selectedOutlet.value !== "all") {
-        params.set("outletId", selectedOutlet.value);
-      }
-      const url = `/api/portal/analytics/birthday-mechanic${params.toString() ? `?${params.toString()}` : ""}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json?.message || "Не удалось загрузить статистику");
-      }
-      setStats(json as BirthdayStats);
-    } catch (err: any) {
-      setError(normalizeErrorMessage(err, "Ошибка загрузки"));
-      setStats(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [appliedCustom, range.value, selectedOutlet.value]);
-
-  React.useEffect(() => {
-    loadStats();
-  }, [loadStats]);
-
-  const summaryItems = React.useMemo(() => {
-    if (!stats) return [];
-    return [
-      {
-        title: "Выслано поздравлений",
-        subtitle: "Всем покупателям по торговым точкам",
-        value: formatNumber(stats.summary.greetings),
-      },
-      {
-        title: "Совершили покупку",
-        subtitle: "С тратой подарочных баллов",
-        value: formatNumber(stats.summary.giftPurchasers),
-      },
-      {
-        title: "Выручки сгенерировано",
-        subtitle: "С вычетом потраченных подарочных баллов",
-        value: formatCurrency(stats.summary.revenueNet),
-      },
-      {
-        title: "Средний чек",
-        subtitle: "Без вычета потраченных подарочных баллов",
-        value: formatCurrency(stats.summary.averageCheck),
-      },
-      {
-        title: "Затраты на баллы",
-        subtitle: "Подарочных баллов было потрачено",
-        value: formatNumber(stats.summary.giftPointsSpent),
-      },
-    ];
-  }, [stats]);
-
-  const groupedTimeline = React.useMemo(
-    () => groupTimeline(stats?.timeline ?? [], timelineGroup),
-    [stats, timelineGroup],
-  );
-  const groupedRevenue = React.useMemo(
-    () => groupRevenue(stats?.revenue ?? [], revenueGroup),
-    [stats, revenueGroup],
-  );
-
-  const timelineOption = React.useMemo(() => {
-    if (!stats || !groupedTimeline.length) return null;
-    const categories = groupedTimeline.map((item) => formatBucketLabel(item.bucket, timelineGroup));
-    const greetings = groupedTimeline.map((item) => item.greetings);
-    const purchases = groupedTimeline.map((item) => item.purchases);
-    return {
-      tooltip: { trigger: "axis" },
-      legend: { data: ["Поздравления", "Покупки"] },
-      grid: { left: 28, right: 16, top: 30, bottom: 40 },
-      xAxis: { type: "category", data: categories },
-      yAxis: { type: "value" },
-      series: [
-        { name: "Поздравления", type: "line", data: greetings, smooth: true },
-        { name: "Покупки", type: "line", data: purchases, smooth: true },
-      ],
-    } as const;
-  }, [groupedTimeline, stats, timelineGroup]);
-
-  const revenueOption = React.useMemo(() => {
-    if (!stats || !groupedRevenue.length) return null;
-    const categories = groupedRevenue.map((item) => formatBucketLabel(item.bucket, revenueGroup));
-    const totals = groupedRevenue.map((item) => Math.round(item.revenue / 100));
-    return {
-      tooltip: { trigger: "axis" },
-      legend: { data: ["Выручка"] },
-      grid: { left: 32, right: 16, top: 30, bottom: 40 },
-      xAxis: { type: "category", data: categories },
-      yAxis: { type: "value", axisLabel: { formatter: (val: number) => `${val} ₽` } },
-      series: [{ name: "Выручка", type: "line", data: totals, smooth: true, areaStyle: {} }],
-    } as const;
-  }, [groupedRevenue, revenueGroup, stats]);
-
-  const canApplyCustom =
-    Boolean(customRangeDraft.from) &&
-    Boolean(customRangeDraft.to) &&
-    !Number.isNaN(new Date(customRangeDraft.from).getTime()) &&
-    !Number.isNaN(new Date(customRangeDraft.to).getTime());
-
-  const applyCustomRange = React.useCallback(() => {
-    if (!canApplyCustom) return;
-    const fromDate = new Date(customRangeDraft.from);
-    const toDate = new Date(customRangeDraft.to);
-    if (fromDate.getTime() > toDate.getTime()) return;
-    setAppliedCustom({ from: customRangeDraft.from, to: customRangeDraft.to });
-  }, [canApplyCustom, customRangeDraft.from, customRangeDraft.to]);
-
-  const resetCustomRange = React.useCallback(() => {
-    setCustomRangeDraft({ from: "", to: "" });
-    setAppliedCustom(null);
-  }, []);
-
-  return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <Card>
-        <CardBody style={{ display: "grid", gap: 12 }}>
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", alignItems: "center" }}>
-            <select
-              value={selectedOutlet.value}
-              onChange={(event) => {
-                const value = event.target.value;
-                const option = outlets.find((item) => item.value === value) ?? defaultOutlet;
-                setSelectedOutlet(option);
-              }}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid rgba(148,163,184,0.35)",
-                background: "rgba(15,23,42,0.6)",
-                color: "#e2e8f0",
-              }}
-            >
-              {outlets.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {quickRanges.map((item) => (
-                <button
-                  type="button"
-                  key={item.value}
-                  onClick={() => {
-                    setRange(item);
-                    setAppliedCustom(null);
-                  }}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: 999,
-                    border:
-                      range.value === item.value && !appliedCustom
-                        ? "1px solid transparent"
-                        : "1px solid rgba(148,163,184,0.35)",
-                    background:
-                      range.value === item.value && !appliedCustom
-                        ? "var(--brand-primary)"
-                        : "rgba(15,23,42,0.6)",
-                    color: "#e2e8f0",
-                    cursor: "pointer",
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 6,
-                  alignItems: "center",
-                  padding: "8px 10px",
-                  borderRadius: 10,
-                  border: "1px solid rgba(148,163,184,0.35)",
-                  background: "rgba(15,23,42,0.6)",
-                  color: "#e2e8f0",
-                  flex: 1,
-                  minWidth: 220,
-                }}
-              >
-                <input
-                  type="date"
-                  value={customRangeDraft.from}
-                  onChange={(event) =>
-                    setCustomRangeDraft((prev) => ({
-                      ...prev,
-                      from: event.target.value,
-                      to: prev.to && prev.to < event.target.value ? event.target.value : prev.to,
-                    }))
-                  }
-                  style={{
-                    border: "none",
-                    background: "transparent",
-                    color: "#e2e8f0",
-                    padding: "6px 4px",
-                    flex: 1,
-                  }}
-                />
-                <span style={{ opacity: 0.6 }}>—</span>
-                <input
-                  type="date"
-                  value={customRangeDraft.to}
-                  onChange={(event) =>
-                    setCustomRangeDraft((prev) => ({
-                      ...prev,
-                      to: event.target.value,
-                      from: prev.from && event.target.value && event.target.value < prev.from ? event.target.value : prev.from,
-                    }))
-                  }
-                  style={{
-                    border: "none",
-                    background: "transparent",
-                    color: "#e2e8f0",
-                    padding: "6px 4px",
-                    flex: 1,
-                  }}
-                />
-              </div>
-              <Button type="button" variant="secondary" onClick={applyCustomRange} disabled={!canApplyCustom || loading}>
-                Применить
-              </Button>
-              {appliedCustom && (
-                <Button type="button" variant="secondary" onClick={resetCustomRange} disabled={loading}>
-                  Сбросить
-                </Button>
-              )}
-            </div>
-          </div>
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardBody style={{ display: "grid", gap: 12 }}>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>Сводные показатели</div>
-          <KpiGrid items={summaryItems} loading={loading} />
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardBody style={{ display: "grid", gap: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>Поздравления и покупки</div>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>Значения за выбранный период</div>
-            </div>
-            <GroupChips value={timelineGroup} onChange={setTimelineGroup} />
-          </div>
-          {loading ? (
-            <Skeleton height={240} />
-          ) : timelineOption && groupedTimeline.length ? (
-            <Chart option={timelineOption as any} height={240} />
-          ) : (
-            <Placeholder>Нет данных</Placeholder>
-          )}
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardBody style={{ display: "grid", gap: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>Выручка</div>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>С вычетом потраченных подарочных баллов</div>
-            </div>
-            <GroupChips value={revenueGroup} onChange={setRevenueGroup} />
-          </div>
-          {loading ? (
-            <Skeleton height={240} />
-          ) : revenueOption && groupedRevenue.length ? (
-            <Chart option={revenueOption as any} height={240} />
-          ) : (
-            <Placeholder>Нет данных</Placeholder>
-          )}
-        </CardBody>
-      </Card>
-
-      {error && (
-        <div style={{ borderRadius: 12, border: "1px solid rgba(248,113,113,.35)", padding: "12px 16px", color: "#f87171" }}>
-          {error}
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-function TabButton({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        border: "none",
-        background: "transparent",
-        padding: "12px 0",
-        fontSize: 14,
-        fontWeight: active ? 600 : 500,
-        color: active ? "var(--brand-primary)" : "#e2e8f0",
-        borderBottom: active ? "2px solid var(--brand-primary)" : "2px solid transparent",
-        cursor: "pointer",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function GroupChips({ value, onChange }: { value: ChartGroup; onChange: (value: ChartGroup) => void }) {
-  const items: { value: ChartGroup; label: string }[] = [
-    { value: "day", label: "По дням" },
-    { value: "week", label: "По неделям" },
-    { value: "month", label: "По месяцам" },
-  ];
-  return (
-    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
-      <span style={{ opacity: 0.75 }}>Детализация:</span>
-      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-        {items.map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            onClick={() => onChange(item.value)}
-            style={{
-              padding: "6px 12px",
-              borderRadius: 999,
-              border: value === item.value ? "1px solid transparent" : "1px solid rgba(148,163,184,0.35)",
-              background: value === item.value ? "var(--brand-primary)" : "rgba(15,23,42,0.6)",
-              color: "#e2e8f0",
-              cursor: "pointer",
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function KpiGrid({ items, loading }: { items: { title: string; subtitle?: string; value: string }[]; loading: boolean }) {
-  if (loading) {
-    return <Skeleton height={160} />;
-  }
-  return (
-    <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
-      {items.map((item) => (
-        <div
-          key={item.title}
-          style={{ padding: "12px 16px", borderRadius: 12, background: "rgba(148,163,184,0.08)", display: "grid", gap: 8 }}
-        >
-          <div style={{ display: "grid", gap: 2 }}>
-            <span style={{ fontSize: 12, opacity: 0.75 }}>{item.title}</span>
-            {item.subtitle && <span style={{ fontSize: 12, opacity: 0.6 }}>{item.subtitle}</span>}
-          </div>
-          <span style={{ fontSize: 18, fontWeight: 700 }}>{item.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-const Placeholder: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div
-    style={{
-      height: 220,
-      borderRadius: 16,
-      background: "linear-gradient(135deg, rgba(59,130,246,0.18), rgba(236,72,153,0.12))",
-      display: "grid",
-      placeItems: "center",
-      opacity: 0.6,
-      fontSize: 12,
-      padding: 16,
-      textAlign: "center",
-    }}
-  >
-    {children}
-  </div>
-);
-
-function formatNumber(value: number) {
-  return Number.isFinite(value) ? value.toLocaleString("ru-RU") : "0";
-}
-
-function formatCurrency(value: number) {
-  if (!Number.isFinite(value)) return "0 ₽";
-  return `${formatNumber(Math.round(value / 100))} ₽`;
+  return <BirthdayPageInner />;
 }

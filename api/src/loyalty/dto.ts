@@ -8,7 +8,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { DeviceType, TxnType } from '@prisma/client';
+import { TxnType } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 
 export enum Mode {
@@ -346,12 +346,6 @@ export class TransactionItemDto {
     description: 'Идентификатор устройства (код)',
   })
   deviceId?: string | null;
-  @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?:
-    | keyof typeof DeviceType
-    | string
-    | null;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
-  outletLastSeenAt?: string | null;
   @ApiPropertyOptional() staffId?: string | null;
   @ApiPropertyOptional({
     nullable: true,
@@ -461,7 +455,6 @@ export class CashierOutletTransactionsRespDto {
 export class PublicOutletDto {
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
-  @ApiPropertyOptional() address?: string;
 }
 
 export class PublicStaffDto {

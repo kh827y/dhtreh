@@ -31,6 +31,7 @@ function verifyPortalJwtLocal(
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   const [h, p, sig] = parts;
+  if (!h || !p || !sig) return null;
   try {
     const header = JSON.parse(decodeBase64Url(h)) as { alg?: string };
     if (header?.alg !== 'HS256') return null;

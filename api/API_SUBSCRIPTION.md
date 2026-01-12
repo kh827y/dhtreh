@@ -152,26 +152,14 @@ Returns current usage statistics against plan limits.
     "id": "plan_starter",
     "name": "Starter",
     "limits": {
-      "transactions": 10000,
-      "customers": 1000,
-      "outlets": 3
+      "outlets": null
     }
   },
   "usage": {
-    "transactions": {
-      "used": 3421,
-      "limit": 10000,
-      "percentage": 34
-    },
-    "customers": {
-      "used": 245,
-      "limit": 1000,
-      "percentage": 25
-    },
     "outlets": {
       "used": 2,
-      "limit": 3,
-      "percentage": 67
+      "limit": "unlimited",
+      "percentage": null
     }
   },
   "status": "active",

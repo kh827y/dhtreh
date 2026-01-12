@@ -107,7 +107,7 @@ export function toHeatmapData(
       const value = getMetricValue(map.get(mapKey), metric);
       cells.push({
         dayIndex: dayIdx,
-        dayLabel: weekDayLabels[dayIdx],
+        dayLabel: weekDayLabels[dayIdx] ?? "",
         hour,
         value,
       });

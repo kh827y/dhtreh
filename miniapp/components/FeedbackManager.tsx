@@ -60,6 +60,8 @@ function mapTransactions(
     reviewId?: string | null;
     reviewRating?: number | null;
     reviewCreatedAt?: string | null;
+    reviewDismissedAt?: string | null;
+    relatedOperationAt?: string | null;
     source?: string | null;
     canceledAt?: string | null;
     earnAmount?: number | null;
@@ -88,6 +90,7 @@ function mapTransactions(
       reviewRating: typeof item.reviewRating === "number" ? item.reviewRating : null,
       reviewCreatedAt: item.reviewCreatedAt ?? null,
       reviewDismissedAt: item.reviewDismissedAt ?? null,
+      relatedOperationAt: item.relatedOperationAt ?? null,
       source:
         typeof item.source === "string" && item.source.trim().length > 0
           ? item.source.trim()

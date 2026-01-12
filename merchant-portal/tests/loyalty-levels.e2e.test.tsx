@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import React from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
 const originalFetch = global.fetch;
 
@@ -45,7 +45,14 @@ describe("loyalty levels page (new design)", () => {
       },
     ];
 
-    fetchMock = mock.method(global, "fetch", async () => {
+    fetchMock = mock.method(global, "fetch", async (input: any) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.endsWith("/api/portal/loyalty/levels")) {
+        return new Response(JSON.stringify({ periodDays: 365 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify(tiersPayload), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -58,7 +65,7 @@ describe("loyalty levels page (new design)", () => {
     await screen.findByText("Base");
     await screen.findByText("VIP");
 
-    assert.equal(fetchMock.mock.calls.length, 1);
+    assert.ok(fetchMock.mock.calls.some((call) => (call.arguments[0] as any).toString().includes("/loyalty/tiers")));
     assert.ok(screen.getByText("Старт"));
     assert.ok(screen.getByText("Скрыт"));
 
@@ -104,6 +111,12 @@ describe("loyalty levels page (new design)", () => {
           headers: { "Content-Type": "application/json" },
         });
       }
+      if (url.endsWith("/api/portal/loyalty/levels") && method === "GET") {
+        return new Response(JSON.stringify({ periodDays: 365 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.endsWith("/api/portal/loyalty/tiers") && method === "POST") {
         return new Response(JSON.stringify(created), {
           status: 200,
@@ -119,22 +132,29 @@ describe("loyalty levels page (new design)", () => {
     await screen.findByText("Base");
     fireEvent.click(screen.getByText("Добавить уровень"));
 
-    fireEvent.click(screen.getByText("Сохранить"));
+    const modalTitle = await screen.findByText("Новый уровень");
+    const modalContainer = modalTitle.closest("div")?.parentElement?.parentElement;
+    if (!modalContainer) {
+      throw new Error("Modal container not found");
+    }
+    const modalScope = within(modalContainer);
+
+    fireEvent.click(modalScope.getByRole("button", { name: "Сохранить" }));
     await screen.findByText("Укажите название уровня");
 
-    fireEvent.change(screen.getByPlaceholderText("Например: Platinum"), {
+    fireEvent.change(modalScope.getByPlaceholderText("Например: Platinum"), {
       target: { value: "Silver" },
     });
-    fireEvent.change(screen.getByLabelText("Порог перехода"), {
+    fireEvent.change(modalScope.getByLabelText("Порог перехода"), {
       target: { value: "15000" },
     });
-    fireEvent.change(screen.getByLabelText("% Начисления"), {
+    fireEvent.change(modalScope.getByLabelText("% Начисления"), {
       target: { value: "5" },
     });
-    fireEvent.change(screen.getByLabelText("% Списания"), {
+    fireEvent.change(modalScope.getByLabelText("% Списания"), {
       target: { value: "60" },
     });
-    fireEvent.click(screen.getByText("Сохранить"));
+    fireEvent.click(modalScope.getByRole("button", { name: "Сохранить" }));
 
     await screen.findByText("Silver");
     assert.ok(fetchMock.mock.calls.some((call) => (call.arguments[0] as any).toString().includes("tiers") && (call.arguments[1]?.method || "GET") === "POST"));
@@ -193,6 +213,12 @@ describe("loyalty levels page (new design)", () => {
       const method = init?.method || "GET";
       if (url.endsWith("/api/portal/loyalty/tiers") && method === "GET") {
         return new Response(JSON.stringify([tier]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/portal/loyalty/levels") && method === "GET") {
+        return new Response(JSON.stringify({ periodDays: 365 }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });

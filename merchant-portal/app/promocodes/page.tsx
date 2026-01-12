@@ -242,7 +242,7 @@ const PromocodesPage: React.FC = () => {
       const mapped = source
         .filter(Boolean)
         .map((row: any) => ({ id: String(row?.id ?? ""), name: String(row?.name ?? "") }))
-        .filter((row) => row.id && row.name);
+        .filter((row: { id: string; name: string }) => row.id && row.name);
       setTiers(mapped);
     } catch {
       setTiers([]);
@@ -262,7 +262,9 @@ const PromocodesPage: React.FC = () => {
         if (!res.ok) throw new Error(await res.text().catch(() => ""));
         const payload = await res.json();
         const source = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
-        const mapped = source.map(mapPortalRow).filter((row) => row.id && row.code);
+        const mapped = source
+          .map(mapPortalRow)
+          .filter((row: PortalPromocodeRow) => row.id && row.code);
         collected.push(...mapped);
         if (source.length < limit) break;
         offset += limit;

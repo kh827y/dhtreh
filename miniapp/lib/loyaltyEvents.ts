@@ -149,9 +149,9 @@ export function subscribeToLoyaltyEvents(handler: EventHandler, options: Subscri
     }
   }
 
-  const pollerKey =
-    merchantId && customerId ? `${merchantId}:${customerId}` : null;
-  if (pollerKey) {
+  let pollerKey: string | null = null;
+  if (merchantId && customerId) {
+    pollerKey = `${merchantId}:${customerId}`;
     acquirePoller(pollerKey, merchantId, customerId);
   }
 

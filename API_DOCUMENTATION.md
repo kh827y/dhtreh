@@ -757,8 +757,6 @@ Response 200:
       "receiptNumber": "string | null",
       "createdAt": "2024-01-01T00:00:00Z",
       "outletId": "OUT-1",
-      "outletPosType": "SMART",
-      "outletLastSeenAt": "2024-01-01T12:34:56Z",
       "staffId": "STAFF-1",
       "pending": true,                 // для отложенных начислений (earnDelayDays>0)
       "maturesAt": "2024-01-03T10:00:00Z", // когда баллы будут зачислены
@@ -1381,13 +1379,8 @@ Response 200:
     "name": "Full"
   },
   "usage": {
-    "transactions": {
-      "used": 5432,
-      "limit": "unlimited",
-      "percentage": null
-    },
-    "customers": {
-      "used": 234,
+    "outlets": {
+      "used": 2,
       "limit": "unlimited",
       "percentage": null
     }

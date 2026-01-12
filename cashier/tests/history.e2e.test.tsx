@@ -154,6 +154,7 @@ describe("cashier history and rating", () => {
         redeemApplied: 0,
         receiptNumber: "RC-1",
         createdAt: today.toISOString(),
+        staffId: "S-1",
         staffName: "Сотрудник А",
         customerName: "Клиент 1",
       },
@@ -166,6 +167,7 @@ describe("cashier history and rating", () => {
         refundRedeem: 0,
         receiptNumber: "RC-2",
         createdAt: today.toISOString(),
+        staffId: "S-1",
         staffName: "Сотрудник А",
         customerName: "Клиент 2",
       },
@@ -178,6 +180,7 @@ describe("cashier history and rating", () => {
         redeemApplied: 0,
         receiptNumber: "RC-3",
         createdAt: today.toISOString(),
+        staffId: "S-2",
         staffName: "Сотрудник Б",
         customerName: "Клиент 3",
       },
@@ -190,6 +193,7 @@ describe("cashier history and rating", () => {
         redeemApplied: 0,
         receiptNumber: "RC-4",
         createdAt: yesterday.toISOString(),
+        staffId: "S-2",
         staffName: "Сотрудник Б",
         customerName: "Клиент 4",
       },
@@ -229,16 +233,22 @@ describe("cashier history and rating", () => {
 
     await screen.findByText("Терминал лояльности");
 
-    const expectedRevenue = new Intl.NumberFormat("ru-RU").format(1700);
+    const expectedRevenue = new Intl.NumberFormat("ru-RU").format(1000);
     const expectedCompact = expectedRevenue.replace(/\s/g, "");
-    const shiftHeading = await screen.findByText("Смена");
-    const shiftScope = within(shiftHeading.parentElement ?? shiftHeading);
+    const shiftHeadings = await screen.findAllByText("Ваши операции за сегодня");
+    const shiftHeading = shiftHeadings.find((node) => node.closest("aside")) ?? shiftHeadings[0];
+    const shiftContainer = shiftHeading.closest("aside") ?? shiftHeading.parentElement ?? shiftHeading;
+    const shiftScope = within(shiftContainer);
 
-    const revenueNode = await shiftScope.findByText((text) =>
+    const revenueLabel = shiftScope.getByText("Выручка");
+    const revenueCard = revenueLabel.closest("div")?.parentElement ?? shiftContainer;
+    const revenueNode = await within(revenueCard).findByText((text) =>
       text.replace(/\s/g, "").includes(expectedCompact),
     );
     assert.ok(revenueNode.textContent?.includes("₽"));
-    shiftScope.getByText("2");
+    const checksLabel = shiftScope.getByText("Чеков");
+    const checksCard = checksLabel.closest("div")?.parentElement ?? shiftContainer;
+    within(checksCard).getByText("1");
   });
 
   it("показывает рейтинг сотрудников", async () => {

@@ -5,9 +5,14 @@ describe('MerchantsService rulesJson validation', () => {
   function makeSvc() {
     const prisma: any = {
       merchant: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'M-1' }),
         upsert: jest.fn().mockResolvedValue({ id: 'M-1', name: 'M-1' }),
       },
       merchantSettings: {
+        findUnique: jest.fn().mockResolvedValue({
+          pointsTtlDays: 0,
+          rulesJson: null,
+        }),
         upsert: jest
           .fn()
           .mockImplementation(async ({ where, update, create }: any) => {
@@ -38,9 +43,9 @@ describe('MerchantsService rulesJson validation', () => {
 
   it('should reject invalid rules with 400 (BadRequestException)', async () => {
     const svc = makeSvc();
-    const badRules = [
-      { if: { weekdayIn: 'not-array' }, then: { earnBps: 700 } },
-    ];
+    const badRules = {
+      rules: [{ if: { channelIn: 'not-array' }, then: { earnBps: 700 } }],
+    };
     await expect(
       svc.updateSettings(
         'M-1',
@@ -62,7 +67,9 @@ describe('MerchantsService rulesJson validation', () => {
 
   it('should accept valid rules and proceed to save', async () => {
     const svc = makeSvc();
-    const okRules = [{ if: { channelIn: ['SMART'] }, then: { earnBps: 700 } }];
+    const okRules = {
+      rules: [{ if: { channelIn: ['SMART'] }, then: { earnBps: 700 } }],
+    };
     const r = await svc.updateSettings(
       'M-1',
       500,
@@ -82,7 +89,7 @@ describe('MerchantsService rulesJson validation', () => {
     expect(r.rulesJson).toEqual(okRules);
   });
 
-  it('normalizes antifraud device limits to outlet and rewrites block factors', async () => {
+  it('keeps antifraud device limits and preserves block factors', async () => {
     const svc = makeSvc();
     const payload = {
       af: {
@@ -113,10 +120,10 @@ describe('MerchantsService rulesJson validation', () => {
     expect(result.rulesJson).toEqual({
       af: {
         merchant: { limit: 10, windowSec: 60 },
-        outlet: { limit: 5, windowSec: 120 },
+        device: { limit: 5, windowSec: 120 },
         staff: { limit: 3, windowSec: 60 },
         customer: { limit: 2, windowSec: 60 },
-        blockFactors: ['no_outlet_id', 'velocity'],
+        blockFactors: ['no_device_id', 'velocity'],
       },
     });
   });

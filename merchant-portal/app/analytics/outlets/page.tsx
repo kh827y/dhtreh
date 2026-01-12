@@ -119,6 +119,7 @@ export default function OutletsActivityPage() {
       return {
         salesCount: 0,
         revenue: 0,
+        avgCheck: 0,
         accruedPoints: 0,
         redeemedPoints: 0,
         customerCount: 0,

@@ -37,13 +37,7 @@ describe('EarnActivationWorker (unit)', () => {
         update: jest.fn().mockResolvedValue({}),
       },
       wallet: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'W1',
-          merchantId: 'M1',
-          customerId: 'C1',
-          type: 'POINTS',
-        }),
-        update: jest.fn().mockResolvedValue({}),
+        upsert: jest.fn().mockResolvedValue({}),
       },
       transaction: { create: jest.fn().mockResolvedValue({}) },
       ledgerEntry: { create: jest.fn().mockResolvedValue({}) },
@@ -65,10 +59,11 @@ describe('EarnActivationWorker (unit)', () => {
       where: { id: 'L1' },
       data: { status: 'ACTIVE', earnedAt: maturedAt },
     });
-    expect(tx.wallet.update).toHaveBeenCalledWith({
-      where: { id: 'W1' },
-      data: { balance: { increment: 70 } },
-    });
+    expect(tx.wallet.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: { balance: { increment: 70 } },
+      }),
+    );
     expect(tx.transaction.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

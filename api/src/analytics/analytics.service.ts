@@ -4241,7 +4241,7 @@ export class AnalyticsService {
     const [outlets, grouped] = await Promise.all([
       this.prisma.outlet.findMany({
         where: { merchantId },
-        select: { id: true, name: true, posLastSeenAt: true },
+        select: { id: true, name: true },
       }),
       this.prisma.transaction.groupBy({
         by: ['outletId'],
@@ -4249,6 +4249,8 @@ export class AnalyticsService {
           merchantId,
           createdAt: { gte: period.from, lte: period.to },
           outletId: { not: null },
+          canceledAt: null,
+          type: { in: [TxnType.EARN, TxnType.REDEEM] },
         },
         _count: { _all: true },
         _max: { createdAt: true },
@@ -4269,12 +4271,11 @@ export class AnalyticsService {
 
     const rows: OutletUsageStats[] = outlets.map((outlet) => {
       const aggregate = map.get(outlet.id);
-      const lastActive = outlet.posLastSeenAt ?? aggregate?.lastTxnAt ?? null;
       return {
         outletId: outlet.id,
         name: outlet.name || outlet.id,
         transactions: aggregate?.transactions || 0,
-        lastActive,
+        lastActive: aggregate?.lastTxnAt ?? null,
       };
     });
 

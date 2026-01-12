@@ -194,31 +194,19 @@ describe('PortalCatalogService', () => {
     });
   });
 
-  it('creates outlet with trimmed data and schedule flags', async () => {
+  it('creates outlet with trimmed data', async () => {
     const createdAt = new Date('2024-01-01T00:00:00Z');
     const updatedAt = new Date('2024-01-01T01:00:00Z');
     let createdOutlet: any = null;
     const createMock = jest.fn(async ({ data }) => {
       createdOutlet = {
-      id: 'out-1',
-      merchantId: 'm-99',
-      name: data.name,
-      address: data.address,
-      status: data.status,
-      hidden: data.hidden,
-      description: data.description,
-      phone: data.phone,
-      adminEmails: data.adminEmails,
-      timezone: data.timezone,
-      scheduleEnabled: data.scheduleEnabled,
-      scheduleMode: data.scheduleMode,
-      scheduleJson: data.scheduleJson,
-      externalId: data.externalId,
-      manualLocation: data.manualLocation,
-      latitude: data.latitude,
-      longitude: data.longitude,
-      createdAt,
-      updatedAt,
+        id: 'out-1',
+        merchantId: 'm-99',
+        name: data.name,
+        status: data.status,
+        reviewLinks: data.reviewLinks,
+        createdAt,
+        updatedAt,
       };
       return createdOutlet;
     });

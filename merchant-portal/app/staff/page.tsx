@@ -293,6 +293,35 @@ export default function StaffPage() {
     setCreateError("");
   }, []);
 
+  const fetchAllOutlets = React.useCallback(async () => {
+    const pageSize = 200;
+    let page = 1;
+    let total = 0;
+    const items: Outlet[] = [];
+    while (true) {
+      const res = await fetch(`/api/portal/outlets?page=${page}&pageSize=${pageSize}`);
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      const payload = await res.json();
+      const chunk: Outlet[] = Array.isArray(payload?.items)
+        ? payload.items
+        : Array.isArray(payload)
+          ? payload
+          : [];
+      items.push(
+        ...chunk.map((outlet: any) => ({
+          id: String(outlet?.id ?? ''),
+          name: String(outlet?.name ?? outlet?.id ?? ''),
+        })),
+      );
+      total = typeof payload?.total === "number" ? payload.total : items.length;
+      if (chunk.length < pageSize || items.length >= total) break;
+      page += 1;
+    }
+    return items;
+  }, []);
+
   const load = React.useCallback(async () => {
     setLoading(true);
     setError("");
@@ -310,18 +339,14 @@ export default function StaffPage() {
         return `/api/portal/staff?${params.toString()}`;
       };
 
-      const [staffRes, outletsRes] = await Promise.all([
-        fetch(buildStaffUrl(1)),
-        fetch(`/api/portal/outlets`),
-      ]);
+      const staffRes = await fetch(buildStaffUrl(1));
       if (staffRes.status === 401 || staffRes.status === 403) {
         router.push('/login');
         return;
       }
       if (!staffRes.ok) throw new Error(await staffRes.text());
-      if (!outletsRes.ok) throw new Error(await outletsRes.text());
       const staffPayload = await staffRes.json();
-      const outletsPayload = await outletsRes.json();
+      const outletsPayload = await fetchAllOutlets();
 
       const staffItemsRaw: Staff[] = Array.isArray(staffPayload?.items)
         ? staffPayload.items
@@ -385,18 +410,13 @@ export default function StaffPage() {
             }
           : { active: 0, pending: 0, suspended: 0, fired: 0, archived: 0, portalEnabled: 0 }
       );
-      const outletItems: Outlet[] = Array.isArray(outletsPayload?.items)
-        ? outletsPayload.items
-        : Array.isArray(outletsPayload)
-          ? outletsPayload
-          : [];
-      setOutlets(outletItems);
+      setOutlets(outletsPayload);
     } catch (e: any) {
       setError(normalizeErrorMessage(e, "Не удалось загрузить данных"));
     } finally {
       setLoading(false);
     }
-  }, [tab, outletFilter, groupFilter, onlyPortal, search]);
+  }, [fetchAllOutlets, groupFilter, onlyPortal, outletFilter, router, search, tab]);
 
   React.useEffect(() => {
     load();

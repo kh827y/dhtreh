@@ -14,6 +14,11 @@ import { PrismaService } from './prisma.service';
 import { MetricsService } from './metrics.service';
 import { PushService } from './notifications/push/push.service';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from './pg-lock.util';
+import {
+  DEFAULT_TIMEZONE_CODE,
+  findTimezone,
+  type RussiaTimezone,
+} from './timezone/russia-timezones';
 
 type BirthdayConfig = {
   enabled: boolean;
@@ -28,6 +33,7 @@ type MerchantConfig = {
   id: string;
   name: string | null;
   config: BirthdayConfig;
+  timezone: RussiaTimezone;
 };
 
 type Candidate = {
@@ -87,9 +93,10 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      const targetDate = this.startOfDay(new Date());
       const merchants = await this.loadMerchantConfigs();
+      const now = new Date();
       for (const merchant of merchants) {
+        const targetDate = this.startOfDayInTimezone(now, merchant.timezone);
         try {
           await this.resumePending(merchant, targetDate);
         } catch (error: any) {
@@ -122,7 +129,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
         id: true,
         name: true,
         telegramBotEnabled: true,
-        settings: { select: { rulesJson: true } },
+        settings: { select: { rulesJson: true, timezone: true } },
       },
     });
 
@@ -136,7 +143,10 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
         );
         continue;
       }
-      result.push({ id: row.id, name: row.name ?? null, config });
+      const timezone = findTimezone(
+        row.settings?.timezone ?? DEFAULT_TIMEZONE_CODE,
+      );
+      result.push({ id: row.id, name: row.name ?? null, config, timezone });
     }
     return result;
   }
@@ -183,42 +193,71 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private startOfDay(date: Date): Date {
-    const copy = new Date(date);
-    copy.setHours(0, 0, 0, 0);
-    return copy;
+  private toLocalDate(date: Date, timezone: RussiaTimezone): Date {
+    const offsetMs = timezone.utcOffsetMinutes * 60 * 1000;
+    return new Date(date.getTime() + offsetMs);
   }
 
-  private normalizeBirthdayDate(birthDate: Date, year: number): Date | null {
+  private startOfDayInTimezone(date: Date, timezone: RussiaTimezone): Date {
+    const offsetMs = timezone.utcOffsetMinutes * 60 * 1000;
+    const local = this.toLocalDate(date, timezone);
+    local.setUTCHours(0, 0, 0, 0);
+    return new Date(local.getTime() - offsetMs);
+  }
+
+  private startOfYearInTimezone(
+    year: number,
+    timezone: RussiaTimezone,
+  ): Date {
+    const offsetMs = timezone.utcOffsetMinutes * 60 * 1000;
+    const local = new Date(Date.UTC(year, 0, 1));
+    local.setUTCHours(0, 0, 0, 0);
+    return new Date(local.getTime() - offsetMs);
+  }
+
+  private getLocalYear(date: Date, timezone: RussiaTimezone): number {
+    return this.toLocalDate(date, timezone).getUTCFullYear();
+  }
+
+  private normalizeBirthdayDate(
+    birthDate: Date,
+    year: number,
+    timezone: RussiaTimezone,
+  ): Date | null {
     const month = birthDate.getMonth();
     const day = birthDate.getDate();
-    const candidate = new Date(year, month, day);
-    candidate.setHours(0, 0, 0, 0);
+    const candidateLocal = new Date(Date.UTC(year, month, day));
 
-    if (candidate.getMonth() !== month) {
+    if (candidateLocal.getUTCMonth() !== month) {
       // Обработка 29 февраля — fallback на 28 февраля в невисокосные годы
       if (month === 1 && day === 29) {
-        const fallback = new Date(year, 1, 28);
-        fallback.setHours(0, 0, 0, 0);
-        return fallback;
+        const fallbackLocal = new Date(Date.UTC(year, 1, 28));
+        const offsetMs = timezone.utcOffsetMinutes * 60 * 1000;
+        fallbackLocal.setUTCHours(0, 0, 0, 0);
+        return new Date(fallbackLocal.getTime() - offsetMs);
       }
       return null;
     }
 
-    return candidate;
+    const offsetMs = timezone.utcOffsetMinutes * 60 * 1000;
+    candidateLocal.setUTCHours(0, 0, 0, 0);
+    return new Date(candidateLocal.getTime() - offsetMs);
   }
 
   private resolveBirthdayEvent(
     birthDate: Date,
     config: BirthdayConfig,
     target: Date,
+    timezone: RussiaTimezone,
   ): Date | null {
-    const years = [target.getFullYear(), target.getFullYear() + 1];
+    const targetYear = this.getLocalYear(target, timezone);
+    const years = [targetYear, targetYear + 1];
     for (const year of years) {
-      const actual = this.normalizeBirthdayDate(birthDate, year);
+      const actual = this.normalizeBirthdayDate(birthDate, year, timezone);
       if (!actual) continue;
-      const sendDate = this.startOfDay(
+      const sendDate = this.startOfDayInTimezone(
         new Date(actual.getTime() - config.daysBefore * DAY_MS),
+        timezone,
       );
       if (sendDate.getTime() === target.getTime()) {
         return actual;
@@ -249,9 +288,6 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     });
 
     for (const greeting of pending) {
-      if (greeting.status === 'FAILED' && greeting.error === 'no recipients') {
-        continue;
-      }
       await this.sendGreeting(merchant, greeting);
     }
   }
@@ -266,15 +302,21 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     const candidateIds = Array.from(
       new Set(candidates.map((c) => c.customerId)),
     );
-    const candidateBirthdays = Array.from(
-      new Set(candidates.map((c) => c.birthdayDate.toISOString())),
-    ).map((iso) => new Date(iso));
-
+    const years = Array.from(
+      new Set(
+        candidates.map((c) => this.getLocalYear(c.birthdayDate, merchant.timezone)),
+      ),
+    );
+    const minYear = Math.min(...years);
+    const maxYear = Math.max(...years);
     const existing = await this.prisma.birthdayGreeting.findMany({
       where: {
         merchantId: merchant.id,
         customerId: { in: candidateIds },
-        birthdayDate: { in: candidateBirthdays },
+        birthdayDate: {
+          gte: this.startOfYearInTimezone(minYear, merchant.timezone),
+          lt: this.startOfYearInTimezone(maxYear + 1, merchant.timezone),
+        },
       },
       select: { customerId: true, birthdayDate: true },
     });
@@ -282,14 +324,14 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     const existingKeys = new Set(
       existing.map(
         (item) =>
-          `${item.customerId}|${this.startOfDay(item.birthdayDate).toISOString()}`,
+          `${item.customerId}|${this.getLocalYear(item.birthdayDate, merchant.timezone)}`,
       ),
     );
 
     const fresh = candidates.filter(
       (candidate) =>
         !existingKeys.has(
-          `${candidate.customerId}|${candidate.birthdayDate.toISOString()}`,
+          `${candidate.customerId}|${this.getLocalYear(candidate.birthdayDate, merchant.timezone)}`,
         ),
     );
 
@@ -328,6 +370,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
         merchantId: merchant.id,
         tgId: { not: null },
         birthday: { not: null },
+        accrualsBlocked: false,
       },
       select: {
         id: true,
@@ -343,6 +386,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
         row.birthday,
         merchant.config,
         target,
+        merchant.timezone,
       );
       if (!actual) continue;
       candidates.push({
@@ -366,6 +410,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
         merchantId: merchant.id,
         customerId: { in: ids },
         total: { gt: 0 },
+        canceledAt: null,
       },
       select: { customerId: true },
       distinct: ['customerId'],
@@ -388,7 +433,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
       username: username.trim() || 'Уважаемый клиент',
       bonus: giftIssued > 0 ? String(giftIssued) : '',
     });
-    const sendDate = this.startOfDay(target);
+    const sendDate = new Date(target);
     const giftExpiresAt =
       merchant.config.giftTtlDays > 0
         ? new Date(Date.now() + merchant.config.giftTtlDays * DAY_MS)

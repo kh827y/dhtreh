@@ -299,7 +299,7 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
     prisma.merchantSettings.findUnique.mockResolvedValue({
       rulesJson: {
         rfm: {
-          recencyDays: 90.4,
+          recency: { mode: 'manual', days: 90.4 },
           frequency: { mode: 'manual', threshold: 8.4 },
           monetary: { mode: 'manual', threshold: 2000 },
         },

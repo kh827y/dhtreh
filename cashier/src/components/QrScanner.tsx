@@ -1,19 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-// @ts-expect-error: библиотека не предоставляет типы
 import { Html5Qrcode } from 'html5-qrcode';
-
-type Html5QrcodeLike = {
-  start: (
-    config: { facingMode: 'environment' },
-    options: { fps: number; qrbox: { width: number; height: number } },
-    onSuccess: (decodedText: string) => void,
-    onError: () => void,
-  ) => Promise<void>;
-  stop: () => Promise<void>;
-  clear: () => Promise<void>;
-};
 
 type Props = {
   onResult: (text: string) => void;
@@ -40,7 +28,7 @@ export default function QrScanner({
   viewfinderClassName,
 }: Props) {
   const divIdRef = useRef<string>('qr-reader-' + Math.random().toString(36).slice(2));
-  const qrRef = useRef<Html5QrcodeLike | null>(null);
+  const qrRef = useRef<Html5Qrcode | null>(null);
   const startedRef = useRef(false); // <— защита от повторного старта в StrictMode
   const handledRef = useRef(false);
   const mountedRef = useRef(true); // <— дополнительная защита от StrictMode

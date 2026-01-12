@@ -5,7 +5,6 @@ import helmet from 'helmet';
 import compression from 'compression';
 import pinoHttp from 'pino-http';
 import Ajv from 'ajv';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import * as Sentry from '@sentry/node';
 import { HttpAdapterHost } from '@nestjs/core';
 import { SentryFilter } from './sentry.filter';
@@ -189,44 +188,6 @@ async function bootstrap() {
       } catch {}
     });
   }
-
-  // Swagger (draft)
-  const cfg = new DocumentBuilder()
-    .setTitle('Loyalty API')
-    .setDescription('Draft OpenAPI for loyalty endpoints')
-    .setVersion('0.1.0')
-    .build();
-  const document = SwaggerModule.createDocument(app, cfg);
-  SwaggerModule.setup('docs', app, document);
-  // JSON спецификация
-  try {
-    const httpInst = app.getHttpAdapter().getInstance();
-    httpInst.get('/openapi.json', (_req: any, res: any) => res.json(document));
-    // Postman collection export from OpenAPI
-    httpInst.get('/postman.json', (_req: any, res: any) => {
-      try {
-        const converter = require('openapi-to-postmanv2');
-        converter.convert(
-          { type: 'json', data: document },
-          { folderStrategy: 'Tags' },
-          (err: any, result: any) => {
-            if (err || !result?.result) {
-              res.status(500).json({
-                error: 'ConversionError',
-                message: String(err || result?.reason || 'Unknown'),
-              });
-              return;
-            }
-            res.json(result.output[0].data);
-          },
-        );
-      } catch (e: any) {
-        res
-          .status(500)
-          .json({ error: 'ConversionError', message: String(e?.message || e) });
-      }
-    });
-  } catch {}
 
   // Совместимый алиас: пробрасываем /api/v1/* на существующие маршруты, чтобы не ломать клиентов
   const http = app.getHttpAdapter().getInstance();

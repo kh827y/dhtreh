@@ -14,6 +14,7 @@ export function buildStaffPayload(body: any) {
   if (body?.lastName !== undefined) payload.lastName = body.lastName == null ? null : String(body.lastName);
   if (body?.position !== undefined) payload.position = body.position == null ? null : String(body.position);
   if (body?.comment !== undefined) payload.comment = body.comment == null ? null : String(body.comment);
+  if (body?.avatarUrl !== undefined) payload.avatarUrl = body.avatarUrl == null ? null : String(body.avatarUrl);
   if (body?.role !== undefined) payload.role = body.role == null ? null : String(body.role);
   if (body?.status !== undefined) payload.status = body.status == null ? null : String(body.status);
   if (body?.canAccessPortal !== undefined) payload.canAccessPortal = !!body.canAccessPortal;

@@ -135,12 +135,7 @@ describe('PointsTtlReminderWorker', () => {
           ]),
       },
       pushNotification: {
-        findFirst: jest.fn().mockImplementation(({ where }: any) => {
-          if (where.data?.equals === burnDateIso) {
-            return Promise.resolve({ id: 'PN1' });
-          }
-          return Promise.resolve(null);
-        }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'PN1' }),
       },
     });
 

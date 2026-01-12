@@ -300,8 +300,8 @@ describe("telegram newsletters page (new design)", () => {
     assert.deepEqual(
       calls.map((call) => ({ url: call.url, method: call.method })),
       [
-        { url: "/api/portal/communications/telegram/t1/cancel", method: "POST" },
         { url: "/api/portal/communications/telegram", method: "POST" },
+        { url: "/api/portal/communications/telegram/t1/cancel", method: "POST" },
         { url: "/api/portal/communications/telegram/t2/cancel", method: "POST" },
       ],
     );

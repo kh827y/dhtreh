@@ -131,41 +131,21 @@ export class PortalTelegramIntegrationService {
 
     try {
       const result = await this.telegramBots.registerBot(merchantId, botToken);
+      if (!result.success) {
+        const description =
+          result.webhookError || 'Не удалось установить webhook';
+        throw new BadRequestException(description);
+      }
       const mask = this.maskToken(botToken);
-      const webhookOk = !result.webhookError;
-      await this.prisma.merchant.update({
-        where: { id: merchantId },
-        data: { telegramBotEnabled: true, telegramBotToken: botToken },
-      });
-      await this.prisma.merchantSettings
-        .update({
-          where: { merchantId },
-          data: {
-            telegramBotToken: botToken,
-            telegramBotUsername: result.username,
-          },
-        })
-        .catch(() =>
-          this.prisma.merchantSettings.create({
-            data: {
-              merchantId,
-              telegramBotToken: botToken,
-              telegramBotUsername: result.username,
-            },
-          }),
-        );
       await this.touchIntegration(merchantId, {
-        isActive: webhookOk,
+        isActive: true,
         username: result.username,
         tokenMask: mask,
-        error: result.webhookError ?? null,
+        error: null,
         lastSyncAt: new Date(),
       });
       const state = await this.getState(merchantId);
       const baseMessage = 'Telegram Mini App подключена';
-      const webhookMessage = result.webhookError
-        ? `. Не удалось установить webhook: ${result.webhookError}. Проверьте доступность API_BASE_URL и повторите проверку.`
-        : '';
       let menuMessage = '';
       try {
         await this.setupMenu(merchantId);
@@ -180,7 +160,7 @@ export class PortalTelegramIntegrationService {
         ' Для корректной работы ссылок вида t.me/<бот>/?startapp=... необходимо установить Main App у бота в BotFather на тот же URL, что и у Menu Button (это действие недоступно через Bot API).';
       return {
         ...state,
-        message: `${baseMessage}${webhookMessage}${menuMessage}${miniappMessage} ${mainAppMessage}`,
+        message: `${baseMessage}${menuMessage}${miniappMessage} ${mainAppMessage}`,
       };
     } catch (error: any) {
       const description = error?.message

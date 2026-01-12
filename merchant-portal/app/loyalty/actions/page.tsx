@@ -326,7 +326,7 @@ const PromotionsPage: React.FC = () => {
     }
     const json = await res.json();
     const mapped: Promotion[] = Array.isArray(json)
-      ? json
+      ? (json
           .map((item: any) => {
             const rewardMeta =
               item?.rewardMetadata && typeof item.rewardMetadata === "object" ? item.rewardMetadata : {};
@@ -427,7 +427,7 @@ const PromotionsPage: React.FC = () => {
               },
             };
           })
-          .filter((promo: Promotion | null): promo is Promotion => Boolean(promo))
+          .filter((promo: Promotion | null): promo is Promotion => promo !== null) as Promotion[])
       : [];
     setPromotions(mapped);
   };
@@ -484,7 +484,8 @@ const PromotionsPage: React.FC = () => {
     setEditingCreatedAtIso(promo.createdAt ?? null);
 
     const parseDate = (dateStr: string) => {
-      if (dateStr === "Бессрочно" || dateStr === "—") return new Date().toISOString().split("T")[0];
+      const today = new Date().toISOString().slice(0, 10);
+      if (dateStr === "Бессрочно" || dateStr === "—") return today;
       const parts = dateStr.split(".");
       if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
       return dateStr;

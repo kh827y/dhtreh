@@ -55,12 +55,39 @@ export class TelegramBotService {
     this.loadBots();
   }
 
+  private normalizeBaseUrl(value?: string | null): string | null {
+    const trimmed = String(value || '').trim().replace(/\/$/, '');
+    if (!trimmed) return null;
+    const lowered = trimmed.toLowerCase();
+    if (lowered === 'undefined' || lowered === 'null') return null;
+    return trimmed;
+  }
+
+  private getApiBaseUrl(required: true): string;
+  private getApiBaseUrl(required?: false): string | null;
+  private getApiBaseUrl(required: boolean = false): string | null {
+    const base = this.normalizeBaseUrl(this.configService.get('API_BASE_URL'));
+    if (!base && required) {
+      throw new Error('API_BASE_URL не настроен');
+    }
+    return base;
+  }
+
+  private getMiniappBaseUrl(): string | null {
+    return this.normalizeBaseUrl(this.configService.get('MINIAPP_BASE_URL'));
+  }
+
   async loadBots() {
     // В тестовой среде и при стабе Prisma (без моделей) — пропускаем
     if (process.env.NODE_ENV === 'test') return;
     const prismaAny = this.prisma as any;
     if (!prismaAny?.merchantSettings?.findMany) return;
     try {
+      const apiBase = this.getApiBaseUrl();
+      if (!apiBase) {
+        this.logger.warn('API_BASE_URL не настроен, Telegram боты не загружены');
+        return;
+      }
       const merchants = await prismaAny.merchantSettings.findMany({
         where: {
           telegramBotToken: { not: null },
@@ -70,7 +97,7 @@ export class TelegramBotService {
 
       for (const merchant of merchants) {
         if (merchant.telegramBotToken && merchant.telegramBotUsername) {
-          const webhookUrl = `${this.configService.get('API_BASE_URL')}/telegram/webhook/${merchant.merchantId}`;
+          const webhookUrl = `${apiBase}/telegram/webhook/${merchant.merchantId}`;
 
           this.bots.set(merchant.merchantId, {
             token: merchant.telegramBotToken,
@@ -97,6 +124,8 @@ export class TelegramBotService {
     const cached = this.bots.get(merchantId);
     if (cached) return cached;
     try {
+      const apiBase = this.getApiBaseUrl();
+      if (!apiBase) return null;
       const settings = await this.prisma.merchantSettings.findUnique({
         where: { merchantId },
         select: {
@@ -105,7 +134,7 @@ export class TelegramBotService {
         },
       });
       if (settings?.telegramBotToken && settings.telegramBotUsername) {
-        const webhookUrl = `${this.configService.get('API_BASE_URL')}/telegram/webhook/${merchantId}`;
+        const webhookUrl = `${apiBase}/telegram/webhook/${merchantId}`;
         const bot: BotConfig = {
           token: settings.telegramBotToken,
           username: settings.telegramBotUsername,
@@ -128,41 +157,21 @@ export class TelegramBotService {
     botToken: string,
   ): Promise<RegisterBotResult> {
     try {
+      const apiBase = this.getApiBaseUrl();
+      if (!apiBase) {
+        return {
+          success: false,
+          username: '',
+          webhookUrl: '',
+          webhookError: 'API_BASE_URL не настроен',
+        };
+      }
       // Получаем информацию о боте
       const botInfo = await this.getBotInfo(botToken);
 
       // Формируем URL вебхука и секрет
-      const webhookUrl = `${this.configService.get('API_BASE_URL')}/telegram/webhook/${merchantId}`;
+      const webhookUrl = `${apiBase}/telegram/webhook/${merchantId}`;
       const secret = crypto.randomBytes(16).toString('hex');
-
-      // Сохраняем настройки мерчанта (для MiniApp и бэкапа токена)
-      const baseUrlRaw = String(this.configService.get('MINIAPP_BASE_URL') || '')
-        .trim()
-        .replace(/\/$/, '');
-      const baseUrl =
-        baseUrlRaw &&
-        !['undefined', 'null'].includes(baseUrlRaw.toLowerCase())
-          ? baseUrlRaw
-          : '';
-      const nextSettings: Record<string, any> = {
-        telegramBotToken: botToken,
-        telegramBotUsername: botInfo.username,
-      };
-      if (baseUrl) {
-        nextSettings.miniappBaseUrl = `${baseUrl}/?merchant=${merchantId}`;
-      }
-      await this.prisma.merchantSettings.update({
-        where: { merchantId },
-        data: nextSettings,
-      });
-
-      await this.prisma.merchant.update({
-        where: { id: merchantId },
-        data: {
-          telegramBotEnabled: true,
-          telegramBotToken: botToken,
-        },
-      });
 
       // Создаём/обновляем запись TelegramBot с секретом для верификации хука
       await this.prisma.telegramBot.upsert({
@@ -204,21 +213,47 @@ export class TelegramBotService {
           where: { merchantId },
           data: { isActive: true },
         });
+        const nextSettings: Record<string, any> = {
+          telegramBotToken: botToken,
+          telegramBotUsername: botInfo.username,
+        };
+        const miniappBase = this.getMiniappBaseUrl();
+        if (miniappBase) {
+          nextSettings.miniappBaseUrl = `${miniappBase}/?merchant=${merchantId}`;
+        }
+        await this.prisma.merchantSettings
+          .update({
+            where: { merchantId },
+            data: nextSettings,
+          })
+          .catch(() =>
+            this.prisma.merchantSettings.create({
+              data: { merchantId, ...nextSettings },
+            }),
+          );
+
+        await this.prisma.merchant.update({
+          where: { id: merchantId },
+          data: {
+            telegramBotEnabled: true,
+            telegramBotToken: botToken,
+          },
+        });
+
+        // Устанавливаем команды бота
+        await this.setBotCommands(botToken);
+
+        // Добавляем в память
+        this.bots.set(merchantId, {
+          token: botToken,
+          username: botInfo.username,
+          merchantId,
+          webhookUrl,
+        });
       }
 
-      // Устанавливаем команды бота
-      await this.setBotCommands(botToken);
-
-      // Добавляем в память
-      this.bots.set(merchantId, {
-        token: botToken,
-        username: botInfo.username,
-        merchantId,
-        webhookUrl,
-      });
-
       return {
-        success: true,
+        success: webhookOk,
         username: botInfo.username,
         webhookUrl,
         webhookError,
@@ -366,7 +401,8 @@ export class TelegramBotService {
   }
 
   async processWebhook(merchantId: string, update: any) {
-    const bot = this.bots.get(merchantId);
+    const bot =
+      (await this.ensureBotLoaded(merchantId)) || this.bots.get(merchantId);
     if (!bot) {
       this.logger.warn(`Бот не найден для мерчанта ${merchantId}`);
       return;
@@ -1034,7 +1070,8 @@ export class TelegramBotService {
         });
 
         // Переустановим webhook с новым секретом
-        const webhookUrl = `${this.configService.get('API_BASE_URL')}/telegram/webhook/${merchantId}`;
+        const apiBase = this.getApiBaseUrl(true);
+        const webhookUrl = `${apiBase}/telegram/webhook/${merchantId}`;
         await this.setWebhook(existing.botToken, webhookUrl, secret);
       } else {
         // Если записи нет, но бот зарегистрирован через настройки мерчанта — просто установим webhook с секретом
@@ -1042,7 +1079,32 @@ export class TelegramBotService {
           where: { merchantId },
         });
         if (settings?.telegramBotToken) {
-          const webhookUrl = `${this.configService.get('API_BASE_URL')}/telegram/webhook/${merchantId}`;
+          const apiBase = this.getApiBaseUrl(true);
+          const webhookUrl = `${apiBase}/telegram/webhook/${merchantId}`;
+          const username = settings.telegramBotUsername;
+          const botInfo = username
+            ? { username, id: null }
+            : await this.getBotInfo(settings.telegramBotToken);
+          await this.prisma.telegramBot.upsert({
+            where: { merchantId },
+            update: {
+              botToken: settings.telegramBotToken,
+              botUsername: botInfo.username,
+              botId: botInfo.id ? String(botInfo.id) : null,
+              webhookUrl,
+              webhookSecret: secret,
+              isActive: true,
+            },
+            create: {
+              merchantId,
+              botToken: settings.telegramBotToken,
+              botUsername: botInfo.username,
+              botId: botInfo.id ? String(botInfo.id) : null,
+              webhookUrl,
+              webhookSecret: secret,
+              isActive: true,
+            },
+          });
           await this.setWebhook(settings.telegramBotToken, webhookUrl, secret);
         }
       }

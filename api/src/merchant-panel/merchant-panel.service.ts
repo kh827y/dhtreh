@@ -48,6 +48,7 @@ export interface UpsertStaffPayload {
   lastName?: string | null;
   position?: string | null;
   comment?: string | null;
+  avatarUrl?: string | null;
   role?: StaffRole;
   status?: StaffStatus;
   canAccessPortal?: boolean;
@@ -155,36 +156,14 @@ function crudPermissions(
 
 export interface OutletFilters {
   status?: 'ACTIVE' | 'INACTIVE' | 'ALL';
-  hidden?: boolean;
   search?: string;
 }
 
 export interface UpsertOutletPayload {
   name?: string;
-  description?: string | null;
-  address?: string | null;
-  phone?: string | null;
-  adminEmails?: string[];
   works?: boolean;
-  hidden?: boolean;
-  timezone?: string | null;
-  schedule?: {
-    mode: '24_7' | 'CUSTOM';
-    days: Array<{
-      day: number;
-      enabled: boolean;
-      opensAt?: string | null;
-      closesAt?: string | null;
-    }>;
-  };
-  externalId?: string | null;
-  integrationProvider?: string | null;
-  integrationLocationCode?: string | null;
   reviewsShareLinks?: unknown;
   devices?: Array<{ code?: string | null }> | null;
-  manualLocation?: boolean;
-  latitude?: number | null;
-  longitude?: number | null;
 }
 
 type StaffAccessView = {
@@ -502,6 +481,7 @@ export class MerchantPanelService {
       lastName: member.lastName,
       position: member.position,
       comment: member.comment,
+      avatarUrl: member.avatarUrl,
       role: member.role,
       status: member.status,
       portalAccessEnabled: member.portalAccessEnabled,
@@ -563,21 +543,6 @@ export class MerchantPanelService {
       lastTxnAt: access.lastTxnAt ? access.lastTxnAt.toISOString() : null,
       transactionsTotal: countMap.get(`${staffId}:${access.outletId}`) ?? 0,
     }));
-  }
-
-  private parseSchedule(schedule: any) {
-    if (!schedule || typeof schedule !== 'object') return null;
-    const days = Array.isArray(schedule.days) ? schedule.days : [];
-    return {
-      mode: schedule.mode ?? 'CUSTOM',
-      days: days.map((day: any) => ({
-        day:
-          typeof day.day === 'number' ? day.day : parseInt(day.day ?? '0', 10),
-        enabled: !!day.enabled,
-        opensAt: day.opensAt ?? day.from ?? null,
-        closesAt: day.closesAt ?? day.to ?? null,
-      })),
-    };
   }
 
   private sanitizeReviewLinksInput(input?: unknown) {
@@ -721,26 +686,10 @@ export class MerchantPanelService {
       include?: { devices?: true };
     }> & { devices?: any[]; staffCount?: number },
   ) {
-    const schedule = this.parseSchedule(outlet.scheduleJson ?? undefined);
     return {
       id: outlet.id,
       name: outlet.name,
-      description: outlet.description,
-      address: outlet.address,
-      phone: outlet.phone,
-      adminEmails: outlet.adminEmails ?? [],
       status: outlet.status,
-      hidden: outlet.hidden,
-      scheduleEnabled: outlet.scheduleEnabled,
-      scheduleMode: schedule?.mode ?? 'CUSTOM',
-      schedule: schedule?.days ?? null,
-      timezone: outlet.timezone,
-      externalId: outlet.externalId,
-      integrationProvider: outlet.integrationProvider,
-      integrationLocationCode: outlet.integrationLocationCode,
-      manualLocation: outlet.manualLocation,
-      latitude: outlet.latitude ? Number(outlet.latitude) : null,
-      longitude: outlet.longitude ? Number(outlet.longitude) : null,
       staffCount: typeof outlet.staffCount === 'number' ? outlet.staffCount : 0,
       devices: this.mapDevices((outlet as any).devices),
       reviewsShareLinks: (() => {
@@ -1133,6 +1082,7 @@ export class MerchantPanelService {
         lastName: payload.lastName?.trim() || undefined,
         position: payload.position?.trim() || undefined,
         comment: payload.comment?.trim() || undefined,
+        avatarUrl: payload.avatarUrl?.trim() || undefined,
         role: payload.role ?? StaffRole.CASHIER,
         status: payload.status ?? StaffStatus.ACTIVE,
         canAccessPortal: payload.canAccessPortal ?? false,
@@ -1272,6 +1222,9 @@ export class MerchantPanelService {
         );
       }
     }
+    if (isSelf && payload.accessGroupIds) {
+      throw new ForbiddenException('Нельзя менять свою группу доступа');
+    }
 
     await this.prisma.$transaction(async (tx) => {
       if (trimmedPassword && trimmedPassword.length < 6) {
@@ -1317,6 +1270,10 @@ export class MerchantPanelService {
         lastName: payload.lastName?.trim() ?? staff.lastName,
         position: payload.position?.trim() ?? staff.position,
         comment: payload.comment?.trim() ?? staff.comment,
+        avatarUrl:
+          payload.avatarUrl !== undefined
+            ? payload.avatarUrl?.trim() || null
+            : staff.avatarUrl,
         role: payload.role ?? staff.role,
         status: payload.status ?? staff.status,
         canAccessPortal: payload.canAccessPortal ?? staff.canAccessPortal,
@@ -1337,6 +1294,12 @@ export class MerchantPanelService {
         updateData.portalState = 'DISABLED';
       }
 
+      const portalAccessRevoked =
+        payload.portalAccessEnabled === false ||
+        payload.canAccessPortal === false ||
+        nextStatus === StaffStatus.FIRED;
+      const portalPasswordChanged = trimmedPassword !== undefined;
+
       if (trimmedPassword !== undefined) {
         if (trimmedPassword) {
           updateData.hash = hashPassword(trimmedPassword);
@@ -1346,6 +1309,11 @@ export class MerchantPanelService {
         } else {
           updateData.hash = null;
         }
+      }
+
+      if (portalAccessRevoked || portalPasswordChanged) {
+        updateData.portalTokensRevokedAt = new Date();
+        updateData.portalRefreshTokenHash = null;
       }
 
       await tx.staff.update({
@@ -1405,6 +1373,8 @@ export class MerchantPanelService {
       data.canAccessPortal = false;
       data.portalAccessEnabled = false;
       data.portalState = 'DISABLED';
+      data.portalTokensRevokedAt = new Date();
+      data.portalRefreshTokenHash = null;
     }
     await this.prisma.staff.update({
       where: { id: staffId },
@@ -1908,17 +1878,13 @@ export class MerchantPanelService {
     pagination?: Partial<PaginationOptions>,
   ) {
     const paging = this.normalizePagination(pagination);
-    const where: Prisma.OutletWhereInput = { merchantId, hidden: false };
+    const where: Prisma.OutletWhereInput = { merchantId };
     if (filters.status && filters.status !== 'ALL') {
       where.status = filters.status;
-    }
-    if (filters.hidden != null) {
-      where.hidden = filters.hidden;
     }
     if (filters.search) {
       where.OR = [
         { name: { contains: filters.search, mode: 'insensitive' } },
-        { address: { contains: filters.search, mode: 'insensitive' } },
       ];
     }
     const [items, total] = await Promise.all([
@@ -1965,19 +1931,6 @@ export class MerchantPanelService {
     };
   }
 
-  private buildScheduleJson(payload: UpsertOutletPayload['schedule']) {
-    if (!payload) return null;
-    return {
-      mode: payload.mode,
-      days: payload.days.map((day) => ({
-        day: day.day,
-        enabled: !!day.enabled,
-        opensAt: day.opensAt ?? null,
-        closesAt: day.closesAt ?? null,
-      })),
-    };
-  }
-
   private async assertOutletLimit(merchantId: string) {
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
@@ -2012,33 +1965,8 @@ export class MerchantPanelService {
         data: {
           merchantId,
           name: outletName,
-          description: payload.description ?? null,
-          address: payload.address ?? null,
-          phone: payload.phone ?? null,
-          adminEmails: payload.adminEmails ?? [],
           status: payload.works === false ? 'INACTIVE' : 'ACTIVE',
-          hidden: payload.hidden ?? false,
-          timezone: payload.timezone ?? null,
-          scheduleEnabled: payload.schedule != null,
-          scheduleJson:
-            payload.schedule != null
-              ? (this.buildScheduleJson(
-                  payload.schedule,
-                ) as Prisma.InputJsonValue)
-              : (Prisma.DbNull as Prisma.NullableJsonNullValueInput),
-          externalId: payload.externalId ?? null,
-          integrationProvider: payload.integrationProvider ?? null,
-          integrationLocationCode: payload.integrationLocationCode ?? null,
           reviewLinks: reviewLinksValue,
-          manualLocation: payload.manualLocation ?? false,
-          latitude:
-            payload.latitude != null
-              ? new Prisma.Decimal(payload.latitude)
-              : null,
-          longitude:
-            payload.longitude != null
-              ? new Prisma.Decimal(payload.longitude)
-              : null,
         },
       });
       if (payload.devices !== undefined) {
@@ -2076,38 +2004,13 @@ export class MerchantPanelService {
         where: { id: outletId },
         data: {
           name: payload.name?.trim() || outlet.name,
-          description: payload.description?.trim() ?? outlet.description,
-          address: payload.address?.trim() ?? outlet.address,
-          phone: payload.phone?.trim() ?? outlet.phone,
-          adminEmails: payload.adminEmails ?? outlet.adminEmails,
           status:
             payload.works === undefined
               ? outlet.status
               : payload.works
                 ? 'ACTIVE'
                 : 'INACTIVE',
-          hidden: payload.hidden ?? outlet.hidden,
-          timezone: payload.timezone ?? outlet.timezone,
-          scheduleEnabled:
-            payload.schedule != null ? true : outlet.scheduleEnabled,
-          scheduleJson: payload.schedule
-            ? (this.buildScheduleJson(payload.schedule) as Prisma.InputJsonValue)
-            : undefined,
-          externalId: payload.externalId ?? outlet.externalId,
-          integrationProvider:
-            payload.integrationProvider ?? outlet.integrationProvider,
-          integrationLocationCode:
-            payload.integrationLocationCode ?? outlet.integrationLocationCode,
           reviewLinks: reviewLinksValue,
-          manualLocation: payload.manualLocation ?? outlet.manualLocation,
-          latitude:
-            payload.latitude != null
-              ? new Prisma.Decimal(payload.latitude)
-              : outlet.latitude,
-          longitude:
-            payload.longitude != null
-              ? new Prisma.Decimal(payload.longitude)
-              : outlet.longitude,
         },
       });
       if (devices !== null) {
@@ -2120,7 +2023,7 @@ export class MerchantPanelService {
 
   async getOutlet(merchantId: string, outletId: string) {
     const outlet = await this.prisma.outlet.findFirst({
-      where: { merchantId, id: outletId, hidden: false },
+      where: { merchantId, id: outletId },
       include: {
         devices: {
           where: { archivedAt: null },
@@ -2130,6 +2033,10 @@ export class MerchantPanelService {
     });
     if (!outlet) throw new NotFoundException('Точка не найдена');
     return this.mapOutlet(outlet as any);
+  }
+
+  async deleteOutlet(merchantId: string, outletId: string) {
+    return this.merchants.deleteOutlet(merchantId, outletId);
   }
 
   async listCashierPins(merchantId: string) {

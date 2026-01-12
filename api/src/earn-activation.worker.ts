@@ -60,99 +60,126 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
       if (lots.length === 0) return;
 
       for (const lot of lots) {
-        await this.prisma.$transaction(async (tx) => {
-          // Пере-выбор лота в транзакции для актуальности статуса
-          const fresh = await tx.earnLot.findUnique({ where: { id: lot.id } });
-          if (
-            !fresh ||
-            fresh.status !== 'PENDING' ||
-            !fresh.maturesAt ||
-            fresh.maturesAt.getTime() > Date.now()
-          )
-            return;
+        try {
+          await this.prisma.$transaction(async (tx) => {
+            // Пере-выбор лота в транзакции для актуальности статуса
+            const fresh = await tx.earnLot.findUnique({
+              where: { id: lot.id },
+            });
+            if (
+              !fresh ||
+              fresh.status !== 'PENDING' ||
+              !fresh.maturesAt ||
+              fresh.maturesAt.getTime() > Date.now()
+            )
+              return;
 
-          // Обновляем статус лота на ACTIVE
-          await tx.earnLot.update({
-            where: { id: fresh.id },
-            data: { status: 'ACTIVE', earnedAt: fresh.maturesAt },
-          });
+            const points = Math.max(0, Number(fresh.points || 0));
+            if (fresh.expiresAt && fresh.expiresAt.getTime() <= Date.now()) {
+              await tx.earnLot.update({
+                where: { id: fresh.id },
+                data: {
+                  status: 'ACTIVE',
+                  earnedAt: fresh.maturesAt,
+                  consumedPoints: points,
+                },
+              });
+              return;
+            }
 
-          // Обновляем баланс кошелька
-          const wallet = await tx.wallet.findFirst({
-            where: {
-              merchantId: fresh.merchantId,
-              customerId: fresh.customerId,
-              type: 'POINTS' as any,
-            },
-          });
-          if (!wallet) return; // безопасная защита, кошелька нет — пропускаем
-          await tx.wallet.update({
-            where: { id: wallet.id },
-            data: { balance: { increment: fresh.points || 0 } },
-          });
+            // Обновляем баланс кошелька (создаём при отсутствии)
+            await tx.wallet.upsert({
+              where: {
+                customerId_merchantId_type: {
+                  customerId: fresh.customerId,
+                  merchantId: fresh.merchantId,
+                  type: 'POINTS' as any,
+                } as any,
+              },
+              update: { balance: { increment: points } },
+              create: {
+                merchantId: fresh.merchantId,
+                customerId: fresh.customerId,
+                type: 'POINTS' as any,
+                balance: points,
+              },
+            } as any);
 
-          // Транзакция начисления (CAMPAIGN или EARN?) — считаем как EARN (отложенное начисление)
-          await tx.transaction.create({
-            data: {
-              merchantId: fresh.merchantId,
-              customerId: fresh.customerId,
-              type: TxnType.EARN,
-              amount: fresh.points,
-              orderId: fresh.orderId ?? undefined,
-              outletId: fresh.outletId ?? undefined,
-              staffId: fresh.staffId ?? undefined,
-              // ВАЖНО: сохраняем порядок в истории — используем исходную дату лота
-              createdAt: fresh.createdAt,
-            },
-          });
+            // Обновляем статус лота на ACTIVE
+            await tx.earnLot.update({
+              where: { id: fresh.id },
+              data: { status: 'ACTIVE', earnedAt: fresh.maturesAt },
+            });
 
-          if (process.env.LEDGER_FEATURE === '1') {
-            await tx.ledgerEntry.create({
+            // Транзакция начисления (CAMPAIGN или EARN?) — считаем как EARN (отложенное начисление)
+            await tx.transaction.create({
               data: {
                 merchantId: fresh.merchantId,
                 customerId: fresh.customerId,
-                debit: LedgerAccount.MERCHANT_LIABILITY,
-                credit: LedgerAccount.CUSTOMER_BALANCE,
-                amount: fresh.points,
+                type: TxnType.EARN,
+                amount: points,
                 orderId: fresh.orderId ?? undefined,
                 outletId: fresh.outletId ?? undefined,
                 staffId: fresh.staffId ?? undefined,
-                meta: { mode: 'EARN', kind: 'DELAYED' },
+                // ВАЖНО: сохраняем порядок в истории — используем исходную дату лота
+                createdAt: fresh.createdAt,
               },
             });
-          }
 
-          await tx.eventOutbox.create({
-            data: {
-              merchantId: fresh.merchantId,
-              eventType: 'loyalty.earn.activated',
-              payload: {
-                merchantId: fresh.merchantId,
-                customerId: fresh.customerId,
-                points: fresh.points,
-                earnLotId: fresh.id,
-                activatedAt: new Date().toISOString(),
-                outletId: fresh.outletId ?? null,
-              } as any,
-            },
-          });
-          if (fresh.orderId === 'registration_bonus') {
+            if (process.env.LEDGER_FEATURE === '1') {
+              await tx.ledgerEntry.create({
+                data: {
+                  merchantId: fresh.merchantId,
+                  customerId: fresh.customerId,
+                  debit: LedgerAccount.MERCHANT_LIABILITY,
+                  credit: LedgerAccount.CUSTOMER_BALANCE,
+                  amount: points,
+                  orderId: fresh.orderId ?? undefined,
+                  outletId: fresh.outletId ?? undefined,
+                  staffId: fresh.staffId ?? undefined,
+                  meta: { mode: 'EARN', kind: 'DELAYED' },
+                },
+              });
+            }
+
             await tx.eventOutbox.create({
               data: {
                 merchantId: fresh.merchantId,
-                eventType: 'notify.registration_bonus',
+                eventType: 'loyalty.earn.activated',
                 payload: {
                   merchantId: fresh.merchantId,
                   customerId: fresh.customerId,
-                  points: fresh.points,
-                },
+                  points,
+                  earnLotId: fresh.id,
+                  activatedAt: new Date().toISOString(),
+                  outletId: fresh.outletId ?? null,
+                } as any,
               },
             });
-          }
-        });
-        try {
-          this.metrics.inc('loyalty_delayed_earn_activated_total');
-        } catch {}
+            if (fresh.orderId === 'registration_bonus') {
+              await tx.eventOutbox.create({
+                data: {
+                  merchantId: fresh.merchantId,
+                  eventType: 'notify.registration_bonus',
+                  payload: {
+                    merchantId: fresh.merchantId,
+                    customerId: fresh.customerId,
+                    points,
+                  },
+                },
+              });
+            }
+          });
+          try {
+            this.metrics.inc('loyalty_delayed_earn_activated_total');
+          } catch {}
+        } catch (error: any) {
+          this.logger.error(
+            `Failed to activate earn lot (id=${lot.id}): ${
+              error?.message || error
+            }`,
+          );
+        }
       }
     } finally {
       this.running = false;

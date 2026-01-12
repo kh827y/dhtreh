@@ -294,9 +294,9 @@ export default function AnalyticsRepeatPage() {
                   <Tooltip
                     cursor={{ fill: "#F3F4F6", radius: 4 }}
                     contentStyle={{ borderRadius: 8, border: "none", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}
-                    formatter={(value: number, _name: string, props: any) => [
+                    formatter={(value?: number, _name?: string, props?: any) => [
                       <div className="flex flex-col" key="content">
-                        <span className="font-bold text-gray-900">{Number(value || 0).toFixed(1)}%</span>
+                        <span className="font-bold text-gray-900">{Number(value ?? 0).toFixed(1)}%</span>
                         <span className="text-xs text-gray-500 font-normal">
                           {props?.payload?.customers?.toLocaleString("ru-RU") || 0} клиентов
                         </span>
@@ -312,7 +312,7 @@ export default function AnalyticsRepeatPage() {
                     <LabelList
                       dataKey="share"
                       position="top"
-                      formatter={(val: number) => `${val.toFixed(1)}%`}
+                      formatter={(val: number | string | boolean | null | undefined) => `${Number(val ?? 0).toFixed(1)}%`}
                       fill="#6B7280"
                       fontSize={12}
                     />

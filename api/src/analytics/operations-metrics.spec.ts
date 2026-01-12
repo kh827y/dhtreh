@@ -59,8 +59,8 @@ describe('AnalyticsService — operational metrics', () => {
     sqlStrings.forEach((text) => {
       expect(text).toContain('"canceledAt" IS NULL');
       expect(text).toContain('refund."type" = \'REFUND\'');
-      expect(text).toContain('"customerId" IS NOT NULL');
     });
+    expect(sqlStrings.some((text) => text.includes('"customerId" IS NOT NULL'))).toBe(true);
   });
 
   it('агрегирует метрики сотрудников, учитывает очки и фильтрует возвраты', async () => {

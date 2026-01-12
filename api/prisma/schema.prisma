@@ -150,23 +150,6 @@ enum PromotionRewardType {
   CUSTOM
 }
 
-enum LoyaltyMechanicType {
-  TIERS
-  PURCHASE_LIMITS
-  WINBACK
-  BIRTHDAY
-  REGISTRATION_BONUS
-  EXPIRATION_REMINDER
-  REFERRAL
-  CUSTOM
-}
-
-enum MechanicStatus {
-  DISABLED
-  ENABLED
-  DRAFT
-}
-
 enum DataImportStatus {
   UPLOADED
   VALIDATING
@@ -252,8 +235,6 @@ model Merchant {
   promotionParticipants       PromotionParticipant[]
   loyaltyTiers                LoyaltyTier[]
   loyaltyTierAssignments      LoyaltyTierAssignment[]
-  loyaltyMechanics            LoyaltyMechanic[]
-  loyaltyMechanicLogs         LoyaltyMechanicLog[]
   communicationTemplates      CommunicationTemplate[]
   communicationTasks          CommunicationTask[]
   communicationTaskRecipients CommunicationTaskRecipient[]
@@ -300,6 +281,8 @@ model Merchant {
   portalTotpEnabled           Boolean                      @default(false)
   portalLoginEnabled          Boolean                      @default(true)
   portalLastLoginAt           DateTime?
+  portalTokensRevokedAt       DateTime?
+  portalRefreshTokenHash      String?
   // Cashier credentials (admin-managed)
   cashierLogin                String?                      @unique
   archivedAt                  DateTime?
@@ -763,28 +746,8 @@ model Outlet {
   merchantId              String
   merchant                Merchant    @relation(fields: [merchantId], references: [id])
   name                    String
-  address                 String?
   status                  String      @default("ACTIVE") // ACTIVE | INACTIVE
-  hidden                  Boolean     @default(false)
-  description             String?
-  phone                   String?
-  adminEmails             String[]    @default([])
-  timezone                String?
-  code                    String?
-  tags                    String[]    @default([])
-  scheduleEnabled         Boolean     @default(false)
-  scheduleMode            String      @default("CUSTOM")
-  scheduleJson            Json?
-  externalId              String?
-  integrationProvider     String?
-  integrationLocationCode String?
-  integrationPayload      Json?
   reviewLinks             Json?
-  manualLocation          Boolean     @default(false)
-  latitude                Decimal?    @db.Decimal(10, 7)
-  longitude               Decimal?    @db.Decimal(10, 7)
-  posType                 DeviceType?
-  posLastSeenAt           DateTime?
   createdAt               DateTime    @default(now())
   updatedAt               DateTime    @updatedAt
 
@@ -795,7 +758,6 @@ model Outlet {
   pushDevices            PushDevice[]
   staffAccesses          StaffOutletAccess[]
   stocks                 ProductStock[]
-  schedules              OutletSchedule[]
   outletMetrics          OutletKpiDaily[]
   cashierSessions        CashierSession[]
   promoCodeUsages        PromoCodeUsage[]
@@ -804,11 +766,8 @@ model Outlet {
   staffMotivationEntries StaffMotivationEntry[]
   devices                Device[]
 
-  @@unique([merchantId, externalId])
-  @@unique([merchantId, code])
   @@index([merchantId])
   @@index([merchantId, status])
-  @@index([merchantId, hidden])
 }
 
 model Device {
@@ -832,23 +791,6 @@ model Device {
   @@unique([merchantId, codeNormalized])
   @@index([merchantId, outletId])
   @@index([outletId, archivedAt])
-}
-
-model OutletSchedule {
-  id        String   @id @default(cuid())
-  outletId  String
-  dayOfWeek Int
-  opensAt   String?
-  closesAt  String?
-  isDayOff  Boolean  @default(false)
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
-
-  @@unique([outletId, dayOfWeek])
-  @@index([outletId])
 }
 
 model Staff {
@@ -882,6 +824,8 @@ model Staff {
   portalInvitationSentAt     DateTime?
   portalInvitationAcceptedAt DateTime?
   portalAccessRevokedAt      DateTime?
+  portalTokensRevokedAt      DateTime?
+  portalRefreshTokenHash     String?
   // Portal access flag (legacy compatibility)
   canAccessPortal            Boolean           @default(false)
   // Owner flag
@@ -907,9 +851,6 @@ model Staff {
   communicationTemplatesCreated CommunicationTemplate[]   @relation("CommunicationTemplateCreatedBy")
   communicationTemplatesUpdated CommunicationTemplate[]   @relation("CommunicationTemplateUpdatedBy")
   communicationTasksCreated     CommunicationTask[]       @relation("CommunicationTaskCreatedBy")
-  mechanicLogs                  LoyaltyMechanicLog[]      @relation("MechanicLogActor")
-  mechanicsCreated              LoyaltyMechanic[]         @relation("MechanicCreatedBy")
-  mechanicsUpdated              LoyaltyMechanic[]         @relation("MechanicUpdatedBy")
   tierAssignmentsAuthored       LoyaltyTierAssignment[]   @relation("TierAssignedBy")
   revokedOutletPins             StaffOutletAccess[]       @relation("StaffOutletAccessRevoker")
   dataImportsStarted            DataImportJob[]           @relation("DataImportStartedBy")
@@ -1976,47 +1917,6 @@ model LoyaltyPromotionMetric {
   merchant  Merchant         @relation(fields: [merchantId], references: [id])
 
   @@index([merchantId])
-}
-
-model LoyaltyMechanic {
-  id          String              @id @default(cuid())
-  merchantId  String
-  type        LoyaltyMechanicType
-  name        String?
-  description String?
-  status      MechanicStatus      @default(DISABLED)
-  settings    Json?
-  createdById String?
-  updatedById String?
-  enabledAt   DateTime?
-  disabledAt  DateTime?
-  metadata    Json?
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-
-  merchant  Merchant             @relation(fields: [merchantId], references: [id])
-  createdBy Staff?               @relation("MechanicCreatedBy", fields: [createdById], references: [id])
-  updatedBy Staff?               @relation("MechanicUpdatedBy", fields: [updatedById], references: [id])
-  logs      LoyaltyMechanicLog[]
-
-  @@index([merchantId, type])
-}
-
-model LoyaltyMechanicLog {
-  id         String   @id @default(cuid())
-  mechanicId String
-  merchantId String
-  actorId    String?
-  action     String
-  payload    Json?
-  createdAt  DateTime @default(now())
-
-  mechanic LoyaltyMechanic @relation(fields: [mechanicId], references: [id], onDelete: Cascade)
-  merchant Merchant        @relation(fields: [merchantId], references: [id])
-  actor    Staff?          @relation("MechanicLogActor", fields: [actorId], references: [id])
-
-  @@index([mechanicId, createdAt])
-  @@index([merchantId, createdAt])
 }
 
 model LoyaltyTier {

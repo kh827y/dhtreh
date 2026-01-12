@@ -34,7 +34,12 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const rules = data?.rulesJson && typeof data.rulesJson === 'object' ? data.rulesJson : {};
+  const rules =
+    data?.rulesJson &&
+    typeof data.rulesJson === 'object' &&
+    !Array.isArray(data.rulesJson)
+      ? data.rulesJson
+      : {};
   const registration =
     rules && typeof rules === 'object' && rules.registration && typeof rules.registration === 'object'
       ? rules.registration
@@ -137,7 +142,12 @@ export async function PUT(req: NextRequest) {
     });
   }
 
-  const rules = data?.rulesJson && typeof data.rulesJson === 'object' ? { ...data.rulesJson } : {};
+  const rules =
+    data?.rulesJson &&
+    typeof data.rulesJson === 'object' &&
+    !Array.isArray(data.rulesJson)
+      ? { ...data.rulesJson }
+      : {};
   const currentRegistration =
     rules && typeof rules === 'object' && rules.registration && typeof rules.registration === 'object'
       ? { ...rules.registration }

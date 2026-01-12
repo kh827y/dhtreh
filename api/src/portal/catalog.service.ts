@@ -392,7 +392,7 @@ export class PortalCatalogService {
 
   private async loadOutletWithDevices(merchantId: string, outletId: string) {
     const outlet = await this.prisma.outlet.findFirst({
-      where: { id: outletId, merchantId, hidden: false },
+      where: { id: outletId, merchantId },
       include: {
         devices: {
           where: { archivedAt: null },
@@ -1550,7 +1550,7 @@ export class PortalCatalogService {
     status?: 'active' | 'inactive' | 'all',
     search?: string,
   ): Promise<PortalOutletListResponseDto> {
-    const where: Prisma.OutletWhereInput = { merchantId, hidden: false };
+    const where: Prisma.OutletWhereInput = { merchantId };
     if (status === 'active') where.status = 'ACTIVE';
     if (status === 'inactive') where.status = 'INACTIVE';
     if (search) {
@@ -1562,7 +1562,6 @@ export class PortalCatalogService {
         and.push({
           OR: [
             { name: { contains: term, mode: 'insensitive' } },
-            { address: { contains: term, mode: 'insensitive' } },
           ],
         });
         where.AND = and;

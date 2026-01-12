@@ -7,7 +7,6 @@ import {
 import { hashPassword, verifyPassword } from '../password.util';
 import { PrismaService } from '../prisma.service';
 import {
-  DeviceType,
   TxnType,
   StaffOutletAccessStatus,
   StaffStatus,
@@ -20,7 +19,6 @@ import {
   UpdateMerchantSettingsDto,
   UpdateOutletDto,
   UpdateStaffDto,
-  UpdateOutletPosDto,
 } from './dto';
 import { signPortalJwt as issuePortalJwt } from '../portal-auth/portal-jwt.util';
 import { ensureBaseTier } from '../loyalty/tier-defaults.util';
@@ -715,6 +713,40 @@ export class MerchantsService {
     if (!merchant) {
       throw new NotFoundException('Merchant not found');
     }
+    const currentSettings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { pointsTtlDays: true, rulesJson: true },
+    });
+    const lotsEnabled = process.env.EARN_LOTS_FEATURE === '1';
+    if (!lotsEnabled) {
+      const ttlProvided =
+        extras && Object.prototype.hasOwnProperty.call(extras, 'pointsTtlDays');
+      if (ttlProvided) {
+        const nextTtlDays = Number(extras?.pointsTtlDays ?? 0) || 0;
+        if (nextTtlDays > 0) {
+          throw new BadRequestException(
+            'Сгорание баллов недоступно без поддержки лотов',
+          );
+        }
+      }
+      const rulesProvided = rulesJson !== undefined;
+      if (rulesProvided) {
+        const currentRules = this.normalizeRulesJson(
+          currentSettings?.rulesJson ?? null,
+        ) as any;
+        const currentReminderEnabled = Boolean(
+          currentRules?.burnReminder?.enabled,
+        );
+        const nextReminderEnabled = Boolean(
+          (normalizedRulesJson as any)?.burnReminder?.enabled,
+        );
+        if (nextReminderEnabled && !currentReminderEnabled) {
+          throw new BadRequestException(
+            'Напоминания о сгорании недоступны без поддержки лотов',
+          );
+        }
+      }
+    }
 
     const updateData: Prisma.MerchantSettingsUpdateInput = {
       qrTtlSec: qrTtlSec ?? undefined,
@@ -944,22 +976,9 @@ export class MerchantsService {
       id: entity.id,
       merchantId: entity.merchantId,
       name: entity.name,
-      address: entity.address ?? null,
       status: entity.status,
-      hidden: !!entity.hidden,
-      posType: entity.posType ?? null,
-      posLastSeenAt: entity.posLastSeenAt ?? null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
-    } as const;
-  }
-
-  private mapOutletMeta(
-    outlet?: { posType: DeviceType | null; posLastSeenAt: Date | null } | null,
-  ) {
-    return {
-      outletPosType: outlet?.posType ?? null,
-      outletLastSeenAt: outlet?.posLastSeenAt ?? null,
     } as const;
   }
 
@@ -975,7 +994,6 @@ export class MerchantsService {
       earnApplied: entity.earnApplied,
       createdAt: entity.createdAt,
       outletId: entity.outletId ?? null,
-      ...this.mapOutletMeta(entity.outlet ?? null),
       staffId: entity.staffId ?? null,
       deviceId: entity?.device?.code ?? entity.deviceId ?? null,
     } as const;
@@ -991,7 +1009,6 @@ export class MerchantsService {
       orderId: entity.orderId ?? null,
       createdAt: entity.createdAt,
       outletId: entity.outletId ?? null,
-      ...this.mapOutletMeta(entity.outlet ?? null),
       staffId: entity.staffId ?? null,
       deviceId: entity?.device?.code ?? entity.deviceId ?? null,
     } as const;
@@ -999,7 +1016,7 @@ export class MerchantsService {
 
   private normalizeRulesJson(rulesJson: any) {
     if (rulesJson == null) return rulesJson;
-    if (Array.isArray(rulesJson)) return {};
+    if (Array.isArray(rulesJson)) return null;
     if (typeof rulesJson !== 'object') return rulesJson;
 
     const clone: any = { ...rulesJson };
@@ -1040,30 +1057,6 @@ export class MerchantsService {
     return clone;
   }
 
-  private async loadOutletMeta(
-    merchantId: string,
-    outletIds: (string | null | undefined)[],
-  ) {
-    const ids = Array.from(
-      new Set(outletIds.filter((id): id is string => !!id)),
-    );
-    if (!ids.length)
-      return new Map<
-        string,
-        { posType: DeviceType | null; posLastSeenAt: Date | null }
-      >();
-    const outlets = await this.prisma.outlet.findMany({
-      where: { merchantId, id: { in: ids } },
-      select: { id: true, posType: true, posLastSeenAt: true },
-    });
-    return new Map(
-      outlets.map((o) => [
-        o.id,
-        { posType: o.posType ?? null, posLastSeenAt: o.posLastSeenAt ?? null },
-      ]),
-    );
-  }
-
   private async ensureOutlet(merchantId: string, outletId: string) {
     const outlet = await this.prisma.outlet.findUnique({
       where: { id: outletId },
@@ -1071,37 +1064,6 @@ export class MerchantsService {
     if (!outlet || outlet.merchantId !== merchantId)
       throw new NotFoundException('Outlet not found');
     return outlet;
-  }
-
-  private async outletHasOperations(
-    tx: Prisma.TransactionClient,
-    merchantId: string,
-    outletId: string,
-  ) {
-    const [receipt, txn, hold, promoUsage, promoParticipant] =
-      await Promise.all([
-        tx.receipt.findFirst({
-          where: { merchantId, outletId },
-          select: { id: true },
-        }),
-        tx.transaction.findFirst({
-          where: { merchantId, outletId },
-          select: { id: true },
-        }),
-        tx.hold.findFirst({
-          where: { merchantId, outletId },
-          select: { id: true },
-        }),
-        tx.promoCodeUsage.findFirst({
-          where: { merchantId, outletId },
-          select: { id: true },
-        }),
-        tx.promotionParticipant.findFirst({
-          where: { merchantId, outletId },
-          select: { id: true },
-        }),
-      ]);
-    return Boolean(receipt || txn || hold || promoUsage || promoParticipant);
   }
 
   private async assertOutletLimit(merchantId: string) {
@@ -1124,11 +1086,11 @@ export class MerchantsService {
     });
     return items.map((out) => this.mapOutlet(out));
   }
-  async createOutlet(merchantId: string, name: string, address?: string) {
+  async createOutlet(merchantId: string, name: string) {
     await this.ensureMerchant(merchantId);
     await this.assertOutletLimit(merchantId);
     const created = await this.prisma.outlet.create({
-      data: { merchantId, name, address: address ?? null },
+      data: { merchantId, name },
     });
     return this.mapOutlet(created);
   }
@@ -1140,29 +1102,16 @@ export class MerchantsService {
     await this.ensureOutlet(merchantId, outletId);
     const updated = await this.prisma.outlet.update({
       where: { id: outletId },
-      data: { name: dto.name ?? undefined, address: dto.address ?? undefined },
+      data: { name: dto.name ?? undefined },
     });
     return this.mapOutlet(updated);
   }
   async deleteOutlet(merchantId: string, outletId: string) {
     await this.ensureOutlet(merchantId, outletId);
     await this.prisma.$transaction(async (tx) => {
-      const hasOperations = await this.outletHasOperations(
-        tx,
-        merchantId,
-        outletId,
-      );
-      if (hasOperations) {
-        await tx.outlet.update({
-          where: { id: outletId },
-          data: { hidden: true, status: 'INACTIVE' },
-        });
-        return;
-      }
       await tx.staffOutletAccess.deleteMany({
         where: { merchantId, outletId },
       });
-      await tx.outletSchedule.deleteMany({ where: { outletId } });
       await tx.productStock.deleteMany({ where: { outletId } });
       await tx.cashierSession.deleteMany({ where: { merchantId, outletId } });
       await tx.promoCodeUsage.deleteMany({ where: { merchantId, outletId } });
@@ -1177,35 +1126,6 @@ export class MerchantsService {
       await tx.outlet.delete({ where: { id: outletId } });
     });
     return { ok: true };
-  }
-
-  private normalizePosType(input?: string | null) {
-    if (input === undefined) return undefined;
-    if (input === null || input === '') return null;
-    const upper = String(input).toUpperCase();
-    if (upper === 'PC_POS' || upper === 'SMART' || upper === 'VIRTUAL')
-      return upper as DeviceType;
-    throw new BadRequestException('Invalid posType');
-  }
-
-  async updateOutletPos(
-    merchantId: string,
-    outletId: string,
-    dto: UpdateOutletPosDto,
-  ) {
-    await this.ensureOutlet(merchantId, outletId);
-    const data: any = {};
-    if (dto.posType !== undefined)
-      data.posType = this.normalizePosType(dto.posType ?? null);
-    if (dto.posLastSeenAt !== undefined)
-      data.posLastSeenAt = dto.posLastSeenAt
-        ? new Date(dto.posLastSeenAt)
-        : null;
-    const updated = await this.prisma.outlet.update({
-      where: { id: outletId },
-      data,
-    });
-    return this.mapOutlet(updated);
   }
 
   async updateOutletStatus(
@@ -1378,6 +1298,14 @@ export class MerchantsService {
       }
       data.hash = hashPassword(password);
       data.canAccessPortal = true;
+    }
+    if (
+      dto.canAccessPortal === false ||
+      dto.password !== undefined ||
+      dto.status === StaffStatus.FIRED
+    ) {
+      data.portalTokensRevokedAt = new Date();
+      data.portalRefreshTokenHash = null;
     }
     return this.prisma.staff.update({ where: { id: staffId }, data });
   }
@@ -2178,7 +2106,6 @@ export class MerchantsService {
       orderBy: { createdAt: 'desc' },
       take: params.limit,
       include: {
-        outlet: { select: { posType: true, posLastSeenAt: true } },
         device: { select: { code: true } },
       },
     });
@@ -2213,7 +2140,6 @@ export class MerchantsService {
       orderBy: { createdAt: 'desc' },
       take: params.limit,
       include: {
-        outlet: { select: { posType: true, posLastSeenAt: true } },
         device: { select: { code: true } },
       },
     });
@@ -2223,7 +2149,6 @@ export class MerchantsService {
     const r = await this.prisma.receipt.findUnique({
       where: { id: receiptId },
       include: {
-        outlet: { select: { posType: true, posLastSeenAt: true } },
         device: { select: { code: true } },
       },
     });
@@ -2233,7 +2158,6 @@ export class MerchantsService {
       where: { merchantId, orderId: r.orderId },
       orderBy: { createdAt: 'asc' },
       include: {
-        outlet: { select: { posType: true, posLastSeenAt: true } },
         device: { select: { code: true } },
       },
     });
@@ -2280,14 +2204,7 @@ export class MerchantsService {
       orderBy: { createdAt: 'desc' },
       take: params.limit,
     });
-    const outletMeta = await this.loadOutletMeta(
-      merchantId,
-      items.map((it) => it.outletId),
-    );
     return items.map((entity) => {
-      const meta = entity.outletId
-        ? (outletMeta.get(entity.outletId) ?? null)
-        : null;
       return {
         id: entity.id,
         merchantId: entity.merchantId,
@@ -2298,8 +2215,6 @@ export class MerchantsService {
         orderId: entity.orderId ?? null,
         receiptId: entity.receiptId ?? null,
         outletId: entity.outletId ?? null,
-        outletPosType: meta?.posType ?? null,
-        outletLastSeenAt: meta?.posLastSeenAt ?? null,
         staffId: entity.staffId ?? null,
         meta: entity.meta ?? null,
         createdAt: entity.createdAt,
@@ -2320,7 +2235,7 @@ export class MerchantsService {
   ) {
     const items = await this.listLedger(merchantId, params);
     const lines = [
-      'id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,outletPosType,outletLastSeenAt,staffId',
+      'id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,staffId',
     ];
     for (const e of items) {
       const row = [
@@ -2333,8 +2248,6 @@ export class MerchantsService {
         e.receiptId || '',
         e.createdAt.toISOString(),
         e.outletId || '',
-        e.outletPosType || '',
-        e.outletLastSeenAt ? new Date(e.outletLastSeenAt).toISOString() : '',
         e.staffId || '',
       ]
         .map((x) => `"${String(x).replaceAll('"', '""')}"`)
@@ -2529,14 +2442,7 @@ export class MerchantsService {
       orderBy: { earnedAt: 'desc' },
       take: params.limit,
     });
-    const outletMeta = await this.loadOutletMeta(
-      merchantId,
-      items.map((it) => it.outletId),
-    );
     return items.map((entity) => {
-      const meta = entity.outletId
-        ? (outletMeta.get(entity.outletId) ?? null)
-        : null;
       return {
         id: entity.id,
         merchantId: entity.merchantId,
@@ -2548,8 +2454,6 @@ export class MerchantsService {
         orderId: entity.orderId ?? null,
         receiptId: entity.receiptId ?? null,
         outletId: entity.outletId ?? null,
-        outletPosType: meta?.posType ?? null,
-        outletLastSeenAt: meta?.posLastSeenAt ?? null,
         staffId: entity.staffId ?? null,
         createdAt: entity.createdAt,
       } as const;
@@ -2566,7 +2470,7 @@ export class MerchantsService {
   ) {
     const items = await this.listEarnLots(merchantId, params);
     const lines = [
-      'id,customerId,points,consumedPoints,earnedAt,expiresAt,orderId,receiptId,outletId,outletPosType,outletLastSeenAt,staffId',
+      'id,customerId,points,consumedPoints,earnedAt,expiresAt,orderId,receiptId,outletId,staffId',
     ];
     for (const e of items) {
       const row = [
@@ -2579,8 +2483,6 @@ export class MerchantsService {
         e.orderId || '',
         e.receiptId || '',
         e.outletId || '',
-        e.outletPosType || '',
-        e.outletLastSeenAt ? new Date(e.outletLastSeenAt).toISOString() : '',
         e.staffId || '',
       ]
         .map((x) => `"${String(x).replaceAll('"', '""')}"`)
@@ -2730,6 +2632,10 @@ export class MerchantsService {
         throw new BadRequestException('password too short');
       data.portalPasswordHash = hashPassword(String(dto.password));
     }
+    if (data.portalEmail !== undefined || data.portalPasswordHash !== undefined) {
+      data.portalTokensRevokedAt = new Date();
+      data.portalRefreshTokenHash = null;
+    }
     const res = await (this.prisma.merchant as any).update({
       where: { id },
       data,
@@ -2785,7 +2691,12 @@ export class MerchantsService {
       // Fallback: мягкое отключение, если есть зависимости
       await (this.prisma.merchant as any).update({
         where: { id },
-        data: { portalLoginEnabled: false, portalEmail: null },
+        data: {
+          portalLoginEnabled: false,
+          portalEmail: null,
+          portalTokensRevokedAt: new Date(),
+          portalRefreshTokenHash: null,
+        },
       });
       return { ok: true };
     }
@@ -2834,9 +2745,14 @@ export class MerchantsService {
     return { key };
   }
   async setPortalLoginEnabled(merchantId: string, enabled: boolean) {
+    const updateData: any = { portalLoginEnabled: !!enabled };
+    if (!enabled) {
+      updateData.portalTokensRevokedAt = new Date();
+      updateData.portalRefreshTokenHash = null;
+    }
     await (this.prisma.merchant as any).update({
       where: { id: merchantId },
-      data: { portalLoginEnabled: !!enabled },
+      data: updateData,
     });
     return { ok: true };
   }

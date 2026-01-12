@@ -124,10 +124,10 @@ export class AntiFraudService {
       };
     } catch (error) {
       this.logger.error('Ошибка проверки антифрода:', error);
-      // В случае ошибки возвращаем низкий риск, чтобы не блокировать легитимные транзакции
+      // В случае ошибки помечаем проверку как подозрительную, но не блокируем
       return {
-        level: RiskLevel.LOW,
-        score: 0,
+        level: RiskLevel.MEDIUM,
+        score: 30,
         factors: ['antifraud_check_error'],
         shouldBlock: false,
         shouldReview: false,

@@ -166,37 +166,6 @@ async function fetchAccessGroupsAndStaff(force = false) {
   }
 }
 
-const LEGACY_RESOURCE_ALIASES: Record<string, string[]> = {
-  products: ["loyalty"],
-  categories: ["loyalty"],
-  audiences: ["loyalty"],
-  customers: ["loyalty"],
-  points_promotions: ["loyalty"],
-  product_promotions: ["loyalty"],
-  promocodes: ["loyalty"],
-  telegram_notifications: ["loyalty"],
-  broadcasts: ["loyalty"],
-  system_settings: ["loyalty"],
-  feedback: ["loyalty"],
-  staff_motivation: ["loyalty"],
-  antifraud: ["loyalty"],
-  cashier_panel: ["loyalty"],
-  import: ["loyalty"],
-  integrations: ["loyalty"],
-  rfm_analysis: ["analytics"],
-  analytics: ["analytics"],
-  staff: ["staff"],
-  access_groups: ["staff"],
-  outlets: ["outlets"],
-  mechanic_birthday: ["loyalty"],
-  mechanic_auto_return: ["loyalty"],
-  mechanic_levels: ["loyalty"],
-  mechanic_redeem_limits: ["loyalty"],
-  mechanic_registration_bonus: ["loyalty"],
-  mechanic_ttl: ["loyalty"],
-  mechanic_referral: ["loyalty"],
-};
-
 const EDIT_ACTIONS = new Set(["create", "update", "delete", "manage", "*"]);
 
 function blankPermissions(): SectionPermissions {
@@ -233,12 +202,6 @@ function resolveSectionPermissions(
   const direct = flagsFromActions(map.get(section.id));
   let view = direct.view;
   let edit = direct.edit;
-  const aliases = LEGACY_RESOURCE_ALIASES[section.id] || [];
-  for (const alias of aliases) {
-    const legacy = flagsFromActions(map.get(alias));
-    view = view || legacy.view;
-    edit = edit || legacy.edit;
-  }
   if (section.allowEdit === false) {
     return { view: view || edit, edit: false };
   }

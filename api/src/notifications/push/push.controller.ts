@@ -2,7 +2,6 @@ import {
   Controller,
   Post,
   Get,
-  Delete,
   Body,
   Param,
   Query,
@@ -16,7 +15,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { PushService } from './push.service';
-import type { RegisterDeviceDto, SendPushDto } from './push.service';
+import type { SendPushDto } from './push.service';
 import { ApiKeyGuard } from '../../guards/api-key.guard';
 
 @ApiTags('Push Notifications')
@@ -25,16 +24,6 @@ import { ApiKeyGuard } from '../../guards/api-key.guard';
 @ApiBearerAuth()
 export class PushController {
   constructor(private readonly pushService: PushService) {}
-
-  /**
-   * Регистрация устройства
-   */
-  @Post('device/register')
-  @ApiOperation({ summary: 'Регистрация устройства для push-уведомлений' })
-  @ApiResponse({ status: 200, description: 'Устройство зарегистрировано' })
-  async registerDevice(@Body() dto: RegisterDeviceDto) {
-    return this.pushService.registerDevice(dto);
-  }
 
   /**
    * Отправить push-уведомление
@@ -67,17 +56,6 @@ export class PushController {
       dto.body,
       dto.data,
     );
-  }
-
-  /**
-   * Деактивировать устройство
-   */
-  @Delete('device/:outletId')
-  @ApiOperation({ summary: 'Деактивировать устройство' })
-  @ApiResponse({ status: 200, description: 'Устройство деактивировано' })
-  async deactivateDevice(@Param('outletId') outletId: string) {
-    await this.pushService.deactivateDevice(outletId);
-    return { success: true };
   }
 
   /**

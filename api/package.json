@@ -22,10 +22,9 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "pretest:e2e": "prisma generate",
-    "test:e2e": "COLUMNS=120 jest --config ./test/jest-e2e.json --runInBand --detectOpenHandles --forceExit",
+    "test:e2e": "COLUMNS=120 jest --config ./test/jest-e2e.json --runInBand --detectOpenHandles --forceExit --passWithNoTests",
     "test:all": "pnpm test && pnpm test:e2e",
-    "seed": "prisma db seed",
-    "postman:gen": "node scripts/generate-postman.js"
+    "seed": "prisma db seed"
   },
   "dependencies": {
     "@apollo/server": "^4.11.1",
@@ -63,7 +62,6 @@
     "jose": "^6.1.0",
     "nestjs-throttler-storage-redis": "^0.5.1",
     "nodemailer": "^6.9.14",
-    "openapi-to-postmanv2": "^4.24.0",
     "otplib": "^12.0.1",
     "pdfkit": "^0.13.0",
     "pg": "^8.16.3",

@@ -190,6 +190,10 @@ export class StaffSummaryDto {
   @ApiPropertyOptional({ description: 'Должность' })
   position?: string | null;
 
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Ссылка на аватар' })
+  avatarUrl?: string | null;
+
   @Field(() => StaffRole)
   @ApiProperty({ enum: StaffRole, description: 'Роль сотрудника' })
   role!: StaffRole;
@@ -336,6 +340,13 @@ export class UpsertStaffInput {
   @MaxLength(500)
   comment?: string | null;
 
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Ссылка на аватар' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  avatarUrl?: string | null;
+
   @Field(() => StaffRole, { nullable: true })
   @ApiPropertyOptional({ enum: StaffRole })
   @IsOptional()
@@ -374,7 +385,6 @@ export class UpsertStaffInput {
   @ApiPropertyOptional({ type: [String], description: 'Список групп доступа' })
   @IsOptional()
   @IsArray()
-  @ArrayNotEmpty()
   @IsString({ each: true })
   accessGroupIds?: string[];
 

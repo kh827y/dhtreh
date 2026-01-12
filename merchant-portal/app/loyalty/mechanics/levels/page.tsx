@@ -228,7 +228,7 @@ export default function LevelsPage() {
           : [];
       const mapped = source
         .map(mapTier)
-        .sort((a, b) => a.thresholdAmount - b.thresholdAmount);
+        .sort((a: TierRow, b: TierRow) => a.thresholdAmount - b.thresholdAmount);
       setLevels(mapped);
 
       try {
@@ -330,6 +330,7 @@ export default function LevelsPage() {
         return;
       }
       const payload = validation.payload;
+      if (!payload) return;
       const editingLevel = editingId
         ? levels.find((lvl) => lvl.id === editingId)
         : null;

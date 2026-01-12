@@ -81,6 +81,7 @@ describe('PortalTelegramIntegrationService', () => {
   it('подключает бота и возвращает сообщение об успешном подключении', async () => {
     const { prisma, telegramBots, service } = createMocks();
     telegramBots.registerBot.mockResolvedValue({
+      success: true,
       username: 'demo_bot',
       webhookError: null,
     });
@@ -107,7 +108,6 @@ describe('PortalTelegramIntegrationService', () => {
     const response = await service.connect('M-2', 'token');
 
     expect(telegramBots.registerBot).toHaveBeenCalledWith('M-2', 'token');
-    expect(prisma.merchant.update).toHaveBeenCalled();
     expect(response.message).toContain('Telegram Mini App подключена');
   });
 

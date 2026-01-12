@@ -57,8 +57,11 @@ export async function GET(req: NextRequest) {
     const outletList = Array.isArray(outlets)
       ? outlets
       : (outlets as any)?.items || [];
-    hasOutlets = outletList.length > 0;
-    outletsCount = outletList.length;
+    const outletsTotal =
+      Number((outlets as any)?.total ?? (outlets as any)?.meta?.total ?? outletList.length) ||
+      outletList.length;
+    hasOutlets = outletsTotal > 0;
+    outletsCount = outletsTotal;
 
     // Check if staff exists
     let hasStaff = false;
@@ -66,8 +69,10 @@ export async function GET(req: NextRequest) {
     const staffList = Array.isArray(staff)
       ? staff
       : (staff as any)?.items || [];
-    hasStaff = staffList.length > 0;
-    staffCount = staffList.length;
+    const staffTotal =
+      Number((staff as any)?.meta?.total ?? staffList.length) || staffList.length;
+    hasStaff = staffTotal > 0;
+    staffCount = staffTotal;
 
     const [bonusRes, nameRes, timezoneRes, supportRes, telegramRes] = await Promise.all([
       fetchJsonSafe(`${API_BASE}/portal/loyalty/redeem-limits`, headers),

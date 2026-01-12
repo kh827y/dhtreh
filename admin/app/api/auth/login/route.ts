@@ -7,12 +7,9 @@ const RATE_LIMIT_MAX = 10;
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 
 function getClientKey(req: NextRequest) {
-  const forwarded = req.headers.get('x-forwarded-for');
-  if (forwarded) {
-    const first = forwarded.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return req.ip || 'unknown';
+  const forwarded = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '';
+  const first = forwarded.split(',')[0]?.trim();
+  return first || 'unknown';
 }
 
 function checkRateLimit(key: string) {

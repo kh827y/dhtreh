@@ -33,7 +33,6 @@ export class OutletsResolver {
     const { page, pageSize, ...rest } = args;
     const filters: OutletFilters = {
       status: rest.status ? (rest.status as any) : undefined,
-      hidden: rest.hidden,
       search: rest.search,
     };
     const result = await this.service.listOutlets(

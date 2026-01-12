@@ -201,7 +201,8 @@ export default function AntiFraudPage() {
     // Group by outlet/POS type
     const byOutlet = new Map<string, any[]>();
     for (const tx of nightTxs) {
-      const key = `${tx.outletId || 'unknown'}/${tx.outletPosType || 'unknown'}`;
+      const posType = tx.outletPosType || 'OUTLET';
+      const key = `${tx.outletId || 'unknown'}/${posType}`;
       if (!byOutlet.has(key)) {
         byOutlet.set(key, []);
       }
@@ -222,7 +223,8 @@ export default function AntiFraudPage() {
   const analyzeSerialRefunds = (transactions: any[]) => {
     const refundStats = new Map<string, { total: number; refunded: number; transactions: any[] }>();
     for (const tx of transactions) {
-      const key = `${tx.outletId || 'unknown'}/${tx.outletPosType || 'unknown'}`;
+      const posType = tx.outletPosType || 'OUTLET';
+      const key = `${tx.outletId || 'unknown'}/${posType}`;
       if (!refundStats.has(key)) {
         refundStats.set(key, { total: 0, refunded: 0, transactions: [] });
       }

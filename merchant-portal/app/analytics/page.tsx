@@ -411,12 +411,14 @@ export default function AnalyticsDashboardPage() {
                       border: "none",
                       boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
                     }}
-                    formatter={(value: number, name: string) => {
-                      if (name === "registrations") return [`${value} чел.`, "Регистрации"];
-                      if (name === "prevRegistrations") return [`${value} чел.`, "Прошлые регистрации"];
-                      if (name === "revenue") return [`${value.toLocaleString()} ₽`, "Выручка"];
-                      if (name === "prevRevenue") return [`${value.toLocaleString()} ₽`, "Прошлая выручка"];
-                      return [value, name];
+                    formatter={(value?: number, name?: string) => {
+                      const numeric = value ?? 0;
+                      const label = name ?? "";
+                      if (label === "registrations") return [`${numeric} чел.`, "Регистрации"];
+                      if (label === "prevRegistrations") return [`${numeric} чел.`, "Прошлые регистрации"];
+                      if (label === "revenue") return [`${numeric.toLocaleString()} ₽`, "Выручка"];
+                      if (label === "prevRevenue") return [`${numeric.toLocaleString()} ₽`, "Прошлая выручка"];
+                      return [numeric, label];
                     }}
                   />
 

@@ -252,10 +252,10 @@ export default function AnalyticsDynamicsPage() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
                   <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "#6B7280", fontSize: 12 }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: "#6B7280", fontSize: 12 }} unit="₽" />
-                  <Tooltip
-                    contentStyle={{ borderRadius: 8, border: "none", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)" }}
-                    formatter={(val: number) => [formatCurrency(val), "Ср. чек"]}
-                  />
+                    <Tooltip
+                      contentStyle={{ borderRadius: 8, border: "none", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)" }}
+                      formatter={(val?: number) => [formatCurrency(val ?? 0), "Ср. чек"]}
+                    />
                   <Area
                     type="monotone"
                     dataKey="avgCheck"
@@ -336,10 +336,11 @@ export default function AnalyticsDynamicsPage() {
                     <Tooltip
                       cursor={{ fill: "#F9FAFB", opacity: 0.5 }}
                       contentStyle={{ borderRadius: 8, border: "none", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)" }}
-                      formatter={(value: number, name: string) => {
-                        const absValue = Math.abs(value || 0);
-                        if (name === "Списано" || name === "Сгорело") return [absValue.toLocaleString("ru-RU"), name];
-                        return [Math.round(value || 0).toLocaleString("ru-RU"), name];
+                      formatter={(value?: number, name?: string) => {
+                        const absValue = Math.abs(value ?? 0);
+                        const label = name ?? "";
+                        if (label === "Списано" || label === "Сгорело") return [absValue.toLocaleString("ru-RU"), label];
+                        return [Math.round(value ?? 0).toLocaleString("ru-RU"), label];
                       }}
                     />
                     <Legend

@@ -6,8 +6,6 @@ import {
 } from '@nestjs/common';
 import {
   CommunicationChannel,
-  LoyaltyMechanicType,
-  MechanicStatus,
   Prisma,
   PromotionRewardType,
   PromotionStatus,
@@ -66,16 +64,6 @@ export interface TierMembersResponse {
   nextCursor: string | null;
 }
 
-export interface MechanicPayload {
-  type: LoyaltyMechanicType;
-  name?: string | null;
-  description?: string | null;
-  status?: MechanicStatus;
-  settings?: any;
-  metadata?: any;
-  actorId?: string;
-}
-
 export interface PromotionPayload {
   name: string;
   description?: string | null;
@@ -99,9 +87,11 @@ export interface PromotionPayload {
 }
 
 export interface OperationsLogFilters {
-  type?: 'MECHANIC' | 'PROMO_CODE' | 'PROMOTION';
+  type?: 'PROMO_CODE' | 'PROMOTION';
   from?: Date | string;
   to?: Date | string;
+  limit?: number;
+  offset?: number;
 }
 
 @Injectable()
@@ -178,6 +168,48 @@ export class LoyaltyProgramService {
       throw new BadRequestException('Укажите pointsValue для товарной акции');
     }
     return normalized;
+  }
+
+  private normalizePromotionDate(value: any, label: string): Date | null {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException(`Некорректная дата ${label}`);
+    }
+    return date;
+  }
+
+  private validatePromotionDates(
+    startAt: Date | null,
+    endAt: Date | null,
+    status: PromotionStatus,
+  ) {
+    if (startAt && endAt && endAt.getTime() < startAt.getTime()) {
+      throw new BadRequestException(
+        'Дата окончания не может быть раньше даты начала',
+      );
+    }
+    const now = new Date();
+    if (status === PromotionStatus.ACTIVE) {
+      if (startAt && startAt.getTime() > now.getTime()) {
+        throw new BadRequestException(
+          'Акция не может быть активной до даты старта',
+        );
+      }
+      if (endAt && endAt.getTime() < now.getTime()) {
+        throw new BadRequestException('Акция уже завершена');
+      }
+    }
+    if (status === PromotionStatus.SCHEDULED) {
+      if (!startAt) {
+        throw new BadRequestException('Для отложенной акции нужна дата старта');
+      }
+      if (startAt.getTime() <= now.getTime()) {
+        throw new BadRequestException(
+          'Дата старта должна быть в будущем',
+        );
+      }
+    }
   }
 
   // ===== Notifications scheduling =====
@@ -551,20 +583,34 @@ export class LoyaltyProgramService {
     if (!tier) throw new NotFoundException('Уровень не найден');
 
     const limit = Math.min(Math.max(params?.limit ?? 50, 1), 200);
-    const cursor =
-      params?.cursor && params.cursor.trim()
-        ? { id: params.cursor.trim() }
-        : undefined;
+    const cursorId =
+      params?.cursor && params.cursor.trim() ? params.cursor.trim() : null;
+    const cursorRow = cursorId
+      ? await this.prisma.loyaltyTierAssignment.findFirst({
+          where: { merchantId, tierId, id: cursorId },
+          select: { id: true, assignedAt: true },
+        })
+      : null;
     const activeWhere = {
       merchantId,
       tierId,
       OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
     };
+    const cursorWhere = cursorRow
+      ? {
+          OR: [
+            { assignedAt: { lt: cursorRow.assignedAt } },
+            {
+              assignedAt: cursorRow.assignedAt,
+              id: { lt: cursorRow.id },
+            },
+          ],
+        }
+      : {};
     const assignments = await this.prisma.loyaltyTierAssignment.findMany({
-      where: activeWhere,
+      where: { ...activeWhere, ...cursorWhere },
       orderBy: [{ assignedAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
-      ...(cursor ? { skip: 1, cursor } : {}),
     });
     const customerIds = Array.from(
       new Set(assignments.map((row) => row.customerId)),
@@ -866,169 +912,6 @@ export class LoyaltyProgramService {
     return { ok: true };
   }
 
-  async listMechanics(merchantId: string, status?: MechanicStatus | 'ALL') {
-    const where: Prisma.LoyaltyMechanicWhereInput = { merchantId };
-    if (status && status !== 'ALL') {
-      where.status = status;
-    }
-
-    const mechanics = await this.prisma.loyaltyMechanic.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    });
-    try {
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.loyalty.mechanics.list',
-          merchantId,
-          status: status ?? 'ALL',
-          total: mechanics.length,
-        }),
-      );
-      this.metrics.inc('portal_loyalty_mechanics_list_total');
-    } catch {}
-    return mechanics;
-  }
-
-  async getMechanic(merchantId: string, mechanicId: string) {
-    const mechanic = await this.prisma.loyaltyMechanic.findFirst({
-      where: { merchantId, id: mechanicId },
-    });
-    if (!mechanic) throw new NotFoundException('Механика не найдена');
-    return mechanic;
-  }
-
-  async createMechanic(merchantId: string, payload: MechanicPayload) {
-    if (!payload.type) throw new BadRequestException('Тип механики обязателен');
-    const mechanic = await this.prisma.loyaltyMechanic.create({
-      data: {
-        merchantId,
-        type: payload.type,
-        name: payload.name ?? null,
-        description: payload.description ?? null,
-        status: payload.status ?? MechanicStatus.DRAFT,
-        settings: payload.settings ?? null,
-        metadata: payload.metadata ?? null,
-        createdById: payload.actorId ?? null,
-        updatedById: payload.actorId ?? null,
-      },
-    });
-    try {
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.loyalty.mechanics.create',
-          merchantId,
-          mechanicId: mechanic.id,
-          type: mechanic.type,
-          status: mechanic.status,
-        }),
-      );
-      this.metrics.inc('portal_loyalty_mechanics_changed_total', {
-        action: 'create',
-      });
-    } catch {}
-    return mechanic;
-  }
-
-  async updateMechanic(
-    merchantId: string,
-    mechanicId: string,
-    payload: MechanicPayload,
-  ) {
-    const mechanic = await this.prisma.loyaltyMechanic.findFirst({
-      where: { merchantId, id: mechanicId },
-    });
-    if (!mechanic) throw new NotFoundException('Механика не найдена');
-
-    const updated = await this.prisma.loyaltyMechanic.update({
-      where: { id: mechanicId },
-      data: {
-        type: payload.type ?? mechanic.type,
-        name: payload.name ?? mechanic.name,
-        description: payload.description ?? mechanic.description,
-        status: payload.status ?? mechanic.status,
-        settings: payload.settings ?? mechanic.settings,
-        metadata: payload.metadata ?? mechanic.metadata,
-        updatedById: payload.actorId ?? mechanic.updatedById,
-      },
-    });
-
-    try {
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.loyalty.mechanics.update',
-          merchantId,
-          mechanicId,
-          status: updated.status,
-        }),
-      );
-      this.metrics.inc('portal_loyalty_mechanics_changed_total', {
-        action: 'update',
-      });
-    } catch {}
-    return updated;
-  }
-
-  async changeMechanicStatus(
-    merchantId: string,
-    mechanicId: string,
-    status: MechanicStatus,
-    actorId?: string,
-  ) {
-    const mechanic = await this.prisma.loyaltyMechanic.findFirst({
-      where: { merchantId, id: mechanicId },
-    });
-    if (!mechanic) throw new NotFoundException('Механика не найдена');
-    const updated = await this.prisma.loyaltyMechanic.update({
-      where: { id: mechanicId },
-      data: {
-        status,
-        updatedById: actorId ?? mechanic.updatedById,
-        enabledAt:
-          status === MechanicStatus.ENABLED ? new Date() : mechanic.enabledAt,
-        disabledAt:
-          status === MechanicStatus.DISABLED ? new Date() : mechanic.disabledAt,
-      },
-    });
-
-    try {
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.loyalty.mechanics.status',
-          merchantId,
-          mechanicId,
-          status,
-        }),
-      );
-      this.metrics.inc('portal_loyalty_mechanics_changed_total', {
-        action: 'status',
-      });
-    } catch {}
-    return updated;
-  }
-
-  async deleteMechanic(merchantId: string, mechanicId: string) {
-    const mechanic = await this.prisma.loyaltyMechanic.findFirst({
-      where: { merchantId, id: mechanicId },
-    });
-    if (!mechanic) throw new NotFoundException('Механика не найдена');
-    await this.prisma.loyaltyMechanic.delete({ where: { id: mechanicId } });
-
-    try {
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.loyalty.mechanics.delete',
-          merchantId,
-          mechanicId,
-        }),
-      );
-      this.metrics.inc('portal_loyalty_mechanics_changed_total', {
-        action: 'delete',
-      });
-    } catch {}
-    return { ok: true };
-  }
-
   async deletePromotion(merchantId: string, promotionId: string) {
     await this.prisma.$transaction(async (tx) => {
       const promotion = await tx.loyaltyPromotion.findFirst({
@@ -1235,6 +1118,9 @@ export class LoyaltyProgramService {
     const productIds = this.normalizeIdList(rewardMetadata.productIds);
     const categoryIds = this.normalizeIdList(rewardMetadata.categoryIds);
     const hasTargets = productIds.length > 0 || categoryIds.length > 0;
+    if (rewardType === PromotionRewardType.POINTS && !hasTargets) {
+      throw new BadRequestException('Выберите товары или категории');
+    }
     if (rewardType === PromotionRewardType.DISCOUNT && !hasTargets) {
       throw new BadRequestException('Выберите товары или категории');
     }
@@ -1316,6 +1202,10 @@ export class LoyaltyProgramService {
     }
 
     await this.ensureSegmentOwned(merchantId, payload.segmentId ?? null);
+    const status = payload.status ?? PromotionStatus.DRAFT;
+    const startAt = this.normalizePromotionDate(payload.startAt, 'startAt');
+    const endAt = this.normalizePromotionDate(payload.endAt, 'endAt');
+    this.validatePromotionDates(startAt, endAt, status);
 
     const promotion = await this.prisma.loyaltyPromotion.create({
       data: {
@@ -1324,7 +1214,7 @@ export class LoyaltyProgramService {
         description: payload.description ?? null,
         segmentId: payload.segmentId ?? null,
         targetTierId: payload.targetTierId ?? null,
-        status: payload.status ?? PromotionStatus.DRAFT,
+        status,
         rewardType: rewardType,
         rewardValue,
         rewardMetadata: rewardMetadata ?? Prisma.JsonNull,
@@ -1335,8 +1225,8 @@ export class LoyaltyProgramService {
         pushReminderEnabled: payload.pushReminderEnabled ?? false,
         reminderOffsetHours: payload.reminderOffsetHours ?? null,
         autoLaunch: payload.autoLaunch ?? false,
-        startAt: payload.startAt ? new Date(payload.startAt) : null,
-        endAt: payload.endAt ? new Date(payload.endAt) : null,
+        startAt,
+        endAt,
         metadata: payload.metadata ?? null,
         createdById: payload.actorId ?? null,
         updatedById: payload.actorId ?? null,
@@ -1399,6 +1289,9 @@ export class LoyaltyProgramService {
     const productIds = this.normalizeIdList(rewardMetadata.productIds);
     const categoryIds = this.normalizeIdList(rewardMetadata.categoryIds);
     const hasTargets = productIds.length > 0 || categoryIds.length > 0;
+    if (rewardType === PromotionRewardType.POINTS && !hasTargets) {
+      throw new BadRequestException('Выберите товары или категории');
+    }
     if (rewardType === PromotionRewardType.DISCOUNT && !hasTargets) {
       throw new BadRequestException('Выберите товары или категории');
     }
@@ -1493,15 +1386,13 @@ export class LoyaltyProgramService {
     const startAt =
       payload.startAt === undefined
         ? promotion.startAt
-        : payload.startAt
-          ? new Date(payload.startAt)
-          : null;
+        : this.normalizePromotionDate(payload.startAt, 'startAt');
     const endAt =
       payload.endAt === undefined
         ? promotion.endAt
-        : payload.endAt
-          ? new Date(payload.endAt)
-          : null;
+        : this.normalizePromotionDate(payload.endAt, 'endAt');
+    const status = payload.status ?? promotion.status;
+    this.validatePromotionDates(startAt, endAt, status);
 
     const updated = await this.prisma.loyaltyPromotion.update({
       where: { id: promotionId },
@@ -1510,7 +1401,7 @@ export class LoyaltyProgramService {
         description: payload.description ?? promotion.description,
         segmentId,
         targetTierId: payload.targetTierId ?? promotion.targetTierId,
-        status: payload.status ?? promotion.status,
+        status,
         rewardType,
         rewardValue,
         rewardMetadata,
@@ -1720,21 +1611,16 @@ export class LoyaltyProgramService {
   async operationsLog(merchantId: string, filters: OperationsLogFilters = {}) {
     const from = filters.from ? new Date(filters.from) : undefined;
     const to = filters.to ? new Date(filters.to) : undefined;
+    const limitRaw = Number(filters.limit ?? 200);
+    const offsetRaw = Number(filters.offset ?? 0);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(Math.max(Math.floor(limitRaw), 1), 500)
+      : 200;
+    const offset = Number.isFinite(offsetRaw)
+      ? Math.max(Math.floor(offsetRaw), 0)
+      : 0;
 
     const logs: any = {};
-    if (!filters.type || filters.type === 'MECHANIC') {
-      logs.mechanics = await this.prisma.loyaltyMechanicLog.findMany({
-        where: {
-          merchantId,
-          createdAt: {
-            ...(from ? { gte: from } : {}),
-            ...(to ? { lte: to } : {}),
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 200,
-      });
-    }
     if (!filters.type || filters.type === 'PROMO_CODE') {
       logs.promoCodes = await this.prisma.promoCodeUsage.findMany({
         where: {
@@ -1745,7 +1631,17 @@ export class LoyaltyProgramService {
           },
         },
         orderBy: { usedAt: 'desc' },
-        take: 200,
+        take: limit,
+        skip: offset,
+      });
+      logs.promoCodesTotal = await this.prisma.promoCodeUsage.count({
+        where: {
+          merchantId,
+          usedAt: {
+            ...(from ? { gte: from } : {}),
+            ...(to ? { lte: to } : {}),
+          },
+        },
       });
     }
     if (!filters.type || filters.type === 'PROMOTION') {
@@ -1758,7 +1654,17 @@ export class LoyaltyProgramService {
           },
         },
         orderBy: { joinedAt: 'desc' },
-        take: 200,
+        take: limit,
+        skip: offset,
+      });
+      logs.promotionsTotal = await this.prisma.promotionParticipant.count({
+        where: {
+          merchantId,
+          joinedAt: {
+            ...(from ? { gte: from } : {}),
+            ...(to ? { lte: to } : {}),
+          },
+        },
       });
     }
 
@@ -1768,13 +1674,14 @@ export class LoyaltyProgramService {
           event: 'portal.loyalty.operations.log',
           merchantId,
           type: filters.type ?? 'ALL',
-          mechanics: logs.mechanics?.length ?? 0,
           promoCodes: logs.promoCodes?.length ?? 0,
           promotions: logs.promotions?.length ?? 0,
         }),
       );
       this.metrics.inc('portal_loyalty_operations_list_total');
     } catch {}
+    logs.limit = limit;
+    logs.offset = offset;
     return logs;
   }
 }

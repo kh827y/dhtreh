@@ -188,7 +188,7 @@ async function fetchOutletOptions(): Promise<{
   rows.forEach((row) => {
     if (!row?.id) return;
     const outletId = String(row.id);
-    const outletLabel = String(row?.name || row?.address || outletId);
+    const outletLabel = String(row?.name || outletId);
     outletMap.set(outletId, { value: outletId, label: outletLabel });
     const devices = Array.isArray(row?.devices) ? row.devices : [];
     devices.forEach((device: any) => {
@@ -330,12 +330,7 @@ function mapOperationFromDto(item: any): Operation {
     datetime: String(item?.occurredAt || new Date().toISOString()),
     outlet: {
       id: String(item?.outlet?.id || ""),
-      name:
-        item?.outlet?.name != null
-          ? String(item.outlet.name)
-          : item?.outlet?.code != null
-            ? String(item.outlet.code)
-            : null,
+      name: item?.outlet?.name != null ? String(item.outlet.name) : null,
     },
     client: { id: String(item?.customer?.id || ""), name: customerName },
     manager,

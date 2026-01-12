@@ -99,7 +99,9 @@ export default function ReferralProgramSettingsPage() {
   const updateLevelValue = React.useCallback((index: number, value: number) => {
     setSettings((prev) => {
       const nextLevels = [...prev.levels] as ReferralProgramFormState["levels"];
-      nextLevels[index] = { ...nextLevels[index], value };
+      const current = nextLevels[index];
+      if (!current) return prev;
+      nextLevels[index] = { ...current, value };
       return { ...prev, levels: nextLevels };
     });
   }, []);

@@ -29,12 +29,19 @@ describe("system settings page (new design)", () => {
       utcOffsetMinutes: 180,
       iana: "Europe/Moscow",
     };
+    const nextTimezone = {
+      ...timezone,
+      code: "MSK+1",
+      iana: "Europe/Samara",
+    };
 
     const namePayload = { name: "Моя Компания", initialName: "Моя Компания" };
+    const supportPayload = { supportTelegram: "" };
+    const qrPayload = { requireJwtForQuote: false };
     const updatedNamePayload = { ok: true, name: "Новая Компания ✓", initialName: "Моя Компания" };
     const updatedTimezonePayload = {
       ok: true,
-      timezone: { ...timezone, code: "MSK+1", iana: "Europe/Samara" },
+      timezone: nextTimezone,
       options: [],
     };
 
@@ -47,6 +54,12 @@ describe("system settings page (new design)", () => {
 
       if (url.endsWith("/api/portal/settings/name") && method === "GET") {
         return new Response(JSON.stringify(namePayload), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.endsWith("/api/portal/settings/support") && method === "GET") {
+        return new Response(JSON.stringify(supportPayload), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.endsWith("/api/portal/settings/qr") && method === "GET") {
+        return new Response(JSON.stringify(qrPayload), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url.endsWith("/api/portal/settings/name") && method === "PUT") {
         calls.push({ url, method, body });
@@ -64,7 +77,7 @@ describe("system settings page (new design)", () => {
     render(
       React.createElement(
         TimezoneProvider,
-        { timezone, options: [timezone] },
+        { timezone, options: [timezone, nextTimezone] },
         React.createElement(SettingsSystemPage),
       ),
     );

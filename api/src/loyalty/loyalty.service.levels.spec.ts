@@ -61,11 +61,17 @@ function mkPrisma(overrides: any = {}) {
     receipt: {
       count: jest.fn(async () => 0),
       findMany: jest.fn(async () => []),
+      findUnique: jest.fn(async () => null),
       aggregate: jest.fn(async () => ({ _sum: { total: 0 } })),
     },
     hold: {
       findUnique: jest.fn(async () => null),
+      findFirst: jest.fn(async () => null),
       create: jest.fn(async (args: any) => ({ id: 'H1', ...args?.data })),
+    },
+    holdItem: {
+      deleteMany: jest.fn(async () => ({ count: 0 })),
+      createMany: jest.fn(async () => ({ count: 0 })),
     },
     wallet: {
       findFirst: jest.fn(async () => null),

@@ -185,7 +185,14 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
   const [newOutletId, setNewOutletId] = React.useState("");
   const [isAddOutletOpen, setIsAddOutletOpen] = React.useState(false);
   const [showPassword, setShowPassword] = React.useState(false);
-  const [editForm, setEditForm] = React.useState({ firstName: "", lastName: "", position: "", phone: "", comment: "" });
+  const [editForm, setEditForm] = React.useState({
+    firstName: "",
+    lastName: "",
+    position: "",
+    phone: "",
+    comment: "",
+    avatarUrl: "",
+  });
   const [saving, setSaving] = React.useState(false);
 
   const [passwordOpen, setPasswordOpen] = React.useState(false);
@@ -284,21 +291,52 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     [staffId],
   );
 
+  const fetchAllOutlets = React.useCallback(async () => {
+    const pageSize = 200;
+    let page = 1;
+    let total = 0;
+    const items: Outlet[] = [];
+    while (true) {
+      const res = await fetch(`/api/portal/outlets?page=${page}&pageSize=${pageSize}`);
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      const payload = await res.json();
+      const chunk: Outlet[] = Array.isArray(payload?.items)
+        ? payload.items
+        : Array.isArray(payload)
+          ? payload
+          : [];
+      items.push(
+        ...chunk.map((outlet: any) => ({
+          id: String(outlet?.id ?? ''),
+          name: String(outlet?.name ?? outlet?.id ?? ''),
+        })),
+      );
+      total = typeof payload?.total === "number" ? payload.total : items.length;
+      if (chunk.length < pageSize || items.length >= total) break;
+      page += 1;
+    }
+    return items;
+  }, []);
+
   const load = React.useCallback(async () => {
     if (!staffId) return;
     setLoading(true);
     setError("");
     setBanner(null);
     try {
-      const [staffRes, accessRes, outletsRes] = await Promise.all([
+      const [staffRes, accessRes] = await Promise.all([
         fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`),
         fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access`),
-        fetch("/api/portal/outlets"),
       ]);
       if (!staffRes.ok) throw new Error(await staffRes.text());
       if (!accessRes.ok) throw new Error(await accessRes.text());
-      if (!outletsRes.ok) throw new Error(await outletsRes.text());
-      const [staffPayload, accessData, outletsData] = await Promise.all([staffRes.json(), accessRes.json(), outletsRes.json()]);
+      const [staffPayload, accessData, outletsData] = await Promise.all([
+        staffRes.json(),
+        accessRes.json(),
+        fetchAllOutlets(),
+      ]);
       const detail: Staff | null = staffPayload && typeof staffPayload === "object" && staffPayload.id ? staffPayload : null;
       if (!detail) {
         setError("Сотрудник не найден или недоступен");
@@ -321,22 +359,13 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       }
       setAccesses(mapAccessRows(accessData));
 
-      const outletsItems: any[] = Array.isArray(outletsData?.items)
-        ? outletsData.items
-        : Array.isArray(outletsData)
-          ? outletsData
-          : [];
-      const mappedOutlets: Outlet[] = outletsItems.map((outlet: any) => ({
-        id: String(outlet?.id ?? ''),
-        name: String(outlet?.name ?? outlet?.id ?? ''),
-      }));
-      setOutlets(mappedOutlets);
+      setOutlets(outletsData);
     } catch (e: any) {
       setError(normalizeErrorMessage(e, "Не удалось загрузить данные сотрудника"));
     } finally {
       setLoading(false);
     }
-  }, [staffId]);
+  }, [fetchAllOutlets, staffId]);
 
   React.useEffect(() => {
     load();
@@ -350,6 +379,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
         position: item.position || "",
         phone: item.phone || "",
         comment: item.comment || "",
+        avatarUrl: item.avatarUrl || "",
       });
     }
   }, [item]);
@@ -371,7 +401,10 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
   const isMerchantStaffActor = actorType === "STAFF" && auth?.role === "MERCHANT";
   const canEditCredentials = isMerchantActor || isSelf || isMerchantStaffActor;
   const isMerchantStaff = !!(item?.isOwner || (item?.role || "").toUpperCase() === "MERCHANT");
-  const canChangeGroup = !isMerchantStaff;
+  const canChangeGroup = !isMerchantStaff && !isSelf;
+  const groupLockHint = isSelf
+    ? "Нельзя менять свою группу."
+    : "Группа владельца не меняется.";
   const canTogglePortal = !item?.isOwner;
   const canChangePassword = canEditCredentials && portalCurrentlyEnabled;
   const hasTransactions = React.useMemo(() => {
@@ -382,12 +415,15 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
 
   const profileChanged = React.useMemo(() => {
     if (!item) return false;
+    const nextAvatar = (editForm.avatarUrl || "").trim();
+    const currentAvatar = (item.avatarUrl || "").trim();
     return (
       editForm.firstName.trim() !== (item.firstName || "") ||
       editForm.lastName.trim() !== (item.lastName || "") ||
       editForm.position.trim() !== (item.position || "") ||
       editForm.phone.trim() !== (item.phone || "") ||
-      editForm.comment.trim() !== (item.comment || "")
+      editForm.comment.trim() !== (item.comment || "") ||
+      nextAvatar !== currentAvatar
     );
   }, [editForm, item]);
 
@@ -450,6 +486,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
         payload.position = editForm.position.trim() || null;
         payload.phone = editForm.phone.trim() || null;
         payload.comment = editForm.comment.trim() || null;
+        payload.avatarUrl = editForm.avatarUrl.trim() || null;
       }
 
       if (accessChanged) {
@@ -542,6 +579,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
         position: updated?.position || "",
         phone: updated?.phone || "",
         comment: updated?.comment || "",
+        avatarUrl: updated?.avatarUrl || "",
       });
       const updatedPortalEnabled = !!(
         updated?.isOwner || updated?.portalAccessEnabled || updated?.canAccessPortal
@@ -868,6 +906,16 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none resize-none"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Аватар (ссылка)</label>
+                <input
+                  type="url"
+                  value={editForm.avatarUrl}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, avatarUrl: e.target.value }))}
+                  placeholder="https://..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
             </div>
 
             {item?.status !== "FIRED" ? (
@@ -946,7 +994,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
                     ))}
                   </select>
                   {!canChangeGroup && (
-                    <div className="mt-1 text-xs text-gray-500">Группа владельца не меняется.</div>
+                    <div className="mt-1 text-xs text-gray-500">{groupLockHint}</div>
                   )}
                 </div>
 

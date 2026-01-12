@@ -5,6 +5,8 @@ import {
   Param,
   Post,
   BadRequestException,
+  HttpException,
+  HttpStatus,
   UseGuards,
   Query,
 } from '@nestjs/common';
@@ -14,7 +16,7 @@ import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from './loyalty.service';
 import { TelegramMiniappGuard } from '../guards/telegram-miniapp.guard';
 import { LoyaltyEventsService } from './loyalty-events.service';
-import { ensureBaseTier, toLevelRule } from './tier-defaults.util';
+import { toLevelRule } from './tier-defaults.util';
 
 @ApiTags('loyalty-public')
 @Controller('loyalty')
@@ -41,7 +43,6 @@ export class LoyaltyPublicController {
     },
   })
   async mechanicsLevels(@Param('merchantId') merchantId: string) {
-    await ensureBaseTier(this.prisma, merchantId).catch(() => null);
     const tiers = await this.prisma.loyaltyTier.findMany({
       where: { merchantId, isHidden: false },
       orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
@@ -126,10 +127,22 @@ export class LoyaltyPublicController {
     if (!sanitizedCustomerId) {
       throw new BadRequestException('customerId is required');
     }
-    const event = await this.events.waitForCustomerEvent(
+    const pollKey = this.events.tryAcquireCustomerPoll(
       sanitizedMerchantId,
       sanitizedCustomerId,
     );
+    if (!pollKey) {
+      throw new HttpException(
+        'Слишком много одновременных запросов',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    const event = await this.events.waitForCustomerEvent(
+      sanitizedMerchantId,
+      sanitizedCustomerId,
+    ).finally(() => {
+      this.events.releaseCustomerPoll(pollKey);
+    });
     return { event };
   }
 }

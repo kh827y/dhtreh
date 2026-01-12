@@ -10,6 +10,7 @@ export interface PortalJwtClaims {
   staffId?: string;
   adminImpersonation: boolean;
   version: number;
+  issuedAt?: number;
   payload: Record<string, unknown>;
 }
 
@@ -79,6 +80,7 @@ export async function verifyPortalJwt(token: string): Promise<PortalJwtClaims> {
   const adminImpersonation = !!payload.adminImpersonation;
   const version =
     typeof payload.version === 'number' ? payload.version : PORTAL_JWT_VERSION;
+  const issuedAt = typeof payload.iat === 'number' ? payload.iat : undefined;
   return {
     sub,
     merchantId,
@@ -87,6 +89,7 @@ export async function verifyPortalJwt(token: string): Promise<PortalJwtClaims> {
     staffId,
     adminImpersonation,
     version,
+    issuedAt,
     payload,
   };
 }
@@ -155,6 +158,7 @@ export async function verifyPortalRefreshJwt(
   const adminImpersonation = !!payload.adminImpersonation;
   const version =
     typeof payload.version === 'number' ? payload.version : PORTAL_JWT_VERSION;
+  const issuedAt = typeof payload.iat === 'number' ? payload.iat : undefined;
   return {
     sub,
     merchantId,
@@ -163,6 +167,7 @@ export async function verifyPortalRefreshJwt(
     staffId,
     adminImpersonation,
     version,
+    issuedAt,
     payload,
   };
 }

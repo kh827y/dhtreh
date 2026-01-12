@@ -9,15 +9,28 @@ import {
   Crown,
   Clock,
   AlertTriangle,
+  BarChart3,
+  PieChart,
+  CreditCard,
+  UserPlus,
+  TrendingUp,
+  Coins,
+  ShoppingBag,
+  Activity,
+  Grid,
+  List,
+  Store,
+  Award,
+  BadgeCheck,
+  Share2,
+  Code,
   Trophy,
   Ban,
   RefreshCcw,
   Cake,
-  Gift,
   Timer,
   Users,
   MonitorSmartphone,
-  Link2,
 } from "lucide-react";
 import type { SidebarSection } from "./SidebarNav";
 import { sidebarIconMap } from "./SidebarNav";
@@ -46,6 +59,7 @@ type SearchResult = {
     | "Инструмент"
     | "График"
     | "KPI"
+    | "Таблица"
     | "Интеграция";
   href: string;
   icon: React.ReactNode;
@@ -65,6 +79,7 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
     Инструмент: "bg-orange-50 text-orange-600",
     График: "bg-blue-50 text-blue-600",
     KPI: "bg-green-50 text-green-600",
+    Таблица: "bg-orange-50 text-orange-600",
     Интеграция: "bg-indigo-50 text-indigo-600",
   };
 
@@ -73,7 +88,7 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
     const normalized = href.split("?")[0] ?? href;
     const icon = sidebarIconMap[href] || sidebarIconMap[normalized];
     if (React.isValidElement(icon)) {
-      return React.cloneElement(icon as React.ReactElement, { size: 14, strokeWidth: 1.5 });
+      return React.cloneElement(icon as React.ReactElement<any>, { size: 14, strokeWidth: 1.5 });
     }
     return <Search size={14} strokeWidth={1.5} />;
   }, []);
@@ -93,46 +108,244 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
         icon: <Ban size={14} strokeWidth={1.5} />,
       },
       {
-        label: "Автовозврат клиентов",
+        label: "Настройки автовозврата",
         type: "Настройка",
         href: "/loyalty/mechanics/auto-return",
         icon: <RefreshCcw size={14} strokeWidth={1.5} />,
       },
       {
-        label: "Поздравления с днём рождения",
+        label: "Настройки поздравлений",
         type: "Настройка",
         href: "/loyalty/mechanics/birthday",
         icon: <Cake size={14} strokeWidth={1.5} />,
       },
       {
-        label: "Баллы за регистрацию",
+        label: "Настройки регистрации",
         type: "Настройка",
         href: "/loyalty/mechanics/registration-bonus",
-        icon: <Gift size={14} strokeWidth={1.5} />,
+        icon: <UserPlus size={14} strokeWidth={1.5} />,
       },
       {
-        label: "Напоминание о сгорании",
+        label: "Настройки сгорания",
         type: "Настройка",
         href: "/loyalty/mechanics/ttl",
         icon: <Timer size={14} strokeWidth={1.5} />,
       },
       {
-        label: "Реферальная программа",
+        label: "Настройки реферальной",
         type: "Настройка",
         href: "/referrals/program",
-        icon: <Users size={14} strokeWidth={1.5} />,
+        icon: <Share2 size={14} strokeWidth={1.5} />,
       },
       {
         label: "REST API",
         type: "Интеграция",
         href: "/integrations/rest-api",
-        icon: <Link2 size={14} strokeWidth={1.5} />,
+        icon: <Code size={14} strokeWidth={1.5} />,
       },
       {
         label: "Telegram Miniapp",
         type: "Интеграция",
         href: "/integrations/telegram-mini-app",
         icon: <MonitorSmartphone size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Выручка (KPI)",
+        type: "KPI",
+        href: "/analytics",
+        icon: <CreditCard size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Регистрации (KPI)",
+        type: "KPI",
+        href: "/analytics",
+        icon: <UserPlus size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Средний чек (KPI)",
+        type: "KPI",
+        href: "/analytics",
+        icon: <TrendingUp size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Списано баллов (KPI)",
+        type: "KPI",
+        href: "/analytics",
+        icon: <Coins size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Динамика выручки",
+        type: "График",
+        href: "/analytics",
+        icon: <BarChart3 size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Структура продаж",
+        type: "График",
+        href: "/analytics",
+        icon: <PieChart size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Покупок на клиента",
+        type: "KPI",
+        href: "/analytics",
+        icon: <ShoppingBag size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Частота визитов",
+        type: "KPI",
+        href: "/analytics",
+        icon: <Clock size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Активная база",
+        type: "KPI",
+        href: "/analytics",
+        icon: <Activity size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Время с последней покупки",
+        type: "График",
+        href: "/analytics/time",
+        icon: <Clock size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Активность клиентов",
+        type: "График",
+        href: "/analytics/time",
+        icon: <BarChart3 size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Тепловая карта",
+        type: "График",
+        href: "/analytics/time",
+        icon: <Grid size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Распределение по полу",
+        type: "График",
+        href: "/analytics/portrait",
+        icon: <PieChart size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Сравнение по полу",
+        type: "График",
+        href: "/analytics/portrait",
+        icon: <BarChart3 size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Аналитика по возрасту",
+        type: "График",
+        href: "/analytics/portrait",
+        icon: <BarChart3 size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Детальная демография",
+        type: "График",
+        href: "/analytics/portrait",
+        icon: <Users size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Частота покупок",
+        type: "График",
+        href: "/analytics/repeat",
+        icon: <BarChart3 size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Уникальные покупатели",
+        type: "KPI",
+        href: "/analytics/repeat",
+        icon: <Users size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Динамика среднего чека",
+        type: "График",
+        href: "/analytics/dynamics",
+        icon: <TrendingUp size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Экономика баллов",
+        type: "График",
+        href: "/analytics/dynamics",
+        icon: <Coins size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Движение баллов",
+        type: "График",
+        href: "/analytics/dynamics",
+        icon: <BarChart3 size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Распределение RFM групп",
+        type: "График",
+        href: "/analytics/rfm",
+        icon: <Grid size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Детальные комбинации",
+        type: "Таблица",
+        href: "/analytics/rfm",
+        icon: <List size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Лидер по выручке",
+        type: "KPI",
+        href: "/analytics/outlets",
+        icon: <Trophy size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Лидер роста",
+        type: "KPI",
+        href: "/analytics/outlets",
+        icon: <TrendingUp size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Макс. трафик",
+        type: "KPI",
+        href: "/analytics/outlets",
+        icon: <Store size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Эффективность точек",
+        type: "Таблица",
+        href: "/analytics/outlets",
+        icon: <List size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Лучший сотрудник",
+        type: "KPI",
+        href: "/analytics/staff",
+        icon: <Award size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Лучший продавец",
+        type: "KPI",
+        href: "/analytics/staff",
+        icon: <BadgeCheck size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Лидер привлечения",
+        type: "KPI",
+        href: "/analytics/staff",
+        icon: <UserPlus size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Детальная эффективность",
+        type: "Таблица",
+        href: "/analytics/staff",
+        icon: <List size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Динамика привлечения",
+        type: "График",
+        href: "/analytics/referrals",
+        icon: <TrendingUp size={14} strokeWidth={1.5} />,
+      },
+      {
+        label: "Топ амбассадоров",
+        type: "Таблица",
+        href: "/analytics/referrals",
+        icon: <Crown size={14} strokeWidth={1.5} />,
       },
     ],
     [],
@@ -141,25 +354,12 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
   // Build search index from nav sections + ручные ссылки из new design
   const searchIndex = React.useMemo(() => {
     const out: SearchResult[] = [];
-    const typeOverride: Record<string, SearchResult["type"]> = {
-      "/customers/import": "Инструмент",
-      "/settings/system": "Настройка",
-      "/settings/outlets": "Настройка",
-      "/settings/staff": "Настройка",
-      "/settings/access": "Настройка",
-      "/settings/telegram": "Настройка",
-      "/settings/integrations": "Настройка",
-      "/loyalty/mechanics": "Настройка",
-      "/loyalty/mechanics/birthday": "Настройка",
-      "/loyalty/mechanics/auto-return": "Настройка",
-    };
 
     for (const section of navSections || []) {
       for (const item of section.items || []) {
-        const normalized = item.href.split("?")[0] ?? item.href;
         out.push({
           label: item.label,
-          type: typeOverride[normalized] || "Раздел",
+          type: "Раздел",
           href: item.href,
           icon: resolveIcon(item.href),
         });
@@ -167,7 +367,9 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
     }
 
     for (const manual of manualSearchIndex) {
-      const exists = out.some((item) => item.href === manual.href);
+      const exists = out.some(
+        (item) => item.href === manual.href && item.label === manual.label
+      );
       if (!exists) out.push(manual);
     }
     return out;
@@ -244,7 +446,7 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
                 </div>
                 {searchResults.map((result) => (
                   <button
-                    key={result.href}
+                    key={`${result.href}::${result.label}::${result.type}`}
                     type="button"
                     onClick={() => handleResultClick(result.href)}
                     className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center justify-between group transition-colors border-b border-gray-50 last:border-0"

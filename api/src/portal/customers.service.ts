@@ -738,7 +738,7 @@ export class PortalCustomersService {
   private describeTransaction(params: {
     tx: Prisma.TransactionGetPayload<{
       include: {
-        outlet: { select: { name: true; code: true } };
+        outlet: { select: { id: true; name: true } };
         staff: {
           select: {
             id?: true;
@@ -759,7 +759,7 @@ export class PortalCustomersService {
         earnApplied: true;
         receiptNumber: true;
         createdAt: true;
-        outlet: { select: { name: true; code: true } };
+        outlet: { select: { id: true; name: true } };
         staff: {
           select: {
             id: true;
@@ -856,7 +856,7 @@ export class PortalCustomersService {
   private describeTransactionBase(params: {
     tx: Prisma.TransactionGetPayload<{
       include: {
-        outlet: { select: { name: true; code: true } };
+        outlet: { select: { id: true; name: true } };
         staff: {
           select: {
             id?: true;
@@ -877,7 +877,7 @@ export class PortalCustomersService {
         earnApplied: true;
         receiptNumber: true;
         createdAt: true;
-        outlet: { select: { name: true; code: true } };
+        outlet: { select: { id: true; name: true } };
         staff: {
           select: {
             id: true;
@@ -1292,7 +1292,7 @@ export class PortalCustomersService {
     baseDto.balance = walletBalance;
 
     const transactionInclude = {
-      outlet: { select: { name: true, code: true } },
+      outlet: { select: { id: true, name: true } },
       staff: {
         select: {
           id: true,
@@ -1322,7 +1322,7 @@ export class PortalCustomersService {
       receiptNumber: true,
       createdAt: true,
       canceledAt: true,
-      outlet: { select: { name: true, code: true } },
+      outlet: { select: { id: true, name: true } },
       staff: {
         select: {
           id: true,
@@ -1534,10 +1534,9 @@ export class PortalCustomersService {
       const outletName =
         receipt?.outlet?.name ??
         tx.outlet?.name ??
-        receipt?.outlet?.code ??
         review?.transaction?.outlet?.name ??
         null;
-      const carrierCode = receipt?.outlet?.code ?? tx.outlet?.code ?? null;
+      const carrierCode = receipt?.outlet?.id ?? tx.outlet?.id ?? null;
       const txCanceledAt = tx.canceledAt ? tx.canceledAt.toISOString() : null;
       const txCanceledByName = tx.canceledBy
         ? this.formatStaffName(tx.canceledBy)
@@ -1638,7 +1637,7 @@ export class PortalCustomersService {
       const manager = receipt.staff
         ? this.formatStaffName(receipt.staff)
         : null;
-      const outletName = receipt.outlet?.name ?? receipt.outlet?.code ?? null;
+      const outletName = receipt.outlet?.name ?? null;
 
       return {
         id: receipt.id,
@@ -1653,7 +1652,7 @@ export class PortalCustomersService {
         receiptNumber: receipt.receiptNumber ?? null,
         manager,
         carrier: outletName,
-        carrierCode: receipt.outlet?.code ?? null,
+        carrierCode: receipt.outlet?.id ?? null,
         toPay: Math.max(0, Number(receipt.total ?? 0) - redeemApplied),
         paidByPoints: redeemApplied,
         total: Number(receipt.total ?? 0),
@@ -1726,7 +1725,7 @@ export class PortalCustomersService {
             purchaseAmount || Number(receipt.total ?? 0) || purchaseAmount;
           total = total ?? Number(receipt.total ?? 0);
           if (!outlet)
-            outlet = receipt.outlet?.name ?? receipt.outlet?.code ?? null;
+            outlet = receipt.outlet?.name ?? null;
           if (!manager)
             manager = receipt.staff
               ? this.formatStaffName(receipt.staff)

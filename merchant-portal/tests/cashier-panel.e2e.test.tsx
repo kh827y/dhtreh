@@ -80,6 +80,9 @@ describe("cashier panel page (new design)", () => {
       if (url.endsWith("/api/portal/cashier/pins") && method === "GET") {
         return new Response(JSON.stringify(pinsPayload), { status: 200, headers: { "Content-Type": "application/json" } });
       }
+      if (url.endsWith("/api/portal/cashier/device-sessions") && method === "GET") {
+        return new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       if (url.endsWith("/api/portal/cashier/activation-codes") && method === "GET") {
         return new Response(JSON.stringify(activationCodesPayload), {
           status: 200,

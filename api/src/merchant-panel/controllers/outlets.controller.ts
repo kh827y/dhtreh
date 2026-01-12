@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Post,
+  Delete,
   Put,
   Query,
   Req,
@@ -47,7 +48,6 @@ export class OutletsController {
     const { page, pageSize, ...rest } = query;
     const filters: OutletFilters = {
       status: rest.status ? (rest.status as any) : undefined,
-      hidden: rest.hidden,
       search: rest.search,
     };
     const result = await this.service.listOutlets(
@@ -93,5 +93,10 @@ export class OutletsController {
     return plainToInstance(OutletDto, outlet, {
       enableImplicitConversion: true,
     });
+  }
+
+  @Delete(':id')
+  async delete(@Req() req: any, @Param('id') id: string) {
+    return this.service.deleteOutlet(this.getMerchantId(req), id);
   }
 }

@@ -97,6 +97,10 @@ function CustomersPageInner() {
   }, []);
 
   const levelLookups = React.useMemo(() => buildLevelLookups(levelsCatalog), [levelsCatalog]);
+  const selectedCustomerRank = React.useMemo(() => {
+    if (!selectedCustomer) return null;
+    return getCustomerLevelRank(selectedCustomer, levelLookups);
+  }, [selectedCustomer, levelLookups]);
 
   const defaultLevelId = React.useMemo(() => {
     const initial = levelsCatalog.find((lvl) => lvl.isInitial);
@@ -307,6 +311,7 @@ function CustomersPageInner() {
         key={selectedCustomerId}
         customerId={selectedCustomerId}
         initialCustomer={selectedCustomer}
+        initialLevelRank={selectedCustomerRank}
         onBack={closeCustomer}
         onNavigateToCustomer={openCustomer}
         onCustomerUpdated={handleCustomerUpdated}
@@ -403,11 +408,26 @@ function CustomersPageInner() {
                   const rank = getCustomerLevelRank(customer, levelLookups);
                   const avatarClass = getAvatarClass(rank);
                   const age = customer.age ?? calculateAge(customer.birthday);
+                  const customerUrl = `/customers?customerId=${encodeURIComponent(customer.id)}`;
                   return (
                     <tr
                       key={customer.id}
                       className="hover:bg-gray-50 transition-colors cursor-pointer"
-                      onClick={() => openCustomer(customer.id)}
+                      onClick={(event) => {
+                        const target = event.target as HTMLElement | null;
+                        if (target?.closest("button")) return;
+                        if (event.metaKey || event.ctrlKey) {
+                          window.open(customerUrl, "_blank", "noopener");
+                          return;
+                        }
+                        openCustomer(customer.id);
+                      }}
+                      onAuxClick={(event) => {
+                        if (event.button !== 1) return;
+                        const target = event.target as HTMLElement | null;
+                        if (target?.closest("button")) return;
+                        window.open(customerUrl, "_blank", "noopener");
+                      }}
                     >
                       <td className="px-6 py-4 text-gray-400 font-mono text-xs truncate max-w-[120px]">
                         {customer.id}

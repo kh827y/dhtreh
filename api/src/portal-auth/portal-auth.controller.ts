@@ -4,9 +4,13 @@ import {
   Get,
   Headers,
   Post,
+  Req,
   UnauthorizedException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { PrismaService } from '../prisma.service';
 import {
   ApiBadRequestResponse,
@@ -23,6 +27,75 @@ import {
 } from './portal-jwt.util';
 import { StaffStatus } from '@prisma/client';
 
+const LOGIN_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
+const LOGIN_ATTEMPT_LIMIT = 10;
+type LoginAttemptState = { count: number; resetAt: number };
+const loginAttempts = new Map<string, LoginAttemptState>();
+
+function hashPortalToken(value: string) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function resolveClientIp(req: any): string | null {
+  const forwarded = String(req?.headers?.['x-forwarded-for'] || '').trim();
+  if (forwarded) return forwarded.split(',')[0]?.trim() || null;
+  const ip = String(req?.ip || req?.connection?.remoteAddress || '').trim();
+  return ip || null;
+}
+
+function buildAttemptKeys(email: string, ip: string | null) {
+  const keys: string[] = [];
+  if (email) keys.push(`email:${email}`);
+  if (ip) keys.push(`ip:${ip}`);
+  return keys;
+}
+
+function getAttemptState(key: string, now: number) {
+  const existing = loginAttempts.get(key);
+  if (!existing || existing.resetAt <= now) {
+    const next = { count: 0, resetAt: now + LOGIN_ATTEMPT_WINDOW_MS };
+    loginAttempts.set(key, next);
+    return next;
+  }
+  return existing;
+}
+
+function ensureNotRateLimited(keys: string[]) {
+  const now = Date.now();
+  for (const key of keys) {
+    const state = getAttemptState(key, now);
+    if (state.count >= LOGIN_ATTEMPT_LIMIT) {
+      throw new HttpException(
+        'Слишком много попыток входа, попробуйте позже',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+}
+
+function recordLoginFailure(keys: string[]) {
+  const now = Date.now();
+  for (const key of keys) {
+    const state = getAttemptState(key, now);
+    state.count += 1;
+  }
+}
+
+function clearLoginAttempts(keys: string[]) {
+  for (const key of keys) {
+    loginAttempts.delete(key);
+  }
+}
+
+function isTokenRevoked(
+  issuedAtSeconds: number | undefined,
+  revokedAt?: Date | null,
+) {
+  if (!revokedAt) return false;
+  if (!issuedAtSeconds) return true;
+  return issuedAtSeconds * 1000 < revokedAt.getTime();
+}
+
 @ApiTags('portal-auth')
 @Controller('portal/auth')
 export class PortalAuthController {
@@ -35,6 +108,7 @@ export class PortalAuthController {
   @ApiUnauthorizedResponse({ description: 'Invalid credentials' })
   @ApiBadRequestResponse({ description: 'Bad request' })
   async login(
+    @Req() req: any,
     @Body()
     body: { email: string; password: string; code?: string; merchantId?: string },
   ) {
@@ -48,105 +122,122 @@ export class PortalAuthController {
         ? body.merchantId.trim()
         : null;
     if (!email || !password) throw new UnauthorizedException('Unauthorized');
-    const merchant = await (this.prisma.merchant as any).findFirst({
-      where: merchantId ? { id: merchantId, portalEmail: email } : { portalEmail: email },
-    });
-    let merchantAuthError: UnauthorizedException | null = null;
-    if (merchant && merchant.portalLoginEnabled !== false) {
-      const passwordMatches =
-        !!merchant.portalPasswordHash &&
-        verifyPassword(password, merchant.portalPasswordHash);
-      if (passwordMatches) {
-        if (merchant.portalTotpEnabled) {
-          const otplib = (() => {
-            try {
-              return require('otplib');
-            } catch {
-              return null;
-            }
-          })();
-          if (!otplib) throw new BadRequestException('TOTP library missing');
-          if (!code) throw new UnauthorizedException('TOTP required');
-          const ok = otplib.authenticator.verify({
-            token: code,
-            secret: merchant.portalTotpSecret,
+    const attemptKeys = buildAttemptKeys(email, resolveClientIp(req));
+    if (attemptKeys.length) ensureNotRateLimited(attemptKeys);
+    try {
+      const merchant = await (this.prisma.merchant as any).findFirst({
+        where: merchantId
+          ? { id: merchantId, portalEmail: email }
+          : { portalEmail: email },
+      });
+      let merchantAuthError: UnauthorizedException | null = null;
+      if (merchant && merchant.portalLoginEnabled !== false) {
+        const passwordMatches =
+          !!merchant.portalPasswordHash &&
+          verifyPassword(password, merchant.portalPasswordHash);
+        if (passwordMatches) {
+          if (merchant.portalTotpEnabled) {
+            const otplib = (() => {
+              try {
+                return require('otplib');
+              } catch {
+                return null;
+              }
+            })();
+            if (!otplib) throw new BadRequestException('TOTP library missing');
+            if (!code) throw new UnauthorizedException('TOTP required');
+            const ok = otplib.authenticator.verify({
+              token: code,
+              secret: merchant.portalTotpSecret,
+            });
+            if (!ok) throw new UnauthorizedException('Invalid code');
+          }
+          const token = await signPortalJwt({
+            merchantId: merchant.id,
+            subject: merchant.id,
+            actor: 'MERCHANT',
+            role: 'MERCHANT',
+            ttlSeconds: 24 * 60 * 60,
           });
-          if (!ok) throw new UnauthorizedException('Invalid code');
+          const refreshToken = await signPortalRefreshJwt({
+            merchantId: merchant.id,
+            subject: merchant.id,
+            actor: 'MERCHANT',
+            role: 'MERCHANT',
+          });
+          await (this.prisma.merchant as any).update({
+            where: { id: merchant.id },
+            data: {
+              portalLastLoginAt: new Date(),
+              portalRefreshTokenHash: hashPortalToken(refreshToken),
+            },
+          });
+          clearLoginAttempts(attemptKeys);
+          return { token, refreshToken };
         }
-        await (this.prisma.merchant as any).update({
-          where: { id: merchant.id },
-          data: { portalLastLoginAt: new Date() },
-        });
-        const token = await signPortalJwt({
-          merchantId: merchant.id,
-          subject: merchant.id,
-          actor: 'MERCHANT',
-          role: 'MERCHANT',
-          ttlSeconds: 24 * 60 * 60,
-        });
-        const refreshToken = await signPortalRefreshJwt({
-          merchantId: merchant.id,
-          subject: merchant.id,
-          actor: 'MERCHANT',
-          role: 'MERCHANT',
-        });
-        return { token, refreshToken };
+        merchantAuthError = new UnauthorizedException('Unauthorized');
       }
-      merchantAuthError = new UnauthorizedException('Unauthorized');
-    }
 
-    const staffWhere = {
-      email,
-      status: StaffStatus.ACTIVE,
-      portalAccessEnabled: true,
-      canAccessPortal: true,
-      ...(merchantId ? { merchantId } : {}),
-    };
-    const staffMatches = await this.prisma.staff.findMany({
-      where: staffWhere,
-      take: merchantId ? 1 : 2,
-    });
-    if (!merchantId && staffMatches.length > 1) {
-      throw new BadRequestException(
-        'Укажите мерчанта для входа с этим email',
-      );
+      const staffWhere = {
+        email,
+        status: StaffStatus.ACTIVE,
+        portalAccessEnabled: true,
+        canAccessPortal: true,
+        ...(merchantId ? { merchantId } : {}),
+      };
+      const staffMatches = await this.prisma.staff.findMany({
+        where: staffWhere,
+        take: merchantId ? 1 : 2,
+      });
+      if (!merchantId && staffMatches.length > 1) {
+        throw new BadRequestException(
+          'Укажите мерчанта для входа с этим email',
+        );
+      }
+      const staff = staffMatches[0] ?? null;
+      if (!staff) {
+        if (merchantAuthError) throw merchantAuthError;
+        throw new UnauthorizedException('Unauthorized');
+      }
+      const staffPasswordOk =
+        !!staff.hash && verifyPassword(password, staff.hash);
+      if (
+        staff.status !== StaffStatus.ACTIVE ||
+        !staff.portalAccessEnabled ||
+        !staff.canAccessPortal ||
+        !staffPasswordOk
+      ) {
+        if (merchantAuthError) throw merchantAuthError;
+        throw new UnauthorizedException('Unauthorized');
+      }
+      const token = await signPortalJwt({
+        merchantId: staff.merchantId,
+        subject: staff.id,
+        actor: 'STAFF',
+        role: staff.role || 'STAFF',
+        staffId: staff.id,
+        ttlSeconds: 24 * 60 * 60,
+      });
+      const refreshToken = await signPortalRefreshJwt({
+        merchantId: staff.merchantId,
+        subject: staff.id,
+        actor: 'STAFF',
+        role: staff.role || 'STAFF',
+        staffId: staff.id,
+      });
+      await this.prisma.staff.update({
+        where: { id: staff.id },
+        data: {
+          lastPortalLoginAt: new Date(),
+          portalRefreshTokenHash: hashPortalToken(refreshToken),
+        },
+      });
+      clearLoginAttempts(attemptKeys);
+      return { token, refreshToken };
+    } catch (error) {
+      recordLoginFailure(attemptKeys);
+      throw error;
     }
-    const staff = staffMatches[0] ?? null;
-    if (!staff) {
-      if (merchantAuthError) throw merchantAuthError;
-      throw new UnauthorizedException('Unauthorized');
-    }
-    const staffPasswordOk =
-      !!staff.hash && verifyPassword(password, staff.hash);
-    if (
-      staff.status !== StaffStatus.ACTIVE ||
-      !staff.portalAccessEnabled ||
-      !staff.canAccessPortal ||
-      !staffPasswordOk
-    ) {
-      if (merchantAuthError) throw merchantAuthError;
-      throw new UnauthorizedException('Unauthorized');
-    }
-    await this.prisma.staff.update({
-      where: { id: staff.id },
-      data: { lastPortalLoginAt: new Date() },
-    });
-    const token = await signPortalJwt({
-      merchantId: staff.merchantId,
-      subject: staff.id,
-      actor: 'STAFF',
-      role: staff.role || 'STAFF',
-      staffId: staff.id,
-      ttlSeconds: 24 * 60 * 60,
-    });
-    const refreshToken = await signPortalRefreshJwt({
-      merchantId: staff.merchantId,
-      subject: staff.id,
-      actor: 'STAFF',
-      role: staff.role || 'STAFF',
-      staffId: staff.id,
-    });
-    return { token, refreshToken };
   }
 
   @Post('refresh')
@@ -165,12 +256,30 @@ export class PortalAuthController {
     const refreshToken = String(body?.refreshToken || '');
     if (!refreshToken) throw new BadRequestException('refreshToken required');
     const claims = await verifyPortalRefreshJwt(refreshToken);
+    const refreshHash = hashPortalToken(refreshToken);
     if (claims.actor === 'MERCHANT') {
       const merchant = await (this.prisma.merchant as any).findUnique({
         where: { id: claims.merchantId },
-        select: { id: true, portalLoginEnabled: true },
+        select: {
+          id: true,
+          portalLoginEnabled: true,
+          portalTokensRevokedAt: true,
+          portalRefreshTokenHash: true,
+        },
       });
       if (!merchant || merchant.portalLoginEnabled === false) {
+        throw new UnauthorizedException('Unauthorized');
+      }
+      if (
+        !claims.adminImpersonation &&
+        isTokenRevoked(claims.issuedAt, merchant.portalTokensRevokedAt)
+      ) {
+        throw new UnauthorizedException('Unauthorized');
+      }
+      if (!merchant.portalRefreshTokenHash) {
+        throw new UnauthorizedException('Unauthorized');
+      }
+      if (merchant.portalRefreshTokenHash !== refreshHash) {
         throw new UnauthorizedException('Unauthorized');
       }
     } else {
@@ -186,6 +295,8 @@ export class PortalAuthController {
           status: true,
           portalAccessEnabled: true,
           canAccessPortal: true,
+          portalTokensRevokedAt: true,
+          portalRefreshTokenHash: true,
         },
       });
       if (
@@ -196,11 +307,32 @@ export class PortalAuthController {
       ) {
         throw new UnauthorizedException('Unauthorized');
       }
+      if (
+        !claims.adminImpersonation &&
+        isTokenRevoked(claims.issuedAt, staff.portalTokensRevokedAt)
+      ) {
+        throw new UnauthorizedException('Unauthorized');
+      }
+      if (!staff.portalRefreshTokenHash) {
+        throw new UnauthorizedException('Unauthorized');
+      }
+      if (staff.portalRefreshTokenHash !== refreshHash) {
+        throw new UnauthorizedException('Unauthorized');
+      }
       const merchant = await (this.prisma.merchant as any).findUnique({
         where: { id: claims.merchantId },
-        select: { portalLoginEnabled: true },
+        select: {
+          portalLoginEnabled: true,
+          portalTokensRevokedAt: true,
+        },
       });
       if (!merchant || merchant.portalLoginEnabled === false) {
+        throw new UnauthorizedException('Unauthorized');
+      }
+      if (
+        !claims.adminImpersonation &&
+        isTokenRevoked(claims.issuedAt, merchant.portalTokensRevokedAt)
+      ) {
         throw new UnauthorizedException('Unauthorized');
       }
     }
@@ -221,6 +353,20 @@ export class PortalAuthController {
       role: claims.role,
       staffId: claims.staffId,
     });
+    if (claims.actor === 'MERCHANT') {
+      await (this.prisma.merchant as any).update({
+        where: { id: claims.merchantId },
+        data: { portalRefreshTokenHash: hashPortalToken(nextRefreshToken) },
+      });
+    } else {
+      const staffId = claims.staffId || claims.sub;
+      if (staffId) {
+        await this.prisma.staff.update({
+          where: { id: staffId },
+          data: { portalRefreshTokenHash: hashPortalToken(nextRefreshToken) },
+        });
+      }
+    }
     return { token, refreshToken: nextRefreshToken };
   }
 
@@ -249,9 +395,15 @@ export class PortalAuthController {
       const merchantId = claims.merchantId || claims.sub;
       const merchant = await (this.prisma.merchant as any).findUnique({
         where: { id: merchantId },
-        select: { portalLoginEnabled: true },
+        select: { portalLoginEnabled: true, portalTokensRevokedAt: true },
       });
       if (!merchant || merchant.portalLoginEnabled === false) {
+        throw new UnauthorizedException();
+      }
+      if (
+        !claims.adminImpersonation &&
+        isTokenRevoked(claims.issuedAt, merchant.portalTokensRevokedAt)
+      ) {
         throw new UnauthorizedException();
       }
     } else {
@@ -262,6 +414,7 @@ export class PortalAuthController {
           status: true,
           portalAccessEnabled: true,
           canAccessPortal: true,
+          portalTokensRevokedAt: true,
         },
       });
       if (
@@ -272,11 +425,26 @@ export class PortalAuthController {
       ) {
         throw new UnauthorizedException();
       }
+      if (
+        !claims.adminImpersonation &&
+        isTokenRevoked(claims.issuedAt, staff.portalTokensRevokedAt)
+      ) {
+        throw new UnauthorizedException();
+      }
       const merchant = await (this.prisma.merchant as any).findUnique({
         where: { id: claims.merchantId },
-        select: { portalLoginEnabled: true },
+        select: {
+          portalLoginEnabled: true,
+          portalTokensRevokedAt: true,
+        },
       });
       if (!merchant || merchant.portalLoginEnabled === false) {
+        throw new UnauthorizedException();
+      }
+      if (
+        !claims.adminImpersonation &&
+        isTokenRevoked(claims.issuedAt, merchant.portalTokensRevokedAt)
+      ) {
         throw new UnauthorizedException();
       }
     }

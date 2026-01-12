@@ -73,6 +73,32 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
       for (const s of merchants) {
         const ttlDays = (s as any).pointsTtlDays as number | null;
         if (!ttlDays || ttlDays <= 0) continue;
+        const previewDate = new Date(now).toISOString().slice(0, 10);
+        const existingKeys = new Set<string>();
+        try {
+          const existing = await this.prisma.eventOutbox.findMany({
+            where: {
+              merchantId: s.merchantId,
+              eventType: 'loyalty.points_ttl.preview',
+              payload: {
+                path: ['previewDate'],
+                equals: previewDate,
+              } as any,
+            },
+            select: { payload: true },
+          });
+          for (const row of existing) {
+            const payload = row.payload as any;
+            const customerId = payload?.customerId;
+            const mode = payload?.mode;
+            const ttl = payload?.ttlDays;
+            if (customerId && ttl != null) {
+              existingKeys.add(
+                `${customerId}|${String(ttl)}|${String(mode)}|${previewDate}`,
+              );
+            }
+          }
+        } catch {}
         const cutoff = new Date(now - ttlDays * 24 * 60 * 60 * 1000);
         const purchaseOnly = {
           orderId: { not: null },
@@ -111,6 +137,8 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
             );
           }
           for (const [customerId, expiringPoints] of byCustomer.entries()) {
+            const key = `${customerId}|${String(ttlDays)}|lots|${previewDate}`;
+            if (existingKeys.has(key)) continue;
             await this.prisma.eventOutbox.create({
               data: {
                 merchantId: s.merchantId,
@@ -120,11 +148,13 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
                   customerId,
                   ttlDays,
                   expiringPoints,
+                  previewDate,
                   computedAt: new Date().toISOString(),
                   mode: 'lots',
                 } as any,
               },
             });
+            existingKeys.add(key);
           }
         } else {
           // Приблизённый превью от баланса/начислений за период
@@ -146,6 +176,8 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
               const recent = recentEarn._sum.amount || 0;
               const tentativeExpire = Math.max(0, (w.balance || 0) - recent);
               if (tentativeExpire > 0) {
+                const key = `${w.customerId}|${String(ttlDays)}|approx|${previewDate}`;
+                if (existingKeys.has(key)) continue;
                 await this.prisma.eventOutbox.create({
                   data: {
                     merchantId: s.merchantId,
@@ -156,11 +188,13 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
                       walletId: w.id,
                       ttlDays,
                       tentativeExpire,
+                      previewDate,
                       computedAt: new Date().toISOString(),
                       mode: 'approx',
                     } as any,
                   },
                 });
+                existingKeys.add(key);
               }
             } catch {}
           }

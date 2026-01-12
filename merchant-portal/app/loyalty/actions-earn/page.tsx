@@ -152,7 +152,7 @@ export default function ActionsEarnPage() {
     }
     const json = await res.json();
     const mapped: PointsPromotion[] = Array.isArray(json)
-      ? json
+      ? (json
           .map((item: any) => {
             const rewardMeta =
               item?.rewardMetadata && typeof item.rewardMetadata === "object" ? item.rewardMetadata : {};
@@ -177,12 +177,13 @@ export default function ActionsEarnPage() {
           const endDate = item?.endAt ? formatDateRu(item.endAt, "—") : "Бессрочно";
           const rawStatus = String(item?.status || "").toUpperCase();
           const startAtMoment = item?.startAt ? new Date(item.startAt) : null;
-          const isScheduled =
+          const isScheduled = Boolean(
             rawStatus === "SCHEDULED" ||
-            (rawStatus === "ACTIVE" &&
-              startAtMoment &&
-              Number.isFinite(startAtMoment.getTime()) &&
-              startAtMoment.getTime() > Date.now());
+              (rawStatus === "ACTIVE" &&
+                startAtMoment &&
+                Number.isFinite(startAtMoment.getTime()) &&
+                startAtMoment.getTime() > Date.now()),
+          );
 
           const audienceId = item?.segmentId ? String(item.segmentId) : "";
           const resolvedAudience = audienceId || audAllId;
@@ -216,7 +217,7 @@ export default function ActionsEarnPage() {
             cost,
           };
           })
-          .filter((promo: PointsPromotion | null): promo is PointsPromotion => Boolean(promo))
+          .filter((promo: PointsPromotion | null): promo is PointsPromotion => promo !== null) as PointsPromotion[])
       : [];
     setPromotions(mapped);
   };
@@ -368,8 +369,13 @@ export default function ActionsEarnPage() {
       ? editingId && editingCreatedAtIso
         ? new Date(editingCreatedAtIso)
         : now
-      : new Date(formData.startDate);
-    const endAt = formData.isIndefinite ? null : new Date(formData.endDate);
+      : formData.startDate
+        ? new Date(formData.startDate)
+        : now;
+    const endAt =
+      formData.isIndefinite || !formData.endDate
+        ? null
+        : new Date(formData.endDate);
     const startIso = Number.isFinite(startAt.getTime()) ? startAt.toISOString() : now.toISOString();
     const endIso = endAt && Number.isFinite(endAt.getTime()) ? endAt.toISOString() : null;
 

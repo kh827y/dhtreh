@@ -35,7 +35,12 @@ export async function GET(req: NextRequest) {
       },
     });
   }
-  const rules = data?.rulesJson && typeof data.rulesJson === 'object' ? data.rulesJson : {};
+  const rules =
+    data?.rulesJson &&
+    typeof data.rulesJson === 'object' &&
+    !Array.isArray(data.rulesJson)
+      ? data.rulesJson
+      : {};
   const antifraud = rules && typeof rules === 'object' && rules.af && typeof rules.af === 'object' ? rules.af : {};
   const customer = antifraud.customer && typeof antifraud.customer === 'object' ? antifraud.customer : {};
 
@@ -78,7 +83,9 @@ export async function POST(req: NextRequest) {
   }
 
   const rules: Record<string, any> =
-    data?.rulesJson && typeof data.rulesJson === 'object'
+    data?.rulesJson &&
+    typeof data.rulesJson === 'object' &&
+    !Array.isArray(data.rulesJson)
       ? { ...data.rulesJson }
       : {};
   const antifraud: Record<string, any> =

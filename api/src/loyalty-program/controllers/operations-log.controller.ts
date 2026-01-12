@@ -6,11 +6,14 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { LoyaltyProgramService } from '../loyalty-program.service';
 
+@ApiTags('portal-loyalty')
 @Controller('portal/loyalty/operations')
 @UseGuards(PortalGuard)
+@ApiBearerAuth()
 export class OperationsLogController {
   constructor(private readonly service: LoyaltyProgramService) {}
 
@@ -21,11 +24,29 @@ export class OperationsLogController {
   private parseType(value?: string) {
     if (!value) return undefined;
     const normalized = value.toUpperCase();
-    const allowed = new Set(['MECHANIC', 'PROMO_CODE', 'PROMOTION']);
+    const allowed = new Set(['PROMO_CODE', 'PROMOTION']);
     if (!allowed.has(normalized)) {
       throw new BadRequestException('Некорректный type');
     }
-    return normalized as 'MECHANIC' | 'PROMO_CODE' | 'PROMOTION';
+    return normalized as 'PROMO_CODE' | 'PROMOTION';
+  }
+
+  private parseLimit(value?: string) {
+    if (!value) return undefined;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new BadRequestException('Некорректный limit');
+    }
+    return Math.floor(parsed);
+  }
+
+  private parseOffset(value?: string) {
+    if (!value) return undefined;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new BadRequestException('Некорректный offset');
+    }
+    return Math.floor(parsed);
   }
 
   private parseDate(value: string | undefined, label: string) {
@@ -38,9 +59,35 @@ export class OperationsLogController {
   }
 
   @Get()
+  @ApiOperation({ summary: 'Получить лог операций лояльности' })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    enum: ['PROMO_CODE', 'PROMOTION'],
+  })
+  @ApiQuery({
+    name: 'from',
+    type: String,
+    required: false,
+    description: 'ISO date string',
+  })
+  @ApiQuery({
+    name: 'to',
+    type: String,
+    required: false,
+    description: 'ISO date string',
+  })
+  @ApiQuery({ name: 'limit', type: Number, required: false })
+  @ApiQuery({ name: 'offset', type: Number, required: false })
   list(
     @Req() req: any,
-    @Query() query: { type?: string; from?: string; to?: string },
+    @Query() query: {
+      type?: string;
+      from?: string;
+      to?: string;
+      limit?: string;
+      offset?: string;
+    },
   ) {
     const from = this.parseDate(query.from, 'from');
     const to = this.parseDate(query.to, 'to');
@@ -51,6 +98,8 @@ export class OperationsLogController {
       type: this.parseType(query.type),
       from,
       to,
+      limit: this.parseLimit(query.limit),
+      offset: this.parseOffset(query.offset),
     });
   }
 }

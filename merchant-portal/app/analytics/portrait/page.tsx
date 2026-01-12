@@ -322,10 +322,11 @@ export default function ClientPortraitPage() {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value: number, _name, item) => {
+                    formatter={(value: number | string | undefined, _name?: string, item?: any) => {
                       const customers = (item?.payload as any)?.customers || 0;
+                      const numeric = typeof value === "number" ? value : Number(value ?? 0);
                       return [
-                        `${value}% · ${formatNumber(customers)} клиентов`,
+                        `${numeric}% · ${formatNumber(customers)} клиентов`,
                         item?.payload?.name || "",
                       ];
                     }}
@@ -569,10 +570,10 @@ export default function ClientPortraitPage() {
                     boxShadow:
                       "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
                   }}
-                  formatter={(value: number, name) =>
+                  formatter={(value?: number, name?) =>
                     name === "Ср. чек"
-                      ? formatCurrency(value)
-                      : formatNumber(value)
+                      ? formatCurrency(value ?? 0)
+                      : formatNumber(value ?? 0)
                   }
                 />
                 <Legend iconType="circle" />
@@ -681,10 +682,10 @@ export default function ClientPortraitPage() {
                 <Tooltip
                   cursor={{ fill: "#F3F4F6" }}
                   contentStyle={{ borderRadius: "8px" }}
-                  formatter={(value: number) =>
+                  formatter={(value?: number) =>
                     combinedMetric === "clients"
-                      ? formatNumber(value)
-                      : formatCurrency(value)
+                      ? formatNumber(value ?? 0)
+                      : formatCurrency(value ?? 0)
                   }
                 />
                 <Legend verticalAlign="top" height={36} iconType="circle" />

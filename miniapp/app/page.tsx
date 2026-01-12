@@ -922,12 +922,16 @@ function MiniappPage() {
   );
 
   const applyProfileSaveResult = useCallback(
-    (profile: CustomerProfile | null, fallbackCustomerId: string) => {
+    (profile: CustomerProfile | null, fallbackCustomerId: string | null) => {
+      const fallback =
+        typeof fallbackCustomerId === "string" && fallbackCustomerId.trim()
+          ? fallbackCustomerId.trim()
+          : "";
       const nextIdRaw =
         typeof profile?.customerId === "string" && profile.customerId.trim()
           ? profile.customerId.trim()
-          : fallbackCustomerId;
-      if (!nextIdRaw) return fallbackCustomerId;
+          : fallback;
+      if (!nextIdRaw) return fallback || null;
       if (merchantId) {
         try {
           localStorage.setItem(localCustomerKey(merchantId), nextIdRaw);
@@ -1707,7 +1711,7 @@ function MiniappPage() {
     try {
       if (canRequestPhone) {
         promptTriggered = true;
-        const res = await tg.requestPhoneNumber();
+        const res = await tg.requestPhoneNumber!();
         const normalized = normalize(res);
         if (!markPhone(normalized) && detectShareConfirmation(res)) {
           shareConfirmed = true;
@@ -1886,7 +1890,7 @@ function MiniappPage() {
     if (!referralInfo) return;
     const ctx: ReferralTemplateContext = {
       merchantName: referralInfo.merchantName,
-      bonusAmount: referralInfo.inviterReward || 0,
+      bonusAmount: referralInfo.friendReward || 0,
       code: referralInfo.code,
       link: referralInfo.link || "",
     };
@@ -2468,7 +2472,7 @@ function MiniappPage() {
       if (!template) return "—";
       const ctx = {
         merchantName: referralInfo.merchantName,
-        bonusAmount: referralInfo.inviterReward || 0,
+        bonusAmount: referralInfo.friendReward || 0,
         code: referralInfo.code,
         link: referralInfo.link || "",
       };

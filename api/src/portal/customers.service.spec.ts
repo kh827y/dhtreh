@@ -18,6 +18,7 @@ function buildPrisma() {
   return {
     customer: {
       findUnique: jest.fn(async () => null),
+      findFirst: jest.fn(async () => null),
       create: jest.fn(async () => ({ id: 'cust-1', merchantId: 'M1' })),
     },
     wallet: {
@@ -108,7 +109,7 @@ describe('PortalCustomersService.ensureOperationAllowed', () => {
 
   it('blocks accruals when accrualsBlocked is true', async () => {
     const prisma = buildPrisma();
-    prisma.customer.findUnique.mockResolvedValueOnce({
+    prisma.customer.findFirst.mockResolvedValueOnce({
       merchantId: 'M1',
       accrualsBlocked: true,
       redemptionsBlocked: false,
@@ -122,7 +123,7 @@ describe('PortalCustomersService.ensureOperationAllowed', () => {
 
   it('blocks redemptions when redemptionsBlocked is true', async () => {
     const prisma = buildPrisma();
-    prisma.customer.findUnique.mockResolvedValueOnce({
+    prisma.customer.findFirst.mockResolvedValueOnce({
       merchantId: 'M1',
       accrualsBlocked: false,
       redemptionsBlocked: true,

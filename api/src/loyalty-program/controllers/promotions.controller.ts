@@ -242,6 +242,8 @@ export class PromotionsController {
       participants.reduce((acc, p) => acc + (p.pointsIssued ?? 0), 0);
     const uniqueCustomers = uniqueCustomersCount;
     const avgReward = totalUsage ? Math.round(totalReward / totalUsage) : 0;
+    const rewardType =
+      promotion.rewardType === 'DISCOUNT' ? 'DISCOUNT' : 'POINTS';
     return {
       ...toPortalResponse(promotion),
       stats: {
@@ -260,8 +262,11 @@ export class PromotionsController {
               name: canReadCustomers ? participant.customer.name ?? null : null,
             }
           : null,
-        rewardType: 'POINTS',
-        rewardValue: participant.pointsIssued ?? null,
+        rewardType,
+        rewardValue:
+          rewardType === 'POINTS'
+            ? participant.pointsIssued ?? null
+            : promotion.rewardValue ?? null,
       })),
     };
   }

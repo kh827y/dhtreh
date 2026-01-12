@@ -22,8 +22,8 @@ export type MerchantRow = {
   portalLoginEnabled?: boolean;
   portalTotpEnabled?: boolean;
   portalEmail?: string | null;
-  earnBps?: number;
-  redeemLimitBps?: number;
+  earnBps?: number | null;
+  redeemLimitBps?: number | null;
   qrTtlSec?: number | null;
   subscriptionStatus?: string;
   subscriptionPlanName?: string | null;
@@ -35,7 +35,7 @@ export type MerchantRow = {
 };
 
 export async function listMerchants(): Promise<MerchantRow[]> {
-  const rows = await http<Array<MerchantRow & { settings?: { earnBps: number; redeemLimitBps: number; qrTtlSec: number | null; maxOutlets?: number | null } }>>(`/merchants`);
+  const rows = await http<Array<MerchantRow & { settings?: { earnBps: number | null; redeemLimitBps: number | null; qrTtlSec: number | null; maxOutlets?: number | null } }>>(`/merchants`);
   return rows.map((row) => ({
     id: row.id,
     name: row.name,

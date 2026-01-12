@@ -22,7 +22,12 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const rules = data?.rulesJson && typeof data.rulesJson === 'object' ? data.rulesJson : {};
+  const rules =
+    data?.rulesJson &&
+    typeof data.rulesJson === 'object' &&
+    !Array.isArray(data.rulesJson)
+      ? data.rulesJson
+      : {};
   const autoReturn = rules && typeof rules === 'object' && rules.autoReturn && typeof rules.autoReturn === 'object'
     ? rules.autoReturn
     : {};
@@ -118,7 +123,12 @@ export async function PUT(req: NextRequest) {
     });
   }
 
-  const rules = data?.rulesJson && typeof data.rulesJson === 'object' ? { ...data.rulesJson } : {};
+  const rules =
+    data?.rulesJson &&
+    typeof data.rulesJson === 'object' &&
+    !Array.isArray(data.rulesJson)
+      ? { ...data.rulesJson }
+      : {};
   const nextAutoReturn: Record<string, any> = {
     enabled,
     days,

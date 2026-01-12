@@ -61,6 +61,13 @@ export class TelegramController {
     const { botToken } = body || ({} as any);
     if (!botToken) return { ok: false, error: 'botToken required' } as any;
     const res = await this.bots.registerBot(merchantId, botToken);
+    if (!res.success) {
+      return {
+        ok: false,
+        error: res.webhookError || 'Не удалось установить webhook',
+        ...res,
+      } as any;
+    }
     return { ok: true, ...res } as any;
   }
 

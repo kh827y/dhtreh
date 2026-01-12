@@ -31,7 +31,12 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const rules = data?.rulesJson && typeof data.rulesJson === 'object' ? data.rulesJson : {};
+  const rules =
+    data?.rulesJson &&
+    typeof data.rulesJson === 'object' &&
+    !Array.isArray(data.rulesJson)
+      ? data.rulesJson
+      : {};
   const reminder =
     rules && typeof rules === 'object' && rules.burnReminder && typeof rules.burnReminder === 'object'
       ? rules.burnReminder
@@ -119,7 +124,12 @@ export async function PUT(req: NextRequest) {
     });
   }
 
-  const rules = data?.rulesJson && typeof data.rulesJson === 'object' ? { ...data.rulesJson } : {};
+  const rules =
+    data?.rulesJson &&
+    typeof data.rulesJson === 'object' &&
+    !Array.isArray(data.rulesJson)
+      ? { ...data.rulesJson }
+      : {};
   const currentReminder =
     rules && typeof rules === 'object' && rules.burnReminder && typeof rules.burnReminder === 'object'
       ? { ...rules.burnReminder }

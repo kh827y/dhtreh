@@ -16,56 +16,23 @@ async function createOutlets(prisma, merchantId) {
     where: { id: 'outlet-main' },
     update: {
       name: 'Главный магазин',
-      address: 'Москва, Тверская 12',
-      code: 'main',
-      tags: ['флагман', '24/7'],
-      scheduleEnabled: true,
-      scheduleMode: 'CUSTOM',
     },
     create: {
       id: 'outlet-main',
       merchantId,
       name: 'Главный магазин',
-      address: 'Москва, Тверская 12',
-      code: 'main',
-      tags: ['флагман', '24/7'],
-      scheduleEnabled: true,
-      scheduleMode: 'CUSTOM',
     },
-  });
-
-  await prisma.outletSchedule.deleteMany({ where: { outletId: main.id } });
-  await prisma.outletSchedule.createMany({
-    data: Array.from({ length: 5 }, (_, idx) => ({
-      outletId: main.id,
-      dayOfWeek: idx,
-      opensAt: '08:00',
-      closesAt: '22:00',
-      isDayOff: false,
-      notes: idx === 4 ? 'короткий день' : null,
-    })).concat([
-      { outletId: main.id, dayOfWeek: 5, opensAt: '10:00', closesAt: '18:00', isDayOff: false },
-      { outletId: main.id, dayOfWeek: 6, opensAt: null, closesAt: null, isDayOff: true },
-    ]),
-    skipDuplicates: true,
   });
 
   const kiosk = await prisma.outlet.upsert({
     where: { id: 'outlet-kiosk' },
     update: {
       name: 'Киоск в бизнес-центре',
-      address: 'Москва, Пресненская наб. 8',
-      code: 'kiosk',
-      tags: ['kiosk'],
     },
     create: {
       id: 'outlet-kiosk',
       merchantId,
       name: 'Киоск в бизнес-центре',
-      address: 'Москва, Пресненская наб. 8',
-      code: 'kiosk',
-      tags: ['kiosk'],
-      scheduleEnabled: false,
     },
   });
 
@@ -967,100 +934,6 @@ async function createPromotions(prisma, merchantId, segments, tiers, staff, temp
 
   return { spring, upcoming, flash };
 }
-async function createMechanics(prisma, merchantId, staff) {
-  await prisma.loyaltyMechanic.upsert({
-    where: { id: 'mechanic-tiers' },
-    update: {
-      status: 'ENABLED',
-      updatedById: staff.manager.id,
-      enabledAt: nowMinus({ days: 60 }),
-    },
-    create: {
-      id: 'mechanic-tiers',
-      merchantId,
-      type: 'TIERS',
-      name: 'Уровни клиентов',
-      description: 'Настройка уровней лояльности',
-      status: 'ENABLED',
-      settings: { autoUpgrade: true },
-      createdById: staff.owner.id,
-      updatedById: staff.manager.id,
-      enabledAt: nowMinus({ days: 60 }),
-    },
-  });
-
-  await prisma.loyaltyMechanic.upsert({
-    where: { id: 'mechanic-birthday' },
-    update: {
-      status: 'ENABLED',
-      updatedById: staff.manager.id,
-      enabledAt: nowMinus({ days: 15 }),
-    },
-    create: {
-      id: 'mechanic-birthday',
-      merchantId,
-      type: 'BIRTHDAY',
-      name: 'Поздравление с ДР',
-      description: 'Автопоздравление с подарком',
-      status: 'ENABLED',
-      settings: { points: 500, daysBefore: 3 },
-      createdById: staff.manager.id,
-      updatedById: staff.manager.id,
-      enabledAt: nowMinus({ days: 15 }),
-    },
-  });
-
-  await prisma.loyaltyMechanic.upsert({
-    where: { id: 'mechanic-winback' },
-    update: {
-      status: 'DISABLED',
-      disabledAt: nowMinus({ days: 5 }),
-      updatedById: staff.owner.id,
-    },
-    create: {
-      id: 'mechanic-winback',
-      merchantId,
-      type: 'WINBACK',
-      name: 'Автовозврат клиентов',
-      description: 'Напоминания об акциях для спящих клиентов',
-      status: 'DISABLED',
-      settings: { thresholdDays: 60, bonus: 300 },
-      createdById: staff.owner.id,
-      updatedById: staff.owner.id,
-      disabledAt: nowMinus({ days: 5 }),
-    },
-  });
-
-  await prisma.loyaltyMechanicLog.createMany({
-    data: [
-      {
-        id: 'mechanic-log-enable-tiers',
-        mechanicId: 'mechanic-tiers',
-        merchantId,
-        actorId: staff.owner.id,
-        action: 'ENABLED',
-        payload: { note: 'После запуска программы' },
-      },
-      {
-        id: 'mechanic-log-birthday-update',
-        mechanicId: 'mechanic-birthday',
-        merchantId,
-        actorId: staff.manager.id,
-        action: 'CONFIG_UPDATED',
-        payload: { bonus: 500 },
-      },
-      {
-        id: 'mechanic-log-winback-disable',
-        mechanicId: 'mechanic-winback',
-        merchantId,
-        actorId: staff.owner.id,
-        action: 'DISABLED',
-        payload: { reason: 'слишком частые уведомления' },
-      },
-    ],
-    skipDuplicates: true,
-  });
-}
 async function createCatalog(prisma, merchantId, outlets) {
   await prisma.productCategory.upsert({
     where: { id: 'category-coffee' },
@@ -1518,7 +1391,6 @@ module.exports = {
   createCommunicationAssets,
   createPromoCodes,
   createPromotions,
-  createMechanics,
   createCatalog,
   createDataImports,
   createAnalytics,

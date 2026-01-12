@@ -18,6 +18,7 @@ import {
   ApiBadRequestResponse,
   ApiExtraModels,
   ApiOkResponse,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
   getSchemaPath,
@@ -34,7 +35,6 @@ import {
   ReceiptDto,
   UpdateMerchantSettingsDto,
   UpdateMerchantNameDto,
-  UpdateOutletPosDto,
   UpdateOutletStatusDto,
   UpdateTimezoneDto,
 } from '../merchants/dto';
@@ -1750,6 +1750,10 @@ export class PortalController {
     );
   }
   @Get('analytics/repeat')
+  @ApiQuery({ name: 'period', required: false })
+  @ApiQuery({ name: 'from', required: false })
+  @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'outletId', required: false })
   repeat(
     @Req() req: any,
     @Query('period') period?: string,
@@ -2562,18 +2566,6 @@ export class PortalController {
   })
   deleteOutlet(@Req() req: any, @Param('outletId') outletId: string) {
     return this.service.deleteOutlet(this.getMerchantId(req), outletId);
-  }
-  @Put('outlets/:outletId/pos')
-  @ApiOkResponse({ type: PortalOutletDto })
-  updateOutletPos(
-    @Req() req: any,
-    @Param('outletId') outletId: string,
-    @Body() dto: UpdateOutletPosDto,
-  ) {
-    const merchantId = this.getMerchantId(req);
-    return this.service
-      .updateOutletPos(merchantId, outletId, dto)
-      .then(() => this.catalog.getOutlet(merchantId, outletId));
   }
   @Put('outlets/:outletId/status')
   @ApiOkResponse({ type: PortalOutletDto })

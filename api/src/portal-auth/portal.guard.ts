@@ -47,11 +47,13 @@ export class PortalGuard implements CanActivate {
       const claims = await verifyPortalJwt(m[1]);
       const merchantId = claims.merchantId || claims.sub;
       if (!merchantId) return false;
+      const issuedAt = claims.issuedAt;
+      const adminImpersonation = !!claims.adminImpersonation;
       req.portalMerchantId = merchantId;
       req.portalRole =
         claims.role || (claims.actor === 'STAFF' ? 'STAFF' : 'MERCHANT');
       req.portalActor = claims.actor;
-      req.portalAdminImpersonation = !!claims.adminImpersonation;
+      req.portalAdminImpersonation = adminImpersonation;
       if (claims.actor === 'STAFF') {
         const staffId = claims.staffId || claims.sub;
         if (!staffId) return false;
@@ -64,12 +66,25 @@ export class PortalGuard implements CanActivate {
               },
               include: { group: { include: { permissions: true } } },
             },
+            merchant: {
+              select: {
+                portalLoginEnabled: true,
+                portalTokensRevokedAt: true,
+              },
+            },
           },
         });
         if (!staff) return false;
         if (staff.status !== 'ACTIVE') return false;
         if (!staff.portalAccessEnabled || !staff.canAccessPortal) return false;
         if (!staff.hash) return false;
+        if (!adminImpersonation) {
+          if (staff.merchant?.portalLoginEnabled === false) return false;
+          if (this.isTokenRevoked(issuedAt, staff.portalTokensRevokedAt))
+            return false;
+          if (this.isTokenRevoked(issuedAt, staff.merchant?.portalTokensRevokedAt))
+            return false;
+        }
         req.portalStaffId = staff.id;
         req.portalStaffEmail = staff.email ?? null;
         req.portalStaffRole = staff.role;
@@ -100,6 +115,15 @@ export class PortalGuard implements CanActivate {
           resources,
         };
       } else {
+        if (!adminImpersonation) {
+          const merchant = await this.prisma.merchant.findUnique({
+            where: { id: merchantId },
+            select: { portalLoginEnabled: true, portalTokensRevokedAt: true },
+          });
+          if (!merchant || merchant.portalLoginEnabled === false) return false;
+          if (this.isTokenRevoked(issuedAt, merchant.portalTokensRevokedAt))
+            return false;
+        }
         req.portalPermissions = {
           allowAll: true,
           resources: new Map<string, Set<string>>(),
@@ -153,7 +177,6 @@ export class PortalGuard implements CanActivate {
     const allowAll = { resources: [] as string[], action };
     if (path === '/portal/me') return allowAll;
     if (path.startsWith('/portal/loyalty/promotions')) return allowAll;
-    if (path.startsWith('/portal/loyalty/mechanics')) return allowAll;
     if (path.startsWith('/portal/loyalty/redeem-limits')) return allowAll;
     if (path === '/portal/settings') return allowAll;
     if (path.startsWith('/portal/settings/telegram-notify')) {
@@ -273,5 +296,14 @@ export class PortalGuard implements CanActivate {
     if (!allowed) {
       throw new ForbiddenException('Недостаточно прав');
     }
+  }
+
+  private isTokenRevoked(
+    issuedAtSeconds: number | undefined,
+    revokedAt?: Date | null,
+  ) {
+    if (!revokedAt) return false;
+    if (!issuedAtSeconds) return true;
+    return issuedAtSeconds * 1000 < revokedAt.getTime();
   }
 }

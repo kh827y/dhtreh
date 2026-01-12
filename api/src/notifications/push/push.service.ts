@@ -3,15 +3,6 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { TelegramBotService } from '../../telegram/telegram-bot.service';
 
-export interface RegisterDeviceDto {
-  merchantId: string;
-  customerId: string;
-  token: string;
-  platform: 'ios' | 'android' | 'web';
-  outletId?: string;
-  deviceInfo?: Record<string, any>;
-}
-
 export interface SendPushDto {
   merchantId: string;
   customerId?: string;
@@ -36,12 +27,6 @@ export class PushService {
     private readonly prisma: PrismaService,
     private readonly telegramBots: TelegramBotService,
   ) {}
-
-  async registerDevice(_: RegisterDeviceDto) {
-    throw new BadRequestException(
-      'Регистрация устройств недоступна: push-уведомления отправляются через Telegram Mini App.',
-    );
-  }
 
   async sendPush(dto: SendPushDto) {
     const body = typeof dto.body === 'string' ? dto.body.trim() : '';
@@ -286,10 +271,6 @@ export class PushService {
     });
 
     return { success: failed === 0, sent, failed };
-  }
-
-  async deactivateDevice(_: string) {
-    return { success: true };
   }
 
   async getPushStats(merchantId: string, period?: { from: Date; to: Date }) {

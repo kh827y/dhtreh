@@ -160,16 +160,15 @@ export class SubscriptionController {
 
     // Если план не передан или не содержит id, используем текущий план подписки
     const targetPlan =
-      plan && typeof plan.id === 'string' && plan.id ? plan : subscription.plan;
+      plan && typeof plan.id === 'string' && plan.id
+        ? await this.subscriptionService.ensurePlan(plan.id)
+        : subscription.plan;
     const isValid = await this.subscriptionService.validatePlanLimits(
       merchantId,
       targetPlan,
     );
 
-    const planId =
-      plan && typeof plan.id === 'string' && plan.id
-        ? plan.id
-        : subscription.plan?.id || subscription.planId;
+    const planId = targetPlan?.id || subscription.plan?.id || subscription.planId;
 
     return {
       valid: isValid,

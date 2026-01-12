@@ -34,6 +34,7 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
     string,
     { merchantId: string; customerId: string }
   >();
+  private readonly activeCustomerPolls = new Map<string, number>();
   private nextListenerId = 1;
   private pgClient?: PgClient;
   private pgConnecting = false;
@@ -107,6 +108,28 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
       }
     }
     return null;
+  }
+
+  tryAcquireCustomerPoll(
+    merchantId: string,
+    customerId: string,
+    limit = 1,
+  ): string | null {
+    const key = `${merchantId}:${customerId}`;
+    const current = this.activeCustomerPolls.get(key) ?? 0;
+    if (current >= limit) return null;
+    this.activeCustomerPolls.set(key, current + 1);
+    return key;
+  }
+
+  releaseCustomerPoll(key: string | null) {
+    if (!key) return;
+    const current = this.activeCustomerPolls.get(key) ?? 0;
+    if (current <= 1) {
+      this.activeCustomerPolls.delete(key);
+      return;
+    }
+    this.activeCustomerPolls.set(key, current - 1);
   }
 
   private async claimPersistedEvent(

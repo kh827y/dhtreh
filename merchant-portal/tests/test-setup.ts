@@ -5,6 +5,7 @@ const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http:
 (globalThis as any).window = dom.window;
 (globalThis as any).self = dom.window;
 (globalThis as any).document = dom.window.document;
+(globalThis as any).alert = () => {};
 Object.defineProperty(globalThis, "navigator", {
   value: dom.window.navigator,
   configurable: true,

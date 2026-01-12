@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { LoyaltyMechanicType, PromotionRewardType } from '@prisma/client';
+import { PromotionRewardType } from '@prisma/client';
 
 type PortalPermissionState = {
   allowAll?: boolean;
@@ -7,37 +7,6 @@ type PortalPermissionState = {
 };
 
 const EDIT_ACTIONS = new Set(['create', 'update', 'delete', 'manage', '*']);
-
-const LEGACY_RESOURCE_ALIASES: Record<string, string[]> = {
-  products: ['loyalty'],
-  categories: ['loyalty'],
-  audiences: ['loyalty'],
-  customers: ['loyalty'],
-  points_promotions: ['loyalty'],
-  product_promotions: ['loyalty'],
-  promocodes: ['loyalty'],
-  telegram_notifications: ['loyalty'],
-  broadcasts: ['loyalty'],
-  system_settings: ['loyalty'],
-  feedback: ['loyalty'],
-  staff_motivation: ['loyalty'],
-  antifraud: ['loyalty'],
-  cashier_panel: ['loyalty'],
-  import: ['loyalty'],
-  integrations: ['loyalty'],
-  rfm_analysis: ['analytics'],
-  analytics: ['analytics'],
-  staff: ['staff'],
-  access_groups: ['staff'],
-  outlets: ['outlets'],
-  mechanic_birthday: ['loyalty'],
-  mechanic_auto_return: ['loyalty'],
-  mechanic_levels: ['loyalty'],
-  mechanic_redeem_limits: ['loyalty'],
-  mechanic_registration_bonus: ['loyalty'],
-  mechanic_ttl: ['loyalty'],
-  mechanic_referral: ['loyalty'],
-};
 
 function normalizeResource(value: string) {
   return String(value || '').trim().toLowerCase();
@@ -98,10 +67,7 @@ export function hasPortalPermission(
   const normalizedResource = normalizeResource(resource);
   const allActions = readActions(state, '__all__');
   if (allActions && canPerform(action, allActions)) return true;
-  const resourcesToCheck = [
-    normalizedResource,
-    ...(LEGACY_RESOURCE_ALIASES[normalizedResource] || []),
-  ];
+  const resourcesToCheck = [normalizedResource];
   for (const key of resourcesToCheck) {
     const actions = readActions(state, key);
     if (!actions || actions.size === 0) continue;
@@ -149,24 +115,24 @@ export function resolvePromotionResource(payload: {
   return 'points_promotions';
 }
 
-export function resolveMechanicResource(type?: LoyaltyMechanicType | string | null) {
+export function resolveMechanicResource(type?: string | null) {
   const normalized = String(type || '').toUpperCase();
   switch (normalized) {
-    case LoyaltyMechanicType.BIRTHDAY:
+    case 'BIRTHDAY':
       return 'mechanic_birthday';
-    case LoyaltyMechanicType.WINBACK:
+    case 'WINBACK':
       return 'mechanic_auto_return';
-    case LoyaltyMechanicType.REGISTRATION_BONUS:
+    case 'REGISTRATION_BONUS':
       return 'mechanic_registration_bonus';
-    case LoyaltyMechanicType.EXPIRATION_REMINDER:
+    case 'EXPIRATION_REMINDER':
       return 'mechanic_ttl';
-    case LoyaltyMechanicType.REFERRAL:
+    case 'REFERRAL':
       return 'mechanic_referral';
-    case LoyaltyMechanicType.PURCHASE_LIMITS:
+    case 'PURCHASE_LIMITS':
       return 'mechanic_redeem_limits';
-    case LoyaltyMechanicType.TIERS:
+    case 'TIERS':
       return 'mechanic_levels';
-    case LoyaltyMechanicType.CUSTOM:
+    case 'CUSTOM':
       return 'loyalty';
     default:
       return 'loyalty';

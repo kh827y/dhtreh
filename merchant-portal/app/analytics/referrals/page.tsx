@@ -468,7 +468,7 @@ export default function AnalyticsReferralsPage() {
                     allowDecimals={false}
                   />
                   <RechartsTooltip
-                    formatter={(value: number) => formatNumber(value)}
+                    formatter={(value?: number) => formatNumber(value ?? 0)}
                     labelFormatter={(label) => formatShortDate(String(label))}
                     contentStyle={{
                       borderRadius: 8,

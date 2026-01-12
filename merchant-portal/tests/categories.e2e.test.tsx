@@ -44,7 +44,6 @@ describe("categories page (new design)", () => {
     let categories: any[] = [];
     let products = [{ id: "p1", name: "Капучино 0.3", categoryId: null }];
     let createPayload: any = null;
-    let updatePayload: any = null;
 
     fetchMock = mock.method(global, "fetch", async (input: any, init?: any) => {
       const url = typeof input === "string" ? input : input.url;
@@ -71,15 +70,12 @@ describe("categories page (new design)", () => {
           status: createPayload.status,
         };
         categories = [created];
+        if (Array.isArray(createPayload.assignProductIds)) {
+          products = products.map((prod) =>
+            createPayload.assignProductIds.includes(prod.id) ? { ...prod, categoryId: created.id } : prod,
+          );
+        }
         return new Response(JSON.stringify(created), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (url.startsWith("/api/portal/catalog/products/p1") && method === "PUT") {
-        updatePayload = JSON.parse(init?.body || "{}");
-        products = products.map((prod) => (prod.id === "p1" ? { ...prod, categoryId: updatePayload.categoryId } : prod));
-        return new Response(JSON.stringify(products[0]), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -110,6 +106,6 @@ describe("categories page (new design)", () => {
     await screen.findByText("Архив");
 
     assert.equal(createPayload.status, "ARCHIVED");
-    assert.equal(updatePayload.categoryId, "c-new");
+    assert.deepEqual(createPayload.assignProductIds, ["p1"]);
   });
 });

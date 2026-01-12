@@ -262,9 +262,7 @@ describe('LoyaltyService.commit idempotency', () => {
       staffMotivation,
     );
     await svc.commit('H3', 'ORDER-3', undefined, undefined, undefined);
-    expect(txUsed.outlet.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'OUT-1' } }),
-    );
+    expect(txUsed.outlet.update).not.toHaveBeenCalled();
   });
 
   it('blocks earn commit when accruals are blocked', async () => {

@@ -357,6 +357,10 @@ export class AdminMerchantsService {
         normalizedEmail !== undefined || payload.portalPassword !== undefined
           ? Boolean(portalEmail && portalPasswordHash)
           : merchant.portalLoginEnabled;
+      const credentialsChanged =
+        portalEmail !== merchant.portalEmail ||
+        portalPasswordHash !== merchant.portalPasswordHash ||
+        portalLoginEnabled !== merchant.portalLoginEnabled;
       await tx.merchant.update({
         where: { id },
         data: {
@@ -364,6 +368,12 @@ export class AdminMerchantsService {
           portalEmail,
           portalPasswordHash,
           portalLoginEnabled,
+          ...(credentialsChanged
+            ? {
+                portalTokensRevokedAt: new Date(),
+                portalRefreshTokenHash: null,
+              }
+            : {}),
           archivedAt:
             payload.archived === undefined
               ? merchant.archivedAt

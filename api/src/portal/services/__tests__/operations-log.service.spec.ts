@@ -4,7 +4,7 @@ describe('OperationsLogService', () => {
   const prisma = {
     receipt: { count: jest.fn(), findMany: jest.fn() },
     review: { findMany: jest.fn() },
-    transaction: { count: jest.fn(), findMany: jest.fn() },
+    transaction: { count: jest.fn(), findMany: jest.fn(), groupBy: jest.fn() },
   } as any;
 
   const loyalty = {
@@ -20,6 +20,7 @@ describe('OperationsLogService', () => {
     prisma.transaction.count.mockResolvedValue(0);
     prisma.receipt.findMany.mockResolvedValue([]);
     prisma.transaction.findMany.mockResolvedValue([]);
+    prisma.transaction.groupBy.mockResolvedValue([]);
     prisma.review.findMany.mockResolvedValue([]);
   });
 
@@ -42,9 +43,6 @@ describe('OperationsLogService', () => {
         outlet: {
           id: 'o1',
           name: 'Главный зал',
-          posType: 'SMART',
-          code: 'POS-1',
-          externalId: null,
         },
         device: null,
         canceledBy: null,
@@ -67,7 +65,7 @@ describe('OperationsLogService', () => {
       rating: 4,
       redeem: { amount: 100 },
       earn: { amount: 50 },
-      carrier: { type: 'SMART', label: 'Главный зал', code: 'POS-1' },
+      carrier: { type: 'OUTLET', label: 'Главный зал', code: 'o1' },
     });
   });
 
@@ -99,7 +97,10 @@ describe('OperationsLogService', () => {
   });
 
   it('merges refund transactions by orderId and keeps latest date', async () => {
-    prisma.transaction.count.mockResolvedValue(2);
+    prisma.transaction.count.mockResolvedValue(0);
+    prisma.transaction.groupBy
+      .mockResolvedValueOnce([]) // earn/redeem groups
+      .mockResolvedValueOnce([{ orderId: 'order-1', _count: { _all: 2 } }]); // refund groups
     prisma.transaction.findMany.mockResolvedValue([
       {
         id: 't1',

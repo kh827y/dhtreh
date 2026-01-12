@@ -4,6 +4,7 @@ import { RiskLevel } from '../antifraud/antifraud.service';
 
 describe('AntiFraudGuard', () => {
   const originalForce = process.env.ANTIFRAUD_GUARD_FORCE;
+  const originalGuard = process.env.ANTIFRAUD_GUARD;
   const originalNodeEnv = process.env.NODE_ENV;
 
   let prisma: any;
@@ -15,6 +16,7 @@ describe('AntiFraudGuard', () => {
   beforeEach(() => {
     process.env.NODE_ENV = 'test';
     process.env.ANTIFRAUD_GUARD_FORCE = 'on';
+    process.env.ANTIFRAUD_GUARD = 'on';
     prisma = {
       hold: { findUnique: jest.fn() },
       merchantSettings: { findUnique: jest.fn() },
@@ -37,6 +39,8 @@ describe('AntiFraudGuard', () => {
   afterAll(() => {
     if (originalForce === undefined) delete process.env.ANTIFRAUD_GUARD_FORCE;
     else process.env.ANTIFRAUD_GUARD_FORCE = originalForce;
+    if (originalGuard === undefined) delete process.env.ANTIFRAUD_GUARD;
+    else process.env.ANTIFRAUD_GUARD = originalGuard;
     if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = originalNodeEnv;
   });

@@ -9,7 +9,7 @@ import {
   Min,
   Length,
 } from 'class-validator';
-import { DeviceType, StaffRole } from '@prisma/client';
+import { StaffRole } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RUSSIA_TIMEZONES } from '../timezone/russia-timezones';
 
@@ -177,10 +177,6 @@ export class CreateOutletDto {
   @ApiProperty()
   @IsString()
   name!: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  address?: string;
 }
 
 export class UpdateOutletDto {
@@ -188,10 +184,6 @@ export class UpdateOutletDto {
   @IsOptional()
   @IsString()
   name?: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  address?: string;
 }
 
 export class CreateStaffDto {
@@ -351,15 +343,7 @@ export class OutletDto {
   @ApiProperty() id!: string;
   @ApiProperty() merchantId!: string;
   @ApiProperty() name!: string;
-  @ApiPropertyOptional() address?: string | null;
   @ApiProperty() status!: string;
-  @ApiProperty() hidden!: boolean;
-  @ApiPropertyOptional({ enum: DeviceType, nullable: true }) posType?:
-    | keyof typeof DeviceType
-    | string
-    | null;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
-  posLastSeenAt?: Date | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }
@@ -406,27 +390,6 @@ export class UpdateTimezoneDto {
   code!: string;
 }
 
-export class UpdateOutletPosDto {
-  @ApiPropertyOptional({
-    enum: DeviceType,
-    description: 'Последний активный POS-тип',
-    nullable: true,
-  })
-  @IsOptional()
-  @IsString()
-  posType?: keyof typeof DeviceType | string | null;
-
-  @ApiPropertyOptional({
-    type: String,
-    format: 'date-time',
-    description: 'Метка последней активности POS',
-    nullable: true,
-  })
-  @IsOptional()
-  @IsDateString()
-  posLastSeenAt?: string | null;
-}
-
 export class UpdateOutletStatusDto {
   @ApiProperty({ enum: ['ACTIVE', 'INACTIVE'] })
   @IsIn(['ACTIVE', 'INACTIVE'])
@@ -462,12 +425,6 @@ export class ReceiptDto {
   @ApiProperty() earnApplied!: number;
   @ApiProperty() createdAt!: Date;
   @ApiPropertyOptional() outletId?: string | null;
-  @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?:
-    | keyof typeof DeviceType
-    | string
-    | null;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
-  outletLastSeenAt?: Date | null;
   @ApiPropertyOptional() staffId?: string | null;
 }
 
@@ -487,12 +444,6 @@ export class LedgerEntryDto {
   @ApiPropertyOptional() orderId?: string | null;
   @ApiPropertyOptional() receiptId?: string | null;
   @ApiPropertyOptional() outletId?: string | null;
-  @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?:
-    | keyof typeof DeviceType
-    | string
-    | null;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
-  outletLastSeenAt?: Date | null;
   @ApiPropertyOptional() staffId?: string | null;
   @ApiPropertyOptional() meta?: any;
   @ApiProperty() createdAt!: Date;
@@ -509,12 +460,6 @@ export class EarnLotDto {
   @ApiPropertyOptional() orderId?: string | null;
   @ApiPropertyOptional() receiptId?: string | null;
   @ApiPropertyOptional() outletId?: string | null;
-  @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?:
-    | keyof typeof DeviceType
-    | string
-    | null;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
-  outletLastSeenAt?: Date | null;
   @ApiPropertyOptional() staffId?: string | null;
   @ApiProperty() createdAt!: Date;
 }

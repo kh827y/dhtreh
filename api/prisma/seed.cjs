@@ -10,7 +10,6 @@ const {
   createCommunicationAssets,
   createPromoCodes,
   createPromotions,
-  createMechanics,
   createCatalog,
   createDataImports,
   createAnalytics,
@@ -128,7 +127,6 @@ async function main() {
   const templates = await createCommunicationAssets(prisma, merchant.id, staff.manager);
   await createPromoCodes(prisma, merchant.id, segments, tiers, staff, customers, outlets);
   await createPromotions(prisma, merchant.id, segments, tiers, staff, templates, customers, outlets);
-  await createMechanics(prisma, merchant.id, staff);
   await createCatalog(prisma, merchant.id, outlets);
   await createDataImports(prisma, merchant.id, staff);
   await createAnalytics(prisma, merchant.id, staff, outlets, customers, segments);

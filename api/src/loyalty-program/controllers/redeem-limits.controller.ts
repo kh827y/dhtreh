@@ -145,6 +145,11 @@ export class RedeemLimitsController {
         'Отложенное начисление недоступно без поддержки лотов',
       );
     }
+    if (pointsTtlDays > 0 && process.env.EARN_LOTS_FEATURE !== '1') {
+      throw new BadRequestException(
+        'Сгорание баллов недоступно без поддержки лотов',
+      );
+    }
 
     const ttlChanged = pointsTtlDays !== currentTtlDays;
     const delayChanged = earnDelayDays !== currentDelayDays;

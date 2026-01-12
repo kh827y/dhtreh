@@ -612,6 +612,9 @@ export class LoyaltyController {
     if (!promotionId) throw new BadRequestException('promotionId required');
 
     const customer = await this.ensureCustomer(merchantId, customerId);
+    if (customer.accrualsBlocked) {
+      throw new BadRequestException('accruals blocked');
+    }
 
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
@@ -627,9 +630,57 @@ export class LoyaltyController {
         throw new BadRequestException('promotion ended');
       if (promo.rewardType !== PromotionRewardType.POINTS)
         throw new BadRequestException('promotion is not points type');
-      const points = Math.max(0, Math.floor(Number(promo.rewardValue ?? 0)));
+      let points = Math.max(0, Math.floor(Number(promo.rewardValue ?? 0)));
       if (!Number.isFinite(points) || points <= 0)
         throw new BadRequestException('invalid reward value');
+
+      const settings = await tx.merchantSettings.findUnique({
+        where: { merchantId },
+        select: { earnDailyCap: true, earnCooldownSec: true },
+      });
+      const earnCooldownSec = Number(settings?.earnCooldownSec ?? 0) || 0;
+      if (earnCooldownSec > 0) {
+        const last = await tx.transaction.findFirst({
+          where: {
+            merchantId,
+            customerId,
+            canceledAt: null,
+            type: { in: [TxnType.EARN, TxnType.CAMPAIGN, TxnType.REFERRAL] },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (last) {
+          const diffSec = Math.floor(
+            (Date.now() - last.createdAt.getTime()) / 1000,
+          );
+          if (diffSec < earnCooldownSec) {
+            throw new BadRequestException('earn cooldown');
+          }
+        }
+      }
+
+      const earnDailyCap = Number(settings?.earnDailyCap ?? 0) || 0;
+      if (earnDailyCap > 0) {
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const usedAgg = await tx.transaction.aggregate({
+          where: {
+            merchantId,
+            customerId,
+            canceledAt: null,
+            createdAt: { gte: since },
+            type: { in: [TxnType.EARN, TxnType.CAMPAIGN, TxnType.REFERRAL] },
+          },
+          _sum: { amount: true },
+        });
+        const used = Math.max(0, Number(usedAgg._sum.amount ?? 0));
+        const left = Math.max(0, earnDailyCap - used);
+        if (left <= 0) {
+          throw new BadRequestException('earn daily cap reached');
+        }
+        if (points > left) {
+          points = left;
+        }
+      }
 
       // audience check
       if (promo.segmentId) {
@@ -2941,7 +2992,6 @@ export class LoyaltyController {
     return items.map((o) => ({
       id: o.id,
       name: o.name,
-      address: o.address ?? undefined,
     }));
   }
 

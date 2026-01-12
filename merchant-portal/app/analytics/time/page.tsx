@@ -105,7 +105,7 @@ const recencyUnitTitle: Record<RecencyGrouping, string> = {
 
 const formatRecencyText = (value: number, unit: RecencyGrouping) => {
   const absValue = Math.max(0, Math.round(value));
-  const forms =
+  const forms: [string, string, string] =
     unit === "day"
       ? ["день назад", "дня назад", "дней назад"]
       : unit === "week"
@@ -368,8 +368,8 @@ export default function AnalyticsTimePage() {
                     boxShadow:
                       "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
                   }}
-                  formatter={(value: number) => [
-                    `${formatNumber(value)} клиентов`,
+                  formatter={(value?: number) => [
+                    `${formatNumber(value ?? 0)} клиентов`,
                     "Кол-во",
                   ]}
                   labelFormatter={(_label, payload) => {
@@ -486,27 +486,20 @@ export default function AnalyticsTimePage() {
                       <YAxis
                         axisLine={false}
                         tickLine={false}
-                        tick={{
-                          fill: "#6B7280",
-                          fontSize: 12,
-                          formatter:
-                            activityMetric === "sales"
-                              ? formatNumber
-                              : (val: number) => formatCurrency(val),
-                        }}
+                        tick={{ fill: "#6B7280", fontSize: 12 }}
                         tickFormatter={
                           activityMetric === "sales"
                             ? formatNumber
-                            : (val: number) => formatCurrency(val)
+                            : (val?: number) => formatCurrency(val ?? 0)
                         }
                       />
                       <Tooltip
                         cursor={{ fill: "transparent" }}
                         contentStyle={{ borderRadius: "8px" }}
-                        formatter={(value: number) =>
+                        formatter={(value?: number) =>
                           activityMetric === "sales"
-                            ? formatNumber(value)
-                            : formatCurrency(value)
+                            ? formatNumber(value ?? 0)
+                            : formatCurrency(value ?? 0)
                         }
                         labelFormatter={(label) =>
                           `День недели: ${label || ""}`
@@ -559,10 +552,10 @@ export default function AnalyticsTimePage() {
                       <Tooltip
                         cursor={{ fill: "transparent" }}
                         contentStyle={{ borderRadius: "8px" }}
-                        formatter={(value: number) =>
+                        formatter={(value?: number) =>
                           activityMetric === "sales"
-                            ? formatNumber(value)
-                            : formatCurrency(value)
+                            ? formatNumber(value ?? 0)
+                            : formatCurrency(value ?? 0)
                         }
                         labelFormatter={(label) => `${label}:00`}
                       />

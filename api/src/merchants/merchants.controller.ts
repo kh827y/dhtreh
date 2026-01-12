@@ -29,7 +29,6 @@ import {
   ReceiptDto,
   CustomerSearchRespDto,
   LedgerEntryDto,
-  UpdateOutletPosDto,
   UpdateOutletStatusDto,
 } from './dto';
 import { AdminGuard } from '../admin.guard';
@@ -269,7 +268,7 @@ export class MerchantsController {
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiBadRequestResponse({ type: ErrorDto })
   createOutlet(@Param('id') id: string, @Body() dto: CreateOutletDto) {
-    return this.service.createOutlet(id, dto.name, dto.address);
+    return this.service.createOutlet(id, dto.name);
   }
   @Put(':id/outlets/:outletId')
   @ApiOkResponse({ type: OutletDto })
@@ -288,17 +287,6 @@ export class MerchantsController {
   @ApiNotFoundResponse({ type: ErrorDto })
   deleteOutlet(@Param('id') id: string, @Param('outletId') outletId: string) {
     return this.service.deleteOutlet(id, outletId);
-  }
-  @Put(':id/outlets/:outletId/pos')
-  @ApiOkResponse({ type: OutletDto })
-  @ApiUnauthorizedResponse({ type: ErrorDto })
-  @ApiNotFoundResponse({ type: ErrorDto })
-  updateOutletPos(
-    @Param('id') id: string,
-    @Param('outletId') outletId: string,
-    @Body() dto: UpdateOutletPosDto,
-  ) {
-    return this.service.updateOutletPos(id, outletId, dto);
   }
   @Put(':id/outlets/:outletId/status')
   @ApiOkResponse({ type: OutletDto })
@@ -707,7 +695,7 @@ export class MerchantsController {
       `attachment; filename="receipts_${id}_${Date.now()}.csv"`,
     );
     res.write(
-      'id,orderId,customerId,total,redeemApplied,earnApplied,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n',
+      'id,orderId,customerId,total,redeemApplied,earnApplied,createdAt,outletId,staffId\n',
     );
     let before = beforeStr ? new Date(beforeStr) : undefined;
     while (true) {
@@ -728,8 +716,6 @@ export class MerchantsController {
           r.earnApplied,
           r.createdAt.toISOString(),
           r.outletId || '',
-          r.outletPosType || '',
-          r.outletLastSeenAt ? new Date(r.outletLastSeenAt).toISOString() : '',
           r.staffId || '',
         ]
           .map((x) => this.csvCell(x))
@@ -791,7 +777,7 @@ export class MerchantsController {
       `attachment; filename="ledger_${id}_${Date.now()}.csv"`,
     );
     res.write(
-      'id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n',
+      'id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,staffId\n',
     );
     let before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
@@ -817,8 +803,6 @@ export class MerchantsController {
           e.receiptId || '',
           e.createdAt.toISOString(),
           e.outletId || '',
-          e.outletPosType || '',
-          e.outletLastSeenAt ? new Date(e.outletLastSeenAt).toISOString() : '',
           e.staffId || '',
         ]
           .map((x) => this.csvCell(x))
@@ -914,7 +898,7 @@ export class MerchantsController {
       `attachment; filename="transactions_${id}_${Date.now()}.csv"`,
     );
     res.write(
-      'id,type,amount,orderId,customerId,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n',
+      'id,type,amount,orderId,customerId,createdAt,outletId,staffId\n',
     );
     let before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
@@ -940,8 +924,6 @@ export class MerchantsController {
           t.customerId,
           t.createdAt.toISOString(),
           t.outletId || '',
-          t.outletPosType || '',
-          t.outletLastSeenAt ? new Date(t.outletLastSeenAt).toISOString() : '',
           t.staffId || '',
         ]
           .map((x) => this.csvCell(x))

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import React from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
 const originalFetch = global.fetch;
 
@@ -59,7 +59,7 @@ describe("points promotions page (new design)", () => {
     await screen.findByText("Акции с начислением баллов");
     await screen.findByText("Приветственные 500 бонусов");
     await screen.findByText(/Бессрочно/);
-    await screen.findByText("Сгораемые");
+    await screen.findByText("Не сгорают");
     await screen.findByText("PUSH");
 
     const rubles = await screen.findAllByText((text) => text.includes("₽"));
@@ -151,9 +151,13 @@ describe("points promotions page (new design)", () => {
     await screen.findByText("Акции с начислением баллов");
     fireEvent.click(screen.getByText("Создать акцию"));
 
-    await screen.findByText("Создание акции");
+    const createHeading = await screen.findByText("Создание акции");
     fireEvent.change(screen.getByPlaceholderText("Например: Бонусы за регистрацию"), { target: { value: "Бонусы за регистрацию" } });
-    fireEvent.click(screen.getByText("Сохранить"));
+    const createView = createHeading.closest(".max-w-5xl");
+    if (!createView) {
+      throw new Error("Create view not found");
+    }
+    fireEvent.click(within(createView).getByRole("button", { name: "Сохранить" }));
 
     await screen.findByText("Бонусы за регистрацию");
     assert.ok(lastPost);
