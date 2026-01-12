@@ -5,7 +5,6 @@ import {
   ForbiddenException,
   SetMetadata,
 } from '@nestjs/common';
-import { GqlExecutionContext } from '@nestjs/graphql';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma.service';
 import { SubscriptionService } from '../subscription/subscription.service';
@@ -23,10 +22,7 @@ export class SubscriptionGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req =
-      context.getType<'http' | 'graphql'>() === 'http'
-        ? context.switchToHttp().getRequest()
-        : GqlExecutionContext.create(context).getContext()?.req;
+    const req = context.switchToHttp().getRequest();
     if (!req) {
       throw new ForbiddenException('Запрос без контекста запрещён');
     }

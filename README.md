@@ -23,10 +23,12 @@
   - `DATABASE_URL=postgresql://loyalty:loyalty@localhost:5432/loyalty`
   - `ADMIN_KEY=admin123` (для админки)
   - `QR_JWT_SECRET=dev_change_me`
+  - `PORTAL_JWT_SECRET=change_me_portal`
+  - `PORTAL_REFRESH_SECRET=change_me_portal_refresh`
   - при наличии бота: `TELEGRAM_BOT_TOKEN=12345:ABC...`
 - Установите зависимости: `pnpm i`
 - Примените миграции: `pnpm prisma migrate dev`
-- Заполните демо-данные: `pnpm seed` (создаст demo customer)
+- (опционально) Минимальный сид: `pnpm seed` (только системный план, без демо)
 - Запустите: `pnpm start:dev` (http://localhost:3000)
 
 3) Admin (панель)
@@ -36,21 +38,21 @@
   - `ADMIN_KEY=admin123` (серверно, прокидывается в `x-admin-key` при прокси)
   - `ADMIN_SESSION_SECRET=change_me_admin_ui_cookie_secret`
   - `ADMIN_UI_PASSWORD=admin_password`
-  - (опц.) `NEXT_PUBLIC_MERCHANT_ID=M-1` (лишь для дефолта в UI)
+  - (опц.) `NEXT_PUBLIC_MERCHANT_ID=<merchant_id>` (лишь для дефолта в UI)
 - `pnpm i` → `pnpm dev` (http://localhost:3001)
 
 4) Cashier (виртуальный терминал)
 - Перейдите в `cashier`
 - Создайте `.env.local` (пример):
   - `NEXT_PUBLIC_API_BASE=http://localhost:3000`
-  - `NEXT_PUBLIC_MERCHANT_ID=M-1`
+  - `NEXT_PUBLIC_MERCHANT_ID=<merchant_id>`
 - `pnpm i` → `pnpm dev` (http://localhost:3002)
 
 5) Miniapp (Telegram мини‑аппа)
 - Перейдите в `miniapp`
 - `.env.local` (пример):
   - `NEXT_PUBLIC_API_BASE=http://localhost:3000`
-  - `NEXT_PUBLIC_MERCHANT_ID=M-1`
+  - `NEXT_PUBLIC_MERCHANT_ID=<merchant_id>`
   - `NEXT_PUBLIC_QR_TTL=60`
 - `pnpm i` → `pnpm dev` (http://localhost:3003)
 
@@ -61,10 +63,12 @@
 
 ## Проверка E2E (понятно и по шагам)
 
-A. Настройка мерчанта
+A. Создание мерчанта и базовых данных
 - Откройте admin: http://localhost:3001
-- Введите ключ (если требуется) и дождитесь загрузки «Настройки мерчанта»
-- Сохраните настройки кнопкой «Сохранить»
+- Создайте мерчанта и задайте portal email/пароль
+- Выдайте подписку (plan `full`)
+- В портале создайте торговую точку и сотрудника с PIN (для кассира)
+- Если используете cashier/miniapp, пропишите `NEXT_PUBLIC_MERCHANT_ID` в их `.env.local`
 
 B. Генерация QR клиентом (мини‑аппа)
 - Откройте miniapp: http://localhost:3003
@@ -74,7 +78,8 @@ B. Генерация QR клиентом (мини‑аппа)
 
 C. Продажа через виртуальный терминал кассира
 - Откройте cashier: http://localhost:3002
-- Введите логин мерчанта и 9‑значный пароль (после первого ввода они сохраняются в куках браузера)
+- В портале выпустите код активации устройства (раздел «Касса») и используйте его для активации
+- Введите логин мерчанта и 9‑значный код активации (после первого ввода они сохраняются в куках браузера)
 - Укажите PIN сотрудника. При необходимости отметьте чекбокс «Сохранить PIN», чтобы автоподставлять его при следующем входе
 - После успешного входа откроется рабочее место кассира. Нажмите «Сканировать QR», наведите камеру на экран мини‑аппы
 - После сканирования автоматически выполнится QUOTE (расчёт)
@@ -105,6 +110,7 @@ D. Проверка результатов
 - Сессия хранится в httpOnly‑cookie `portal_jwt` (устанавливается фронтом после успешного логина).
 - Переменные окружения:
   - `PORTAL_JWT_SECRET` — обязательный секрет для подписи/проверки токенов портала.
+  - `PORTAL_REFRESH_SECRET` — обязательный секрет для refresh‑токенов портала.
 
 Особенности:
 

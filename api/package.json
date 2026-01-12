@@ -27,12 +27,9 @@
     "seed": "prisma db seed"
   },
   "dependencies": {
-    "@apollo/server": "^4.11.1",
-    "@nestjs/apollo": "^13.1.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
-    "@nestjs/graphql": "^13.1.0",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/schedule": "^4.1.2",
     "@nestjs/swagger": "^11.0.2",
@@ -55,7 +52,6 @@
     "csv-stringify": "^6.5.0",
     "exceljs": "^4.4.0",
     "firebase-admin": "^12.0.0",
-    "graphql": "^16.9.0",
     "handlebars": "^4.7.8",
     "helmet": "^7.2.0",
     "ioredis": "^5.4.1",

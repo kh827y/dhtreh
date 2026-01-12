@@ -36,9 +36,6 @@ import { MerchantPanelModule } from './merchant-panel/merchant-panel.module';
 import { LoyaltyProgramModule } from './loyalty-program/loyalty-program.module';
 import { CustomerAudiencesModule } from './customer-audiences/customer-audiences.module';
 import { CommunicationsModule } from './communications/communications.module';
-import { GraphQLModule } from '@nestjs/graphql';
-import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
-import { join } from 'path';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { AutoReturnWorker } from './auto-return.worker';
 import { BirthdayWorker } from './birthday.worker';
@@ -75,12 +72,6 @@ try {
         ...(throttlerStorage ? { storage: throttlerStorage } : {}),
       },
     ]),
-    GraphQLModule.forRoot<ApolloDriverConfig>({
-      driver: ApolloDriver,
-      autoSchemaFile: join(process.cwd(), 'api', 'schema.gql'),
-      sortSchema: true,
-      context: ({ req }) => ({ req }),
-    }),
     PrismaModule,
     LoyaltyModule,
     MetricsModule,

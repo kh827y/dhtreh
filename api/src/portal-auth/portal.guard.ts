@@ -4,7 +4,6 @@ import {
   Injectable,
   ForbiddenException,
 } from '@nestjs/common';
-import { GqlExecutionContext } from '@nestjs/graphql';
 import { PrismaService } from '../prisma.service';
 import { verifyPortalJwt } from './portal-jwt.util';
 import {
@@ -25,11 +24,7 @@ export class PortalGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const contextType = context.getType<'http' | 'graphql'>();
-    const isHttp = contextType === 'http';
-    const req: any = isHttp
-      ? context.switchToHttp().getRequest()
-      : GqlExecutionContext.create(context).getContext()?.req;
+    const req: any = context.switchToHttp().getRequest();
     if (!req) return false;
     const allowInactive =
       this.reflector.get<boolean>(
@@ -148,7 +143,7 @@ export class PortalGuard implements CanActivate {
       req.portalTimezone = timezone.code;
       req.portalTimezoneOffsetMinutes = timezone.utcOffsetMinutes;
       req.portalTimezoneIana = timezone.iana;
-      this.enforcePortalPermissions(req, isHttp);
+      this.enforcePortalPermissions(req);
       return true;
     } catch (error) {
       if (error instanceof ForbiddenException) {
@@ -279,8 +274,7 @@ export class PortalGuard implements CanActivate {
     return null;
   }
 
-  private enforcePortalPermissions(req: any, isHttp: boolean) {
-    if (!isHttp) return;
+  private enforcePortalPermissions(req: any) {
     if (!req || req.portalActor !== 'STAFF') return;
     const permissions = req.portalPermissions;
     if (!permissions || permissions.allowAll) return;
