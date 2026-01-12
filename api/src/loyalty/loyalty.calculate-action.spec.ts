@@ -51,7 +51,7 @@ describe('LoyaltyService.calculateAction', () => {
 
     const result = await svc.calculateAction({
       merchantId: 'M-1',
-      items: [{ id_product: 'picca-01', qty: 3, price: 500 }],
+      items: [{ externalId: 'picca-01', qty: 3, price: 500 }],
     });
 
     expect(result.positions).toHaveLength(2);
@@ -108,7 +108,7 @@ describe('LoyaltyService.calculateAction', () => {
 
     const result = await svc.calculateAction({
       merchantId: 'M-1',
-      items: [{ id_product: 'latte-01', qty: 1, price: 200 }],
+      items: [{ externalId: 'latte-01', qty: 1, price: 200 }],
     });
 
     expect(result.positions).toHaveLength(1);
@@ -156,7 +156,7 @@ describe('LoyaltyService.calculateAction', () => {
 
     const result = await svc.calculateAction({
       merchantId: 'M-1',
-      items: [{ id_product: 'cake-01', qty: 1, price: 300 }],
+      items: [{ externalId: 'cake-01', qty: 1, price: 300 }],
     });
 
     expect(result.positions[0]).toEqual(
@@ -270,7 +270,7 @@ describe('LoyaltyService.calculateAction', () => {
     const result = await svc.calculateAction({
       merchantId: 'M-1',
       customerId: 'C-1',
-      items: [{ id_product: 'cake-01', qty: 1, price: 300 }],
+      items: [{ externalId: 'cake-01', qty: 1, price: 300 }],
     });
 
     const applied = result.positions[0].actions.sort();

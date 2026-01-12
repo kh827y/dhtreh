@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { PushService } from '../notifications/push/push.service';
 import { MetricsService } from '../metrics.service';
+import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../pg-lock.util';
 
 /**
  * Cron задачи для управления подписками
@@ -22,6 +23,12 @@ export class SubscriptionCronService {
    */
   @Cron('0 10 * * *')
   async sendExpirationReminders() {
+    if (process.env.WORKERS_ENABLED === '0') return;
+    const lock = await pgTryAdvisoryLock(
+      this.prisma,
+      'cron:subscription_reminders',
+    );
+    if (!lock.ok) return;
     console.log('[CRON] Starting expiration reminder process...');
 
     try {
@@ -93,6 +100,8 @@ export class SubscriptionCronService {
     } catch (error) {
       console.error('[CRON] Error sending expiration reminders:', error);
       this.metrics.increment('subscription_reminder_errors');
+    } finally {
+      await pgAdvisoryUnlock(this.prisma, lock.key);
     }
   }
 
@@ -102,6 +111,12 @@ export class SubscriptionCronService {
    */
   @Cron('5 0 * * *')
   async deactivateExpiredSubscriptions() {
+    if (process.env.WORKERS_ENABLED === '0') return;
+    const lock = await pgTryAdvisoryLock(
+      this.prisma,
+      'cron:subscription_deactivate',
+    );
+    if (!lock.ok) return;
     console.log('[CRON] Starting expired subscription deactivation...');
 
     try {
@@ -156,6 +171,8 @@ export class SubscriptionCronService {
     } catch (error) {
       console.error('[CRON] Error deactivating expired subscriptions:', error);
       this.metrics.increment('subscription_deactivation_errors');
+    } finally {
+      await pgAdvisoryUnlock(this.prisma, lock.key);
     }
   }
 
@@ -165,6 +182,12 @@ export class SubscriptionCronService {
    */
   @Cron('0 8 1 * *')
   async generateMonthlyReports() {
+    if (process.env.WORKERS_ENABLED === '0') return;
+    const lock = await pgTryAdvisoryLock(
+      this.prisma,
+      'cron:subscription_reports',
+    );
+    if (!lock.ok) return;
     console.log('[CRON] Starting monthly report generation...');
 
     try {
@@ -228,6 +251,8 @@ export class SubscriptionCronService {
     } catch (error) {
       console.error('[CRON] Error generating monthly reports:', error);
       this.metrics.increment('monthly_report_errors');
+    } finally {
+      await pgAdvisoryUnlock(this.prisma, lock.key);
     }
   }
 
@@ -237,6 +262,12 @@ export class SubscriptionCronService {
    */
   @Cron('0 4 * * 0')
   async cleanupOldData() {
+    if (process.env.WORKERS_ENABLED === '0') return;
+    const lock = await pgTryAdvisoryLock(
+      this.prisma,
+      'cron:subscription_cleanup',
+    );
+    if (!lock.ok) return;
     console.log('[CRON] Starting cleanup process...');
 
     try {
@@ -257,6 +288,8 @@ export class SubscriptionCronService {
     } catch (error) {
       console.error('[CRON] Error during cleanup:', error);
       this.metrics.increment('cleanup_errors');
+    } finally {
+      await pgAdvisoryUnlock(this.prisma, lock.key);
     }
   }
 
@@ -266,6 +299,12 @@ export class SubscriptionCronService {
    */
   @Cron(CronExpression.EVERY_HOUR)
   async checkUsageLimits() {
+    if (process.env.WORKERS_ENABLED === '0') return;
+    const lock = await pgTryAdvisoryLock(
+      this.prisma,
+      'cron:subscription_usage_limits',
+    );
+    if (!lock.ok) return;
     console.log('[CRON] Checking subscription usage limits...');
 
     try {
@@ -329,6 +368,8 @@ export class SubscriptionCronService {
     } catch (error) {
       console.error('[CRON] Error checking usage limits:', error);
       this.metrics.increment('usage_check_errors');
+    } finally {
+      await pgAdvisoryUnlock(this.prisma, lock.key);
     }
   }
 

@@ -5,10 +5,6 @@ const rateLimits = {
   calculate: { limit: 120, ttl: 60_000 },
   bonus: { limit: 60, ttl: 60_000 },
   refund: { limit: 30, ttl: 60_000 },
-  outlets: { limit: 60, ttl: 60_000 },
-  devices: { limit: 60, ttl: 60_000 },
-  operations: { limit: 30, ttl: 60_000 },
-  clientMigrate: { limit: 30, ttl: 60_000 },
 };
 
 function createMocks() {
@@ -24,7 +20,6 @@ function createMocks() {
     provider: 'REST_API',
     findByMerchant: jest.fn(),
     normalizeConfig: jest.fn().mockReturnValue({
-      requireBridgeSignature: true,
       rateLimits,
     }),
     baseApiUrl: jest.fn().mockReturnValue('https://api.example'),
@@ -68,7 +63,7 @@ describe('PortalRestApiIntegrationService', () => {
     const { service, restIntegrations, prisma } = createMocks();
     restIntegrations.findByMerchant.mockResolvedValue({
       id: 'INT-2',
-      config: { requireBridgeSignature: false },
+      config: {},
       credentials: { apiKeyMask: 'old' },
     });
 

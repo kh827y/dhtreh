@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { MetricsService } from './metrics.service';
-import { TxnType, LedgerAccount } from '@prisma/client';
+import { TxnType, LedgerAccount, Prisma } from '@prisma/client';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
 
 @Injectable()
@@ -78,13 +78,20 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
             { orderId: { startsWith: 'complimentary:' } },
           ],
         };
+        const conditions: Prisma.EarnLotWhereInput[] = [
+          { expiresAt: { lte: new Date(now) } },
+          {
+            expiresAt: null,
+            earnedAt: { lt: cutoff },
+            ...purchaseOnly,
+          },
+        ];
         // Выберем клиентов, у кого есть неиспользованные lot'ы до cutoff
         const lots = await this.prisma.earnLot.findMany({
           where: {
             merchantId: s.merchantId,
             status: 'ACTIVE',
-            earnedAt: { lt: cutoff },
-            ...purchaseOnly,
+            OR: conditions,
           },
         });
         const map = new Map<string, number>();
@@ -115,35 +122,33 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
               where: {
                 merchantId: s.merchantId,
                 customerId,
-                earnedAt: { lt: cutoff },
-                ...purchaseOnly,
+                OR: conditions,
               },
               orderBy: { earnedAt: 'asc' },
             });
+            const lotUpdates: Array<{ id: string; consumedPoints: number }> = [];
             for (const lot of expLots) {
               if (toBurn <= 0) break;
               const consumed = lot.consumedPoints || 0;
               const remain = Math.max(0, (lot.points || 0) - consumed);
               if (remain <= 0) continue;
               const take = Math.min(remain, toBurn);
-              await tx.earnLot.update({
-                where: { id: lot.id },
-                data: { consumedPoints: consumed + take },
-              });
+              lotUpdates.push({ id: lot.id, consumedPoints: consumed + take });
               toBurn -= take;
             }
-            const burnedByLots = Math.max(0, initialBurn - toBurn);
-            // списываем из кошелька
-            const fresh = await tx.wallet.findUnique({
-              where: { id: wallet.id },
-            });
-            const burnAmount = Math.min(fresh?.balance || 0, burnedByLots);
+            const burnAmount = Math.max(0, initialBurn - toBurn);
             if (burnAmount <= 0) return 0;
-            const newBal = Math.max(0, (fresh!.balance || 0) - burnAmount);
-            await tx.wallet.update({
-              where: { id: wallet.id },
-              data: { balance: newBal },
+            const updatedWallet = await tx.wallet.updateMany({
+              where: { id: wallet.id, balance: { gte: burnAmount } },
+              data: { balance: { decrement: burnAmount } },
             });
+            if (!updatedWallet.count) return 0;
+            for (const upd of lotUpdates) {
+              await tx.earnLot.update({
+                where: { id: upd.id },
+                data: { consumedPoints: upd.consumedPoints },
+              });
+            }
             await tx.transaction.create({
               data: {
                 merchantId: s.merchantId,

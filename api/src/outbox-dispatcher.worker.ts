@@ -7,6 +7,7 @@ import {
 import { PrismaService } from './prisma.service';
 import { MetricsService } from './metrics.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
+import { isIP } from 'net';
 
 type OutboxRow = {
   id: string;
@@ -132,6 +133,54 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     return current;
   }
 
+  private truncateError(text: string, limit = 1000): string {
+    if (!text) return '';
+    const trimmed = text.trim();
+    if (trimmed.length <= limit) return trimmed;
+    return `${trimmed.slice(0, limit)}…`;
+  }
+
+  private isPrivateAddress(hostname: string): boolean {
+    const host = hostname.toLowerCase();
+    if (host === 'localhost' || host.endsWith('.local')) return true;
+    const ipType = isIP(host);
+    if (ipType === 4) {
+      const parts = host.split('.').map((v) => Number(v));
+      if (parts.length !== 4 || parts.some((v) => Number.isNaN(v))) return false;
+      const [a, b] = parts;
+      if (a === 10) return true;
+      if (a === 127) return true;
+      if (a === 0) return true;
+      if (a === 169 && b === 254) return true;
+      if (a === 192 && b === 168) return true;
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      return false;
+    }
+    if (ipType === 6) {
+      if (host === '::1') return true;
+      if (host.startsWith('fe80:')) return true; // link-local
+      if (host.startsWith('fc') || host.startsWith('fd')) return true; // unique local
+      return false;
+    }
+    return false;
+  }
+
+  private validateWebhookUrl(url: string): string | null {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return 'Invalid webhook URL';
+    }
+    if (parsed.protocol !== 'https:') {
+      return 'Webhook URL must use https';
+    }
+    if (!parsed.hostname || this.isPrivateAddress(parsed.hostname)) {
+      return 'Webhook URL points to a private address';
+    }
+    return null;
+  }
+
   private parseTypeConcurrency(): Map<string, number> {
     if (this.parsedTypeConcurrency) return this.parsedTypeConcurrency;
     const m = new Map<string, number>();
@@ -175,7 +224,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private async claim(row: OutboxRow): Promise<boolean> {
     try {
       const r = await this.prisma.eventOutbox.updateMany({
-        where: { id: row.id, status: 'PENDING' },
+        where: { id: row.id, status: { in: ['PENDING', 'FAILED'] } },
         data: { status: 'SENDING', updatedAt: new Date() },
       });
       return r.count === 1;
@@ -211,7 +260,25 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
     if (!url || !secret) {
-      // ничего не отправляем — парковка и лёгкий бэк‑офф
+      await this.prisma.eventOutbox.update({
+        where: { id: row.id },
+        data: {
+          status: 'SENT',
+          nextRetryAt: null,
+          lastError: 'Webhook not configured',
+          updatedAt: new Date(),
+        },
+      });
+      try {
+        this.metrics.inc('loyalty_outbox_events_total', {
+          type: row.eventType,
+          result: 'skipped',
+        });
+      } catch {}
+      return;
+    }
+    const validationError = this.validateWebhookUrl(url);
+    if (validationError) {
       const retries = row.retries + 1;
       if (retries >= maxRetries) {
         await this.prisma.eventOutbox.update({
@@ -220,7 +287,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             status: 'DEAD',
             retries,
             nextRetryAt: null,
-            lastError: 'Webhook not configured',
+            lastError: validationError,
           },
         });
         this.metrics.inc('loyalty_outbox_dead_total');
@@ -229,10 +296,10 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         await this.prisma.eventOutbox.update({
           where: { id: row.id },
           data: {
-            status: 'PENDING',
+            status: 'FAILED',
             retries,
             nextRetryAt: next,
-            lastError: 'Webhook not configured',
+            lastError: validationError,
           },
         });
       }
@@ -285,7 +352,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         } catch {}
         this.noteSuccess(row.merchantId);
       } else {
-        const text = await res.text().catch(() => '');
+        const text = this.truncateError(
+          await res.text().catch(() => ''),
+        );
         const retries = row.retries + 1;
         if (retries >= maxRetries) {
           await this.prisma.eventOutbox.update({
@@ -294,7 +363,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
               status: 'DEAD',
               retries,
               nextRetryAt: null,
-              lastError: `${res.status} ${res.statusText} ${text}`,
+              lastError: this.truncateError(
+                `${res.status} ${res.statusText} ${text}`,
+              ),
             },
           });
           this.metrics.inc('loyalty_outbox_dead_total');
@@ -316,7 +387,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
               status: 'FAILED',
               retries,
               nextRetryAt: next,
-              lastError: `${res.status} ${res.statusText} ${text}`,
+              lastError: this.truncateError(
+                `${res.status} ${res.statusText} ${text}`,
+              ),
             },
           });
           if (res.status >= 500 || res.status === 429)
@@ -339,7 +412,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             status: 'DEAD',
             retries,
             nextRetryAt: null,
-            lastError: String(e?.message || e),
+            lastError: this.truncateError(String(e?.message || e)),
           },
         });
         this.metrics.inc('loyalty_outbox_dead_total');
@@ -357,7 +430,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             status: 'FAILED',
             retries,
             nextRetryAt: next,
-            lastError: String(e?.message || e),
+            lastError: this.truncateError(String(e?.message || e)),
           },
         });
         this.noteFailure(row.merchantId);
@@ -398,10 +471,27 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         );
       } catch {}
       const now = new Date();
+      const staleMs = Math.max(
+        60000,
+        Number(process.env.OUTBOX_SENDING_STALE_MS || '300000'),
+      );
+      try {
+        await this.prisma.eventOutbox.updateMany({
+          where: {
+            status: 'SENDING',
+            updatedAt: { lt: new Date(Date.now() - staleMs) },
+          },
+          data: {
+            status: 'PENDING',
+            nextRetryAt: now,
+            lastError: 'stale sending',
+          },
+        });
+      } catch {}
       // обновим gauge pending
       try {
         const pending = await this.prisma.eventOutbox.count({
-          where: { status: 'PENDING' },
+          where: { status: { in: ['PENDING', 'FAILED'] } },
         });
         this.metrics.setGauge('loyalty_outbox_pending', pending);
       } catch {}
@@ -409,7 +499,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       const batch = Number(process.env.OUTBOX_WORKER_BATCH || '10');
       const items = (await this.prisma.eventOutbox.findMany({
         where: {
-          status: 'PENDING',
+          status: { in: ['PENDING', 'FAILED'] },
           OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
           eventType: { not: { startsWith: 'notify.' } },
         },
@@ -491,8 +581,8 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       } catch {}
     } finally {
       this.running = false;
+      await pgAdvisoryUnlock(this.prisma, lock.key);
     }
-    await pgAdvisoryUnlock(this.prisma, lock.key);
   }
 
   private parseRpsByMerchant(): Map<string, number> {

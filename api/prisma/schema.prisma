@@ -325,11 +325,7 @@ model MerchantSettings {
   earnDailyCap                          Int?
   maxOutlets                            Int?
   requireJwtForQuote                    Boolean   @default(false)
-  requireBridgeSig                      Boolean   @default(false)
-  bridgeSecret                          String?
-  bridgeSecretNext                      String?
   rulesJson                             Json?
-  requireStaffKey                       Boolean   @default(false)
   // Telegram miniapp per merchant
   telegramBotToken                      String?
   telegramBotUsername                   String?
@@ -354,12 +350,14 @@ model MerchantSettings {
 model IdempotencyKey {
   id         String    @id @default(cuid())
   merchantId String
+  scope      String    @default("general")
   key        String
-  response   Json
+  requestHash String?
+  response   Json?
   createdAt  DateTime  @default(now())
   expiresAt  DateTime?
 
-  @@unique([merchantId, key])
+  @@unique([merchantId, scope, key])
   @@index([merchantId, createdAt])
   @@index([expiresAt])
 }
@@ -787,9 +785,6 @@ model Outlet {
   longitude               Decimal?    @db.Decimal(10, 7)
   posType                 DeviceType?
   posLastSeenAt           DateTime?
-  bridgeSecret            String?
-  bridgeSecretNext        String?
-  bridgeSecretUpdatedAt   DateTime?
   createdAt               DateTime    @default(now())
   updatedAt               DateTime    @updatedAt
 

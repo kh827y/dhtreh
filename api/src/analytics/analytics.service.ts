@@ -1167,15 +1167,27 @@ export class AnalyticsService {
         // Кто вернулся в этот период (есть чек)
         let returned = 0;
         if (size > 0) {
-          const visits = await this.prisma.receipt.groupBy({
-            by: ['customerId'],
-            where: {
-              merchantId,
-              customerId: { in: ids },
-              createdAt: { gte: periodStart, lt: periodEnd },
-            },
-          });
-          returned = visits.length;
+          const [row] = await this.prisma.$queryRaw<
+            Array<{ count: bigint | number | null }>
+          >(Prisma.sql`
+            SELECT COUNT(DISTINCT r."customerId")::bigint AS count
+            FROM "Receipt" r
+            WHERE r."merchantId" = ${merchantId}
+              AND r."customerId" IN (${Prisma.join(ids)})
+              AND r."createdAt" >= ${periodStart}
+              AND r."createdAt" < ${periodEnd}
+              AND r."canceledAt" IS NULL
+              AND r."total" > 0
+              AND NOT EXISTS (
+                SELECT 1
+                FROM "Transaction" refund
+                WHERE refund."merchantId" = r."merchantId"
+                  AND refund."orderId" = r."orderId"
+                  AND refund."type" = 'REFUND'
+                  AND refund."canceledAt" IS NULL
+              )
+          `);
+          returned = Number(row?.count || 0);
         }
         retention.push(
           size > 0 ? Math.round((returned / size) * 1000) / 10 : 0,
@@ -1796,55 +1808,66 @@ export class AnalyticsService {
       },
     });
 
-    const activeCustomers = await this.prisma.transaction.groupBy({
-      by: ['customerId'],
-      where: {
-        merchantId,
-        createdAt: { gte: period.from, lte: period.to },
-      },
-    });
+    const [activeRow] = await this.prisma.$queryRaw<
+      Array<{ count: bigint | number | null }>
+    >(Prisma.sql`
+      SELECT COUNT(DISTINCT r."customerId")::bigint AS count
+      FROM "Receipt" r
+      WHERE r."merchantId" = ${merchantId}
+        AND r."createdAt" >= ${period.from}
+        AND r."createdAt" <= ${period.to}
+        AND r."canceledAt" IS NULL
+        AND r."total" > 0
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "Transaction" refund
+          WHERE refund."merchantId" = r."merchantId"
+            AND refund."orderId" = r."orderId"
+            AND refund."type" = 'REFUND'
+            AND refund."canceledAt" IS NULL
+        )
+    `);
+    const activeCustomers = Number(activeRow?.count || 0);
 
-    // Отток клиентов
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const visits = await this.prisma.$queryRaw<
+      Array<{ visits: bigint | number | null }>
+    >(Prisma.sql`
+      SELECT COUNT(*)::bigint AS visits
+      FROM "Receipt" r
+      WHERE r."merchantId" = ${merchantId}
+        AND r."createdAt" >= ${period.from}
+        AND r."createdAt" <= ${period.to}
+        AND r."canceledAt" IS NULL
+        AND r."total" > 0
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "Transaction" refund
+          WHERE refund."merchantId" = r."merchantId"
+            AND refund."orderId" = r."orderId"
+            AND refund."type" = 'REFUND'
+            AND refund."canceledAt" IS NULL
+        )
+      GROUP BY r."customerId"
+    `);
+    const visitsTotal = visits.reduce(
+      (sum, row) => sum + Number(row.visits || 0),
+      0,
+    );
+    const averageVisits = visits.length > 0 ? visitsTotal / visits.length : 0;
 
-    // Customer теперь per-merchant модель
-    const inactiveCustomers = await this.prisma.customer.count({
-      where: {
-        merchantId,
-        NOT: {
-          transactions: {
-            some: {
-              merchantId,
-              createdAt: { gte: thirtyDaysAgo },
-            },
-          },
-        },
-      },
-    });
-
+    const inactiveCustomers = Math.max(0, totalCustomers - activeCustomers);
     const churnRate =
       totalCustomers > 0 ? (inactiveCustomers / totalCustomers) * 100 : 0;
     const retentionRate = 100 - churnRate;
 
     const ltv = await this.calculateCustomerLTV(merchantId);
 
-    const visits = await this.prisma.transaction.groupBy({
-      by: ['customerId'],
-      where: { merchantId },
-      _count: true,
-    });
-    const averageVisits =
-      visits.length > 0
-        ? visits.reduce((sum, v) => sum + v._count, 0) / visits.length
-        : 0;
-
     const topCustomers = await this.getTopCustomers(merchantId, 10);
 
     return {
       totalCustomers,
       newCustomers,
-      activeCustomers: activeCustomers.length,
+      activeCustomers,
       churnRate: Math.round(churnRate * 10) / 10,
       retentionRate: Math.round(retentionRate * 10) / 10,
       customerLifetimeValue: Math.round(ltv),
@@ -1965,7 +1988,7 @@ export class AnalyticsService {
         joinedAt: { gte: period.from, lte: period.to },
       },
       _count: { _all: true },
-      _sum: { pointsIssued: true },
+      _sum: { pointsIssued: true, totalSpent: true },
     });
 
     const totalRewardsIssued = participantStats.reduce(
@@ -1973,14 +1996,10 @@ export class AnalyticsService {
       0,
     );
 
-    const campaignRevenue = await this.prisma.transaction.aggregate({
-      where: {
-        merchantId,
-        type: 'CAMPAIGN',
-        createdAt: { gte: period.from, lte: period.to },
-      },
-      _sum: { amount: true },
-    });
+    const campaignRevenue = participantStats.reduce(
+      (sum, row) => sum + Math.max(0, Number(row._sum.totalSpent ?? 0)),
+      0,
+    );
 
     const usageCount = participantStats.reduce(
       (sum, row) => sum + row._count._all,
@@ -1998,8 +2017,7 @@ export class AnalyticsService {
 
     const campaignROI =
       totalRewardsIssued > 0
-        ? ((Math.abs(campaignRevenue._sum.amount || 0) - totalRewardsIssued) /
-            totalRewardsIssued) *
+        ? ((campaignRevenue - totalRewardsIssued) / totalRewardsIssued) *
           100
         : 0;
 
@@ -3651,31 +3669,20 @@ export class AnalyticsService {
     merchantId: string,
     period: DashboardPeriod,
   ): Promise<number> {
-    const [loyaltyRevenue, programCost] = await Promise.all([
-      this.prisma.transaction.aggregate({
-        where: {
-          merchantId,
-          type: 'EARN',
-          customer: {
-            wallets: {
-              some: { merchantId, balance: { gt: 0 } },
-            },
-          },
-          createdAt: { gte: period.from, lte: period.to },
-        },
-        _sum: { amount: true },
-      }),
+    const [loyaltyStats, programCost] = await Promise.all([
+      this.getLoyaltyReceiptStats(merchantId, period),
       this.prisma.transaction.aggregate({
         where: {
           merchantId,
           type: { in: ['EARN', 'CAMPAIGN', 'REFERRAL'] },
           createdAt: { gte: period.from, lte: period.to },
+          canceledAt: null,
         },
         _sum: { amount: true },
       }),
     ]);
 
-    const revenue = Math.abs(loyaltyRevenue._sum.amount || 0);
+    const revenue = Math.max(0, loyaltyStats.loyaltyRevenue);
     const cost = Math.abs(programCost._sum.amount || 0);
     return cost > 0 ? ((revenue - cost) / cost) * 100 : 0;
   }
@@ -3684,24 +3691,66 @@ export class AnalyticsService {
     merchantId: string,
     period: DashboardPeriod,
   ): Promise<number> {
-    const [withLoyalty, total] = await Promise.all([
-      this.prisma.transaction.count({
-        where: {
-          merchantId,
-          type: 'REDEEM',
-          createdAt: { gte: period.from, lte: period.to },
-        },
-      }),
-      this.prisma.transaction.count({
-        where: {
-          merchantId,
-          type: { in: ['EARN', 'REDEEM'] },
-          createdAt: { gte: period.from, lte: period.to },
-        },
-      }),
-    ]);
+    const loyaltyStats = await this.getLoyaltyReceiptStats(merchantId, period);
+    return loyaltyStats.totalReceipts > 0
+      ? (loyaltyStats.loyaltyReceipts / loyaltyStats.totalReceipts) * 100
+      : 0;
+  }
 
-    return total > 0 ? (withLoyalty / total) * 100 : 0;
+  private async getLoyaltyReceiptStats(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<{
+    loyaltyRevenue: number;
+    totalReceipts: number;
+    loyaltyReceipts: number;
+  }> {
+    const [row] = await this.prisma.$queryRaw<
+      Array<{
+        loyaltyRevenue: Prisma.Decimal | number | null;
+        totalReceipts: bigint | number | null;
+        loyaltyReceipts: bigint | number | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        COALESCE(SUM(
+          CASE
+            WHEN COALESCE(r."earnApplied", 0) > 0
+              OR COALESCE(r."redeemApplied", 0) > 0
+            THEN r."total"
+            ELSE 0
+          END
+        ), 0)::numeric AS "loyaltyRevenue",
+        COUNT(*)::bigint AS "totalReceipts",
+        SUM(
+          CASE
+            WHEN COALESCE(r."earnApplied", 0) > 0
+              OR COALESCE(r."redeemApplied", 0) > 0
+            THEN 1
+            ELSE 0
+          END
+        )::bigint AS "loyaltyReceipts"
+      FROM "Receipt" r
+      WHERE r."merchantId" = ${merchantId}
+        AND r."createdAt" >= ${period.from}
+        AND r."createdAt" <= ${period.to}
+        AND r."canceledAt" IS NULL
+        AND r."total" > 0
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "Transaction" refund
+          WHERE refund."merchantId" = r."merchantId"
+            AND refund."orderId" = r."orderId"
+            AND refund."type" = 'REFUND'
+            AND refund."canceledAt" IS NULL
+        )
+    `);
+
+    return {
+      loyaltyRevenue: Number(row?.loyaltyRevenue || 0),
+      totalReceipts: Number(row?.totalReceipts || 0),
+      loyaltyReceipts: Number(row?.loyaltyReceipts || 0),
+    };
   }
 
   private async getTopCampaigns(

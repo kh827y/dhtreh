@@ -51,6 +51,12 @@ export class TelegramNotifyService implements OnModuleInit {
   private readonly minGlobalIntervalMs = 50;
   private readonly minChatIntervalMs = 1000;
   private readonly maxSendAttempts = 3;
+  private botInfoCache: {
+    value: { id: number; username: string; firstName?: string } | null;
+    expiresAt: number;
+  } | null = null;
+  private readonly botInfoTtlMs = 5 * 60 * 1000;
+  private readonly botInfoErrorTtlMs = 30 * 1000;
 
   constructor(
     private prisma: PrismaService,
@@ -244,6 +250,10 @@ export class TelegramNotifyService implements OnModuleInit {
     username: string;
     firstName?: string;
   } | null> {
+    const now = Date.now();
+    if (this.botInfoCache && this.botInfoCache.expiresAt > now) {
+      return this.botInfoCache.value;
+    }
     try {
       if (!this.token) return null;
       const res = await fetch(
@@ -252,13 +262,16 @@ export class TelegramNotifyService implements OnModuleInit {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       if (!data?.ok) return null;
-      return {
+      const value = {
         id: data.result.id,
         username: data.result.username,
         firstName: data.result.first_name,
       };
+      this.botInfoCache = { value, expiresAt: now + this.botInfoTtlMs };
+      return value;
     } catch (e) {
       this.logger.warn(`getBotInfo failed: ${e}`);
+      this.botInfoCache = { value: null, expiresAt: now + this.botInfoErrorTtlMs };
       return null;
     }
   }

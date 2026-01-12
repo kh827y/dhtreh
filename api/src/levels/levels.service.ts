@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import {
   computeLevelState,
   DEFAULT_LEVELS_METRIC,
   DEFAULT_LEVELS_PERIOD_DAYS,
+  normalizeLevelsPeriodDays,
   type LevelRule,
 } from '../loyalty/levels.util';
 import { ensureBaseTier, toLevelRule } from '../loyalty/tier-defaults.util';
@@ -44,8 +45,25 @@ export class LevelsService {
       visibleLevels.length > 0
         ? visibleLevels
         : [{ name: 'Base', threshold: 0 }];
+    let periodDays = DEFAULT_LEVELS_PERIOD_DAYS;
+    try {
+      const settings = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId },
+        select: { rulesJson: true },
+      });
+      const rules =
+        settings?.rulesJson &&
+        typeof settings.rulesJson === 'object' &&
+        !Array.isArray(settings.rulesJson)
+          ? (settings.rulesJson as Record<string, any>)
+          : null;
+      periodDays = normalizeLevelsPeriodDays(
+        rules?.levelsPeriodDays,
+        DEFAULT_LEVELS_PERIOD_DAYS,
+      );
+    } catch {}
     const cfg = {
-      periodDays: DEFAULT_LEVELS_PERIOD_DAYS,
+      periodDays,
       metric: DEFAULT_LEVELS_METRIC,
       levels,
     };
@@ -53,8 +71,9 @@ export class LevelsService {
       where: { id: customerId },
       select: { id: true, merchantId: true },
     });
-    if (!customer || customer.merchantId !== merchantId)
-      throw new Error('customer not found');
+    if (!customer || customer.merchantId !== merchantId) {
+      throw new NotFoundException('customer not found');
+    }
 
     const assignment = await (this.prisma as any).loyaltyTierAssignment
       ?.findFirst?.({

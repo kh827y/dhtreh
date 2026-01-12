@@ -176,10 +176,10 @@ describe('LoyaltyController.saveProfile', () => {
         findUnique: jest.fn().mockResolvedValue(current),
         findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockImplementation(({ where, data }) => ({
-          id: where.id,
-          merchantId: current.merchantId,
           ...current,
           ...data,
+          id: where.id,
+          merchantId: current.merchantId,
         })),
       },
     });

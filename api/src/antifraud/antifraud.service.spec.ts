@@ -36,8 +36,7 @@ describe('AntiFraudService (outlet factors)', () => {
     expect(prisma.transaction.count).not.toHaveBeenCalled();
   });
 
-  it('учитывает outletId при проверке новой точки и множественности', async () => {
-    prisma.transaction.count.mockResolvedValueOnce(0);
+  it('учитывает outletId при проверке множественности точек', async () => {
     prisma.transaction.findMany.mockResolvedValueOnce([
       { outletId: 'O-1' },
       { outletId: 'O-2' },
@@ -53,19 +52,13 @@ describe('AntiFraudService (outlet factors)', () => {
       outletId: 'O-1',
     });
 
-    expect(prisma.transaction.count).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ outletId: 'O-1' }),
-      }),
-    );
     expect(prisma.transaction.findMany).toHaveBeenCalled();
     expect(result.factors).toEqual(
-      expect.arrayContaining(['new_outlet', 'multiple_outlets:4']),
+      expect.arrayContaining(['multiple_outlets:4']),
     );
   });
 
   it('не добавляет no_outlet_id, если outletId указан и есть история', async () => {
-    prisma.transaction.count.mockResolvedValueOnce(3);
     prisma.transaction.findMany.mockResolvedValueOnce([
       { outletId: 'O-1' },
       { outletId: 'O-2' },
@@ -79,11 +72,6 @@ describe('AntiFraudService (outlet factors)', () => {
       outletId: 'O-1',
     });
 
-    expect(prisma.transaction.count).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ outletId: 'O-1' }),
-      }),
-    );
     expect(result.factors).not.toContain('no_outlet_id');
   });
 

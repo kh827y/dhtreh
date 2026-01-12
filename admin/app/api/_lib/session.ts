@@ -3,7 +3,7 @@ import { createHmac } from 'crypto';
 
 const COOKIE = 'admin_session_v1';
 
-export type Sess = { sub: string; role: 'ADMIN'|'MERCHANT'; iat: number; exp: number };
+export type Sess = { sub: string; iat: number; exp: number };
 
 function b64(s: string) { return Buffer.from(s, 'utf8').toString('base64url'); }
 function ub64(s: string) { return Buffer.from(s, 'base64url').toString('utf8'); }
@@ -12,9 +12,9 @@ function getSecret() {
   return process.env.ADMIN_SESSION_SECRET || '';
 }
 
-export function makeSessionCookie(days = 7, role: 'ADMIN'|'MERCHANT' = 'ADMIN') {
+export function makeSessionCookie(days = 7) {
   const now = Math.floor(Date.now()/1000);
-  const payload: Sess = { sub: 'admin', role, iat: now, exp: now + days*24*60*60 };
+  const payload: Sess = { sub: 'admin', iat: now, exp: now + days*24*60*60 };
   const secret = getSecret();
   if (!secret) throw new Error('ADMIN_SESSION_SECRET not configured');
   const p = b64(JSON.stringify(payload));
@@ -46,7 +46,7 @@ export function getSession(req: NextRequest): Sess | null {
 
 export function requireSession(req: NextRequest): NextResponse | null {
   // allow in dev if no password configured (developer convenience)
-  const noAdminPwd = !process.env.ADMIN_UI_ADMIN_PASSWORD && !process.env.ADMIN_UI_PASSWORD;
+  const noAdminPwd = !process.env.ADMIN_UI_PASSWORD;
   const devBypass = process.env.NODE_ENV !== 'production' && noAdminPwd;
   if (devBypass) return null;
   const val = req.cookies.get(COOKIE)?.value;

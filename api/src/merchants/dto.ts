@@ -111,22 +111,6 @@ export class UpdateMerchantSettingsDto {
   @IsOptional()
   rulesJson?: any;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  requireBridgeSig?: boolean;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  bridgeSecret?: string;
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  bridgeSecretNext?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  requireStaffKey?: boolean;
-
   @ApiPropertyOptional({
     minimum: 0,
     description: 'TTL баллов (в днях). 0 или отсутствие — отключено',
@@ -332,8 +316,6 @@ export class MerchantSettingsRespDto {
   @ApiPropertyOptional() webhookUrl?: string | null;
   @ApiPropertyOptional() webhookSecret?: string | null;
   @ApiPropertyOptional() webhookKeyId?: string | null;
-  @ApiProperty() requireBridgeSig!: boolean;
-  @ApiPropertyOptional() bridgeSecret?: string | null;
   @ApiProperty() redeemCooldownSec!: number;
   @ApiProperty() earnCooldownSec!: number;
   @ApiPropertyOptional() redeemDailyCap?: number | null;
@@ -342,7 +324,6 @@ export class MerchantSettingsRespDto {
   maxOutlets?: number | null;
   @ApiProperty() requireJwtForQuote!: boolean;
   @ApiPropertyOptional() rulesJson?: any;
-  @ApiProperty() requireStaffKey!: boolean;
   @ApiPropertyOptional({
     description:
       'TTL баллов (в днях). Предпросмотр через outbox, списание отключено.',
@@ -379,10 +360,6 @@ export class OutletDto {
     | null;
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
   posLastSeenAt?: Date | null;
-  @ApiProperty() bridgeSecretIssued!: boolean;
-  @ApiProperty() bridgeSecretNextIssued!: boolean;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
-  bridgeSecretUpdatedAt?: Date | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }

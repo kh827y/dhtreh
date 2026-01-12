@@ -30,7 +30,7 @@ services:
     networks:
       - loyalty_network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -46,8 +46,12 @@ services:
       DATABASE_URL: postgresql://loyalty:${DB_PASSWORD}@postgres:5432/loyalty
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ADMIN_KEY: ${ADMIN_KEY}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET}
       QR_JWT_SECRET: ${QR_JWT_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS}
+      PORTAL_JWT_SECRET: ${PORTAL_JWT_SECRET}
+      PORTAL_REFRESH_SECRET: ${PORTAL_REFRESH_SECRET}
+      API_KEY: ${API_KEY}
       API_BASE_URL: ${API_BASE_URL}
       MINIAPP_BASE_URL: ${MINIAPP_BASE_URL}
       SENTRY_DSN: ${SENTRY_DSN}
@@ -86,6 +90,16 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://loyalty:${DB_PASSWORD}@postgres:5432/loyalty
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      ADMIN_KEY: ${ADMIN_KEY}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET}
+      QR_JWT_SECRET: ${QR_JWT_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      PORTAL_JWT_SECRET: ${PORTAL_JWT_SECRET}
+      PORTAL_REFRESH_SECRET: ${PORTAL_REFRESH_SECRET}
+      API_KEY: ${API_KEY}
+      API_BASE_URL: ${API_BASE_URL}
+      MINIAPP_BASE_URL: ${MINIAPP_BASE_URL}
+      SENTRY_DSN: ${SENTRY_DSN}
       NO_HTTP: 1
       WORKERS_ENABLED: 1
       WEBHOOK_WORKERS: 4
@@ -115,8 +129,7 @@ services:
       API_BASE: http://api:3000
       ADMIN_KEY: ${ADMIN_KEY}
       ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET}
-      ADMIN_UI_ADMIN_PASSWORD: ${ADMIN_UI_ADMIN_PASSWORD}
-      ADMIN_UI_MANAGER_PASSWORD: ${ADMIN_UI_MANAGER_PASSWORD}
+      ADMIN_UI_PASSWORD: ${ADMIN_UI_PASSWORD}
     depends_on:
       - api
     networks:
@@ -126,7 +139,7 @@ services:
       - "traefik.http.routers.admin.rule=Host(`admin.${DOMAIN}`)"
       - "traefik.http.routers.admin.tls=true"
       - "traefik.http.routers.admin.tls.certresolver=letsencrypt"
-      - "traefik.http.services.admin.loadbalancer.server.port=3000"
+      - "traefik.http.services.admin.loadbalancer.server.port=3001"
       - "traefik.http.routers.admin.middlewares=admin-auth"
       - "traefik.http.middlewares.admin-auth.basicauth.users=${ADMIN_BASIC_AUTH}"
 
@@ -185,7 +198,7 @@ services:
       - "traefik.http.routers.miniapp.rule=Host(`app.${DOMAIN}`)"
       - "traefik.http.routers.miniapp.tls=true"
       - "traefik.http.routers.miniapp.tls.certresolver=letsencrypt"
-      - "traefik.http.services.miniapp.loadbalancer.server.port=3000"
+      - "traefik.http.services.miniapp.loadbalancer.server.port=3003"
     deploy:
       replicas: 2
       resources:
@@ -233,11 +246,14 @@ services:
   prometheus:
     image: prom/prometheus:latest
     restart: unless-stopped
+    environment:
+      METRICS_TOKEN: ${METRICS_TOKEN}
     volumes:
       - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--config.expand-env'
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
@@ -274,10 +290,9 @@ services:
   # Backup сервис
   backup:
     image: postgres:15-alpine
-    restart: unless-stopped
+    restart: "no"
     environment:
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      BACKUP_SCHEDULE: "0 3 * * *"  # Ежедневно в 3:00
+      DB_PASSWORD: ${DB_PASSWORD}
       S3_BUCKET: ${S3_BUCKET}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}

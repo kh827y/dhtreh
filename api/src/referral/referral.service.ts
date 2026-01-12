@@ -243,10 +243,9 @@ export class ReferralService {
             },
           });
         }
-        const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
         await tx.wallet.update({
           where: { id: wallet.id },
-          data: { balance: (fresh?.balance ?? 0) + amount },
+          data: { balance: { increment: amount } },
         });
         await tx.transaction.create({
           data: {
@@ -355,10 +354,9 @@ export class ReferralService {
             },
           });
         }
-        const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
         await tx.wallet.update({
           where: { id: wallet.id },
-          data: { balance: (fresh?.balance ?? 0) + rewardAmount },
+          data: { balance: { increment: rewardAmount } },
         });
         await tx.transaction.create({
           data: {

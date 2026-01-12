@@ -6,8 +6,6 @@ export type TeleauthResponse = {
   hasPhone: boolean;
   onboarded: boolean;
 };
-// For Node HMAC in signBridgeSignature without requiring @types/node
-declare const require: any;
 
 export class LoyaltyApi {
   private base: string;
@@ -23,28 +21,16 @@ export class LoyaltyApi {
     return await res.json() as T;
   }
 
-  // Utilities
-  static signBridgeSignature(secret: string, body: string, ts?: number): string {
-    const t = Math.floor((ts ?? Date.now()) / 1000).toString();
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const h = require('crypto').createHmac('sha256', secret).update(t + '.' + body).digest('base64');
-    return `v1,ts=${t},sig=${h}`;
-  }
-
   // Endpoints
-  quote(body: { mode: 'redeem'|'earn'; merchantId: string; userToken: string; orderId: string; total: number; outletId?: string; staffId?: string; category?: string; promoCode?: string; positions?: Array<{ productId?: string; externalProvider?: string; externalId?: string; name?: string; sku?: string; barcode?: string; qty: number; price: number; accruePoints?: boolean }> }, opts?: { staffKey?: string; bridgeSignatureSecret?: string }) {
+  quote(body: { mode: 'redeem'|'earn'; merchantId: string; userToken: string; orderId: string; total: number; outletId?: string; staffId?: string; category?: string; promoCode?: string; positions?: Array<{ productId?: string; externalProvider?: string; externalId?: string; name?: string; sku?: string; barcode?: string; qty: number; price: number; accruePoints?: boolean }> }) {
     const json = JSON.stringify(body);
-    const headers: any = {};
-    if (opts?.staffKey) headers['X-Staff-Key'] = opts.staffKey;
-    if (opts?.bridgeSignatureSecret) headers['X-Bridge-Signature'] = LoyaltyApi.signBridgeSignature(opts.bridgeSignatureSecret, json);
-    return this.http('/loyalty/quote', { method: 'POST', headers, body: json });
+    return this.http('/loyalty/quote', { method: 'POST', body: json });
   }
 
-  commit(body: { merchantId: string; holdId: string; orderId: string; receiptNumber?: string; requestId?: string; promoCode?: string }, opts?: { idempotencyKey?: string; bridgeSignatureSecret?: string }) {
+  commit(body: { merchantId: string; holdId: string; orderId: string; receiptNumber?: string; requestId?: string; promoCode?: string }, opts?: { idempotencyKey?: string }) {
     const json = JSON.stringify(body);
     const headers: any = {};
     if (opts?.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
-    if (opts?.bridgeSignatureSecret) headers['X-Bridge-Signature'] = LoyaltyApi.signBridgeSignature(opts.bridgeSignatureSecret, json);
     return this.http('/loyalty/commit', { method: 'POST', headers, body: json });
   }
 
@@ -57,12 +43,11 @@ export class LoyaltyApi {
       outletId?: string;
       operationDate?: string;
     },
-    opts?: { idempotencyKey?: string; bridgeSignatureSecret?: string },
+    opts?: { idempotencyKey?: string },
   ) {
     const json = JSON.stringify(body);
     const headers: any = {};
     if (opts?.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
-    if (opts?.bridgeSignatureSecret) headers['X-Bridge-Signature'] = LoyaltyApi.signBridgeSignature(opts.bridgeSignatureSecret, json);
     return this.http('/loyalty/refund', { method: 'POST', headers, body: json });
   }
 

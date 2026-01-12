@@ -6,7 +6,6 @@ import { PortalGuard } from '../portal-auth/portal.guard';
 import { PromoCodesModule } from '../promocodes/promocodes.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
-import { GiftsModule } from '../gifts/gifts.module';
 import { PortalCatalogService } from './catalog.service';
 import { PortalCustomersService } from './customers.service';
 import { StaffMotivationService } from './services/staff-motivation.service';
@@ -31,7 +30,6 @@ import { ImportExportModule } from '../import-export/import-export.module';
     PromoCodesModule,
     NotificationsModule,
     AnalyticsModule,
-    GiftsModule,
     CustomerAudiencesModule,
     TelegramModule,
     CommunicationsModule,

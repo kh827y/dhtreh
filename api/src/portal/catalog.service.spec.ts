@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client';
 import { PortalCatalogService } from './catalog.service';
 import { ProductBulkAction } from './catalog.dto';
 
@@ -233,7 +232,7 @@ describe('PortalCatalogService', () => {
       },
       device: {
         updateMany: jest.fn(),
-        findMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
         create: jest.fn(),
       },
@@ -253,41 +252,14 @@ describe('PortalCatalogService', () => {
 
     const result = await service.createOutlet('m-99', {
       works: true,
-      hidden: false,
       name: '  Точка  ',
-      description: '  описание ',
-      phone: '+7 000',
-      address: ' Город, улица ',
-      manualLocation: true,
-      latitude: 55.7558,
-      longitude: 37.6173,
-      adminEmails: [' manager@example.com ', 'second@example.com'],
-      timezone: 'UTC+03',
-      showSchedule: true,
-      schedule: {
-        mode: 'CUSTOM',
-        days: [{ day: 'mon', enabled: true, from: '10:00', to: '22:00' }],
-      },
-      externalId: '  BR-1  ',
+      devices: [{ code: ' POS-1 ' }],
     } as any);
 
     expect(createMock).toHaveBeenCalledTimes(1);
     const payload = createMock.mock.calls[0][0].data;
     expect(payload.name).toBe('Точка');
-    expect(payload.address).toBe('Город, улица');
-    expect(payload.adminEmails).toEqual([
-      'manager@example.com',
-      'second@example.com',
-    ]);
-    expect(payload.scheduleEnabled).toBe(true);
-    expect(payload.scheduleJson).toEqual({
-      mode: 'CUSTOM',
-      days: [{ day: 'mon', enabled: true, from: '10:00', to: '22:00' }],
-    });
-    expect(payload.latitude).toBeInstanceOf(Prisma.Decimal);
-    expect(payload.latitude?.toString()).toBe('55.7558');
-    expect(result.manualLocation).toBe(true);
-    expect(result.showSchedule).toBe(true);
+    expect(payload.status).toBe('ACTIVE');
     expect(metrics.inc).toHaveBeenCalledWith('portal_outlets_changed_total', {
       action: 'create',
     });

@@ -23,7 +23,7 @@ export default function AdminMerchantsPage() {
   const [ownerName, setOwnerName] = React.useState('');
   const [maxOutlets, setMaxOutlets] = React.useState('');
   const [msg, setMsg] = React.useState('');
-  const [totp, setTotp] = React.useState<{ secret: string; otpauth: string }|null>(null);
+  const [totp, setTotp] = React.useState<{ merchantId: string; secret: string; otpauth: string }|null>(null);
   const [code, setCode] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [subscriptionFilter, setSubscriptionFilter] = React.useState<'all'|'active'|'expiring'|'expired'>('all');
@@ -41,7 +41,8 @@ export default function AdminMerchantsPage() {
     const expired = items.filter((m) => m.subscriptionExpired).length;
     const expiring = items.filter((m) => !m.subscriptionExpired && m.subscriptionExpiresSoon).length;
     const loginDisabled = items.filter((m) => m.portalLoginEnabled === false).length;
-    return { total, expired, expiring, loginDisabled, active: total - expired };
+    const active = items.filter((m) => (m.subscriptionStatus || '').toLowerCase() === 'active').length;
+    return { total, expired, expiring, loginDisabled, active };
   }, [items]);
   const filteredItems = React.useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -112,8 +113,8 @@ export default function AdminMerchantsPage() {
     }
   }
   async function doInitTotp(id: string) {
-    setMsg(''); setTotp(null);
-    try { const r = await initTotp(id); setTotp(r); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
+    setMsg(''); setTotp(null); setCode('');
+    try { const r = await initTotp(id); setTotp({ merchantId: id, secret: r.secret, otpauth: r.otpauth }); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
   }
   async function doVerifyTotp(id: string) {
     setMsg('');
@@ -203,7 +204,7 @@ export default function AdminMerchantsPage() {
                 )}
               </div>
             </div>
-            {totp && (
+            {totp && totp.merchantId === m.id && (
               <div style={{ marginTop: 10, borderTop:'1px dashed #ccc', paddingTop: 10 }}>
                 <div style={{ display:'grid', gap: 6 }}>
                   <div>Секрет: <code>{totp.secret}</code></div>

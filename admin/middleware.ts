@@ -54,7 +54,7 @@ async function verifySessionCookie(cookieVal: string | undefined) {
 }
 
 export async function middleware(req: NextRequest) {
-  const noAdminPwd = !process.env.ADMIN_UI_ADMIN_PASSWORD && !process.env.ADMIN_UI_PASSWORD;
+  const noAdminPwd = !process.env.ADMIN_UI_PASSWORD;
   const devBypass = process.env.NODE_ENV !== 'production' && noAdminPwd;
   if (devBypass) return NextResponse.next();
   const cookie = req.cookies.get(COOKIE)?.value;

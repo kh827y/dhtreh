@@ -19,6 +19,7 @@ import {
   computeLevelState,
   DEFAULT_LEVELS_METRIC,
   DEFAULT_LEVELS_PERIOD_DAYS,
+  normalizeLevelsPeriodDays,
   type LevelRule,
 } from './levels.util';
 import { ensureBaseTier, toLevelRule } from './tier-defaults.util';
@@ -157,10 +158,9 @@ export class LoyaltyService {
           data: { customerId, merchantId, type: WalletType.POINTS, balance: 0 },
         });
       }
-      const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
       await tx.wallet.update({
         where: { id: wallet.id },
-        data: { balance: fresh!.balance + amount },
+        data: { balance: { increment: amount } },
       });
       const txn = await tx.transaction.create({
         data: { customerId, merchantId, type: TxnType.EARN, amount, orderId },
@@ -790,7 +790,7 @@ export class LoyaltyService {
       segmentIds.length
         ? this.prisma.customerSegment
             .findMany({
-              where: { id: { in: segmentIds } },
+              where: { id: { in: segmentIds }, merchantId },
               select: { id: true, systemKey: true, isSystem: true, rules: true },
             })
             .catch(() => [])
@@ -1452,10 +1452,9 @@ export class LoyaltyService {
                 balance: 0,
               },
             });
-          const fresh = await tx.wallet.findUnique({ where: { id: w.id } });
           await tx.wallet.update({
             where: { id: w.id },
-            data: { balance: (fresh?.balance ?? 0) + points },
+            data: { balance: { increment: points } },
           });
           const rewardTx = await tx.transaction.create({
             data: {
@@ -1619,10 +1618,9 @@ export class LoyaltyService {
         },
       });
       if (!wallet) continue;
-      const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
       await tx.wallet.update({
         where: { id: wallet.id },
-        data: { balance: (fresh?.balance ?? 0) - amount },
+        data: { balance: { decrement: amount } },
       });
       const rewardMeta: any = reward?.metadata;
       let rollbackBuyerId: string | null = null;
@@ -1929,9 +1927,12 @@ export class LoyaltyService {
         } as const;
       } else {
         // Immediate award
-        const freshW = await tx.wallet.findUnique({ where: { id: wallet.id } });
-        const balance = (freshW?.balance ?? 0) + points;
-        await tx.wallet.update({ where: { id: wallet.id }, data: { balance } });
+        const updatedWallet = await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: { increment: points } },
+          select: { balance: true },
+        });
+        const balance = updatedWallet.balance;
 
         const earnTx = await tx.transaction.create({
           data: {
@@ -2063,13 +2064,13 @@ export class LoyaltyService {
           data: { customerId, merchantId, type: WalletType.POINTS, balance: 0 },
         });
       }
-      const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
-      if (fresh!.balance < amount)
-        throw new BadRequestException('Insufficient points');
-      await tx.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: fresh!.balance - amount },
+      const updated = await tx.wallet.updateMany({
+        where: { id: wallet.id, balance: { gte: amount } },
+        data: { balance: { decrement: amount } },
       });
+      if (!updated.count) {
+        throw new BadRequestException('Insufficient points');
+      }
       const txn = await tx.transaction.create({
         data: {
           customerId,
@@ -2137,12 +2138,16 @@ export class LoyaltyService {
         ? new Date(Date.now() + promoExpireDays * 24 * 60 * 60 * 1000)
         : null;
 
-      const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
-      const currentBalance = fresh?.balance ?? 0;
-      let balance = currentBalance;
+      let balance =
+        (await tx.wallet.findUnique({ where: { id: wallet.id } }))?.balance ??
+        0;
       if (points > 0) {
-        balance = currentBalance + points;
-        await tx.wallet.update({ where: { id: wallet.id }, data: { balance } });
+        const updatedWallet = await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: { increment: points } },
+          select: { balance: true },
+        });
+        balance = updatedWallet.balance;
       }
 
       const promoTx = await tx.transaction.create({
@@ -3385,6 +3390,9 @@ export class LoyaltyService {
       }
       throw new ConflictException('Hold already finished');
     }
+    if (hold.orderId && hold.orderId !== orderId) {
+      throw new ConflictException('Hold already bound to another order');
+    }
 
     if (accrualsBlocked && hold.mode === 'EARN') {
       throw new BadRequestException('Начисления заблокированы администратором');
@@ -3484,6 +3492,41 @@ export class LoyaltyService {
             redeemApplied: existing.redeemApplied,
             earnApplied: existing.earnApplied,
           };
+        }
+        const claim = await tx.hold.updateMany({
+          where: {
+            id: hold.id,
+            status: HoldStatus.PENDING,
+            OR: [{ orderId: null }, { orderId }],
+          },
+          data: { status: HoldStatus.COMMITTED, orderId },
+        });
+        if (claim.count === 0) {
+          const current = await tx.hold.findUnique({
+            where: { id: hold.id },
+            select: { status: true, orderId: true },
+          });
+          if (current?.orderId && current.orderId !== orderId) {
+            throw new ConflictException('Hold already bound to another order');
+          }
+          if (current?.status && current.status !== HoldStatus.PENDING) {
+            const committed = await tx.receipt.findUnique({
+              where: {
+                merchantId_orderId: { merchantId: hold.merchantId, orderId },
+              },
+            });
+            if (committed) {
+              return {
+                ok: true,
+                customerId: context.customerId,
+                alreadyCommitted: true,
+                receiptId: committed.id,
+                redeemApplied: committed.redeemApplied,
+                earnApplied: committed.earnApplied,
+              };
+            }
+            throw new ConflictException('Hold already finished');
+          }
         }
 
         // Накапливаем применённые суммы для чека
@@ -3600,12 +3643,30 @@ export class LoyaltyService {
           const fresh = await tx.wallet.findUnique({
             where: { id: wallet.id },
           });
-          const amount = Math.min(fresh!.balance, redeemTarget);
+          let amount = Math.min(fresh!.balance, redeemTarget);
           appliedRedeem = amount;
-          await tx.wallet.update({
-            where: { id: wallet.id },
-            data: { balance: fresh!.balance - amount },
-          });
+          if (amount > 0) {
+            let updated = await tx.wallet.updateMany({
+              where: { id: wallet.id, balance: { gte: amount } },
+              data: { balance: { decrement: amount } },
+            });
+            if (!updated.count) {
+              const retryFresh = await tx.wallet.findUnique({
+                where: { id: wallet.id },
+              });
+              amount = Math.min(retryFresh?.balance ?? 0, redeemTarget);
+              appliedRedeem = amount;
+              if (amount > 0) {
+                updated = await tx.wallet.updateMany({
+                  where: { id: wallet.id, balance: { gte: amount } },
+                  data: { balance: { decrement: amount } },
+                });
+              }
+            }
+            if (!updated.count) {
+              throw new BadRequestException('Insufficient points');
+            }
+          }
           const redeemTx = await tx.transaction.create({
             data: {
               customerId: hold.customerId,
@@ -3871,13 +3932,10 @@ export class LoyaltyService {
             });
           } else {
             // Немедленное начисление
-            const fresh = await tx.wallet.findUnique({
-              where: { id: wallet.id },
-            });
             if (appliedEarn > 0) {
               await tx.wallet.update({
                 where: { id: wallet.id },
-                data: { balance: fresh!.balance + appliedEarn },
+                data: { balance: { increment: appliedEarn } },
               });
             }
             const earnTx = await tx.transaction.create({
@@ -5253,11 +5311,62 @@ export class LoyaltyService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const lockReceipt = await tx.receipt.updateMany({
+        where: { id: receipt.id, canceledAt: null },
+        data: { canceledAt: operationDateObj },
+      });
+      if (lockReceipt.count === 0) {
+        const existing = await tx.transaction.findMany({
+          where: {
+            merchantId,
+            orderId: receipt.orderId,
+            type: TxnType.REFUND,
+            canceledAt: null,
+          },
+        });
+        const matching = existing.filter((tx) => {
+          try {
+            const meta =
+              tx.metadata && typeof tx.metadata === 'object'
+                ? (tx.metadata as any)
+                : null;
+            const receiptMatch =
+              !receipt.id ||
+              !meta ||
+              !meta.receiptId ||
+              meta.receiptId === receipt.id;
+            return receiptMatch;
+          } catch {
+            return false;
+          }
+        });
+        if (matching.length > 0) {
+          const pointsRestored = matching
+            .filter((tx) => tx.amount > 0)
+            .reduce((sum, tx) => sum + Math.max(0, tx.amount), 0);
+          const pointsRevoked = matching
+            .filter((tx) => tx.amount < 0)
+            .reduce((sum, tx) => sum + Math.max(0, -tx.amount), 0);
+          return {
+            ok: true,
+            share: 1,
+            pointsRestored,
+            pointsRevoked,
+            customerId: merchantContext.customerId,
+          };
+        }
+        return {
+          ok: true,
+          share: 1,
+          pointsRestored: 0,
+          pointsRevoked: 0,
+          customerId: merchantContext.customerId,
+        };
+      }
       if (pointsToRestore > 0) {
-        const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
         await tx.wallet.update({
           where: { id: wallet.id },
-          data: { balance: fresh!.balance + pointsToRestore },
+          data: { balance: { increment: pointsToRestore } },
         });
         const restoreTx = await tx.transaction.create({
           data: {
@@ -5304,10 +5413,9 @@ export class LoyaltyService {
         }
       }
       if (pointsToRevoke > 0) {
-        const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
         await tx.wallet.update({
           where: { id: wallet.id },
-          data: { balance: fresh!.balance - pointsToRevoke },
+          data: { balance: { decrement: pointsToRevoke } },
         });
         const revokeTx = await tx.transaction.create({
           data: {
@@ -5354,10 +5462,6 @@ export class LoyaltyService {
         }
       }
 
-      await tx.receipt.update({
-        where: { id: receipt.id },
-        data: { canceledAt: operationDateObj },
-      });
       await tx.eventOutbox.create({
         data: {
           merchantId,
@@ -6122,7 +6226,25 @@ export class LoyaltyService {
     tx: any,
     params: { merchantId: string; customerId: string },
   ) {
-    const periodDays = DEFAULT_LEVELS_PERIOD_DAYS;
+    let periodDays = DEFAULT_LEVELS_PERIOD_DAYS;
+    try {
+      if (tx?.merchantSettings?.findUnique) {
+        const settings = await tx.merchantSettings.findUnique({
+          where: { merchantId: params.merchantId },
+          select: { rulesJson: true },
+        });
+        const rules =
+          settings?.rulesJson &&
+          typeof settings.rulesJson === 'object' &&
+          !Array.isArray(settings.rulesJson)
+            ? (settings.rulesJson as Record<string, any>)
+            : null;
+        periodDays = normalizeLevelsPeriodDays(
+          rules?.levelsPeriodDays,
+          DEFAULT_LEVELS_PERIOD_DAYS,
+        );
+      }
+    } catch {}
     const metric: 'earn' | 'redeem' | 'transactions' = DEFAULT_LEVELS_METRIC;
     const tiers = await tx.loyaltyTier.findMany({
       where: { merchantId: params.merchantId },
@@ -6149,6 +6271,7 @@ export class LoyaltyService {
       progress: value,
       levelRules,
       tiers: visibleTiers,
+      periodDays,
     });
   }
 
@@ -6160,6 +6283,7 @@ export class LoyaltyService {
       progress: number;
       levelRules?: LevelRule[];
       tiers?: Array<any>;
+      periodDays?: number;
     },
   ) {
     const tiers =
@@ -6196,6 +6320,13 @@ export class LoyaltyService {
     if (currentAssign?.tier?.isHidden) return;
     if (currentAssign?.tierId === target.id) return;
     const assignedAt = new Date();
+    const periodDays = normalizeLevelsPeriodDays(
+      params.periodDays,
+      DEFAULT_LEVELS_PERIOD_DAYS,
+    );
+    const expiresAt = new Date(
+      assignedAt.getTime() + periodDays * 24 * 60 * 60 * 1000,
+    );
     await tx.loyaltyTierAssignment.upsert({
       where: {
         merchantId_customerId: {
@@ -6206,7 +6337,7 @@ export class LoyaltyService {
       update: {
         tierId: target.id,
         assignedAt,
-        expiresAt: null,
+        expiresAt,
         source: 'auto',
       },
       create: {
@@ -6214,7 +6345,7 @@ export class LoyaltyService {
         customerId: params.customerId,
         tierId: target.id,
         assignedAt,
-        expiresAt: null,
+        expiresAt,
         source: 'auto',
       },
     });

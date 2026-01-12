@@ -48,6 +48,10 @@ export class HealthController {
     return {
       ready,
       ts: now,
+      checks: {
+        database: dbOk,
+        migrations: migrationsOk,
+      },
     };
   }
 }

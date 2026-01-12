@@ -11,15 +11,10 @@ export type RestApiRateLimits = {
   calculate: RestApiRateLimit;
   bonus: RestApiRateLimit;
   refund: RestApiRateLimit;
-  outlets: RestApiRateLimit;
-  devices: RestApiRateLimit;
-  operations: RestApiRateLimit;
-  clientMigrate: RestApiRateLimit;
 };
 
 export interface RestApiIntegrationConfig {
   kind: string;
-  requireBridgeSignature: boolean;
   rateLimits: RestApiRateLimits;
   [key: string]: any;
 }
@@ -29,10 +24,6 @@ const DEFAULT_RATE_LIMITS: RestApiRateLimits = {
   calculate: { limit: 120, ttl: 60_000 },
   bonus: { limit: 60, ttl: 60_000 },
   refund: { limit: 30, ttl: 60_000 },
-  outlets: { limit: 60, ttl: 60_000 },
-  devices: { limit: 60, ttl: 60_000 },
-  operations: { limit: 30, ttl: 60_000 },
-  clientMigrate: { limit: 30, ttl: 60_000 },
 };
 
 @Injectable()
@@ -94,16 +85,11 @@ export class RestApiIntegrationsService {
     return {
       ...base,
       kind: 'rest-api',
-      requireBridgeSignature: Boolean(base.requireBridgeSignature),
       rateLimits: {
         code: pickLimit(rateLimits, 'code'),
         calculate: pickLimit(rateLimits, 'calculate'),
         bonus: pickLimit(rateLimits, 'bonus'),
         refund: pickLimit(rateLimits, 'refund'),
-        outlets: pickLimit(rateLimits, 'outlets'),
-        devices: pickLimit(rateLimits, 'devices'),
-        operations: pickLimit(rateLimits, 'operations'),
-        clientMigrate: pickLimit(rateLimits, 'clientMigrate'),
       },
     };
   }

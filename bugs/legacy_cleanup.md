@@ -4,12 +4,6 @@
 
 ## Высокий приоритет
 
-1. **Legacy Staff Key продолжает жить в API и настройках мерчанта**
-   - В документации это явно помечено как legacy, но в коде остаются: проверка заголовка `X-Staff-Key`, флаг `requireStaffKey`, сохранение/проброс настройки в портале.
-   - Это создаёт избыточную поверхность для поддержки/тестирования и усложняет миграции на актуальные схемы авторизации (Bridge‑подпись, cashier‑сессии).
-   - Минимальное удаление без overengineering: объявить дату снятия поддержки, мигрировать мерчантов на Bridge/cashier‑сессию, затем удалить обработку `X-Staff-Key`, `requireStaffKey` и связанные настройки/DTO/валидации.
-   - Где видно: `API_DOCUMENTATION.md` (раздел “Staff Key (legacy)”), `api/src/loyalty/loyalty.controller.ts`, `api/src/merchants/merchants.service.ts`, `api/src/portal/portal.controller.ts`.
-
 ## Средний приоритет
 
 2. **Legacy‑алиасы прав доступа держат старые ресурсы “loyalty/analytics” живыми**

@@ -18,17 +18,10 @@ docker run --rm --env DATABASE_URL=$DATABASE_URL loyalty-api pnpm prisma migrate
 docker run -d --name api -p 3000:3000 --env-file ./api.env loyalty-api
 `}</pre>
 
-      <h3>Bridge</h3>
-      <pre style={{ whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{`docker build -t loyalty-bridge ./bridge
-docker run -d --name bridge -p 18080:18080 \
-  -e API_BASE=http://api:3000 -e MERCHANT_ID=<merchant_id> -e BRIDGE_SECRET=... loyalty-bridge
-`}</pre>
-
       <h3>Admin/Miniapp</h3>
       <pre style={{ whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{`docker build -t loyalty-admin ./admin
 docker run -d --name admin -p 3001:3001 \
   -e API_BASE=http://api:3000 \
-  -e NEXT_PUBLIC_API_KEY=... \
   -e ADMIN_KEY=... \
   -e ADMIN_UI_PASSWORD=... \
   -e ADMIN_SESSION_SECRET=change_me_long_random \

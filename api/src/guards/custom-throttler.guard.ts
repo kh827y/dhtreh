@@ -1,18 +1,44 @@
 import { ExecutionContext, Injectable } from '@nestjs/common';
 import { ThrottlerGuard, ThrottlerRequest } from '@nestjs/throttler';
+import { createHash } from 'crypto';
 
 @Injectable()
 export class CustomThrottlerGuard extends ThrottlerGuard {
+  private extractApiKey(req: Record<string, any>): string {
+    const viaGetter = typeof req.get === 'function' ? req.get('x-api-key') : '';
+    const rawHeader =
+      viaGetter ??
+      req.headers?.['x-api-key'] ??
+      req.headers?.['X-Api-Key'] ??
+      req.headers?.['x_api_key'] ??
+      req.headers?.['x-api_key'];
+    const headerKey = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+    const auth = req.headers?.['authorization'] || '';
+    const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
+    return String(headerKey || bearer || '').trim();
+  }
+
   protected async getTracker(req: Record<string, any>): Promise<string> {
     try {
       const ip =
         req.ip || req.ips?.[0] || req.socket?.remoteAddress || 'unknown';
-      const path = (req.route?.path || req.path || req.originalUrl || '').split(
-        '?',
-      )[0];
+      const path = (
+        req.originalUrl ||
+        (req.baseUrl ? `${req.baseUrl}${req.path || ''}` : '') ||
+        req.path ||
+        req.route?.path ||
+        ''
+      ).split('?')[0];
       const integrationId = req.integrationId || req.integration?.id;
       if (integrationId) {
         return [integrationId, path].filter(Boolean).join('|');
+      }
+      if (path.includes('/integrations/')) {
+        const apiKey = this.extractApiKey(req);
+        if (apiKey) {
+          const hash = createHash('sha256').update(apiKey).digest('hex');
+          return [hash, path].filter(Boolean).join('|');
+        }
       }
       const body = req.body || {};
       const q = req.query || {};
@@ -37,11 +63,14 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       const { context, limit, ttl } = requestProps as any;
       const req: any = context.switchToHttp().getRequest();
       const path: string = (
-        req?.route?.path ||
-        req?.path ||
         req?.originalUrl ||
+        (req?.baseUrl ? `${req.baseUrl}${req.path || ''}` : '') ||
+        req?.path ||
+        req?.route?.path ||
         ''
-      ).toLowerCase();
+      )
+        .toLowerCase()
+        .split('?')[0];
       const body = req?.body || {};
       const q = req?.query || {};
       const merchantId: string | undefined =
@@ -84,22 +113,14 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
             ttl: Number.isFinite(t) && t > 0 ? t : base.ttl,
           };
         };
-        if (path.includes('/api/integrations/bonus/calculate')) {
+        if (path.includes('/integrations/calculate/')) {
           base = pickIntegration('calculate');
-        } else if (path.includes('/api/integrations/bonus')) {
+        } else if (path.includes('/integrations/bonus')) {
           base = pickIntegration('bonus');
-        } else if (path.includes('/api/integrations/refund')) {
+        } else if (path.includes('/integrations/refund')) {
           base = pickIntegration('refund');
-        } else if (path.includes('/api/integrations/code')) {
+        } else if (path.includes('/integrations/code')) {
           base = pickIntegration('code');
-        } else if (path.includes('/api/integrations/client/migrate')) {
-          base = pickIntegration('clientMigrate');
-        } else if (path.includes('/api/integrations/operations')) {
-          base = pickIntegration('operations');
-        } else if (path.includes('/api/integrations/outlets')) {
-          base = pickIntegration('outlets');
-        } else if (path.includes('/api/integrations/devices')) {
-          base = pickIntegration('devices');
         }
       }
       if (path.includes('/loyalty/quote')) base = pick('quote');

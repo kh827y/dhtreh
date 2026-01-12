@@ -262,10 +262,50 @@ export class LoyaltyProgramService {
     return this.buildReminderText(promotion, reminderHours ?? 48);
   }
 
+  private async ensureSegmentOwned(
+    merchantId: string,
+    segmentId: string | null | undefined,
+  ) {
+    if (!segmentId) return;
+    const existing = await this.prisma.customerSegment.findFirst({
+      where: { id: segmentId, merchantId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new BadRequestException('Сегмент не найден');
+    }
+  }
+
+  private async clearPromotionTasks(
+    merchantId: string,
+    promotionId: string,
+  ): Promise<void> {
+    try {
+      await this.prisma.communicationTask.deleteMany({
+        where: {
+          merchantId,
+          promotionId,
+          status: { in: ['SCHEDULED', 'PAUSED'] },
+        },
+      });
+    } catch {}
+  }
+
+  private async refreshPromotionNotifications(
+    merchantId: string,
+    promotion: any,
+  ): Promise<void> {
+    await this.clearPromotionTasks(merchantId, promotion.id);
+    await this.schedulePromotionNotifications(merchantId, promotion);
+  }
+
   private async schedulePromotionNotifications(
     merchantId: string,
     promotion: any,
   ): Promise<void> {
+    const statusAllows =
+      promotion.status === 'ACTIVE' || promotion.status === 'SCHEDULED';
+    if (!statusAllows) return;
     const now = Date.now();
     const hasSegment = !!promotion.segmentId;
     const audienceCode = hasSegment ? `segment:${promotion.segmentId}` : 'all';
@@ -1275,6 +1315,8 @@ export class LoyaltyProgramService {
       }
     }
 
+    await this.ensureSegmentOwned(merchantId, payload.segmentId ?? null);
+
     const promotion = await this.prisma.loyaltyPromotion.create({
       data: {
         merchantId,
@@ -1447,6 +1489,7 @@ export class LoyaltyProgramService {
 
     const segmentId =
       payload.segmentId !== undefined ? payload.segmentId : promotion.segmentId;
+    await this.ensureSegmentOwned(merchantId, segmentId);
     const startAt =
       payload.startAt === undefined
         ? promotion.startAt
@@ -1502,6 +1545,13 @@ export class LoyaltyProgramService {
         action: 'update',
       });
     } catch {}
+    try {
+      await this.refreshPromotionNotifications(merchantId, updated);
+    } catch (e) {
+      this.logger.warn(
+        `refreshPromotionNotifications failed: ${String(e?.message || e)}`,
+      );
+    }
     return updated;
   }
 
@@ -1597,6 +1647,13 @@ export class LoyaltyProgramService {
         action: 'status',
       });
     } catch {}
+    try {
+      await this.refreshPromotionNotifications(merchantId, updated);
+    } catch (e) {
+      this.logger.warn(
+        `refreshPromotionNotifications failed: ${String(e?.message || e)}`,
+      );
+    }
     return updated;
   }
 
@@ -1627,6 +1684,20 @@ export class LoyaltyProgramService {
     );
 
     const updated = results.reduce((acc, res) => acc + res.count, 0);
+    try {
+      const promotions = await this.prisma.loyaltyPromotion.findMany({
+        where: { merchantId, id: { in: promotionIds } },
+      });
+      for (const promotion of promotions) {
+        await this.refreshPromotionNotifications(merchantId, promotion).catch(
+          () => {},
+        );
+      }
+    } catch (e) {
+      this.logger.warn(
+        `refreshPromotionNotifications failed: ${String(e?.message || e)}`,
+      );
+    }
     try {
       this.logger.log(
         JSON.stringify({

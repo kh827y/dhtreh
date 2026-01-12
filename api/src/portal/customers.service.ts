@@ -1881,7 +1881,8 @@ export class PortalCustomersService {
       }
       const updatedWallet = await tx.wallet.update({
         where: { id: wallet.id },
-        data: { balance: wallet.balance + appliedPoints },
+        data: { balance: { increment: appliedPoints } },
+        select: { balance: true },
       });
 
       if (process.env.EARN_LOTS_FEATURE === '1' && appliedPoints > 0) {
@@ -1972,14 +1973,13 @@ export class PortalCustomersService {
           'У клиента отсутствует кошелёк с баллами',
         );
       }
-      if (wallet.balance < redeemPoints) {
+      const updated = await tx.wallet.updateMany({
+        where: { id: wallet.id, balance: { gte: redeemPoints } },
+        data: { balance: { decrement: redeemPoints } },
+      });
+      if (!updated.count) {
         throw new BadRequestException('Недостаточно баллов на балансе клиента');
       }
-
-      const updatedWallet = await tx.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: wallet.balance - redeemPoints },
-      });
 
       await this.consumeLotsForRedeem(
         tx,
@@ -2004,7 +2004,6 @@ export class PortalCustomersService {
 
       return {
         transactionId: transaction.id,
-        balance: updatedWallet.balance,
       };
     });
 
@@ -2080,7 +2079,8 @@ export class PortalCustomersService {
 
       const updatedWallet = await tx.wallet.update({
         where: { id: wallet.id },
-        data: { balance: wallet.balance + bonusPoints },
+        data: { balance: { increment: bonusPoints } },
+        select: { balance: true },
       });
 
       if (process.env.EARN_LOTS_FEATURE === '1' && bonusPoints > 0) {

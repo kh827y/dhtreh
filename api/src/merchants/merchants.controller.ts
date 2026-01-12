@@ -22,7 +22,6 @@ import {
   MerchantSettingsRespDto,
   OutletDto,
   StaffDto,
-  SecretRespDto,
   TokenRespDto,
   OkDto,
   OutboxEventDto,
@@ -240,11 +239,22 @@ export class MerchantsController {
       dto.earnDailyCap,
       dto.requireJwtForQuote,
       dto.rulesJson,
-      dto.requireBridgeSig,
-      dto.bridgeSecret,
-      dto.requireStaffKey,
       dto, // передаём доп.поля (next секреты/флажок) без ломки сигнатуры
     );
+  }
+
+  @Post(':id/antifraud/reset')
+  @ApiOkResponse({ type: OkDto })
+  @ApiBadRequestResponse({ type: ErrorDto })
+  resetAntifraudLimit(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      scope: 'merchant' | 'customer' | 'staff' | 'device' | 'outlet';
+      targetId?: string;
+    },
+  ) {
+    return this.service.resetAntifraudLimit(id, body);
   }
 
   // Outlets
@@ -278,46 +288,6 @@ export class MerchantsController {
   @ApiNotFoundResponse({ type: ErrorDto })
   deleteOutlet(@Param('id') id: string, @Param('outletId') outletId: string) {
     return this.service.deleteOutlet(id, outletId);
-  }
-  @Post(':id/outlets/:outletId/bridge-secret')
-  @ApiOkResponse({ type: SecretRespDto })
-  @ApiUnauthorizedResponse({ type: ErrorDto })
-  @ApiNotFoundResponse({ type: ErrorDto })
-  issueOutletBridgeSecret(
-    @Param('id') id: string,
-    @Param('outletId') outletId: string,
-  ) {
-    return this.service.issueOutletBridgeSecret(id, outletId);
-  }
-  @Delete(':id/outlets/:outletId/bridge-secret')
-  @ApiOkResponse({ type: OkDto })
-  @ApiUnauthorizedResponse({ type: ErrorDto })
-  @ApiNotFoundResponse({ type: ErrorDto })
-  revokeOutletBridgeSecret(
-    @Param('id') id: string,
-    @Param('outletId') outletId: string,
-  ) {
-    return this.service.revokeOutletBridgeSecret(id, outletId);
-  }
-  @Post(':id/outlets/:outletId/bridge-secret/next')
-  @ApiOkResponse({ type: SecretRespDto })
-  @ApiUnauthorizedResponse({ type: ErrorDto })
-  @ApiNotFoundResponse({ type: ErrorDto })
-  issueOutletBridgeSecretNext(
-    @Param('id') id: string,
-    @Param('outletId') outletId: string,
-  ) {
-    return this.service.issueOutletBridgeSecretNext(id, outletId);
-  }
-  @Delete(':id/outlets/:outletId/bridge-secret/next')
-  @ApiOkResponse({ type: OkDto })
-  @ApiUnauthorizedResponse({ type: ErrorDto })
-  @ApiNotFoundResponse({ type: ErrorDto })
-  revokeOutletBridgeSecretNext(
-    @Param('id') id: string,
-    @Param('outletId') outletId: string,
-  ) {
-    return this.service.revokeOutletBridgeSecretNext(id, outletId);
   }
   @Put(':id/outlets/:outletId/pos')
   @ApiOkResponse({ type: OutletDto })
@@ -762,7 +732,7 @@ export class MerchantsController {
           r.outletLastSeenAt ? new Date(r.outletLastSeenAt).toISOString() : '',
           r.staffId || '',
         ]
-          .map((x) => `"${String(x).replaceAll('"', '""')}"`)
+          .map((x) => this.csvCell(x))
           .join(',');
         res.write(row + '\n');
       }
@@ -851,7 +821,7 @@ export class MerchantsController {
           e.outletLastSeenAt ? new Date(e.outletLastSeenAt).toISOString() : '',
           e.staffId || '',
         ]
-          .map((x) => `"${String(x).replaceAll('"', '""')}"`)
+          .map((x) => this.csvCell(x))
           .join(',');
         res.write(row + '\n');
       }
@@ -974,7 +944,7 @@ export class MerchantsController {
           t.outletLastSeenAt ? new Date(t.outletLastSeenAt).toISOString() : '',
           t.staffId || '',
         ]
-          .map((x) => `"${String(x).replaceAll('"', '""')}"`)
+          .map((x) => this.csvCell(x))
           .join(',');
         res.write(row + '\n');
       }
@@ -982,5 +952,19 @@ export class MerchantsController {
       if (page.length < batch) break;
     }
     res.end();
+  }
+
+  private sanitizeCsvValue(value: string) {
+    const trimmed = value.replace(/^[\t\r\n ]+/, '');
+    if (trimmed && /^[=+\-@]/.test(trimmed)) {
+      return `'${value}`;
+    }
+    return value;
+  }
+
+  private csvCell(value: unknown) {
+    const safe = this.sanitizeCsvValue(String(value ?? ''));
+    const escaped = safe.replace(/"/g, '""');
+    return `"${escaped}"`;
   }
 }

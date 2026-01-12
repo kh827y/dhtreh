@@ -71,7 +71,10 @@ describe('TelegramMiniappGuard', () => {
       customerId: 'C-2',
       tgId: 'TG-2',
     });
-    const req = { body: { merchantId: 'M-2', customerId: 'C-2' }, headers: {} };
+    const req: any = {
+      body: { merchantId: 'M-2', customerId: 'C-2' },
+      headers: {},
+    };
 
     await expect(guard.canActivate(createContext(req))).resolves.toBe(true);
     expect(req.teleauth).toEqual({

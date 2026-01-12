@@ -1,8 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { ConfigService } from '@nestjs/config';
-import * as crypto from 'crypto';
+import {
+  DEFAULT_TIMEZONE_CODE,
+  findTimezone,
+} from '../timezone/russia-timezones';
 
 export enum RiskLevel {
   LOW = 'LOW',
@@ -72,7 +75,7 @@ export class AntiFraudService {
       factors.push(...amountScore.factors);
 
       // 3. Проверка времени транзакции
-      const timeScore = this.checkTime();
+      const timeScore = await this.checkTime(context.merchantId);
       totalScore += timeScore.score;
       factors.push(...timeScore.factors);
 
@@ -86,13 +89,7 @@ export class AntiFraudService {
       totalScore += patternScore.score;
       factors.push(...patternScore.factors);
 
-      // 5. Проверка геолокации (если доступна)
-      if (context.location) {
-        const geoScore = await this.checkGeolocation(context);
-        totalScore += geoScore.score;
-        factors.push(...geoScore.factors);
-      }
-      // 6. Проверка торговой точки/устройства
+      // 5. Проверка торговой точки/устройства
       const outletScore = await this.checkOutlet(context);
       totalScore += outletScore.score;
       factors.push(...outletScore.factors);
@@ -255,11 +252,15 @@ export class AntiFraudService {
   /**
    * Проверка времени транзакции
    */
-  private checkTime() {
+  private async checkTime(merchantId: string) {
     const factors: string[] = [];
     let score = 0;
 
-    const currentHour = new Date().getHours();
+    const timezone = await this.resolveTimezone(merchantId);
+    const local = new Date(
+      Date.now() + timezone.utcOffsetMinutes * 60 * 1000,
+    );
+    const currentHour = local.getUTCHours();
 
     // Проверка на необычное время
     if (
@@ -271,7 +272,7 @@ export class AntiFraudService {
     }
 
     // Проверка на выходные дни для B2B
-    const dayOfWeek = new Date().getDay();
+    const dayOfWeek = local.getUTCDay();
     if (dayOfWeek === 0 || dayOfWeek === 6) {
       score += 5;
       factors.push('weekend_transaction');
@@ -344,37 +345,6 @@ export class AntiFraudService {
   }
 
   /**
-   * Проверка геолокации
-   */
-  private async checkGeolocation(context: TransactionContext) {
-    const factors: string[] = [];
-    let score = 0;
-
-    if (!context.location) return { score, factors };
-
-    // Получаем последнюю транзакцию с геолокацией
-    const lastTransactionWithGeo = await this.prisma.transaction.findFirst({
-      where: {
-        customerId: context.customerId,
-        merchantId: context.merchantId,
-        NOT: { id: undefined }, // Исключаем текущую
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // Здесь должна быть логика проверки расстояния между транзакциями
-    // Для примера используем заглушку
-    const distance = 0; // calculateDistance(lastLocation, context.location);
-
-    if (distance > this.THRESHOLDS.maxDistanceKm) {
-      score += 30;
-      factors.push(`location_jump:${distance}km`);
-    }
-
-    return { score, factors };
-  }
-
-  /**
    * Проверка устройства
    */
   private async checkOutlet(context: TransactionContext) {
@@ -387,21 +357,6 @@ export class AntiFraudService {
       score += 10;
       factors.push('no_outlet_id');
       return { score, factors };
-    }
-
-    const historyThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const outletHistory = await this.prisma.transaction.count({
-      where: {
-        customerId: context.customerId,
-        merchantId: context.merchantId,
-        outletId,
-        createdAt: { lt: historyThreshold },
-      },
-    });
-
-    if (outletHistory === 0) {
-      score += 15;
-      factors.push('new_outlet');
     }
 
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -450,7 +405,10 @@ export class AntiFraudService {
     }
 
     // Проверка черного списка
-    const blacklisted = await this.checkBlacklist(context.customerId);
+    const blacklisted = await this.checkBlacklist(
+      context.merchantId,
+      context.customerId,
+    );
     if (blacklisted) {
       score += 100;
       factors.push('blacklisted_customer');
@@ -462,10 +420,18 @@ export class AntiFraudService {
   /**
    * Проверка черного списка
    */
-  private async checkBlacklist(customerId: string): Promise<boolean> {
-    // Здесь должна быть проверка по реальной базе черного списка
-    // Для примера возвращаем false
-    return false;
+  private async checkBlacklist(
+    merchantId: string,
+    customerId: string,
+  ): Promise<boolean> {
+    if (!merchantId || !customerId) return false;
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, merchantId },
+      select: { accrualsBlocked: true, redemptionsBlocked: true },
+    });
+    return Boolean(
+      customer?.accrualsBlocked || customer?.redemptionsBlocked,
+    );
   }
 
   /**
@@ -534,6 +500,12 @@ export class AntiFraudService {
    * История проверок/транзакций клиента (простой вариант)
    */
   async getCustomerHistory(merchantId: string, customerId: string) {
+    if (!merchantId) {
+      throw new BadRequestException('merchantId is required');
+    }
+    if (!customerId) {
+      throw new BadRequestException('customerId is required');
+    }
     const [txns, audits] = await Promise.all([
       this.prisma.transaction.findMany({
         where: { merchantId, customerId },
@@ -541,43 +513,16 @@ export class AntiFraudService {
         take: 50,
       }),
       this.prisma.adminAudit.findMany({
-        where: { merchantId, actor: 'antifraud_system' },
+        where: {
+          merchantId,
+          actor: 'antifraud_system',
+          payload: { path: ['customerId'], equals: customerId } as any,
+        },
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
     ]);
     return { txns, audits };
-  }
-
-  /**
-   * Ручная отметка результата проверки (review)
-   */
-  async reviewCheck(
-    checkId: string,
-    dto: { approved: boolean; notes?: string; reviewedBy: string },
-  ) {
-    try {
-      await this.prisma.adminAudit.create({
-        data: {
-          actor: dto.reviewedBy || 'admin',
-          method: 'FRAUD_REVIEW',
-          path: '/antifraud/:checkId/review',
-          action: dto.approved
-            ? 'fraud_review_approved'
-            : 'fraud_review_rejected',
-          payload: {
-            checkId,
-            approved: dto.approved,
-            notes: dto.notes,
-            timestamp: new Date().toISOString(),
-          } as any,
-        },
-      });
-      try {
-        this.metrics.inc('antifraud_reviewed_total');
-      } catch {}
-    } catch {}
-    return { ok: true };
   }
 
   /**
@@ -617,6 +562,9 @@ export class AntiFraudService {
    * Получение статистики по антифроду
    */
   async getStatistics(merchantId: string, days = 30) {
+    if (!merchantId) {
+      throw new BadRequestException('merchantId is required');
+    }
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
     const audits = await this.prisma.adminAudit.findMany({
@@ -699,6 +647,18 @@ export class AntiFraudService {
     } catch (e) {
       this.logger.error('Ошибка записи FraudCheck:', e);
       return null;
+    }
+  }
+
+  private async resolveTimezone(merchantId: string) {
+    try {
+      const row = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId },
+        select: { timezone: true },
+      });
+      return findTimezone(row?.timezone ?? DEFAULT_TIMEZONE_CODE);
+    } catch {
+      return findTimezone(DEFAULT_TIMEZONE_CODE);
     }
   }
 }

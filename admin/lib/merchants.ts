@@ -1,7 +1,15 @@
 const BASE = '/api/admin';
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, { headers: { 'Content-Type': 'application/json' }, ...init });
+  const method = String(init?.method || 'GET').toUpperCase();
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...(init?.headers as any || {}),
+  };
+  if (method !== 'GET' && method !== 'HEAD' && !('x-admin-action' in headers)) {
+    (headers as Record<string, string>)['x-admin-action'] = 'ui';
+  }
+  const res = await fetch(BASE + path, { ...init, headers });
   if (!res.ok) throw new Error(await res.text());
   return await res.json() as T;
 }
@@ -17,8 +25,6 @@ export type MerchantRow = {
   earnBps?: number;
   redeemLimitBps?: number;
   qrTtlSec?: number | null;
-  requireBridgeSig?: boolean;
-  requireStaffKey?: boolean;
   subscriptionStatus?: string;
   subscriptionPlanName?: string | null;
   subscriptionEndsAt?: string | null;
@@ -29,7 +35,7 @@ export type MerchantRow = {
 };
 
 export async function listMerchants(): Promise<MerchantRow[]> {
-  const rows = await http<Array<MerchantRow & { settings?: { earnBps: number; redeemLimitBps: number; qrTtlSec: number | null; requireBridgeSig: boolean; requireStaffKey: boolean; maxOutlets?: number | null } }>>(`/merchants`);
+  const rows = await http<Array<MerchantRow & { settings?: { earnBps: number; redeemLimitBps: number; qrTtlSec: number | null; maxOutlets?: number | null } }>>(`/merchants`);
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
@@ -38,11 +44,9 @@ export async function listMerchants(): Promise<MerchantRow[]> {
     portalLoginEnabled: row.portalLoginEnabled,
     portalTotpEnabled: row.portalTotpEnabled,
     portalEmail: row.portalEmail ?? null,
-    earnBps: row.settings?.earnBps ?? row.earnBps ?? 300,
-    redeemLimitBps: row.settings?.redeemLimitBps ?? row.redeemLimitBps ?? 5000,
+    earnBps: row.settings?.earnBps ?? row.earnBps ?? null,
+    redeemLimitBps: row.settings?.redeemLimitBps ?? row.redeemLimitBps ?? null,
     qrTtlSec: row.settings?.qrTtlSec ?? row.qrTtlSec ?? null,
-    requireBridgeSig: row.settings?.requireBridgeSig ?? row.requireBridgeSig ?? false,
-    requireStaffKey: row.settings?.requireStaffKey ?? row.requireStaffKey ?? false,
     subscriptionStatus: (row as any)?.subscription?.status ?? undefined,
     subscriptionPlanName:
       (row as any)?.subscription?.planName ??
@@ -62,10 +66,24 @@ export async function createMerchant(
   ownerName?: string,
   maxOutlets?: number | null,
 ): Promise<{ id: string; name: string; email: string }> {
-  return http(`/merchants`, { method: 'POST', body: JSON.stringify({ name, email, password, ownerName, maxOutlets }) });
+  return http(`/merchants`, {
+    method: 'POST',
+    body: JSON.stringify({
+      name,
+      portalEmail: email,
+      portalPassword: password,
+      ownerName,
+      maxOutlets,
+    }),
+  });
 }
 export async function updateMerchant(id: string, patch: { name?: string; email?: string; password?: string }): Promise<{ id: string; name: string; email: string|null }> {
-  return http(`/merchants/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(patch) });
+  const payload = {
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.email !== undefined ? { portalEmail: patch.email } : {}),
+    ...(patch.password !== undefined ? { portalPassword: patch.password } : {}),
+  };
+  return http(`/merchants/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) });
 }
 export async function deleteMerchant(id: string): Promise<{ ok: true }> {
   return http(`/merchants/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -98,8 +116,6 @@ export async function updateMerchantSettings(
   merchantId: string,
   dto: {
     qrTtlSec?: number;
-    requireBridgeSig?: boolean;
-    requireStaffKey?: boolean;
     maxOutlets?: number | null;
   },
 ): Promise<any> {

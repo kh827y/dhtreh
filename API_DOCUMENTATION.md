@@ -118,46 +118,6 @@ Local: http://localhost:3000
 X-Admin-Key: ak_live_xxxxxxxxxxxxxx
 ```
 
-### Bridge Signature
-Для запросов от POS Bridge:
-```http
-X-Bridge-Signature: v1,ts=1234567890,sig=base64signature
-```
-
-Формирование подписи:
-- Алгоритм: HMAC-SHA256
-- Строка для подписи: `${ts}.${body}` (где `ts` — UNIX seconds, `body` — точный JSON тела запроса без изменений)
-- Формат заголовка: `v1,ts=<unix_seconds>,sig=<base64(HMAC_SHA256(ts + '.' + body))>`
-
-Проверка на стороне API:
-1) распарсить `ts` и `sig` из заголовка; убедиться, что `ts` в разумном окне времени (рекомендуется ±300 секунд);
-2) вычислить ожидаемую подпись `base64(HMAC_SHA256(ts + '.' + body, secret))` и сравнить с присланной `sig`;
-3) разрешить временную ротацию секрета: если проверка не прошла основным `bridgeSecret`, попробовать `bridgeSecretNext`.
-
-Где применяется (включается per-merchant настройкой `requireBridgeSig`):
-- `POST /loyalty/quote` — при включённой настройке, сигнатура обязательна.
-- `POST /loyalty/commit` — проверяется до выполнения; если hold привязан к торговой точке, используется секрет точки (`Outlet.bridgeSecret` или `bridgeSecretNext`) вместо мерчантского.
-- `POST /loyalty/refund` — аналогично `commit`; для новых интеграций требуется `outletId`.
-- `POST /loyalty/qr` — если нет TeleAuth и Staff-Key, при включённой настройке требуется подпись.
-
-Совместимость со Staff-Key: если для мерчанта вручную включено требование Staff-Key (`requireStaffKey`, настраивается только через backend/поддержку), допускается либо `X-Staff-Key`, либо `X-Bridge-Signature` (см. `loyalty.controller.ts: enforceRequireStaffKey`).
-
-Пример валидации:
-```ts
-import { createHmac } from 'crypto';
-
-function verifyBridgeSignature(sigHeader: string, rawBody: string, secret: string, nowSec = Math.floor(Date.now()/1000)) {
-  if (!sigHeader) return false;
-  const parts = Object.fromEntries(sigHeader.split(',').map(p => p.split('=')) as any);
-  const ts = Number(parts['ts']);
-  const sig = parts['sig'];
-  if (!ts || !sig) return false;
-  if (Math.abs(nowSec - ts) > 300) return false; // окно ±5 минут
-  const expected = createHmac('sha256', secret).update(`${ts}.${rawBody}`).digest('base64');
-  return expected === sig;
-}
-```
-
 ### PortalAuth JWT
 
 Merchant Portal использует отдельный JWT, выдаваемый при логине по email.
@@ -352,7 +312,7 @@ Response 200:
 
 ### Интеграции REST API
 
-Эндпоинты `/api/integrations/**` требуют заголовок `X-Api-Key` (интеграционный ключ); `merchantId` определяется по ключу. Throttling по `integrationId` с дефолтными лимитами: CODE — 60/мин, CALCULATE-ACTION/BONUS — 180/мин, BONUS — 60/мин, REFUND — 30/мин, OUTLETS/DEVICES — 60/мин, OPERATIONS — 30/мин (настраиваются в интеграции).
+Эндпоинты `/api/integrations/**` требуют заголовок `X-Api-Key` (интеграционный ключ); `merchantId` определяется по ключу. Throttling по `integrationId` с дефолтными лимитами: CODE — 60/мин, CALCULATE-ACTION/BONUS — 180/мин, BONUS — 60/мин, REFUND — 30/мин (настраиваются в интеграции).
 
 Идентификация клиента: во всех методах, требующих клиента, используется `id_client` (= customerId) или `user_token` (QR-код). Тип QR-кода задаётся в системных настройках мерчанта: цифровой 9-значный код или защищённый JWT-токен. В CALCULATE-BONUS/ACTION дополнительно поддерживается `phone`.
 
@@ -361,9 +321,6 @@ Response 200:
 - `POST /api/integrations/calculate/bonus` — расчёт начисления/списания без hold: `{ user_token? | id_client? | phone?, items[]?, total?, paid_bonus?, outlet_id? }` → `{ status, items?: [{ id_product, name, price, quantity, max_pay_bonus, earn_bonus }], max_pay_bonus, bonus_value, final_payable }`. Можно передать `total` вместо `items[]` для упрощённого расчёта (без per-item детализации). `paid_bonus` — желаемое списание, ограничивает `max_pay_bonus` этим значением. Акции применяются **только** если переданы `items[].actions`/`items[].action_names`; при отсутствии — промо не учитываются.
 - `POST /api/integrations/bonus` — фиксация операции по переданным значениям: `idempotency_key` (обязательный ключ идемпотентности), `invoice_num?` (кастомный номер чека), `paid_bonus?` (списывается с учётом лимитов), `bonus_value?` (если не передан — авторасчёт по правилам лояльности, `0` отключает начисление), `operation_date?` (ISO), `manager_id?`. Контекст `outlet_id`/`device_id`/`manager_id` обязателен (хотя бы один). Акции применяются **только** если переданы `items[].actions`/`items[].action_names`; при отсутствии — промо не учитываются. Идемпотентность по `merchantId+idempotency_key`. Ответ: `{ result, invoice_num, order_id (ID операции лояльности), redeem_applied, earn_applied, client }`.
 - `POST /api/integrations/refund` — только полная отмена по `invoice_num` или `order_id` (`operation_date?`, `device_id?`, `outlet_id?` для контекста). Возвращает `{ invoice_num, order_id, points_restored, points_revoked, balance_after }`, без partial-share и без transactionIds.
-- `GET /api/integrations/outlets` — справочник точек мерчанта (`id`, `name`, `address?`, `description?`) + `managers[]` (активные сотрудники с доступом к точке: `id`, `name`, `code?`), без чужих `merchantId`.
-- `GET /api/integrations/devices` — опциональный `outlet_id`, возвращает устройства мерчанта (`id`, `code`, `outlet_id`) с валидацией кода/ID по Device.
-- `GET /api/integrations/operations` — история покупок/возвратов: query `invoice_num?` (ищет и по `receipt_num`), `from?`/`to?` (ISO по `operation_date/createdAt`), `device_id?`, `outlet_id?`, `limit?` (<=500). Ответ `items[]`: `{ kind: purchase|refund, id_client, invoice_num, order_id, receipt_num?, total, redeem_applied?, earn_applied?, points_restored?, points_revoked?, operation_date, outlet_id?, device_id?, device_code?, canceled_at?, points_delta, balance_before?, balance_after? }`. История строится только из зафиксированных BONUS (hold→commit) и REFUND; CODE/CALCULATE не создают записей.
 
 Item-level формат позиций: `items[]` с полями `id_product`, `name?`, `qty` (или `quantity`), `price`. Поля `categoryId/category_id` не поддерживаются ни в одном интеграционном методе. Для `calculate/bonus` не поддерживаются `base_price`, `allow_earn_and_pay`, `earn_multiplier`. Акции по товарам учитываются через `actions`/`action_names`.
 
@@ -373,7 +330,6 @@ Item-level формат позиций: `items[]` с полями `id_product`, 
 ```http
 POST /loyalty/qr
 Content-Type: application/json
-X-Staff-Key: optional
 
 {
   "customerId": "string",
@@ -730,7 +686,6 @@ REDEEM cap: 1000 * (5000+1000)/10000 = floor(1000 * 0.6) = 600
 POST /loyalty/commit
 Content-Type: application/json
 Idempotency-Key: unique_key
-X-Staff-Key: required_if_enabled
 
 {
   "merchantId": "string",
@@ -754,7 +709,6 @@ Response 200:
 POST /loyalty/refund
 Content-Type: application/json
 Idempotency-Key: unique_key
-X-Staff-Key: required_if_enabled
 
 {
   "merchantId": "string",
@@ -933,8 +887,6 @@ Response 200:
   "redeemLimitBps": 5000,
   "qrTtlSec": 300,
   "webhookUrl": "https://merchant.com/webhook",
-  "requireStaffKey": true,
-  "requireBridgeSig": false,
   "telegramBotToken": "encrypted",
   "miniappBaseUrl": "https://app.loyalty.com"
 }
@@ -1331,33 +1283,6 @@ Content-Type: application/json
 }
 ```
 
-## POS Bridge
-
-### Quote через Bridge
-```http
-POST http://localhost:18080/quote
-Content-Type: application/json
-
-{
-  "mode": "redeem",
-  "orderId": "POS-123",
-  "total": 1000,
-  "userToken": "jwt_or_qr"
-}
-```
-
-### Commit через Bridge
-```http
-POST http://localhost:18080/commit
-Content-Type: application/json
-
-{
-  "holdId": "uuid",
-  "orderId": "POS-123",
-  "idempotencyKey": "unique_key"
-}
-```
-
 ## Вебхуки
 
 ### Формат вебхука
@@ -1569,7 +1494,6 @@ curl -X POST https://api.loyalty.com/loyalty/qr \
 # Quote
 curl -X POST https://api.loyalty.com/loyalty/quote \
   -H "Content-Type: application/json" \
-  -H "X-Staff-Key: sk_live_xxxxx" \
   -d '{"mode":"earn","merchantId":"M-1","userToken":"jwt","orderId":"123","total":1000,"positions":[{"id_product":"SKU-1","qty":1,"price":1000}]}'
 ```
 
@@ -1748,7 +1672,7 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
   - POST `/portal/integrations/telegram-mini-app/link` → генерация диплинка Mini App: `{ deepLink, startParam }`.
   - POST `/portal/integrations/telegram-mini-app/setup-menu` → установка Chat Menu Button с web_app URL мини-приложения для мерчанта: `{ ok: true }`.
   - DELETE `/portal/integrations/telegram-mini-app` → отключение интеграции.
-  - GET `/portal/integrations/rest-api` → состояние REST API интеграции: `{ enabled, status, integrationId, apiKeyMask, baseUrl, requireBridgeSignature, rateLimits, issuedAt, availableEndpoints }`.
+- GET `/portal/integrations/rest-api` → состояние REST API интеграции: `{ enabled, status, integrationId, apiKeyMask, baseUrl, rateLimits, issuedAt, availableEndpoints }`.
   - POST `/portal/integrations/rest-api/issue` → выпуск или перевыпуск ключа, возвращает состояние + одноразовый `apiKey` для копирования.
   - DELETE `/portal/integrations/rest-api` → отзыв ключа и деактивация интеграции (ключ стирается).
 

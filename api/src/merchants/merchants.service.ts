@@ -140,6 +140,10 @@ export class MerchantsService {
       .replace(/[^0-9]/g, '')
       .slice(0, Math.max(0, Math.floor(Number(maxLen) || 0)));
   }
+
+  private hashPin(pin: string): string {
+    return this.sha256(`pin:${pin}`);
+  }
   private async generateUniqueOutletPin(
     merchantId: string,
     excludeAccessId?: string,
@@ -581,9 +585,6 @@ export class MerchantsService {
       webhookSecretNext: s.webhookSecretNext ?? null,
       webhookKeyIdNext: s.webhookKeyIdNext ?? null,
       useWebhookNext: s.useWebhookNext ?? false,
-      requireBridgeSig: s.requireBridgeSig ?? false,
-      bridgeSecret: s.bridgeSecret ?? null,
-      bridgeSecretNext: s.bridgeSecretNext ?? null,
       redeemCooldownSec: s.redeemCooldownSec ?? 0,
       earnCooldownSec: s.earnCooldownSec ?? 0,
       redeemDailyCap: s.redeemDailyCap ?? null,
@@ -591,7 +592,6 @@ export class MerchantsService {
       maxOutlets: s.maxOutlets ?? null,
       requireJwtForQuote: s.requireJwtForQuote ?? false,
       rulesJson: normalizedRules ?? null,
-      requireStaffKey: s.requireStaffKey ?? false,
       pointsTtlDays: s.pointsTtlDays ?? null,
       earnDelayDays: s.earnDelayDays ?? null,
       telegramBotToken: s.telegramBotToken ?? null,
@@ -702,9 +702,6 @@ export class MerchantsService {
     earnDailyCap?: number,
     requireJwtForQuote?: boolean,
     rulesJson?: any,
-    requireBridgeSig?: boolean,
-    bridgeSecret?: string,
-    requireStaffKey?: boolean,
     extras?: Partial<UpdateMerchantSettingsDto>,
   ) {
     const normalizedRulesJson = this.normalizeRulesJson(rulesJson);
@@ -727,9 +724,6 @@ export class MerchantsService {
       webhookSecretNext: extras?.webhookSecretNext ?? undefined,
       webhookKeyIdNext: extras?.webhookKeyIdNext ?? undefined,
       useWebhookNext: extras?.useWebhookNext ?? undefined,
-      requireBridgeSig: requireBridgeSig ?? undefined,
-      bridgeSecret: bridgeSecret ?? undefined,
-      bridgeSecretNext: extras?.bridgeSecretNext ?? undefined,
       redeemCooldownSec: redeemCooldownSec ?? undefined,
       earnCooldownSec: earnCooldownSec ?? undefined,
       redeemDailyCap: redeemDailyCap ?? undefined,
@@ -739,7 +733,6 @@ export class MerchantsService {
         : {}),
       requireJwtForQuote: requireJwtForQuote ?? undefined,
       rulesJson: normalizedRulesJson ?? undefined,
-      requireStaffKey: requireStaffKey ?? undefined,
       updatedAt: new Date(),
       pointsTtlDays: extras?.pointsTtlDays ?? undefined,
       earnDelayDays: extras?.earnDelayDays ?? undefined,
@@ -769,9 +762,6 @@ export class MerchantsService {
       webhookSecretNext: extras?.webhookSecretNext ?? null,
       webhookKeyIdNext: extras?.webhookKeyIdNext ?? null,
       useWebhookNext: extras?.useWebhookNext ?? false,
-      requireBridgeSig: requireBridgeSig ?? false,
-      bridgeSecret: bridgeSecret ?? null,
-      bridgeSecretNext: extras?.bridgeSecretNext ?? null,
       redeemCooldownSec: redeemCooldownSec ?? 0,
       earnCooldownSec: earnCooldownSec ?? 0,
       redeemDailyCap: redeemDailyCap ?? null,
@@ -779,7 +769,6 @@ export class MerchantsService {
       maxOutlets: extras?.maxOutlets ?? null,
       requireJwtForQuote: requireJwtForQuote ?? false,
       rulesJson: normalizedRulesJson ?? null,
-      requireStaffKey: requireStaffKey ?? false,
       pointsTtlDays: extras?.pointsTtlDays ?? null,
       earnDelayDays: extras?.earnDelayDays ?? null,
       telegramBotToken: extras?.telegramBotToken ?? null,
@@ -811,8 +800,6 @@ export class MerchantsService {
       webhookUrl: updated.webhookUrl,
       webhookSecret: updated.webhookSecret,
       webhookKeyId: updated.webhookKeyId,
-      requireBridgeSig: updated.requireBridgeSig,
-      bridgeSecret: updated.bridgeSecret,
       redeemCooldownSec: updated.redeemCooldownSec,
       earnCooldownSec: updated.earnCooldownSec,
       redeemDailyCap: updated.redeemDailyCap,
@@ -820,7 +807,6 @@ export class MerchantsService {
       maxOutlets: (updated as any).maxOutlets ?? null,
       requireJwtForQuote: updated.requireJwtForQuote,
       rulesJson: updated.rulesJson,
-      requireStaffKey: updated.requireStaffKey,
       earnDelayDays: (updated as any).earnDelayDays ?? null,
       telegramBotToken: (updated as any).telegramBotToken ?? null,
       telegramBotUsername: (updated as any).telegramBotUsername ?? null,
@@ -832,6 +818,76 @@ export class MerchantsService {
       miniappLogoUrl: (updated as any).miniappLogoUrl ?? null,
       timezone: updated.timezone ?? DEFAULT_TIMEZONE_CODE,
     };
+  }
+
+  async resetAntifraudLimit(
+    merchantId: string,
+    payload: {
+      scope: 'merchant' | 'customer' | 'staff' | 'device' | 'outlet';
+      targetId?: string;
+    },
+  ) {
+    const scope = String(payload?.scope || '').trim() as
+      | 'merchant'
+      | 'customer'
+      | 'staff'
+      | 'device'
+      | 'outlet';
+    if (
+      !['merchant', 'customer', 'staff', 'device', 'outlet'].includes(scope)
+    ) {
+      throw new BadRequestException('scope is invalid');
+    }
+    if (scope !== 'merchant' && !payload?.targetId) {
+      throw new BadRequestException('targetId is required');
+    }
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { id: true },
+    });
+    if (!merchant) throw new NotFoundException('Merchant not found');
+
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { rulesJson: true },
+    });
+    const normalized = this.normalizeRulesJson(settings?.rulesJson ?? null);
+    const rules =
+      normalized && typeof normalized === 'object' && !Array.isArray(normalized)
+        ? { ...(normalized as any) }
+        : {};
+    const af =
+      rules.af && typeof rules.af === 'object' && !Array.isArray(rules.af)
+        ? { ...(rules.af as any) }
+        : {};
+    const reset =
+      af.reset && typeof af.reset === 'object' && !Array.isArray(af.reset)
+        ? { ...(af.reset as any) }
+        : {};
+    const nowIso = new Date().toISOString();
+
+    if (scope === 'merchant') {
+      reset.merchant = nowIso;
+    } else {
+      const id = String(payload?.targetId || '').trim();
+      const bucket =
+        reset[scope] && typeof reset[scope] === 'object'
+          ? { ...(reset[scope] as any) }
+          : {};
+      bucket[id] = nowIso;
+      reset[scope] = bucket;
+    }
+
+    af.reset = reset;
+    rules.af = af;
+
+    await this.prisma.merchantSettings.upsert({
+      where: { merchantId },
+      update: { rulesJson: rules, updatedAt: new Date() },
+      create: { merchantId, rulesJson: rules },
+    });
+
+    return { ok: true };
   }
 
   async previewRules(
@@ -893,9 +949,6 @@ export class MerchantsService {
       hidden: !!entity.hidden,
       posType: entity.posType ?? null,
       posLastSeenAt: entity.posLastSeenAt ?? null,
-      bridgeSecretIssued: !!entity.bridgeSecret,
-      bridgeSecretNextIssued: !!entity.bridgeSecretNext,
-      bridgeSecretUpdatedAt: entity.bridgeSecretUpdatedAt ?? null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     } as const;
@@ -1122,41 +1175,6 @@ export class MerchantsService {
       await tx.pushDevice.deleteMany({ where: { outletId } });
       await tx.device.deleteMany({ where: { outletId } });
       await tx.outlet.delete({ where: { id: outletId } });
-    });
-    return { ok: true };
-  }
-
-  async issueOutletBridgeSecret(merchantId: string, outletId: string) {
-    await this.ensureOutlet(merchantId, outletId);
-    const secret = this.randToken();
-    await this.prisma.outlet.update({
-      where: { id: outletId },
-      data: { bridgeSecret: secret, bridgeSecretUpdatedAt: new Date() },
-    });
-    return { secret };
-  }
-  async revokeOutletBridgeSecret(merchantId: string, outletId: string) {
-    await this.ensureOutlet(merchantId, outletId);
-    await this.prisma.outlet.update({
-      where: { id: outletId },
-      data: { bridgeSecret: null, bridgeSecretUpdatedAt: new Date() },
-    });
-    return { ok: true };
-  }
-  async issueOutletBridgeSecretNext(merchantId: string, outletId: string) {
-    await this.ensureOutlet(merchantId, outletId);
-    const secret = this.randToken();
-    await this.prisma.outlet.update({
-      where: { id: outletId },
-      data: { bridgeSecretNext: secret },
-    });
-    return { secret };
-  }
-  async revokeOutletBridgeSecretNext(merchantId: string, outletId: string) {
-    await this.ensureOutlet(merchantId, outletId);
-    await this.prisma.outlet.update({
-      where: { id: outletId },
-      data: { bridgeSecretNext: null },
     });
     return { ok: true };
   }
@@ -1429,11 +1447,13 @@ export class MerchantsService {
     const normalizedPin = String(pinCode || '').trim();
     if (!normalizedPin)
       throw new BadRequestException('pinCode (4 digits) required');
-    const matches = await this.prisma.staffOutletAccess.findMany({
+    const pinHash = this.hashPin(normalizedPin);
+    let matches = await this.prisma.staffOutletAccess.findMany({
       where: {
         merchantId,
-        pinCode: normalizedPin,
+        pinCodeHash: pinHash,
         status: StaffOutletAccessStatus.ACTIVE,
+        revokedAt: null,
       },
       include: {
         staff: true,
@@ -1441,6 +1461,33 @@ export class MerchantsService {
       },
       take: 2,
     });
+    if (!matches.length) {
+      matches = await this.prisma.staffOutletAccess.findMany({
+        where: {
+          merchantId,
+          pinCode: normalizedPin,
+          status: StaffOutletAccessStatus.ACTIVE,
+          revokedAt: null,
+        },
+        include: {
+          staff: true,
+          outlet: { select: { id: true, name: true } },
+        },
+        take: 2,
+      });
+      if (matches.length === 1 && !matches[0].pinCodeHash) {
+        await this.prisma.staffOutletAccess.update({
+          where: { id: matches[0].id },
+          data: {
+            pinCodeHash: pinHash,
+            pinRetryCount: 0,
+            pinUpdatedAt: new Date(),
+            revokedAt: null,
+          },
+        });
+        matches[0].pinCodeHash = pinHash;
+      }
+    }
     if (!matches.length)
       throw new NotFoundException('Staff access by PIN not found');
     if (matches.length > 1) {
@@ -1449,11 +1496,32 @@ export class MerchantsService {
       );
     }
     const access = matches[0];
+    const retryLimit = Math.max(
+      1,
+      Number(process.env.PIN_RETRY_LIMIT || '5'),
+    );
+    const retryWindowMs = Math.max(
+      60_000,
+      Number(process.env.PIN_RETRY_WINDOW_MS || '900000'),
+    );
+    if (
+      access.pinRetryCount >= retryLimit &&
+      access.pinUpdatedAt &&
+      Date.now() - access.pinUpdatedAt.getTime() < retryWindowMs
+    ) {
+      throw new UnauthorizedException('PIN временно заблокирован');
+    }
     const staff = access.staff;
     if (!staff || staff.merchantId !== merchantId)
       throw new NotFoundException('Staff not found');
     if (staff.status && staff.status !== StaffStatus.ACTIVE) {
       throw new UnauthorizedException('Staff inactive');
+    }
+    if (access.pinRetryCount) {
+      await this.prisma.staffOutletAccess.update({
+        where: { id: access.id },
+        data: { pinRetryCount: 0, pinUpdatedAt: new Date() },
+      });
     }
     return {
       access: {
@@ -1487,6 +1555,8 @@ export class MerchantsService {
       where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } },
       update: {
         pinCode,
+        pinCodeHash: this.hashPin(pinCode),
+        pinRetryCount: 0,
         status: StaffOutletAccessStatus.ACTIVE,
         revokedAt: null,
         pinUpdatedAt: new Date(),
@@ -1496,7 +1566,10 @@ export class MerchantsService {
         staffId,
         outletId,
         pinCode,
+        pinCodeHash: this.hashPin(pinCode),
+        pinRetryCount: 0,
         status: StaffOutletAccessStatus.ACTIVE,
+        pinUpdatedAt: new Date(),
       },
     });
     return {
@@ -1543,6 +1616,8 @@ export class MerchantsService {
       where: { id: access.id },
       data: {
         pinCode,
+        pinCodeHash: this.hashPin(pinCode),
+        pinRetryCount: 0,
         pinUpdatedAt: new Date(),
         status: StaffOutletAccessStatus.ACTIVE,
         revokedAt: null,
@@ -1567,6 +1642,8 @@ export class MerchantsService {
       where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } },
       data: {
         pinCode,
+        pinCodeHash: this.hashPin(pinCode),
+        pinRetryCount: 0,
         pinUpdatedAt: new Date(),
         status: StaffOutletAccessStatus.ACTIVE,
         revokedAt: null,
@@ -2271,9 +2348,60 @@ export class MerchantsService {
   async ttlReconciliation(merchantId: string, cutoffISO: string) {
     const cutoff = new Date(cutoffISO);
     if (isNaN(cutoff.getTime())) throw new Error('Bad cutoff date');
-    // expired lots (earnedAt < cutoff)
+    const windowDaysRaw = Number(
+      process.env.TTL_RECONCILIATION_WINDOW_DAYS || '365',
+    );
+    const windowDays =
+      Number.isFinite(windowDaysRaw) && windowDaysRaw > 0
+        ? Math.floor(windowDaysRaw)
+        : 0;
+    const windowStart =
+      windowDays > 0
+        ? new Date(cutoff.getTime() - windowDays * 24 * 60 * 60 * 1000)
+        : null;
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { pointsTtlDays: true },
+    });
+    const ttlDaysRaw = Number(settings?.pointsTtlDays ?? 0);
+    const ttlDays =
+      Number.isFinite(ttlDaysRaw) && ttlDaysRaw > 0
+        ? Math.floor(ttlDaysRaw)
+        : 0;
+    const now =
+      ttlDays > 0
+        ? new Date(cutoff.getTime() + ttlDays * 24 * 60 * 60 * 1000)
+        : cutoff;
+    const purchaseOnly = {
+      orderId: { not: null },
+      NOT: [
+        { orderId: 'registration_bonus' },
+        { orderId: { startsWith: 'birthday:' } },
+        { orderId: { startsWith: 'auto_return:' } },
+        { orderId: { startsWith: 'complimentary:' } },
+      ],
+    };
+    const expiresAtFilter = windowStart
+      ? { lte: now, gte: windowStart }
+      : { lte: now };
+    const earnedAtFilter = windowStart
+      ? { lt: cutoff, gte: windowStart }
+      : { lt: cutoff };
+    const conditions: Prisma.EarnLotWhereInput[] = [
+      { expiresAt: expiresAtFilter },
+      {
+        expiresAt: null,
+        earnedAt: earnedAtFilter,
+        ...purchaseOnly,
+      },
+    ];
+    // expired lots (aligned with burn logic)
     const lots = await this.prisma.earnLot.findMany({
-      where: { merchantId, earnedAt: { lt: cutoff } },
+      where: {
+        merchantId,
+        status: 'ACTIVE',
+        OR: conditions,
+      },
     });
     const remainByCustomer = new Map<string, number>();
     for (const lot of lots) {
@@ -2284,15 +2412,34 @@ export class MerchantsService {
           (remainByCustomer.get(lot.customerId) || 0) + remain,
         );
     }
-    // burned from outbox events with matching cutoff
+    const cutoffDay = new Date(
+      Date.UTC(
+        cutoff.getUTCFullYear(),
+        cutoff.getUTCMonth(),
+        cutoff.getUTCDate(),
+      ),
+    );
+    const cutoffDayEnd = new Date(cutoffDay.getTime() + 24 * 60 * 60 * 1000);
+    // burned from outbox events with matching cutoff date
     const events = await this.prisma.eventOutbox.findMany({
-      where: { merchantId, eventType: 'loyalty.points_ttl.burned' },
+      where: {
+        merchantId,
+        eventType: 'loyalty.points_ttl.burned',
+        ...(windowStart ? { createdAt: { gte: windowStart } } : {}),
+      },
     });
     const burnedByCustomer = new Map<string, number>();
     for (const ev of events) {
       try {
         const p: any = ev.payload as any;
-        if (p && p.cutoff && String(p.cutoff) === cutoff.toISOString()) {
+        const pCutoff =
+          p && p.cutoff ? new Date(String(p.cutoff)) : undefined;
+        if (
+          pCutoff &&
+          !isNaN(pCutoff.getTime()) &&
+          pCutoff >= cutoffDay &&
+          pCutoff < cutoffDayEnd
+        ) {
           const cid = String(p.customerId || '');
           const amt = Number(p.amount || 0);
           if (cid && amt > 0)
@@ -2482,8 +2629,6 @@ export class MerchantsService {
             earnBps: true,
             redeemLimitBps: true,
             qrTtlSec: true,
-            requireBridgeSig: true,
-            requireStaffKey: true,
             maxOutlets: true,
           },
         },
@@ -2664,9 +2809,6 @@ export class MerchantsService {
         earnBps: 300,
         redeemLimitBps: 5000,
         qrTtlSec: 300,
-        requireBridgeSig: false,
-        bridgeSecret: null,
-        requireStaffKey: false,
         redeemCooldownSec: 0,
         earnCooldownSec: 0,
         redeemDailyCap: null,

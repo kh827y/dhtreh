@@ -12,7 +12,6 @@ export interface RestApiIntegrationState {
   integrationId: string | null;
   apiKeyMask: string | null;
   baseUrl: string | null;
-  requireBridgeSignature: boolean;
   rateLimits: RestApiRateLimits;
   issuedAt: string | null;
   availableEndpoints: string[];
@@ -48,7 +47,6 @@ export class PortalRestApiIntegrationService {
       integrationId: integration?.id ?? null,
       apiKeyMask: keyMask || null,
       baseUrl: baseUrl || null,
-      requireBridgeSignature: config.requireBridgeSignature,
       rateLimits: config.rateLimits,
       issuedAt: integration?.apiKeyCreatedAt
         ? integration.apiKeyCreatedAt.toISOString()
@@ -74,7 +72,6 @@ export class PortalRestApiIntegrationService {
     const configToSave: Prisma.InputJsonValue = {
       ...preservedConfig,
       kind: 'rest-api',
-      requireBridgeSignature: normalizedConfig.requireBridgeSignature,
       rateLimits: normalizedConfig.rateLimits,
       lastIssuedAt: now.toISOString(),
     };
@@ -180,9 +177,6 @@ export class PortalRestApiIntegrationService {
       `${prefix}/calculate/bonus`,
       `${prefix}/bonus`,
       `${prefix}/refund`,
-      `${prefix}/outlets`,
-      `${prefix}/devices`,
-      `${prefix}/operations`,
     ];
   }
 }

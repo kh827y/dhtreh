@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   BadRequestException,
+  ConflictException,
   Res,
   Req,
   UnauthorizedException,
@@ -49,7 +50,7 @@ import {
   CustomerProfileSaveDto,
   CustomerPhoneStatusDto,
 } from './dto';
-import { randomInt } from 'crypto';
+import { createHash, createHmac, randomInt } from 'crypto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
@@ -60,12 +61,12 @@ import {
   SubscriptionGuard,
 } from '../guards/subscription.guard';
 import type { Request, Response } from 'express';
-import { createHmac } from 'crypto';
 import { validateTelegramInitData } from './telegram.util';
 import { PromoCodesService } from '../promocodes/promocodes.service';
 import { ReviewService } from '../reviews/review.service';
 import { LevelsService } from '../levels/levels.service';
 import type { MerchantSettings, Customer } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import {
   LedgerAccount,
   TxnType,
@@ -142,6 +143,31 @@ export class LoyaltyController {
       path: '/',
       maxAge: Math.max(0, Math.trunc(maxAgeMs)),
     });
+  }
+
+  private stableIdempotencyStringify(value: any): string {
+    if (value === null || value === undefined) return 'null';
+    if (typeof value !== 'object') return JSON.stringify(value);
+    if (Array.isArray(value)) {
+      return `[${value
+        .map((item) => this.stableIdempotencyStringify(item))
+        .join(',')}]`;
+    }
+    const keys = Object.keys(value).sort();
+    return `{${keys
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${this.stableIdempotencyStringify(
+            (value as Record<string, any>)[key],
+          )}`,
+      )
+      .join(',')}}`;
+  }
+
+  private hashIdempotencyPayload(payload: Record<string, any>): string {
+    return createHash('sha256')
+      .update(this.stableIdempotencyStringify(payload))
+      .digest('hex');
   }
 
   private clearCashierSessionCookie(res: Response) {
@@ -2076,7 +2102,7 @@ export class LoyaltyController {
         where: { id: dto.holdId },
       });
     } catch {}
-    const merchantIdEff = dto.merchantId || holdCached?.merchantId;
+    const merchantIdEff = holdCached?.merchantId || dto.merchantId;
 
     let customerId: string | null = null;
     if (holdCached?.customerId && merchantIdEff) {
@@ -2093,53 +2119,101 @@ export class LoyaltyController {
         dto.positions && Array.isArray(dto.positions)
           ? { positions: dto.positions }
           : undefined;
-      if (idemKey) {
-        const merchantForIdem = merchantIdEff || undefined;
-        if (merchantForIdem) {
-          const saved = await this.prisma.idempotencyKey.findUnique({
-            where: {
-              merchantId_key: { merchantId: merchantForIdem, key: idemKey },
-            },
-          });
-          if (saved) {
-            data = saved.response as any;
-          } else {
-            data = await this.service.commit(
-              dto.holdId,
-              dto.orderId,
-              dto.receiptNumber,
-              req.requestId,
-              commitOpts,
+      const merchantForIdem = merchantIdEff || undefined;
+      const scope = 'loyalty/commit';
+      const requestHash =
+        idemKey && merchantForIdem
+          ? this.hashIdempotencyPayload({
+              merchantId: merchantForIdem,
+              holdId: dto.holdId,
+              orderId: dto.orderId ?? null,
+              receiptNumber: dto.receiptNumber ?? null,
+              positions: commitOpts?.positions ?? null,
+            })
+          : null;
+      if (idemKey && merchantForIdem) {
+        const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
+        const exp = new Date(Date.now() + ttlH * 3600 * 1000);
+        const keyWhere = {
+          merchantId: merchantForIdem,
+          scope,
+          key: idemKey,
+        };
+        const existing = await this.prisma.idempotencyKey.findUnique({
+          where: { merchantId_scope_key: keyWhere },
+        });
+        if (existing) {
+          if (existing.requestHash && existing.requestHash !== requestHash) {
+            throw new ConflictException(
+              'Idempotency-Key уже использован с другим запросом',
             );
-            if (
-              data &&
-              typeof data === 'object' &&
-              data.alreadyCommitted === true
-            ) {
-              const { alreadyCommitted, ...rest } = data;
-              data = rest;
-            }
-            try {
-              const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
-              const exp = new Date(Date.now() + ttlH * 3600 * 1000);
-              await this.prisma.idempotencyKey.create({
-                data: {
-                  merchantId: merchantForIdem,
-                  key: idemKey,
-                  response: data,
-                  expiresAt: exp,
-                },
-              });
-            } catch {}
+          }
+          if (existing.response) {
+            data = existing.response as any;
+          } else {
+            throw new ConflictException('Idempotency-Key уже обрабатывается');
           }
         } else {
-          data = await this.service.commit(
-            dto.holdId,
-            dto.orderId,
-            dto.receiptNumber,
-            req.requestId,
-            commitOpts,
-          );
+          try {
+            await this.prisma.idempotencyKey.create({
+              data: {
+                merchantId: merchantForIdem,
+                scope,
+                key: idemKey,
+                requestHash,
+                expiresAt: exp,
+                response: Prisma.JsonNull,
+              },
+            });
+          } catch {
+            const saved = await this.prisma.idempotencyKey.findUnique({
+              where: { merchantId_scope_key: keyWhere },
+            });
+            if (saved) {
+              if (saved.requestHash && saved.requestHash !== requestHash) {
+                throw new ConflictException(
+                  'Idempotency-Key уже использован с другим запросом',
+                );
+              }
+              if (saved.response) {
+                data = saved.response as any;
+              } else {
+                throw new ConflictException(
+                  'Idempotency-Key уже обрабатывается',
+                );
+              }
+            }
+          }
+          if (data === undefined) {
+            try {
+              data = await this.service.commit(
+                dto.holdId,
+                dto.orderId,
+                dto.receiptNumber,
+                req.requestId,
+                commitOpts,
+              );
+              if (
+                data &&
+                typeof data === 'object' &&
+                data.alreadyCommitted === true
+              ) {
+                const { alreadyCommitted, ...rest } = data;
+                data = rest;
+              }
+              await this.prisma.idempotencyKey.update({
+                where: { merchantId_scope_key: keyWhere },
+                data: { response: data, expiresAt: exp },
+              });
+            } catch (e) {
+              try {
+                await this.prisma.idempotencyKey.delete({
+                  where: { merchantId_scope_key: keyWhere },
+                });
+              } catch {}
+              throw e;
+            }
+          }
         }
       } else {
         data = await this.service.commit(
@@ -2358,59 +2432,113 @@ export class LoyaltyController {
     try {
       const idemKey =
         (req.headers['idempotency-key'] as string | undefined) || undefined;
+      const scope = 'loyalty/refund';
+      const requestHash = idemKey
+        ? this.hashIdempotencyPayload({
+            merchantId,
+            invoiceNum: invoiceNum || null,
+            orderId: orderId || null,
+            receiptNumber,
+            deviceId: dto.deviceId ?? null,
+            operationDate: operationDate ? operationDate.toISOString() : null,
+          })
+        : null;
       if (idemKey) {
+        const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
+        const exp = new Date(Date.now() + ttlH * 3600 * 1000);
+        const keyWhere = { merchantId, scope, key: idemKey };
         const saved = await this.prisma.idempotencyKey.findUnique({
-          where: {
-            merchantId_key: { merchantId, key: idemKey },
-          },
+          where: { merchantId_scope_key: keyWhere },
         });
         if (saved) {
-          data = saved.response as any;
+          if (saved.requestHash && saved.requestHash !== requestHash) {
+            throw new ConflictException(
+              'Idempotency-Key уже использован с другим запросом',
+            );
+          }
+          if (saved.response) {
+            data = saved.response as any;
+          } else {
+            throw new ConflictException('Idempotency-Key уже обрабатывается');
+          }
         } else {
-          data = await this.service.refund({
-            merchantId,
-            invoiceNum,
-            orderId,
-            requestId: req.requestId,
-            deviceId: dto.deviceId,
-            operationDate,
-          });
           try {
-            let receipt = await this.prisma.receipt.findUnique({
-              where: {
-                merchantId_orderId: {
-                  merchantId,
-                  orderId: invoiceNum,
-                },
-              },
-              select: { customerId: true },
-            });
-            if (!receipt && orderId) {
-              receipt = await this.prisma.receipt.findFirst({
-                where: { id: orderId, merchantId },
-                select: { customerId: true },
-              });
-            }
-            if (receipt?.customerId) {
-              const mc = await this.ensureCustomer(
-                merchantId,
-                receipt.customerId,
-              );
-              customerId = mc.id;
-            }
-          } catch {}
-          try {
-            const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
-            const exp = new Date(Date.now() + ttlH * 3600 * 1000);
             await this.prisma.idempotencyKey.create({
               data: {
                 merchantId,
+                scope,
                 key: idemKey,
-                response: data,
+                requestHash,
                 expiresAt: exp,
+                response: Prisma.JsonNull,
               },
             });
-          } catch {}
+          } catch {
+            const existing = await this.prisma.idempotencyKey.findUnique({
+              where: { merchantId_scope_key: keyWhere },
+            });
+            if (existing) {
+              if (existing.requestHash && existing.requestHash !== requestHash) {
+                throw new ConflictException(
+                  'Idempotency-Key уже использован с другим запросом',
+                );
+              }
+              if (existing.response) {
+                data = existing.response as any;
+              } else {
+                throw new ConflictException(
+                  'Idempotency-Key уже обрабатывается',
+                );
+              }
+            }
+          }
+          if (data === undefined) {
+            try {
+              data = await this.service.refund({
+                merchantId,
+                invoiceNum,
+                orderId,
+                requestId: req.requestId,
+                deviceId: dto.deviceId,
+                operationDate,
+              });
+              try {
+                let receipt = await this.prisma.receipt.findUnique({
+                  where: {
+                    merchantId_orderId: {
+                      merchantId,
+                      orderId: invoiceNum,
+                    },
+                  },
+                  select: { customerId: true },
+                });
+                if (!receipt && orderId) {
+                  receipt = await this.prisma.receipt.findFirst({
+                    where: { id: orderId, merchantId },
+                    select: { customerId: true },
+                  });
+                }
+                if (receipt?.customerId) {
+                  const mc = await this.ensureCustomer(
+                    merchantId,
+                    receipt.customerId,
+                  );
+                  customerId = mc.id;
+                }
+              } catch {}
+              await this.prisma.idempotencyKey.update({
+                where: { merchantId_scope_key: keyWhere },
+                data: { response: data, expiresAt: exp },
+              });
+            } catch (e) {
+              try {
+                await this.prisma.idempotencyKey.delete({
+                  where: { merchantId_scope_key: keyWhere },
+                });
+              } catch {}
+              throw e;
+            }
+          }
         }
       } else {
         data = await this.service.refund({
@@ -2661,6 +2789,35 @@ export class LoyaltyController {
             if (existingTgId && existingTgId !== currentTgId) {
               throw new BadRequestException('Номер телефона уже используется');
             }
+            const [transactionsCount, earnLotsCount, wallet] =
+              await Promise.all([
+                tx.transaction
+                  .count({ where: { merchantId, customerId: customer.id } })
+                  .catch(() => 0),
+                (tx as any)?.earnLot?.count
+                  ? (tx as any).earnLot
+                      .count({
+                        where: { merchantId, customerId: customer.id },
+                      })
+                      .catch(() => 0)
+                  : 0,
+                tx.wallet
+                  .findFirst({
+                    where: {
+                      merchantId,
+                      customerId: customer.id,
+                      type: WalletType.POINTS,
+                    },
+                    select: { balance: true },
+                  })
+                  .catch(() => null),
+              ]);
+            const walletBalance = wallet?.balance ?? 0;
+            if (transactionsCount > 0 || earnLotsCount > 0 || walletBalance > 0) {
+              throw new BadRequestException(
+                'Этот профиль уже содержит историю операций. Автоматическое объединение недоступно.',
+              );
+            }
             mergedCustomerId = existingByPhone.id;
             targetCustomer = existingByPhone;
             if (currentTgId && existingTgId !== currentTgId) {
@@ -2804,8 +2961,6 @@ export class LoyaltyController {
       role: s.role,
     }));
   }
-
-  // verifyBridgeSignature: вынесен в ./bridge.util.ts
 
   // Согласия на коммуникации
   @Get('consent')

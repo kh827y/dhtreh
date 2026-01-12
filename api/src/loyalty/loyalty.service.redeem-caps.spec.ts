@@ -60,6 +60,9 @@ describe('LoyaltyService redeem caps', () => {
     jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 0,
       redeemLimitBps: 10000,
+      earnPercent: 0,
+      redeemLimitPercent: 100,
+      tierMinPayment: null,
     });
 
     const result = await service.calculateBonusPreview({
@@ -106,6 +109,9 @@ describe('LoyaltyService redeem caps', () => {
     jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 0,
       redeemLimitBps: 10000,
+      earnPercent: 0,
+      redeemLimitPercent: 100,
+      tierMinPayment: null,
     });
 
     const result = await service.calculateBonusPreview({
@@ -152,6 +158,9 @@ describe('LoyaltyService redeem caps', () => {
     jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 0,
       redeemLimitBps: 2500,
+      earnPercent: 0,
+      redeemLimitPercent: 25,
+      tierMinPayment: null,
     });
 
     const result = await service.calculateBonusPreview({
@@ -198,6 +207,9 @@ describe('LoyaltyService redeem caps', () => {
     jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 0,
       redeemLimitBps: 5000,
+      earnPercent: 0,
+      redeemLimitPercent: 50,
+      tierMinPayment: null,
     });
 
     const result = await service.calculateBonusPreview({
@@ -261,6 +273,8 @@ describe('LoyaltyService redeem caps', () => {
     jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 1000,
       redeemLimitBps: 0,
+      earnPercent: 10,
+      redeemLimitPercent: 0,
       tierMinPayment: null,
     });
 
@@ -307,6 +321,8 @@ describe('LoyaltyService redeem caps', () => {
     jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 1000,
       redeemLimitBps: 0,
+      earnPercent: 10,
+      redeemLimitPercent: 0,
       tierMinPayment: null,
     });
 
@@ -375,6 +391,8 @@ describe('LoyaltyService redeem caps', () => {
     jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 300,
       redeemLimitBps: 0,
+      earnPercent: 3,
+      redeemLimitPercent: 0,
       tierMinPayment: null,
     });
 
@@ -437,6 +455,8 @@ describe('LoyaltyService redeem caps', () => {
     jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 500,
       redeemLimitBps: 10000,
+      earnPercent: 5,
+      redeemLimitPercent: 100,
       tierMinPayment: null,
     });
 

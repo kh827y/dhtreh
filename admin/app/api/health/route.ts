@@ -12,11 +12,13 @@ export async function GET(req: NextRequest) {
     if (unauth) return unauth;
   }
   try {
-    const res = await fetch(API_BASE + '/healthz', { redirect: 'manual' });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    const healthRes = await fetch(API_BASE + '/healthz', { redirect: 'manual' });
+    const readyRes = await fetch(API_BASE + '/readyz', { redirect: 'manual' });
+    const health = await healthRes.json().catch(() => null);
+    const ready = await readyRes.json().catch(() => null);
+    const status = healthRes.ok && readyRes.ok ? 200 : (healthRes.ok ? readyRes.status : healthRes.status);
+    return NextResponse.json({ health, ready }, { status });
   } catch (e: any) {
     return new NextResponse(String(e?.message || e), { status: 502 });
   }
 }
-

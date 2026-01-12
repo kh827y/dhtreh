@@ -1,7 +1,15 @@
 const BASE = '/api/admin';
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, { headers: { 'Content-Type': 'application/json' }, ...init });
+  const method = String(init?.method || 'GET').toUpperCase();
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...(init?.headers as any || {}),
+  };
+  if (method !== 'GET' && method !== 'HEAD' && !('x-admin-action' in headers)) {
+    (headers as Record<string, string>)['x-admin-action'] = 'ui';
+  }
+  const res = await fetch(BASE + path, { ...init, headers });
   if (!res.ok) throw new Error(await res.text());
   return await res.json() as T;
 }

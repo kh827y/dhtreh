@@ -35,7 +35,6 @@ type RestApiState = {
   integrationId: string | null;
   apiKeyMask: string | null;
   baseUrl: string | null;
-  requireBridgeSignature: boolean;
   rateLimits?: RateLimits;
   issuedAt: string | null;
   availableEndpoints?: string[];

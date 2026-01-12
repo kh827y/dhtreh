@@ -93,6 +93,7 @@ export default function ObservabilityPage() {
         {incidents.length > 0 && (
           <div style={{ marginTop: 12 }}>
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Последние инциденты</div>
+            <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>История хранится только за текущий запуск сервиса.</div>
             <div style={{ display: "grid", gap: 8 }}>
               {incidents.map((ev) => (
                 <div key={ev.id} style={{ background: "#10182c", padding: 10, borderRadius: 8, border: ev.severity === "critical" ? "1px solid #f38ba8" : "1px solid #1e2a44" }}>
@@ -121,10 +122,13 @@ export default function ObservabilityPage() {
         <Stat label="Outbox pending" value={data?.metrics?.outboxPending ?? 0} warn={(data?.metrics?.outboxPending ?? 0) > 0} />
         <Stat label="Outbox DEAD" value={data?.metrics?.outboxDead ?? 0} warn={(data?.metrics?.outboxDead ?? 0) > 0} />
         <Stat label="Breaker open" value={data?.metrics?.circuitOpen ?? 0} warn={(data?.metrics?.circuitOpen ?? 0) > 0} />
-        <Stat label="HTTP 5xx" value={data?.metrics?.http5xx ?? 0} warn={(data?.metrics?.http5xx ?? 0) > 0} />
-        <Stat label="HTTP 4xx" value={data?.metrics?.http4xx ?? 0} warn={(data?.metrics?.http4xx ?? 0) > 100} />
-        <Stat label="Rate limited" value={data?.metrics?.rateLimited ?? 0} warn={(data?.metrics?.rateLimited ?? 0) > 0} />
+        <Stat label="HTTP 5xx (всего)" value={data?.metrics?.http5xx ?? 0} />
+        <Stat label="HTTP 4xx (всего)" value={data?.metrics?.http4xx ?? 0} />
+        <Stat label="Rate limited (всего)" value={data?.metrics?.rateLimited ?? 0} />
       </section>
+      <div style={{ fontSize: 12, opacity: 0.7, marginTop: -6 }}>
+        HTTP 4xx/5xx и Rate limited — накопительные значения с момента старта.
+      </div>
 
       <section style={{ background: "#0e1629", padding: 16, borderRadius: 10, border: "1px solid #1e2a44" }}>
         <div style={{ fontWeight: 700, marginBottom: 8 }}>Воркеры</div>

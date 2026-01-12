@@ -2628,6 +2628,10 @@ function MiniappPage() {
           <div className="pl-4 mb-2">
             <span className="text-[13px] uppercase text-gray-400 font-medium tracking-wide">Уровни лояльности</span>
           </div>
+          <p className="px-4 mb-3 text-[13px] text-gray-500">
+            Уровень рассчитывается за покупки в последние{" "}
+            {Number.isFinite(levelInfo?.periodDays) ? Math.floor(levelInfo!.periodDays) : 365} дней.
+          </p>
           <div className="bg-white rounded-[18px] overflow-hidden shadow-sm">
             {levelCatalog.map((level, index) => {
               const isCurrent = levelInfo?.current?.name === level.name;

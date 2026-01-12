@@ -58,7 +58,6 @@ docker-compose -f docker-compose.dev.yml exec api pnpm seed
 - Admin: http://localhost:3001
 - Cashier: http://localhost:3002
 - Miniapp: http://localhost:3003
-- Bridge: http://localhost:18080
 
 ## 🏭 Развертывание в Production
 
@@ -87,7 +86,6 @@ sudo usermod -aG docker $USER
 sudo ufw allow 22/tcp    # SSH
 sudo ufw allow 80/tcp    # HTTP
 sudo ufw allow 443/tcp   # HTTPS
-sudo ufw allow 18080/tcp # Bridge (только если нужен внешний доступ)
 sudo ufw enable
 ```
 
@@ -135,13 +133,13 @@ nano .env.production
 
 ```bash
 # Сборка и запуск
-docker-compose -f docker-compose.production.yml up -d
+docker-compose --env-file .env.production -f docker-compose.production.yml up -d
 
 # Применение миграций
-docker-compose -f docker-compose.production.yml exec api pnpm prisma migrate deploy
+docker-compose --env-file .env.production -f docker-compose.production.yml exec api pnpm prisma migrate deploy
 
 # Проверка логов
-docker-compose -f docker-compose.production.yml logs -f
+docker-compose --env-file .env.production -f docker-compose.production.yml logs -f
 
 # Проверка здоровья сервисов
 curl http://localhost:3000/health
@@ -319,13 +317,13 @@ docker exec postgres pg_dump -U loyalty loyalty | gzip > backup_$(date +%Y%m%d).
 ### Восстановление из бэкапа
 ```bash
 # Остановка приложения
-docker-compose -f docker-compose.production.yml stop api worker
+docker-compose --env-file .env.production -f docker-compose.production.yml stop api worker
 
 # Восстановление БД
 gunzip < backup_20240101.sql.gz | docker exec -i postgres psql -U loyalty loyalty
 
 # Запуск приложения
-docker-compose -f docker-compose.production.yml start api worker
+docker-compose --env-file .env.production -f docker-compose.production.yml start api worker
 ```
 
 ## 🔧 Обслуживание
@@ -336,10 +334,10 @@ docker-compose -f docker-compose.production.yml start api worker
 git pull origin main
 
 # Пересборка и перезапуск
-docker-compose -f docker-compose.production.yml up -d --build
+docker-compose --env-file .env.production -f docker-compose.production.yml up -d --build
 
 # Применение новых миграций
-docker-compose -f docker-compose.production.yml exec api pnpm prisma migrate deploy
+docker-compose --env-file .env.production -f docker-compose.production.yml exec api pnpm prisma migrate deploy
 ```
 
 ### Очистка Docker
@@ -348,7 +346,7 @@ docker-compose -f docker-compose.production.yml exec api pnpm prisma migrate dep
 docker image prune -a -f
 
 # Очистка логов
-docker-compose -f docker-compose.production.yml logs --tail=0 -f
+docker-compose --env-file .env.production -f docker-compose.production.yml logs --tail=0 -f
 
 # Полная очистка (ОСТОРОЖНО!)
 docker system prune -a --volumes
@@ -359,13 +357,13 @@ docker system prune -a --volumes
 ### Проблема: Контейнеры не запускаются
 ```bash
 # Проверка логов
-docker-compose -f docker-compose.production.yml logs api
+docker-compose --env-file .env.production -f docker-compose.production.yml logs api
 
 # Проверка конфигурации
-docker-compose -f docker-compose.production.yml config
+docker-compose --env-file .env.production -f docker-compose.production.yml config
 
 # Перезапуск с пересборкой
-docker-compose -f docker-compose.production.yml up -d --force-recreate --build
+docker-compose --env-file .env.production -f docker-compose.production.yml up -d --force-recreate --build
 ```
 
 ### Проблема: База данных недоступна
@@ -425,13 +423,13 @@ services:
 ### Логи для диагностики
 ```bash
 # Сбор всех логов
-docker-compose -f docker-compose.production.yml logs > logs_$(date +%Y%m%d_%H%M%S).txt
+docker-compose --env-file .env.production -f docker-compose.production.yml logs > logs_$(date +%Y%m%d_%H%M%S).txt
 
 # Логи конкретного сервиса
-docker-compose -f docker-compose.production.yml logs api --tail=1000
+docker-compose --env-file .env.production -f docker-compose.production.yml logs api --tail=1000
 
 # Real-time логи
-docker-compose -f docker-compose.production.yml logs -f
+docker-compose --env-file .env.production -f docker-compose.production.yml logs -f
 ```
 
 ### Контакты

@@ -55,7 +55,6 @@ import {
   RecencyGrouping,
   TimeGrouping,
 } from '../analytics/analytics.service';
-import { GiftsService } from '../gifts/gifts.service';
 import { PortalCatalogService } from './catalog.service';
 import {
   CategoryDto,
@@ -116,7 +115,6 @@ export class PortalController {
     private readonly notifications: NotificationsService,
     private readonly analytics: AnalyticsService,
     private readonly catalog: PortalCatalogService,
-    private readonly gifts: GiftsService,
     private readonly communications: CommunicationsService,
     private readonly staffMotivation: StaffMotivationService,
     private readonly operations: OperationsLogService,
@@ -628,16 +626,10 @@ export class PortalController {
 
   private maskSettingsSecrets(req: any, settings: any) {
     if (!settings) return settings;
-    if (req.portalActor !== 'STAFF') return settings;
-    if (hasPortalPermission(req.portalPermissions, 'system_settings', 'read')) {
-      return settings;
-    }
     return {
       ...settings,
       webhookSecret: null,
       webhookSecretNext: null,
-      bridgeSecret: null,
-      bridgeSecretNext: null,
       telegramBotToken: null,
     };
   }
@@ -719,6 +711,10 @@ export class PortalController {
       'reviewsShare',
       hasPortalPermission(req.portalPermissions, 'feedback', 'read'),
     );
+    pickRule(
+      'levelsPeriodDays',
+      hasPortalPermission(req.portalPermissions, 'mechanic_levels', 'read'),
+    );
 
     if (Object.keys(nextRules).length) {
       filtered.rulesJson = nextRules;
@@ -778,10 +774,6 @@ export class PortalController {
     setSystemIfDifferent(dto.redeemDailyCap, currentSettings.redeemDailyCap);
     setSystemIfDifferent(dto.earnDailyCap, currentSettings.earnDailyCap);
     setSystemIfDifferent(dto.requireJwtForQuote, currentSettings.requireJwtForQuote);
-    setSystemIfDifferent(dto.requireBridgeSig, currentSettings.requireBridgeSig);
-    setSystemIfDifferent(dto.bridgeSecret, currentSettings.bridgeSecret);
-    setSystemIfDifferent(dto.bridgeSecretNext, currentSettings.bridgeSecretNext);
-    setSystemIfDifferent(dto.requireStaffKey, currentSettings.requireStaffKey);
     setSystemIfDifferent(dto.telegramBotToken, currentSettings.telegramBotToken);
     setSystemIfDifferent(
       dto.telegramBotUsername,
@@ -851,6 +843,7 @@ export class PortalController {
           reviewsShare: 'feedback',
           allowEarnRedeemSameReceipt: 'mechanic_redeem_limits',
           disallowEarnRedeemSameReceipt: 'mechanic_redeem_limits',
+          levelsPeriodDays: 'mechanic_levels',
         };
         for (const key of rulesKeys) {
           const before = currentRules[key];
@@ -2005,7 +1998,6 @@ export class PortalController {
         integrationId: { type: 'string', nullable: true },
         apiKeyMask: { type: 'string', nullable: true },
         baseUrl: { type: 'string', nullable: true },
-        requireBridgeSignature: { type: 'boolean' },
         issuedAt: { type: 'string', format: 'date-time', nullable: true },
         availableEndpoints: {
           type: 'array',
@@ -2257,18 +2249,6 @@ export class PortalController {
     return this.telegramIntegration.disconnect(this.getMerchantId(req));
   }
 
-  // Gifts (portal list)
-  @Get('gifts')
-  @ApiOkResponse({
-    schema: {
-      type: 'array',
-      items: { type: 'object', additionalProperties: true },
-    },
-  })
-  giftsList(@Req() req: any) {
-    return this.gifts.listGifts(this.getMerchantId(req));
-  }
-
   // Settings
   @Get('settings')
   @ApiOkResponse({ type: MerchantSettingsRespDto })
@@ -2308,9 +2288,6 @@ export class PortalController {
       dto.earnDailyCap,
       dto.requireJwtForQuote,
       dto.rulesJson,
-      dto.requireBridgeSig,
-      dto.bridgeSecret,
-      dto.requireStaffKey,
       dto,
     );
   }
@@ -2585,59 +2562,6 @@ export class PortalController {
   })
   deleteOutlet(@Req() req: any, @Param('outletId') outletId: string) {
     return this.service.deleteOutlet(this.getMerchantId(req), outletId);
-  }
-
-  @Post('outlets/:outletId/bridge-secret')
-  @ApiOkResponse({
-    schema: { type: 'object', properties: { secret: { type: 'string' } } },
-  })
-  issueOutletBridgeSecret(
-    @Req() req: any,
-    @Param('outletId') outletId: string,
-  ) {
-    return this.service.issueOutletBridgeSecret(
-      this.getMerchantId(req),
-      outletId,
-    );
-  }
-  @Delete('outlets/:outletId/bridge-secret')
-  @ApiOkResponse({
-    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
-  })
-  revokeOutletBridgeSecret(
-    @Req() req: any,
-    @Param('outletId') outletId: string,
-  ) {
-    return this.service.revokeOutletBridgeSecret(
-      this.getMerchantId(req),
-      outletId,
-    );
-  }
-  @Post('outlets/:outletId/bridge-secret/next')
-  @ApiOkResponse({
-    schema: { type: 'object', properties: { secret: { type: 'string' } } },
-  })
-  issueOutletBridgeSecretNext(
-    @Req() req: any,
-    @Param('outletId') outletId: string,
-  ) {
-    return this.service.issueOutletBridgeSecretNext(
-      this.getMerchantId(req),
-      outletId,
-    );
-  }
-  @Delete('outlets/:outletId/bridge-secret/next')
-  @ApiOkResponse({
-    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
-  })
-  revokeOutletBridgeSecretNext(
-    @Req() req: any,
-    @Param('outletId') outletId: string,
-  ) {
-    return this.service.revokeOutletBridgeSecretNext(
-      this.getMerchantId(req),
-      outletId,
-    );
   }
   @Put('outlets/:outletId/pos')
   @ApiOkResponse({ type: PortalOutletDto })

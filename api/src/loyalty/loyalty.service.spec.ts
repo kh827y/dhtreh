@@ -5,9 +5,18 @@ import { LoyaltyService } from './loyalty.service';
 describe('LoyaltyService.commit idempotency', () => {
   function mkPrisma(overrides: any = {}) {
     const base: any = {
-      hold: { findUnique: jest.fn() },
+      hold: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       receipt: { findUnique: jest.fn(), create: jest.fn() },
-      wallet: { findFirst: jest.fn() },
+      wallet: {
+        findFirst: jest.fn(),
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       transaction: { create: jest.fn(() => ({ id: 'TXN' })) },
       eventOutbox: { create: jest.fn() },
       outlet: { findFirst: jest.fn(), update: jest.fn() },
@@ -76,6 +85,13 @@ describe('LoyaltyService.commit idempotency', () => {
       undefined as any,
       staffMotivation,
     );
+    jest.spyOn(svc, 'getBaseRatesForCustomer').mockResolvedValue({
+      earnBps: 0,
+      redeemLimitBps: 10000,
+      earnPercent: 0,
+      redeemLimitPercent: 100,
+      tierMinPayment: null,
+    });
     const r = await svc.commit('H1', 'O-1', undefined, undefined, undefined);
     expect(r.alreadyCommitted).toBe(true);
     expect(r.receiptId).toBe('R1');
@@ -110,10 +126,11 @@ describe('LoyaltyService.commit idempotency', () => {
         wallet: {
           findUnique: jest.fn(() => ({ id: 'W1', balance: 0 })),
           update: jest.fn(),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
         transaction: { create: jest.fn() },
         eventOutbox: { create: jest.fn() },
-        hold: { update: jest.fn() },
+        hold: { update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       });
       // when create fails, service should try findUnique again
       tx.receipt.findUnique.mockResolvedValue({
@@ -171,10 +188,11 @@ describe('LoyaltyService.commit idempotency', () => {
         wallet: {
           findUnique: jest.fn(() => ({ id: 'W2', balance: 0 })),
           update: jest.fn(),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
         transaction: { create: jest.fn(() => ({ id: 'TX' })) },
         eventOutbox: { create: jest.fn() },
-        hold: { update: jest.fn() },
+        hold: { update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       });
       return fn(txUsed);
     });
@@ -226,10 +244,11 @@ describe('LoyaltyService.commit idempotency', () => {
         wallet: {
           findUnique: jest.fn(() => ({ id: 'W3', balance: 0 })),
           update: jest.fn(),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
         transaction: { create: jest.fn(() => ({ id: 'TX' })) },
         eventOutbox: { create: jest.fn() },
-        hold: { update: jest.fn() },
+        hold: { update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
         outlet: { findFirst: jest.fn(), update: jest.fn() },
       });
       return fn(txUsed);
@@ -352,10 +371,11 @@ describe('LoyaltyService.commit idempotency', () => {
         wallet: {
           findUnique: jest.fn(() => ({ id: 'W-R1', balance: 100 })),
           update: jest.fn(),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
         transaction: { create: jest.fn(() => ({ id: 'TX-R1' })) },
         eventOutbox: { create: jest.fn() },
-        hold: { update: jest.fn() },
+        hold: { update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       });
       return fn(txUsed);
     });
@@ -400,9 +420,18 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       customer: { findUnique: jest.fn(), create: jest.fn() },
       merchant: { upsert: jest.fn() },
       receipt: { findUnique: jest.fn() },
-      hold: { findFirst: jest.fn(), create: jest.fn() },
+      hold: {
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       holdItem: { deleteMany: jest.fn(), createMany: jest.fn() },
-      wallet: { findFirst: jest.fn(), create: jest.fn() },
+      wallet: {
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       merchantSettings: { findUnique: jest.fn() },
       transaction: { findMany: jest.fn().mockResolvedValue([]) },
     };
@@ -453,6 +482,7 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       merchantId: 'M-1',
       customerId: 'C-1',
       userToken: 'token',
+      idempotencyKey: 'IDEMP-1',
       invoiceNum: 'ORDER-1',
       total: 100,
     });
@@ -484,6 +514,13 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       undefined as any,
       staffMotivation,
     );
+    jest.spyOn(svc, 'getBaseRatesForCustomer').mockResolvedValue({
+      earnBps: 0,
+      redeemLimitBps: 10000,
+      earnPercent: 0,
+      redeemLimitPercent: 100,
+      tierMinPayment: null,
+    });
     svc.commit = jest.fn().mockResolvedValue({
       receiptId: 'RCPT-M',
       redeemApplied: 50,
@@ -495,6 +532,7 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       merchantId: 'M-2',
       customerId: 'C-2',
       userToken: 'token',
+      idempotencyKey: 'IDEMP-2',
       invoiceNum: 'ORDER-2',
       total: 200,
       paidBonus: 50,
@@ -507,7 +545,7 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     expect(res.redeemApplied).toBe(50);
     expect(svc.commit).toHaveBeenCalledWith(
       'H-MANUAL',
-      'ORDER-2',
+      'IDEMP-2',
       'ORDER-2',
       undefined,
       expect.objectContaining({
@@ -541,6 +579,7 @@ describe('LoyaltyService.processIntegrationBonus', () => {
         merchantId: 'M-3',
         customerId: 'C-3',
         userToken: 'token',
+        idempotencyKey: 'IDEMP-3',
         invoiceNum: 'ORDER-3',
         total: 100,
         paidBonus: 50,
@@ -578,6 +617,7 @@ describe('LoyaltyService.processIntegrationBonus', () => {
         merchantId: 'M-4',
         customerId: 'C-4',
         userToken: 'token',
+        idempotencyKey: 'IDEMP-4',
         invoiceNum: 'ORDER-4',
         total: 100,
         bonusValue: 150,
@@ -618,6 +658,7 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       merchantId: 'M-5',
       customerId: 'C-5',
       userToken: 'token',
+      idempotencyKey: 'IDEMP-5',
       invoiceNum: 'ORDER-5',
       total: 150,
       paidBonus: 20,
@@ -634,7 +675,7 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     );
     expect(svc.commit).toHaveBeenCalledWith(
       'H-5',
-      'ORDER-5',
+      'IDEMP-5',
       'ORDER-5',
       undefined,
       expect.objectContaining({ operationDate }),
@@ -685,6 +726,7 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       merchantId: 'M-7',
       customerId: 'C-7',
       userToken: 'token',
+      idempotencyKey: 'IDEMP-7',
       invoiceNum: 'ORDER-7',
       total: 100,
       outletId: 'OUT-7',
@@ -763,12 +805,13 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     });
     const walletObj = { id: 'W-REF', balance: 0 };
     const tx = mkPrisma({
-      hold: { update: jest.fn() },
+      hold: { update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       wallet: {
         findFirst: jest.fn().mockResolvedValue(walletObj),
         findUnique: jest.fn().mockResolvedValue(walletObj),
         create: jest.fn().mockResolvedValue(walletObj),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       receipt: {
         findUnique: jest.fn().mockResolvedValue(null),

@@ -148,28 +148,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy-staging:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop'
-    environment: staging
-    
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Deploy to staging
-        uses: appleboy/ssh-action@v0.1.5
-        with:
-          host: ${{ secrets.STAGING_HOST }}
-          username: ${{ secrets.STAGING_USER }}
-          key: ${{ secrets.STAGING_SSH_KEY }}
-          script: |
-            cd /opt/loyalty
-            git pull origin develop
-            docker compose -f docker-compose.staging.yml pull
-            docker compose -f docker-compose.staging.yml up -d --remove-orphans
-            docker compose -f docker-compose.staging.yml exec -T api pnpm prisma migrate deploy
-            
   deploy-production:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -188,9 +166,9 @@ jobs:
           script: |
             cd /opt/loyalty
             git pull origin main
-            docker compose -f docker-compose.production.yml pull
-            docker compose -f docker-compose.production.yml up -d --remove-orphans --scale api=2 --scale miniapp=2
-            docker compose -f docker-compose.production.yml exec -T api pnpm prisma migrate deploy
+            docker compose --env-file .env.production -f docker-compose.production.yml pull
+            docker compose --env-file .env.production -f docker-compose.production.yml up -d --remove-orphans --scale api=2 --scale miniapp=2
+            docker compose --env-file .env.production -f docker-compose.production.yml exec -T api pnpm prisma migrate deploy
             
       - name: Run smoke tests
         run: |

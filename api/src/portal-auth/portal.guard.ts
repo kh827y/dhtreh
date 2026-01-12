@@ -135,8 +135,13 @@ export class PortalGuard implements CanActivate {
   }
 
   private normalizePath(raw?: string) {
-    const base = String(raw || '').split('?')[0] || '';
+    let base = String(raw || '').split('?')[0] || '';
     if (!base) return '';
+    if (base.startsWith('/api/v1/')) {
+      base = base.slice('/api/v1'.length);
+    } else if (base === '/api/v1') {
+      base = '/';
+    }
     return base.endsWith('/') && base !== '/' ? base.slice(0, -1) : base;
   }
 
@@ -145,11 +150,12 @@ export class PortalGuard implements CanActivate {
     const action = method === 'GET' || method === 'HEAD' ? 'read' : 'manage';
     const path = this.normalizePath(req?.originalUrl || req?.url);
     if (!path.startsWith('/portal')) return null;
-    if (path === '/portal/me') return null;
-    if (path.startsWith('/portal/loyalty/promotions')) return null;
-    if (path.startsWith('/portal/loyalty/mechanics')) return null;
-    if (path.startsWith('/portal/loyalty/redeem-limits')) return null;
-    if (path === '/portal/settings') return null;
+    const allowAll = { resources: [] as string[], action };
+    if (path === '/portal/me') return allowAll;
+    if (path.startsWith('/portal/loyalty/promotions')) return allowAll;
+    if (path.startsWith('/portal/loyalty/mechanics')) return allowAll;
+    if (path.startsWith('/portal/loyalty/redeem-limits')) return allowAll;
+    if (path === '/portal/settings') return allowAll;
     if (path.startsWith('/portal/settings/telegram-notify')) {
       return { resources: ['telegram_notifications'], action };
     }
@@ -256,8 +262,11 @@ export class PortalGuard implements CanActivate {
     const permissions = req.portalPermissions;
     if (!permissions || permissions.allowAll) return;
     const target = this.resolvePermissionTarget(req);
-    if (!target) return;
+    if (!target) {
+      throw new ForbiddenException('Недостаточно прав');
+    }
     const { resources, action } = target;
+    if (!resources.length) return;
     const allowed = resources.every((resource) =>
       hasPortalPermission(permissions, resource, action),
     );

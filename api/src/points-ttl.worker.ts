@@ -85,13 +85,20 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
         };
         const useLots = process.env.EARN_LOTS_FEATURE === '1';
         if (useLots) {
+          const conditions = [
+            { expiresAt: { lte: new Date(now) } },
+            {
+              expiresAt: null,
+              earnedAt: { lt: cutoff },
+              ...purchaseOnly,
+            },
+          ];
           // Точный превью: неиспользованные lot'ы, «заработанные» ранее cutoff
           const lots = await this.prisma.earnLot.findMany({
             where: {
               merchantId: s.merchantId,
               status: 'ACTIVE',
-              earnedAt: { lt: cutoff },
-              ...purchaseOnly,
+              OR: conditions,
             },
           });
           const byCustomer = new Map<string, number>();

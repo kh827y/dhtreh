@@ -7,6 +7,5 @@ export async function GET(req: NextRequest) {
   const unauth = requireSession(req);
   if (unauth) return unauth;
   const sess = getSession(req);
-  return NextResponse.json({ role: sess?.role || 'UNKNOWN' });
+  return NextResponse.json({ user: sess?.sub || 'admin' });
 }
-

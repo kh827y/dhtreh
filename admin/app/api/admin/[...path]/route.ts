@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 const API_BASE = (process.env.API_BASE || '').replace(/\/$/, '');
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || '';
-const ADMIN_UI_PASSWORD = process.env.ADMIN_UI_PASSWORD || process.env.ADMIN_UI_ADMIN_PASSWORD || '';
+const ADMIN_UI_PASSWORD = process.env.ADMIN_UI_PASSWORD || '';
 
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> | { path: string[] } }) {
   if (!API_BASE) return new Response('API_BASE not configured', { status: 500 });
@@ -19,7 +19,13 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     const unauth = requireSession(req);
     if (unauth) return unauth;
   }
-  const method = req.method;
+  const method = req.method.toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') {
+    const action = (req.headers.get('x-admin-action') || '').trim().toLowerCase();
+    if (action !== 'ui') {
+      return new Response('Missing admin action header', { status: 403 });
+    }
+  }
   const url = new URL(req.url);
   // В Next 15 params может быть Promise — поддержим оба варианта
   const p = (typeof (ctx.params as any)?.then === 'function') ? await (ctx.params as Promise<{ path: string[] }>) : (ctx.params as { path: string[] });
@@ -34,7 +40,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   // Audit hint via header (для логов API)
   try {
     const ip = (req.headers.get('x-forwarded-for') || req.ip || '').split(',')[0].trim();
-    headers['x-admin-actor'] = `${sess?.role || 'UNKNOWN'}@${ip || 'unknown'}`;
+    headers['x-admin-actor'] = `${sess?.sub || 'admin'}@${ip || 'unknown'}`;
     const mi = (() => { const i = parts.indexOf('merchants'); return i >= 0 ? parts[i+1] : undefined; })();
     if (mi) headers['x-merchant-id'] = mi;
   } catch {}

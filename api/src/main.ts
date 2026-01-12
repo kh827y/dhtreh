@@ -103,8 +103,6 @@ async function bootstrap() {
       'Content-Type',
       'x-admin-key',
       'x-request-id',
-      'x-staff-key',
-      'x-bridge-signature',
       'idempotency-key',
       'authorization',
     ],
@@ -131,8 +129,6 @@ async function bootstrap() {
         paths: [
           'req.headers.authorization',
           'req.headers["x-admin-key"]',
-          'req.headers["x-staff-key"]',
-          'req.headers["x-bridge-signature"]',
           'req.headers["idempotency-key"]',
           'req.headers["x-metrics-token"]',
           'req.body.userToken',

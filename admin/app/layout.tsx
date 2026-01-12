@@ -1,7 +1,6 @@
 export const metadata = { title: 'Loyalty Admin', description: 'Админ‑панель' };
 
 import OutboxLink from '../components/OutboxLink';
-import RoleBadge from '../components/RoleBadge';
 import '../src/app/globals.css';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -28,7 +27,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <aside style={{ width: 240, background: '#0e1629', borderRight: '1px solid #1e2a44', padding: 16, position: 'sticky', top: 0, alignSelf: 'flex-start', height: '100vh' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <a href="/" style={{ color: '#e6edf3', textDecoration: 'none', fontWeight: 700 }}>Loyalty Admin</a>
-              <RoleBadge />
             </div>
             <nav style={{ display: 'grid', gap: 8 }}>
               <a href="/" style={{ color: '#89b4fa' }}>Главная</a>
@@ -41,12 +39,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div style={{ marginTop: 8, opacity: 0.8, fontSize: 12, textTransform: 'uppercase' }}>Документация</div>
               <a href="/docs/webhooks" style={{ color: '#89b4fa' }}>Вебхуки</a>
               <a href="/docs/integration" style={{ color: '#89b4fa' }}>Интеграции</a>
-              <a href="/docs/bridge" style={{ color: '#89b4fa' }}>Bridge</a>
               <a href="/docs/deployment" style={{ color: '#89b4fa' }}>Деплой</a>
               <a href="/docs/observability" style={{ color: '#89b4fa' }}>Наблюдаемость</a>
               <div style={{ marginTop: 8, opacity: 0.8, fontSize: 12, textTransform: 'uppercase' }}>Инструменты</div>
               <a href="/exports" style={{ color: '#89b4fa' }}>Экспорт</a>
-              <a href="/tools/signature" style={{ color: '#89b4fa' }}>Подпись</a>
               <a href="/antifraud" style={{ color: '#89b4fa' }}>Антифрод</a>
               <a href="/status" style={{ color: '#89b4fa' }}>Статус API</a>
               <a href="/audit" style={{ color: '#89b4fa' }}>Аудит</a>

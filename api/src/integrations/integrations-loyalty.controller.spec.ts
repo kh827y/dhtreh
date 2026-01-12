@@ -395,9 +395,6 @@ describe('IntegrationsLoyaltyController', () => {
     jest
       .spyOn(controller as any, 'buildClientPayload')
       .mockResolvedValue({ id_client: 'C-2' });
-    jest
-      .spyOn(controller as any, 'verifyBridgeSignatureIfRequired')
-      .mockResolvedValue(undefined);
 
     const resp = await controller.code({ user_token: 'qr' } as any, {
       ...baseReq,

@@ -6,11 +6,12 @@ import { MerchantsModule } from '../merchants/merchants.module';
 import { AdminNotificationsController } from './admin-notifications.controller';
 import { TelegramModule } from '../telegram/telegram.module';
 import { SubscriptionModule } from '../subscription/subscription.module';
+import { AdminAuditInterceptor } from '../admin-audit.interceptor';
 
 @Module({
   imports: [PrismaModule, MerchantsModule, TelegramModule, SubscriptionModule],
   controllers: [AdminMerchantsController, AdminNotificationsController],
-  providers: [AdminMerchantsService],
+  providers: [AdminMerchantsService, AdminAuditInterceptor],
   exports: [AdminMerchantsService],
 })
 export class AdminPanelModule {}

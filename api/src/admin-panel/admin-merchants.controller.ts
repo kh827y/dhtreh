@@ -9,10 +9,12 @@ import {
   UseGuards,
   Delete,
   BadRequestException,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AdminGuard } from '../admin.guard';
 import { AdminIpGuard } from '../admin-ip.guard';
+import { AdminAuditInterceptor } from '../admin-audit.interceptor';
 import {
   AdminMerchantsService,
   type UpdateMerchantSettingsPayload,
@@ -25,6 +27,7 @@ interface ListQuery {
 
 @Controller('admin/merchants')
 @UseGuards(AdminGuard, AdminIpGuard)
+@UseInterceptors(AdminAuditInterceptor)
 @ApiTags('admin-merchants')
 export class AdminMerchantsController {
   constructor(private readonly service: AdminMerchantsService) {}
@@ -73,10 +76,12 @@ export class AdminMerchantsController {
   ) {
     return this.service.updateMerchant(id, {
       name: body.name ?? undefined,
-      portalEmail: body.portalEmail ?? undefined,
-      portalPassword: body.portalPassword ?? undefined,
+      portalEmail:
+        body.portalEmail === undefined ? undefined : body.portalEmail,
+      portalPassword:
+        body.portalPassword === undefined ? undefined : body.portalPassword,
       ownerName: body.ownerName ?? undefined,
-      archived: body.archived ?? false,
+      archived: body.archived,
     });
   }
 

@@ -45,7 +45,7 @@ services:
       API_BASE: http://api:3000
       ADMIN_KEY: change_me_admin
       ADMIN_SESSION_SECRET: change_me_admin_ui_cookie_secret
-      ADMIN_UI_ADMIN_PASSWORD: admin_password
+      ADMIN_UI_PASSWORD: admin_password
       NEXT_PUBLIC_MERCHANT_ID: M-1
     ports: ["3001:3001"]
 
@@ -57,19 +57,9 @@ services:
       NEXT_PUBLIC_MERCHANT_ID: M-1
     ports: ["3003:3003"]
 
-  bridge:
-    build: ../bridge
-    depends_on: [api]
-    environment:
-      API_BASE: http://api:3000
-      MERCHANT_ID: M-1
-      BRIDGE_PORT: 18080
-      BRIDGE_SECRET: change_me_bridge
-    ports: ["18080:18080"]
-
   prometheus:
     image: prom/prometheus:latest
-    depends_on: [api, bridge]
+    depends_on: [api]
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -93,4 +83,3 @@ services:
 
 volumes:
   pgdata:
-

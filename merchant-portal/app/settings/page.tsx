@@ -8,14 +8,14 @@ export default function SettingsPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>Системные настройки</div>
-          <div style={{ opacity: 0.8, fontSize: 13 }}>Управление кассовыми требованиями и TTL перенесено в админ‑панель</div>
+          <div style={{ opacity: 0.8, fontSize: 13 }}>Базовый TTL QR настраивается в админ‑панели</div>
         </div>
       </div>
 
       <Card>
         <CardHeader
           title="Кассовые ограничения теперь в админке"
-          subtitle="Переключатели «Требовать подпись Bridge», «Требовать Staff‑ключ» и базовый QR TTL настраиваются через раздел «Мерчанты» админ‑панели"
+          subtitle="Базовый TTL QR настраивается через раздел «Мерчанты» админ‑панели"
         />
         <CardBody>
           <p style={{ margin: 0, lineHeight: 1.6 }}>

@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const pass = String(body?.password || '');
   const code = (body?.code != null) ? String(body.code) : '';
-  const adminPass = process.env.ADMIN_UI_PASSWORD || process.env.ADMIN_UI_ADMIN_PASSWORD || '';
+  const adminPass = process.env.ADMIN_UI_PASSWORD || '';
 
   // In production, disallow dev defaults
   if (process.env.NODE_ENV === 'production') {
@@ -62,18 +62,18 @@ export async function POST(req: NextRequest) {
     return res;
   }
 
-  let role: 'ADMIN' | null = null;
-  if (adminPass && pass === adminPass) role = 'ADMIN';
-  if (!role) return new NextResponse('Invalid credentials', { status: 401 });
-  // Optional TOTP for ADMIN role
-  if (role === 'ADMIN' && process.env.ADMIN_UI_TOTP_SECRET) {
+  if (!adminPass || pass !== adminPass) {
+    return new NextResponse('Invalid credentials', { status: 401 });
+  }
+  // Optional TOTP for admin
+  if (process.env.ADMIN_UI_TOTP_SECRET) {
     const secret = process.env.ADMIN_UI_TOTP_SECRET as string;
     if (!code) return new NextResponse('Invalid credentials', { status: 401 });
     const ok = (() => { try { return authenticator.verify({ token: code, secret }); } catch { return false; } })();
     if (!ok) return new NextResponse('Invalid credentials', { status: 401 });
   }
   try {
-    const token = makeSessionCookie(7, role);
+    const token = makeSessionCookie(7);
     const res = NextResponse.json({ ok: true });
     setSessionCookie(res, token);
     resetRateLimit(clientKey);

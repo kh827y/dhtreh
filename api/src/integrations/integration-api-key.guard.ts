@@ -34,7 +34,6 @@ export class IntegrationApiKeyGuard implements CanActivate {
     req.integrationProvider = integration.provider;
     req.integrationConfig = config;
     req.integrationRateLimits = config.rateLimits;
-    req.integrationRequireBridgeSignature = config.requireBridgeSignature;
     req.integrationApiKeyHash = integration.apiKeyHash;
     if (!req.merchantId) {
       req.merchantId = integration.merchantId;

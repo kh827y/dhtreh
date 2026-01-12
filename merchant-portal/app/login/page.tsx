@@ -51,10 +51,12 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirectPath = safeRedirectPath(searchParams.get("redirect"));
   const [email, setEmail] = React.useState("");
+  const [merchantId, setMerchantId] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
   const [code, setCode] = React.useState("");
   const [needCode, setNeedCode] = React.useState(false);
+  const [needMerchantId, setNeedMerchantId] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [msg, setMsg] = React.useState("");
 
@@ -63,11 +65,18 @@ function LoginForm() {
     setMsg("");
     setLoading(true);
     try {
-      const payload = {
+      const payload: {
+        email: string;
+        password: string;
+        code?: string;
+        merchantId?: string;
+      } = {
         email: email.trim(),
         password,
         code: needCode ? code.trim() : undefined,
       };
+      const merchantIdValue = merchantId.trim();
+      if (merchantIdValue) payload.merchantId = merchantIdValue;
       const r = await fetch("/api/session/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -96,6 +105,9 @@ function LoginForm() {
           );
         }
 
+        if (/мерчант/i.test(message)) {
+          setNeedMerchantId(true);
+        }
         throw new Error(message || "Ошибка входа");
       }
       window.location.href = redirectPath;
@@ -149,6 +161,32 @@ function LoginForm() {
                 />
               </div>
             </div>
+
+            {needMerchantId && (
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                  ID мерчанта
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <KeyRound className="h-5 w-5 text-gray-400 group-focus-within:text-purple-500 transition-colors" />
+                  </div>
+                  <input
+                    value={merchantId}
+                    onChange={(e) => {
+                      setMerchantId(e.target.value);
+                      setMsg("");
+                    }}
+                    className="block w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                    placeholder="cmk123..."
+                    autoComplete="off"
+                  />
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  Введите ID мерчанта, если такой email встречается у нескольких.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide">

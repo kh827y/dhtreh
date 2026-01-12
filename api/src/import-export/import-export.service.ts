@@ -515,12 +515,9 @@ export class ImportExportService {
               tx,
             );
             if (dto.operation === 'add_points') {
-              const fresh = await tx.wallet.findUnique({
-                where: { id: wallet.id },
-              });
               await tx.wallet.update({
                 where: { id: wallet.id },
-                data: { balance: (fresh?.balance ?? 0) + amount },
+                data: { balance: { increment: amount } },
               });
             } else {
               await tx.wallet.update({
@@ -1722,9 +1719,17 @@ export class ImportExportService {
     const phone = this.normalizePhone(row['Телефон клиента'] || row['Телефон']);
     const email = row['Email клиента'] || row['Email'];
 
+    if (!phone && !email) {
+      throw new Error('Телефон или Email обязательны');
+    }
+
+    const or: any[] = [];
+    if (phone) or.push({ phone });
+    if (email) or.push({ email });
+
     return this.prisma.customer.findFirst({
       where: {
-        OR: [{ phone: phone || undefined }, { email: email || undefined }],
+        OR: or,
         wallets: {
           some: { merchantId },
         },

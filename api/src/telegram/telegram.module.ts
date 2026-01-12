@@ -7,6 +7,7 @@ import { TelegramController } from './telegram.controller';
 import { TelegramNotifyService } from './telegram-notify.service';
 import { TelegramNotifyController } from './telegram-notify.controller';
 import { TelegramStaffNotificationsService } from './staff-notifications.service';
+import { AdminAuditInterceptor } from '../admin-audit.interceptor';
 
 @Module({
   imports: [ConfigModule, PrismaModule],
@@ -16,6 +17,7 @@ import { TelegramStaffNotificationsService } from './staff-notifications.service
     TelegramNotifyService,
     TelegramStaffNotificationsService,
     AdminIpGuard,
+    AdminAuditInterceptor,
   ],
   exports: [
     TelegramBotService,

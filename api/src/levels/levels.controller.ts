@@ -1,9 +1,11 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import { LevelsService } from './levels.service';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { LevelsAccessGuard } from '../guards/levels-access.guard';
 
 @ApiTags('levels')
 @Controller('levels')
+@UseGuards(LevelsAccessGuard)
 export class LevelsController {
   constructor(private readonly levels: LevelsService) {}
 

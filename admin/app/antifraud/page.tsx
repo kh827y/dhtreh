@@ -1,16 +1,17 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { getSettings } from '../../lib/admin';
+import { getSettings, resetAntifraudLimit } from '../../lib/admin';
 import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
 
 export default function AntiFraudPage() {
   const { merchantId, setMerchantId } = usePreferredMerchantId();
   const TRANSACTION_LIMIT = 200;
-  const RECEIPT_LIMIT = 200;
+  const DEFAULT_TIMEZONE_CODE = 'MSK+4';
   const [loading, setLoading] = useState<boolean>(false);
   const [anomalies, setAnomalies] = useState<any[]>([]);
   const [nightActivity, setNightActivity] = useState<any[]>([]);
   const [serialRefunds, setSerialRefunds] = useState<any[]>([]);
+  const [merchantTimezone, setMerchantTimezone] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<{ from: string; to: string }>({
     from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0],
@@ -23,13 +24,20 @@ export default function AntiFraudPage() {
   } | null>(null);
   const [cfgMsg, setCfgMsg] = useState('');
   const [bfStr, setBfStr] = useState('');
+  const [resetScope, setResetScope] = useState<'merchant' | 'customer' | 'staff' | 'device' | 'outlet'>('merchant');
+  const [resetTargetId, setResetTargetId] = useState('');
+  const [resetMsg, setResetMsg] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
+
+  useEffect(() => {
+    if (!merchantId) return;
+    loadAf();
+  }, [merchantId]);
 
   useEffect(() => {
     if (!merchantId) return;
     loadReports();
-    // load antifraud limits
-    loadAf();
-  }, [dateRange, merchantId]);
+  }, [dateRange, merchantId, merchantTimezone]);
 
   const loadReports = async () => {
     setLoading(true);
@@ -45,16 +53,8 @@ export default function AntiFraudPage() {
       
       // Analyze for anomalies
       analyzeAnomalies(transactions);
-      analyzeNightActivity(transactions);
-      
-      // Fetch receipts for refund analysis
-      const rcParams = new URLSearchParams({ limit: String(RECEIPT_LIMIT) });
-      if (dateRange.from) rcParams.set('from', dateRange.from);
-      if (dateRange.to) rcParams.set('to', dateRange.to);
-      const rcResponse = await fetch(`/api/admin/merchants/${merchantId}/receipts?${rcParams.toString()}`);
-      const rcJson = await rcResponse.json();
-      const receipts: any[] = Array.isArray(rcJson?.items) ? rcJson.items : (Array.isArray(rcJson) ? rcJson : []);
-      analyzeSerialRefunds(receipts);
+      analyzeNightActivity(transactions, merchantTimezone);
+      analyzeSerialRefunds(transactions);
     } catch (e) {
       console.error(e);
     } finally {
@@ -66,6 +66,7 @@ export default function AntiFraudPage() {
     try {
       if (!merchantId) return;
       const s = await getSettings(merchantId);
+      setMerchantTimezone(String(s.timezone || DEFAULT_TIMEZONE_CODE));
       const rules = s.rulesJson;
       let afObj: any = null;
       if (Array.isArray(rules)) {
@@ -86,6 +87,14 @@ export default function AntiFraudPage() {
     } catch (e:any) {
       setCfgMsg('Не удалось загрузить настройки антифрода: ' + (e.message || e));
     }
+  };
+
+  const resolveTimezoneOffsetMinutes = (code?: string | null) => {
+    const normalized = String(code || DEFAULT_TIMEZONE_CODE).toUpperCase();
+    const match = normalized.match(/MSK([+-]\\d+)/);
+    const mskOffset = match ? Number(match[1]) : 4;
+    if (!Number.isFinite(mskOffset)) return 180 + 4 * 60;
+    return 180 + mskOffset * 60;
   };
 
   const saveAf = async () => {
@@ -180,9 +189,12 @@ export default function AntiFraudPage() {
     return patterns;
   };
 
-  const analyzeNightActivity = (transactions: any[]) => {
+  const analyzeNightActivity = (transactions: any[], timezoneCode?: string | null) => {
+    const offsetMinutes = resolveTimezoneOffsetMinutes(timezoneCode);
     const nightTxs = transactions.filter(tx => {
-      const hour = new Date(tx.createdAt).getHours();
+      const time = new Date(tx.createdAt).getTime();
+      const local = new Date(time + offsetMinutes * 60 * 1000);
+      const hour = local.getUTCHours();
       return hour >= 0 && hour < 6; // 00:00 - 06:00
     });
     
@@ -207,37 +219,51 @@ export default function AntiFraudPage() {
     setNightActivity(nightStats.sort((a, b) => b.count - a.count));
   };
 
-  const analyzeSerialRefunds = (receipts: any[]) => {
-    // Find receipts with high refund rate
-    const refundStats = new Map<string, { total: number; refunded: number; receipts: any[] }>();
-    
-    for (const receipt of receipts) {
-      const key = `${receipt.outletId || 'unknown'}/${receipt.outletPosType || 'unknown'}`;
+  const analyzeSerialRefunds = (transactions: any[]) => {
+    const refundStats = new Map<string, { total: number; refunded: number; transactions: any[] }>();
+    for (const tx of transactions) {
+      const key = `${tx.outletId || 'unknown'}/${tx.outletPosType || 'unknown'}`;
       if (!refundStats.has(key)) {
-        refundStats.set(key, { total: 0, refunded: 0, receipts: [] });
+        refundStats.set(key, { total: 0, refunded: 0, transactions: [] });
       }
       const stats = refundStats.get(key)!;
       stats.total++;
-      stats.receipts.push(receipt);
-      
-      // Check if this receipt has refund (negative redeem/earn)
-      if (receipt.redeemApplied < 0 || receipt.earnApplied < 0) {
+      if (tx.type === 'REFUND') {
         stats.refunded++;
+        stats.transactions.push(tx);
       }
     }
-    
     const highRefundRate = Array.from(refundStats.entries())
       .map(([key, stats]) => ({
         outlet: key.split('/')[0],
         posType: key.split('/')[1],
-        totalReceipts: stats.total,
-        refundedReceipts: stats.refunded,
-        refundRate: ((stats.refunded / stats.total) * 100).toFixed(1),
-        receipts: stats.receipts.filter(r => r.redeemApplied < 0 || r.earnApplied < 0),
+        totalTransactions: stats.total,
+        refundedTransactions: stats.refunded,
+        refundRate: stats.total ? ((stats.refunded / stats.total) * 100).toFixed(1) : '0.0',
+        transactions: stats.transactions,
       }))
       .filter(s => parseFloat(s.refundRate) > 10); // More than 10% refund rate
-    
+
     setSerialRefunds(highRefundRate.sort((a, b) => parseFloat(b.refundRate) - parseFloat(a.refundRate)));
+  };
+
+  const canReset = !!merchantId && (resetScope === 'merchant' || !!resetTargetId.trim());
+  const runReset = async () => {
+    if (!merchantId) return;
+    setResetBusy(true);
+    setResetMsg('');
+    try {
+      await resetAntifraudLimit(merchantId, {
+        scope: resetScope,
+        targetId: resetScope === 'merchant' ? undefined : resetTargetId.trim(),
+      });
+      setResetMsg('Сброс выполнен.');
+      setResetTargetId('');
+    } catch (e: any) {
+      setResetMsg(e?.message || 'Не удалось выполнить сброс');
+    } finally {
+      setResetBusy(false);
+    }
   };
 
   return (
@@ -310,6 +336,33 @@ export default function AntiFraudPage() {
           <p style={{ opacity: 0.8 }}>Загрузка настроек…</p>
         )}
       </div>
+
+      <div style={{ marginTop: 16, padding: 16, background: '#11111b', borderRadius: 8, border: '1px solid #313244' }}>
+        <h3 style={{ marginTop: 0 }}>Быстрый сброс лимитов</h3>
+        <p style={{ opacity: 0.8, fontSize: 13, marginTop: 4 }}>
+          Используется для снятия ошибочных блокировок. Сброс влияет только на выбранный уровень и начинается «сейчас».
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: 12, alignItems: 'center' }}>
+          <select value={resetScope} onChange={(e) => setResetScope(e.target.value as any)} style={{ padding: 8 }}>
+            <option value="merchant">Мерчант</option>
+            <option value="customer">Клиент</option>
+            <option value="staff">Сотрудник</option>
+            <option value="device">Устройство</option>
+            <option value="outlet">Точка</option>
+          </select>
+          <input
+            value={resetTargetId}
+            onChange={(e) => setResetTargetId(e.target.value)}
+            placeholder={resetScope === 'merchant' ? 'ID не требуется' : 'ID клиента/сотрудника/устройства/точки'}
+            disabled={resetScope === 'merchant'}
+            style={{ padding: 8 }}
+          />
+          <button onClick={runReset} disabled={!canReset || resetBusy} style={{ padding: '8px 12px' }}>
+            {resetBusy ? 'Сброс…' : 'Сбросить'}
+          </button>
+        </div>
+        {resetMsg && <div style={{ fontSize: 12, opacity: 0.85, marginTop: 8 }}>{resetMsg}</div>}
+      </div>
       
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
         <label>
@@ -334,7 +387,7 @@ export default function AntiFraudPage() {
           {loading ? 'Loading...' : 'Refresh'}
         </button>
         <span style={{ opacity: 0.7, fontSize: 12 }}>
-          Report uses last {TRANSACTION_LIMIT} transactions and {RECEIPT_LIMIT} receipts for the selected dates.
+          Report uses last {TRANSACTION_LIMIT} transactions for the selected dates.
         </span>
       </div>
 
@@ -411,7 +464,7 @@ export default function AntiFraudPage() {
                   <strong style={{ color: '#fab387' }}>Refund Rate:</strong> {location.refundRate}%
                 </div>
                 <div style={{ gridColumn: 'span 3' }}>
-                  <strong>Refunded:</strong> {location.refundedReceipts} / {location.totalReceipts} receipts
+                  <strong>Refunded:</strong> {location.refundedTransactions} / {location.totalTransactions} transactions
                 </div>
               </div>
             </div>

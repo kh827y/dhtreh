@@ -21,10 +21,7 @@ function normalizeIp(ip?: string): string {
 }
 
 function getClientIp(req: any): string {
-  const xff = (req.headers['x-forwarded-for'] as string | undefined) || '';
-  const first = xff.split(',')[0]?.trim();
   const cand =
-    first ||
     req.ip ||
     req.connection?.remoteAddress ||
     req.socket?.remoteAddress ||

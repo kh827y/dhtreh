@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma.module';
 import { MetricsModule } from '../metrics.module';
 import { LoyaltyProgramService } from './loyalty-program.service';
-import { MechanicsController } from './controllers/mechanics.controller';
 import { PromotionsController } from './controllers/promotions.controller';
 import { OperationsLogController } from './controllers/operations-log.controller';
 import { TiersController } from './controllers/tiers.controller';
@@ -20,7 +19,6 @@ import { SubscriptionModule } from '../subscription/subscription.module';
   ],
   providers: [LoyaltyProgramService, PortalGuard],
   controllers: [
-    MechanicsController,
     PromotionsController,
     OperationsLogController,
     TiersController,

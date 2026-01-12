@@ -1,7 +1,7 @@
 FROM node:20-slim AS build
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9 --activate
-COPY package.json pnpm-lock.yaml .npmrc* ./ 2>/dev/null || true
+COPY package.json ./
 RUN pnpm i --frozen-lockfile=false
 COPY . .
 RUN pnpm build
@@ -13,4 +13,3 @@ COPY --from=build /app .
 EXPOSE 3001
 ENV PORT=3001
 CMD ["pnpm","start"]
-

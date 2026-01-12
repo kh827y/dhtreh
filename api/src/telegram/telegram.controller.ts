@@ -6,12 +6,14 @@ import {
   Param,
   Post,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { TelegramBotService } from './telegram-bot.service';
 import { PrismaService } from '../prisma.service';
 import { AdminGuard } from '../admin.guard';
 import { AdminIpGuard } from '../admin-ip.guard';
 import { MetricsService } from '../metrics.service';
+import { AdminAuditInterceptor } from '../admin-audit.interceptor';
 
 @Controller()
 export class TelegramController {
@@ -51,6 +53,7 @@ export class TelegramController {
   // Admin: register a bot for merchant with BotFather token
   @Post('merchants/:id/telegram/register')
   @UseGuards(AdminGuard, AdminIpGuard)
+  @UseInterceptors(AdminAuditInterceptor)
   async register(
     @Param('id') merchantId: string,
     @Body() body: { botToken: string },
@@ -64,6 +67,7 @@ export class TelegramController {
   // Admin: rotate webhook secret and update webhook
   @Post('merchants/:id/telegram/rotate-webhook')
   @UseGuards(AdminGuard, AdminIpGuard)
+  @UseInterceptors(AdminAuditInterceptor)
   async rotateWebhook(@Param('id') merchantId: string) {
     await this.bots.rotateWebhookSecret(merchantId);
     return { ok: true };
@@ -72,6 +76,7 @@ export class TelegramController {
   // Admin: deactivate bot
   @Delete('merchants/:id/telegram')
   @UseGuards(AdminGuard, AdminIpGuard)
+  @UseInterceptors(AdminAuditInterceptor)
   async deactivate(@Param('id') merchantId: string) {
     await this.bots.deactivateBot(merchantId);
     return { ok: true };

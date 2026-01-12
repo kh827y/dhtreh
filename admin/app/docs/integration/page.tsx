@@ -2,27 +2,8 @@ export default function IntegrationDocsPage() {
   return (
     <div>
       <h2>Интеграции (POS / CRM)</h2>
-      <h3>POS через Bridge</h3>
-      <ol>
-        <li>Установите POS Bridge на кассовый ПК (см. infra/bridge.service.example).</li>
-        <li>Настройте: API_BASE, MERCHANT_ID, BRIDGE_SECRET, STAFF_KEY (опц., legacy для старых интеграций).</li>
-        <li>Убедитесь, что для мерчанта включён параметр требовать подпись Bridge (`requireBridgeSig`) на стороне backend/поддержки, если хотите жёстко требовать `X-Bridge-Signature`.</li>
-      </ol>
-      <p>Протокол:</p>
-      <pre style={{ whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{`POST http://127.0.0.1:18080/quote
-{ "mode":"redeem","merchantId":"<merchant_id>","orderId":"O-1","total":1000,"positions":[{"externalId":"SKU-1","qty":1,"price":1000}],"userToken":"<jwt|id>" }
-→ { canRedeem, discountToApply, finalPayable, holdId }
-
-POST http://127.0.0.1:18080/commit
-{ "merchantId":"<merchant_id>","holdId":"...","orderId":"O-1","receiptNumber":"000001" }
-→ { ok, receiptId, earnApplied, redeemApplied }
-`}</pre>
-      <h3>Прямая интеграция (без Bridge)</h3>
-      <p>Подписывайте запросы HMAC‑заголовком <code>X-Bridge-Signature</code> и используйте <code>Idempotency-Key</code> на commit/refund.</p>
-      <pre style={{ whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{`const body = JSON.stringify({...});
-const sig = sign(secret, body); // v1,ts=...,sig=...
-fetch(API_BASE + '/loyalty/commit', { method:'POST', headers:{ 'X-Bridge-Signature': sig, 'Idempotency-Key': 'commit:<merchant_id>:O-1' }, body });
-`}</pre>
+      <h3>Интеграция через REST API</h3>
+      <p>Для подключения кассы или внешней системы используйте REST API с заголовком <code>X-Api-Key</code>. Для commit/refund всегда передавайте <code>Idempotency-Key</code>, чтобы избежать повторных операций.</p>
       <h3>CRM‑виджет</h3>
       <p>Этот раздел относится к внутренним ручкам админки и не предназначен для внешних CRM‑интеграций.</p>
       <h3>Frontol / 1С — алгоритм скидки/начислений</h3>
@@ -51,13 +32,13 @@ fetch(API_BASE + '/loyalty/commit', { method:'POST', headers:{ 'X-Bridge-Signatu
   ],
   "userToken": "<JWT из QR>"
 }`}</pre>
-      <p>Важно: при включённой подписи Bridge добавляйте заголовок <code>X-Bridge-Signature</code>, а при commit/refund всегда передавайте <code>Idempotency-Key</code>. Требование подписи Bridge (`requireBridgeSig`) включается на стороне backend и не управляется из админ‑UI.</p>
+      <p>Важно: при commit/refund всегда передавайте <code>Idempotency-Key</code>, чтобы избежать дублей.</p>
 
       <h3>SDK TypeScript</h3>
       <p>Используйте пакет <code>@loyalty/sdk-ts</code> (минимальный):</p>
       <pre style={{ whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{`import { LoyaltyApi } from '@loyalty/sdk-ts';
 const api = new LoyaltyApi({ baseUrl: 'http://localhost:3000' });
-const q = await api.quote({ mode:'redeem', merchantId:'<merchant_id>', userToken:'...', orderId:'O-1', total:1000, positions:[{ externalId:'SKU-1', qty:1, price:1000 }] }, { staffKey: '...', bridgeSignatureSecret: '...' });
+const q = await api.quote({ mode:'redeem', merchantId:'<merchant_id>', userToken:'...', orderId:'O-1', total:1000, positions:[{ externalId:'SKU-1', qty:1, price:1000 }] });
 const c = await api.commit({ merchantId:'<merchant_id>', holdId:q.holdId!, orderId:'O-1' }, { idempotencyKey:'commit:<merchant_id>:O-1' });
 `}</pre>
 

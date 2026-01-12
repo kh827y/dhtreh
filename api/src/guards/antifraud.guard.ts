@@ -170,6 +170,7 @@ export class AntiFraudGuard implements CanActivate {
     } as const;
 
     // Per-merchant overrides via MerchantSettings.rulesJson.af
+    let resetCfg: any = null;
     try {
       const s = merchantId
         ? await this.prisma.merchantSettings.findUnique({
@@ -181,6 +182,7 @@ export class AntiFraudGuard implements CanActivate {
           ? (s.rulesJson as any).af
           : null;
       if (af) {
+        resetCfg = af?.reset ?? null;
         const outletCfg = af.outlet ?? {};
         const deviceCfg = af.device ?? {};
         limits = {
@@ -237,6 +239,27 @@ export class AntiFraudGuard implements CanActivate {
     } catch {}
 
     const now = Date.now();
+    const reset = resetCfg && typeof resetCfg === 'object' && !Array.isArray(resetCfg)
+      ? resetCfg
+      : {};
+    const parseReset = (value: any) => {
+      if (!value) return null;
+      const ms = Date.parse(String(value));
+      if (!Number.isFinite(ms)) return null;
+      return new Date(ms);
+    };
+    const resolveReset = (
+      scope: 'merchant' | 'outlet' | 'device' | 'staff' | 'customer',
+      id?: string,
+    ) => {
+      if (scope === 'merchant') return parseReset(reset?.merchant);
+      if (!id) return null;
+      const bag = reset?.[scope];
+      if (!bag || typeof bag !== 'object') return null;
+      return parseReset(bag?.[id]);
+    };
+    const clampStart = (base: Date, resetAt: Date | null) =>
+      resetAt && resetAt > base ? resetAt : base;
     // rolling windows to avoid TZ/midnight edge cases
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const startOfWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // rolling 7-day window
@@ -307,22 +330,28 @@ export class AntiFraudGuard implements CanActivate {
 
     // Merchant-level
     {
-      const from = new Date(now - limits.merchant.windowSec * 1000);
+      const resetAt = resolveReset('merchant');
+      const from = clampStart(
+        new Date(now - limits.merchant.windowSec * 1000),
+        resetAt,
+      );
       const count = await this.prisma.transaction.count({
         where: { merchantId, createdAt: { gte: from } },
       });
       if (count >= limits.merchant.limit)
         block('merchant', count, limits.merchant.limit, false);
       if (limits.merchant.dailyCap && limits.merchant.dailyCap > 0) {
+        const since = clampStart(since24h, resetAt);
         const daily = await this.prisma.transaction.count({
-          where: { merchantId, createdAt: { gte: since24h } },
+          where: { merchantId, createdAt: { gte: since } },
         });
         if (daily >= limits.merchant.dailyCap)
           block('merchant_daily', daily, limits.merchant.dailyCap, false);
       }
       if (limits.merchant.weeklyCap && limits.merchant.weeklyCap > 0) {
+        const since = clampStart(startOfWeek, resetAt);
         const weekly = await this.prisma.transaction.count({
-          where: { merchantId, createdAt: { gte: startOfWeek } },
+          where: { merchantId, createdAt: { gte: since } },
         });
         if (weekly >= limits.merchant.weeklyCap)
           block('merchant_weekly', weekly, limits.merchant.weeklyCap, false);
@@ -331,7 +360,11 @@ export class AntiFraudGuard implements CanActivate {
 
     // Outlet-level (if known)
     if (resolvedOutletId) {
-      const from = new Date(now - limits.outlet.windowSec * 1000);
+      const resetAt = resolveReset('outlet', resolvedOutletId);
+      const from = clampStart(
+        new Date(now - limits.outlet.windowSec * 1000),
+        resetAt,
+      );
       const count = await this.prisma.transaction.count({
         where: {
           merchantId,
@@ -342,22 +375,24 @@ export class AntiFraudGuard implements CanActivate {
       if (count >= limits.outlet.limit)
         block('outlet', count, limits.outlet.limit, false);
       if (limits.outlet.dailyCap && limits.outlet.dailyCap > 0) {
+        const since = clampStart(since24h, resetAt);
         const daily = await this.prisma.transaction.count({
           where: {
             merchantId,
             outletId: resolvedOutletId,
-            createdAt: { gte: since24h },
+            createdAt: { gte: since },
           },
         });
         if (daily >= limits.outlet.dailyCap)
           block('outlet_daily', daily, limits.outlet.dailyCap, false);
       }
       if (limits.outlet.weeklyCap && limits.outlet.weeklyCap > 0) {
+        const since = clampStart(startOfWeek, resetAt);
         const weekly = await this.prisma.transaction.count({
           where: {
             merchantId,
             outletId: resolvedOutletId,
-            createdAt: { gte: startOfWeek },
+            createdAt: { gte: since },
           },
         });
         if (weekly >= limits.outlet.weeklyCap)
@@ -367,7 +402,11 @@ export class AntiFraudGuard implements CanActivate {
 
     // Device-level (if known)
     if (resolvedDeviceIdFinal) {
-      const from = new Date(now - limits.device.windowSec * 1000);
+      const resetAt = resolveReset('device', resolvedDeviceIdFinal);
+      const from = clampStart(
+        new Date(now - limits.device.windowSec * 1000),
+        resetAt,
+      );
       const count = await this.prisma.transaction.count({
         where: {
           merchantId,
@@ -378,22 +417,24 @@ export class AntiFraudGuard implements CanActivate {
       if (count >= limits.device.limit)
         block('device', count, limits.device.limit, false);
       if (limits.device.dailyCap && limits.device.dailyCap > 0) {
+        const since = clampStart(since24h, resetAt);
         const daily = await this.prisma.transaction.count({
           where: {
             merchantId,
             deviceId: resolvedDeviceIdFinal,
-            createdAt: { gte: since24h },
+            createdAt: { gte: since },
           },
         });
         if (daily >= limits.device.dailyCap)
           block('device_daily', daily, limits.device.dailyCap, false);
       }
       if (limits.device.weeklyCap && limits.device.weeklyCap > 0) {
+        const since = clampStart(startOfWeek, resetAt);
         const weekly = await this.prisma.transaction.count({
           where: {
             merchantId,
             deviceId: resolvedDeviceIdFinal,
-            createdAt: { gte: startOfWeek },
+            createdAt: { gte: since },
           },
         });
         if (weekly >= limits.device.weeklyCap)
@@ -403,22 +444,28 @@ export class AntiFraudGuard implements CanActivate {
 
     // Staff-level (if known)
     if (staffId) {
-      const from = new Date(now - limits.staff.windowSec * 1000);
+      const resetAt = resolveReset('staff', staffId);
+      const from = clampStart(
+        new Date(now - limits.staff.windowSec * 1000),
+        resetAt,
+      );
       const count = await this.prisma.transaction.count({
         where: { merchantId, staffId, createdAt: { gte: from } },
       });
       if (count >= limits.staff.limit)
         block('staff', count, limits.staff.limit, false);
       if (limits.staff.dailyCap && limits.staff.dailyCap > 0) {
+        const since = clampStart(since24h, resetAt);
         const daily = await this.prisma.transaction.count({
-          where: { merchantId, staffId, createdAt: { gte: since24h } },
+          where: { merchantId, staffId, createdAt: { gte: since } },
         });
         if (daily >= limits.staff.dailyCap)
           block('staff_daily', daily, limits.staff.dailyCap, false);
       }
       if (limits.staff.weeklyCap && limits.staff.weeklyCap > 0) {
+        const since = clampStart(startOfWeek, resetAt);
         const weekly = await this.prisma.transaction.count({
-          where: { merchantId, staffId, createdAt: { gte: startOfWeek } },
+          where: { merchantId, staffId, createdAt: { gte: since } },
         });
         if (weekly >= limits.staff.weeklyCap)
           block('staff_weekly', weekly, limits.staff.weeklyCap, false);
@@ -427,6 +474,7 @@ export class AntiFraudGuard implements CanActivate {
 
     // Customer-level only for commit (refund может не иметь customerId)
     if (isCommit && customerId) {
+      const resetAt = resolveReset('customer', customerId);
       const platformCustomerLimit = Number(platformCustomer.limit);
       const platformCustomerWindow = Number(platformCustomer.windowSec);
       const enforcePlatformVelocity =
@@ -435,7 +483,10 @@ export class AntiFraudGuard implements CanActivate {
         Number.isFinite(platformCustomerWindow) &&
         platformCustomerWindow > 0;
       if (enforcePlatformVelocity) {
-        const from = new Date(now - platformCustomerWindow * 1000);
+        const from = clampStart(
+          new Date(now - platformCustomerWindow * 1000),
+          resetAt,
+        );
         const count = await this.prisma.transaction.count({
           where: { merchantId, customerId, createdAt: { gte: from } },
         });
@@ -454,7 +505,10 @@ export class AntiFraudGuard implements CanActivate {
           limits.customer.windowSec === platformCustomerWindow
         );
       if (enforceMerchantVelocity) {
-        const from = new Date(now - limits.customer.windowSec * 1000);
+        const from = clampStart(
+          new Date(now - limits.customer.windowSec * 1000),
+          resetAt,
+        );
         const count = await this.prisma.transaction.count({
           where: { merchantId, customerId, createdAt: { gte: from } },
         });
@@ -471,8 +525,9 @@ export class AntiFraudGuard implements CanActivate {
         Number.isFinite(merchantDailyCap) && merchantDailyCap > 0;
 
       if (enforcePlatformDailyCap || enforceMerchantDailyCap) {
+        const since = clampStart(since24h, resetAt);
         const daily = await this.prisma.transaction.count({
-          where: { merchantId, customerId, createdAt: { gte: since24h } },
+          where: { merchantId, customerId, createdAt: { gte: since } },
         });
         // 1) Жёсткий лимит платформы: AF_DAILY_CAP_CUSTOMER
         if (enforcePlatformDailyCap && daily >= platformDailyCap) {
@@ -493,8 +548,9 @@ export class AntiFraudGuard implements CanActivate {
       const enforcePlatformWeeklyCap =
         Number.isFinite(platformWeeklyCap) && platformWeeklyCap > 0;
       if (enforcePlatformWeeklyCap) {
+        const since = clampStart(startOfWeek, resetAt);
         const weekly = await this.prisma.transaction.count({
-          where: { merchantId, customerId, createdAt: { gte: startOfWeek } },
+          where: { merchantId, customerId, createdAt: { gte: since } },
         });
         if (weekly >= platformWeeklyCap) {
           block('customer_weekly', weekly, platformWeeklyCap, true);
@@ -505,15 +561,19 @@ export class AntiFraudGuard implements CanActivate {
         merchantWeeklyCap > 0 &&
         merchantWeeklyCap !== platformWeeklyCap;
       if (enforceMerchantWeeklyCap) {
+        const since = clampStart(startOfWeek, resetAt);
         const weekly = await this.prisma.transaction.count({
-          where: { merchantId, customerId, createdAt: { gte: startOfWeek } },
+          where: { merchantId, customerId, createdAt: { gte: since } },
         });
         if (weekly >= merchantWeeklyCap) {
           block('customer_weekly', weekly, merchantWeeklyCap, false);
         }
       }
       if (limits.customer.monthlyCap && limits.customer.monthlyCap > 0) {
-        const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const monthAgo = clampStart(
+          new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+          resetAt,
+        );
         const monthly = await this.prisma.transaction.count({
           where: { merchantId, customerId, createdAt: { gte: monthAgo } },
         });

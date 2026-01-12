@@ -1,10 +1,12 @@
-import { Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AdminGuard } from '../admin.guard';
 import { AdminIpGuard } from '../admin-ip.guard';
+import { AdminAuditInterceptor } from '../admin-audit.interceptor';
 import { TelegramNotifyService } from '../telegram/telegram-notify.service';
 
 @UseGuards(AdminGuard, AdminIpGuard)
+@UseInterceptors(AdminAuditInterceptor)
 @Controller('notifications')
 export class AdminNotificationsController {
   constructor(

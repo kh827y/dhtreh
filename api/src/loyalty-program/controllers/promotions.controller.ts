@@ -99,6 +99,13 @@ export class PromotionsController {
     return String(req.portalMerchantId);
   }
 
+  private actorId(req: any): string | null {
+    if (req.portalActor === 'STAFF' && req.portalStaffId) {
+      return String(req.portalStaffId);
+    }
+    return null;
+  }
+
   @Get()
   async list(@Req() req: any, @Query('status') status?: string) {
     const normalized =
@@ -168,7 +175,7 @@ export class PromotionsController {
   async changeStatus(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: { status: PromotionStatus; actorId?: string },
+    @Body() body: { status: PromotionStatus },
   ) {
     const merchantId = this.merchantId(req);
     const current = await this.service.getPromotion(merchantId, id);
@@ -182,7 +189,7 @@ export class PromotionsController {
       merchantId,
       id,
       status,
-      body.actorId,
+      this.actorId(req) ?? undefined,
     );
     return toPortalResponse(updated);
   }
@@ -190,7 +197,7 @@ export class PromotionsController {
   @Post('bulk/status')
   bulkStatus(
     @Req() req: any,
-    @Body() body: { ids: string[]; status: PromotionStatus; actorId?: string },
+    @Body() body: { ids: string[]; status: PromotionStatus },
   ) {
     const merchantId = this.merchantId(req);
     return this.service
@@ -207,7 +214,7 @@ export class PromotionsController {
           merchantId,
           body.ids ?? [],
           status,
-          body.actorId,
+          this.actorId(req) ?? undefined,
         );
       });
   }

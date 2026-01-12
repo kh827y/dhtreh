@@ -19,13 +19,13 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { CrmModule } from './crm/crm.module';
 import { HoldGcWorker } from './hold-gc.worker';
 import { IdempotencyGcWorker } from './idempotency-gc.worker';
+import { EventOutboxGcWorker } from './event-outbox-gc.worker';
 import { OutboxDispatcherWorker } from './outbox-dispatcher.worker';
 import { NotificationDispatcherWorker } from './notification-dispatcher.worker';
 import { PointsBurnWorker } from './points-burn.worker';
 import { PointsTtlWorker } from './points-ttl.worker';
 import { PointsTtlReminderWorker } from './points-ttl-reminder.worker';
 import { EarnActivationWorker } from './earn-activation.worker';
-import { GiftsModule } from './gifts/gifts.module';
 import { ReferralModule } from './referral/referral.module';
 import { LevelsModule } from './levels/levels.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -45,6 +45,7 @@ import { BirthdayWorker } from './birthday.worker';
 import { TelegramStaffDigestWorker } from './telegram/staff-digest.worker';
 import { OpsAlertMonitor } from './alerts/ops-alert-monitor.service';
 import { AdminObservabilityController } from './admin-observability.controller';
+import { AdminAuditInterceptor } from './admin-audit.interceptor';
 // Optional Redis storage for Throttler
 let throttlerStorage: any = undefined;
 try {
@@ -90,7 +91,6 @@ try {
     TelegramModule,
     AlertsModule,
     CrmModule,
-    GiftsModule,
     LevelsModule,
     NotificationsModule,
     ReferralModule,
@@ -113,6 +113,7 @@ try {
     OutboxDispatcherWorker,
     NotificationDispatcherWorker,
     IdempotencyGcWorker,
+    EventOutboxGcWorker,
     PointsTtlWorker,
     PointsTtlReminderWorker,
     PointsBurnWorker,
@@ -121,6 +122,7 @@ try {
     BirthdayWorker,
     TelegramStaffDigestWorker,
     OpsAlertMonitor,
+    AdminAuditInterceptor,
     { provide: APP_GUARD, useClass: CustomThrottlerGuard },
   ],
 })

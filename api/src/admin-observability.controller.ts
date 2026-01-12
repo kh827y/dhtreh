@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import { AdminGuard } from './admin.guard';
 import { AdminIpGuard } from './admin-ip.guard';
 import { OpsAlertMonitor } from './alerts/ops-alert-monitor.service';
 import { AlertsService } from './alerts/alerts.service';
 import { ConfigService } from '@nestjs/config';
+import { AdminAuditInterceptor } from './admin-audit.interceptor';
 
 @UseGuards(AdminGuard, AdminIpGuard)
+@UseInterceptors(AdminAuditInterceptor)
 @Controller()
 export class AdminObservabilityController {
   constructor(

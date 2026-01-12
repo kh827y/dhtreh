@@ -1,50 +1,31 @@
 import {
   BadRequestException,
   Controller,
-  Get,
   Post,
   Body,
   Req,
-  Query,
   UseGuards,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
-import {
-  Prisma,
-  TxnType,
-  WalletType,
-  StaffStatus,
-  StaffOutletAccessStatus,
-} from '@prisma/client';
+import { Prisma, StaffStatus, StaffOutletAccessStatus } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { IntegrationApiKeyGuard } from './integration-api-key.guard';
-import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiTags } from '@nestjs/swagger';
 import {
-  IntegrationDevicesQueryDto,
-  IntegrationDevicesRespDto,
-  IntegrationDeviceDto,
   IntegrationBonusDto,
   IntegrationCalculateActionDto,
   IntegrationCalculateBonusDto,
   IntegrationCodeRequestDto,
-  IntegrationOperationDto,
-  IntegrationOperationsQueryDto,
-  IntegrationOperationsRespDto,
-  IntegrationOutletDto,
-  IntegrationOutletsRespDto,
   IntegrationRefundDto,
 } from './dto';
 import { looksLikeJwt, verifyQrToken } from '../loyalty/token.util';
 import { normalizeDeviceCode } from '../devices/device.util';
-import { verifyBridgeSignature } from '../loyalty/bridge.util';
 
 type IntegrationRequest = Request & {
   integrationMerchantId?: string;
   integrationId?: string;
-  integrationRequireBridgeSignature?: boolean;
   requestId?: string;
 };
 
@@ -58,34 +39,6 @@ type NormalizedItem = {
   actionIds?: string[];
   actionNames?: string[];
 };
-
-type IntegrationOperationInternal = {
-  opKey: string;
-  kind: 'purchase' | 'refund';
-  orderId: string;
-  receiptId: string | null;
-  receiptNumber: string | null;
-  total: number | null;
-  redeemApplied: number | null;
-  earnApplied: number | null;
-  pointsRestored: number | null;
-  pointsRevoked: number | null;
-  outletId: string | null;
-  deviceId: string | null;
-  deviceCode: string | null;
-  canceledAt: Date | null;
-  operationDate: Date;
-  customerId: string;
-  netDelta: number;
-  balanceBefore?: number | null;
-  balanceAfter?: number | null;
-};
-
-type RefundMetaNormalized = {
-  receiptId: string | null;
-};
-
-const MAX_OPERATIONS_LIMIT = 500;
 
 @Controller('api/integrations')
 @UseGuards(IntegrationApiKeyGuard)
@@ -124,24 +77,6 @@ export class IntegrationsLoyaltyController {
     const time = value.getTime();
     if (!Number.isFinite(time)) return null;
     return value.toISOString().slice(0, 10);
-  }
-
-  private sanitizeLimit(value?: number | null, fallback = 200) {
-    const num = Number(value);
-    const base = Number.isFinite(num) && num > 0 ? Math.floor(num) : fallback;
-    return Math.min(MAX_OPERATIONS_LIMIT, Math.max(1, base));
-  }
-
-  private parseDateTime(
-    raw: string | undefined | null,
-    field: string,
-  ): Date | null {
-    if (!raw) return null;
-    const parsed = new Date(raw);
-    if (Number.isNaN(parsed.getTime())) {
-      throw new BadRequestException(`${field} must be a valid date`);
-    }
-    return parsed;
   }
 
   private normalizeItems(
@@ -585,63 +520,6 @@ export class IntegrationsLoyaltyController {
     return { id: device.id, code, outletId: device.outletId ?? null };
   }
 
-  private async verifyBridgeSignatureIfRequired(
-    req: IntegrationRequest,
-    merchantId: string,
-    outletId: string | null,
-    payload: unknown,
-  ) {
-    try {
-      const settings = await this.prisma.merchantSettings.findUnique({
-        where: { merchantId },
-      });
-      const requireSig =
-        Boolean(req.integrationRequireBridgeSignature) ||
-        Boolean(settings?.requireBridgeSig);
-      if (!requireSig) return;
-      const sig =
-        (req.headers['x-bridge-signature'] as string | undefined) || '';
-      if (!sig) return;
-      let secret: string | null = null;
-      let alt: string | null = null;
-      if (outletId) {
-        try {
-          const outlet = await this.prisma.outlet.findFirst({
-            where: { id: outletId, merchantId },
-          });
-          secret = outlet?.bridgeSecret ?? null;
-          alt = (outlet as any)?.bridgeSecretNext ?? null;
-        } catch {}
-      }
-      if (!secret && !alt) {
-        secret = settings?.bridgeSecret || null;
-        alt = (settings as any)?.bridgeSecretNext || null;
-      }
-      if (!secret && !alt) return;
-      const body = JSON.stringify(payload ?? {});
-      const ok =
-        (secret && verifyBridgeSignature(sig, body, secret)) ||
-        (alt && verifyBridgeSignature(sig, body, alt));
-      if (!ok) {
-        throw new UnauthorizedException('Invalid bridge signature');
-      }
-    } catch (e) {
-      if (e instanceof UnauthorizedException) throw e;
-    }
-  }
-
-  private normalizeRefundMeta(meta?: unknown): RefundMetaNormalized {
-    const raw =
-      meta && typeof meta === 'object' ? (meta as Record<string, any>) : null;
-    const receiptId =
-      typeof raw?.receiptId === 'string' && raw.receiptId.trim().length
-        ? raw.receiptId.trim()
-        : null;
-    return {
-      receiptId,
-    };
-  }
-
   private async logIntegrationSync(
     req: IntegrationRequest,
     endpoint: string,
@@ -664,553 +542,6 @@ export class IntegrationsLoyaltyController {
         },
       });
     } catch {}
-  }
-
-  @Get('outlets')
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @ApiOkResponse({ type: IntegrationOutletsRespDto })
-  async outlets(
-    @Req() req: IntegrationRequest,
-  ): Promise<IntegrationOutletsRespDto> {
-    const merchantId = String(
-      req.integrationMerchantId || (req as any).merchantId || '',
-    ).trim();
-    if (!merchantId) throw new BadRequestException('merchantId required');
-
-    const outlets = await this.prisma.outlet.findMany({
-      where: { merchantId },
-      select: { id: true, name: true, address: true, description: true },
-      orderBy: [{ name: 'asc' }, { createdAt: 'asc' }],
-    });
-    const managersByOutlet = new Map<
-      string,
-      { id: string; name: string; code: string | null }[]
-    >();
-    if (outlets.length > 0) {
-      const accesses = await this.prisma.staffOutletAccess.findMany({
-        where: {
-          merchantId,
-          outletId: { in: outlets.map((o) => o.id) },
-          status: StaffOutletAccessStatus.ACTIVE,
-          staff: { status: StaffStatus.ACTIVE },
-        },
-        select: {
-          outletId: true,
-          staff: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              login: true,
-              email: true,
-            },
-          },
-        },
-      });
-      for (const row of accesses) {
-        if (!row.outletId || !row.staff) continue;
-        const current = managersByOutlet.get(row.outletId) ?? [];
-        current.push({
-          id: row.staff.id,
-          name: this.buildStaffName(row.staff),
-          code:
-            (row.staff.login && row.staff.login.trim()) ||
-            (row.staff.email && row.staff.email.trim()) ||
-            null,
-        });
-        managersByOutlet.set(row.outletId, current);
-      }
-    }
-    await this.logIntegrationSync(req, 'GET /api/integrations/outlets', 'ok', {
-      count: outlets.length,
-    });
-    return {
-      items: outlets.map(
-        (outlet): IntegrationOutletDto => ({
-          id: outlet.id,
-          name: outlet.name,
-          address: outlet.address ?? null,
-          description: outlet.description ?? null,
-          managers: managersByOutlet.get(outlet.id) ?? [],
-        }),
-      ),
-    };
-  }
-
-  @Get('devices')
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @ApiOkResponse({ type: IntegrationDevicesRespDto })
-  async devices(
-    @Query() query: IntegrationDevicesQueryDto,
-    @Req() req: IntegrationRequest,
-  ): Promise<IntegrationDevicesRespDto> {
-    const merchantId = String(
-      req.integrationMerchantId || (req as any).merchantId || '',
-    ).trim();
-    if (!merchantId) throw new BadRequestException('merchantId required');
-    const outletId =
-      typeof query.outlet_id === 'string' && query.outlet_id.trim()
-        ? query.outlet_id.trim()
-        : null;
-    if (outletId) {
-      const outlet = await this.prisma.outlet.findFirst({
-        where: { id: outletId, merchantId },
-        select: { id: true },
-      });
-      if (!outlet) {
-        throw new BadRequestException('Торговая точка не найдена');
-      }
-    }
-    const devices = await this.prisma.device.findMany({
-      where: {
-        merchantId,
-        archivedAt: null,
-        ...(outletId ? { outletId } : {}),
-      },
-      select: { id: true, code: true, outletId: true },
-      orderBy: [{ createdAt: 'asc' }],
-    });
-    await this.logIntegrationSync(req, 'GET /api/integrations/devices', 'ok', {
-      count: devices.length,
-      outlet_id: outletId,
-    });
-    return {
-      items: devices.map(
-        (device): IntegrationDeviceDto => ({
-          id: device.id,
-          code: device.code,
-          outlet_id: device.outletId,
-        }),
-      ),
-    };
-  }
-
-  @Get('operations')
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  @ApiOkResponse({ type: IntegrationOperationsRespDto })
-  async operations(
-    @Query() query: IntegrationOperationsQueryDto,
-    @Req() req: IntegrationRequest,
-  ): Promise<IntegrationOperationsRespDto> {
-    const merchantId = String(
-      req.integrationMerchantId || (req as any).merchantId || '',
-    ).trim();
-    if (!merchantId) throw new BadRequestException('merchantId required');
-
-    const invoiceNumRaw =
-      typeof query.invoice_num === 'string' && query.invoice_num.trim()
-        ? query.invoice_num.trim()
-        : null;
-    const outletId =
-      typeof query.outlet_id === 'string' && query.outlet_id.trim()
-        ? query.outlet_id.trim()
-        : null;
-    const deviceRaw =
-      typeof query.device_id === 'string' && query.device_id.trim()
-        ? query.device_id.trim()
-        : null;
-    const limit = this.sanitizeLimit(query.limit, 200);
-    const fromDate = this.parseDateTime(query.from, 'from');
-    const toDate = this.parseDateTime(query.to, 'to');
-    if (fromDate && toDate && fromDate.getTime() > toDate.getTime()) {
-      throw new BadRequestException('from must be earlier than to');
-    }
-    const createdAtFilter =
-      fromDate || toDate
-        ? {
-            ...(fromDate ? { gte: fromDate } : {}),
-            ...(toDate ? { lte: toDate } : {}),
-          }
-        : undefined;
-
-    if (outletId) {
-      const outlet = await this.prisma.outlet.findFirst({
-        where: { id: outletId, merchantId },
-        select: { id: true },
-      });
-      if (!outlet) {
-        throw new BadRequestException('Торговая точка не найдена');
-      }
-    }
-
-    let resolvedDeviceId: string | null = null;
-    if (deviceRaw) {
-      const { normalized } = normalizeDeviceCode(deviceRaw);
-      const device = await this.prisma.device.findFirst({
-        where: {
-          merchantId,
-          archivedAt: null,
-          OR: [{ codeNormalized: normalized }, { id: deviceRaw }],
-        },
-        select: { id: true, outletId: true },
-      });
-      if (!device) {
-        throw new BadRequestException('Устройство не найдено или удалено');
-      }
-      if (outletId && device.outletId && device.outletId !== outletId) {
-        throw new BadRequestException(
-          'Устройство привязано к другой торговой точке',
-        );
-      }
-      resolvedDeviceId = device.id;
-    }
-
-    let normalizedOrderId = invoiceNumRaw;
-    if (invoiceNumRaw) {
-      try {
-        const byReceipt = await this.prisma.receipt.findFirst({
-          where: { merchantId, receiptNumber: invoiceNumRaw },
-          select: { orderId: true },
-        });
-        if (byReceipt?.orderId) {
-          normalizedOrderId = byReceipt.orderId;
-        }
-      } catch {}
-    }
-
-    const orderFilterForReceipts = invoiceNumRaw
-      ? {
-          OR: [
-            { orderId: normalizedOrderId ?? invoiceNumRaw },
-            { receiptNumber: invoiceNumRaw },
-          ],
-        }
-      : undefined;
-    const orderFilterValue = normalizedOrderId ?? invoiceNumRaw ?? null;
-
-    const receipts = await this.prisma.receipt.findMany({
-      where: {
-        merchantId,
-        ...(orderFilterForReceipts ?? {}),
-        ...(outletId ? { outletId } : {}),
-        ...(resolvedDeviceId ? { deviceId: resolvedDeviceId } : {}),
-        ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      select: {
-        id: true,
-        orderId: true,
-        receiptNumber: true,
-        total: true,
-        redeemApplied: true,
-        earnApplied: true,
-        createdAt: true,
-        outletId: true,
-        deviceId: true,
-        customerId: true,
-        canceledAt: true,
-        device: { select: { code: true } },
-      },
-    });
-
-    const operations: IntegrationOperationInternal[] = receipts.map(
-      (receipt) => ({
-        opKey: `purchase:${receipt.id}`,
-        kind: 'purchase',
-        orderId: receipt.orderId,
-        receiptId: receipt.id,
-        receiptNumber: receipt.receiptNumber ?? null,
-        total: receipt.total ?? null,
-        redeemApplied: receipt.redeemApplied ?? 0,
-        earnApplied: receipt.earnApplied ?? 0,
-        pointsRestored: null,
-        pointsRevoked: null,
-        outletId: receipt.outletId ?? null,
-        deviceId: receipt.deviceId ?? null,
-        deviceCode: receipt.device?.code ?? null,
-        canceledAt: receipt.canceledAt ?? null,
-        operationDate: receipt.createdAt,
-        customerId: receipt.customerId,
-        netDelta:
-          Math.max(0, receipt.earnApplied ?? 0) -
-          Math.max(0, receipt.redeemApplied ?? 0),
-      }),
-    );
-
-    const refundTxToOpKey = new Map<string, string>();
-    const refundGroups = new Map<
-      string,
-      {
-        opKey: string;
-        orderId: string;
-        receiptId: string | null;
-        createdAt: Date;
-        outletId: string | null;
-        deviceId: string | null;
-        deviceCode: string | null;
-        customerId: string;
-        pointsRestored: number;
-        pointsRevoked: number;
-      }
-    >();
-    const refundTake = Math.min(limit * 4, 2000);
-    const refundTxns = await this.prisma.transaction.findMany({
-      where: {
-        merchantId,
-        type: TxnType.REFUND,
-        canceledAt: null,
-        ...(orderFilterValue ? { orderId: orderFilterValue } : {}),
-        ...(outletId ? { outletId } : {}),
-        ...(resolvedDeviceId ? { deviceId: resolvedDeviceId } : {}),
-        ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: refundTake,
-      select: {
-        id: true,
-        orderId: true,
-        amount: true,
-        createdAt: true,
-        outletId: true,
-        deviceId: true,
-        customerId: true,
-        metadata: true,
-        device: { select: { code: true } },
-      },
-    });
-    for (const tx of refundTxns) {
-      if (!tx.orderId) continue;
-      const meta = this.normalizeRefundMeta(tx.metadata);
-      const key = [
-        tx.orderId,
-        meta.receiptId ?? 'na',
-        tx.createdAt.toISOString(),
-      ].join('|');
-      let group = refundGroups.get(key);
-      if (!group) {
-        group = {
-          opKey: `refund:${key}`,
-          orderId: tx.orderId,
-          receiptId: meta.receiptId,
-          createdAt: tx.createdAt,
-          outletId: tx.outletId ?? null,
-          deviceId: tx.deviceId ?? null,
-          deviceCode: tx.device?.code ?? null,
-          customerId: tx.customerId,
-          pointsRestored: 0,
-          pointsRevoked: 0,
-        };
-        refundGroups.set(key, group);
-      }
-      if (tx.amount > 0) group.pointsRestored += tx.amount;
-      if (tx.amount < 0) group.pointsRevoked += Math.abs(tx.amount);
-      refundTxToOpKey.set(tx.id, group.opKey);
-    }
-
-    const receiptMetaByOrder = new Map<
-      string,
-      {
-        receiptNumber: string | null;
-        canceledAt: Date | null;
-        receiptId: string | null;
-      }
-    >();
-    for (const receipt of receipts) {
-      receiptMetaByOrder.set(receipt.orderId, {
-        receiptNumber: receipt.receiptNumber ?? null,
-        canceledAt: receipt.canceledAt ?? null,
-        receiptId: receipt.id ?? null,
-      });
-    }
-    const refundOperations: IntegrationOperationInternal[] = [];
-    for (const group of refundGroups.values()) {
-      refundOperations.push({
-        opKey: group.opKey,
-        kind: 'refund',
-        orderId: group.orderId,
-        receiptId: group.receiptId ?? null,
-        receiptNumber: null,
-        total: null,
-        redeemApplied: null,
-        earnApplied: null,
-        pointsRestored: group.pointsRestored ?? null,
-        pointsRevoked: group.pointsRevoked ?? null,
-        outletId: group.outletId,
-        deviceId: group.deviceId,
-        deviceCode: group.deviceCode ?? null,
-        canceledAt: null,
-        operationDate: group.createdAt,
-        customerId: group.customerId,
-        netDelta:
-          Math.max(0, group.pointsRestored ?? 0) -
-          Math.max(0, group.pointsRevoked ?? 0),
-      });
-    }
-
-    const missingOrderIds = Array.from(
-      new Set(
-        refundOperations
-          .map((op) => op.orderId)
-          .filter((id) => id && !receiptMetaByOrder.has(id)),
-      ),
-    );
-    if (missingOrderIds.length) {
-      const receiptsExtra = await this.prisma.receipt.findMany({
-        where: { merchantId, orderId: { in: missingOrderIds } },
-        select: {
-          orderId: true,
-          receiptNumber: true,
-          canceledAt: true,
-          id: true,
-        },
-      });
-      for (const receipt of receiptsExtra) {
-        if (!receipt.orderId) continue;
-        receiptMetaByOrder.set(receipt.orderId, {
-          receiptNumber: receipt.receiptNumber ?? null,
-          canceledAt: receipt.canceledAt ?? null,
-          receiptId: receipt.id ?? null,
-        });
-      }
-    }
-    for (const op of refundOperations) {
-      const meta = receiptMetaByOrder.get(op.orderId);
-      if (meta) {
-        op.receiptNumber = meta.receiptNumber ?? op.receiptNumber ?? null;
-        if (!op.canceledAt) op.canceledAt = meta.canceledAt ?? null;
-      }
-    }
-
-    const merged = [...operations, ...refundOperations].sort((a, b) => {
-      const diff = b.operationDate.getTime() - a.operationDate.getTime();
-      if (diff !== 0) return diff;
-      return a.opKey > b.opKey ? 1 : -1;
-    });
-    const sliced = merged.slice(0, limit);
-    const activeKeys = new Set(sliced.map((op) => op.opKey));
-
-    const purchaseOrderToOpKey = new Map<string, string>();
-    for (const op of sliced) {
-      if (op.kind === 'purchase' && op.orderId) {
-        purchaseOrderToOpKey.set(op.orderId, op.opKey);
-      }
-    }
-    const refundTxToOpKeyActive = new Map<string, string>();
-    for (const [txId, opKey] of refundTxToOpKey.entries()) {
-      if (activeKeys.has(opKey)) {
-        refundTxToOpKeyActive.set(txId, opKey);
-      }
-    }
-
-    const customerIds = Array.from(
-      new Set(sliced.map((op) => op.customerId).filter(Boolean)),
-    );
-    if (customerIds.length > 0) {
-      const wallets = await this.prisma.wallet.findMany({
-        where: {
-          merchantId,
-          customerId: { in: customerIds },
-          type: WalletType.POINTS,
-        },
-        select: { customerId: true, balance: true },
-      });
-      const balanceMap = new Map<string, number>();
-      for (const wallet of wallets) {
-        balanceMap.set(wallet.customerId, wallet.balance ?? 0);
-      }
-      for (const cid of customerIds) {
-        if (!balanceMap.has(cid)) balanceMap.set(cid, 0);
-      }
-
-      const txns = await this.prisma.transaction.findMany({
-        where: { merchantId, customerId: { in: customerIds }, canceledAt: null },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        select: {
-          id: true,
-          customerId: true,
-          amount: true,
-          type: true,
-          orderId: true,
-          createdAt: true,
-        },
-      });
-
-      const progress = new Map<
-        string,
-        { netDelta: number; seenDelta: number; balanceBefore?: number | null }
-      >();
-      for (const op of sliced) {
-        progress.set(op.opKey, {
-          netDelta: op.netDelta ?? 0,
-          seenDelta: 0,
-          balanceBefore: undefined,
-        });
-      }
-
-      for (const tx of txns) {
-        const current = balanceMap.get(tx.customerId) ?? 0;
-        const before = current - tx.amount;
-        let opKey: string | null = null;
-        if (refundTxToOpKeyActive.has(tx.id)) {
-          opKey = refundTxToOpKeyActive.get(tx.id)!;
-        } else if (
-          tx.orderId &&
-          (tx.type === TxnType.EARN || tx.type === TxnType.REDEEM) &&
-          purchaseOrderToOpKey.has(tx.orderId)
-        ) {
-          opKey = purchaseOrderToOpKey.get(tx.orderId)!;
-        }
-        if (opKey && activeKeys.has(opKey)) {
-          const state = progress.get(opKey);
-          if (state) {
-            state.seenDelta += tx.amount;
-            if (
-              state.balanceBefore === undefined &&
-              Math.abs(state.seenDelta - state.netDelta) < 0.0001
-            ) {
-              state.balanceBefore = before;
-            }
-          }
-        }
-        balanceMap.set(tx.customerId, before);
-      }
-
-      for (const op of sliced) {
-        const state = progress.get(op.opKey);
-        if (state && state.balanceBefore != null) {
-          op.balanceBefore = state.balanceBefore;
-          op.balanceAfter = state.balanceBefore + (op.netDelta ?? 0);
-        }
-      }
-    }
-
-    const items: IntegrationOperationDto[] = sliced.map((op) => ({
-      kind: op.kind,
-      id_client: op.customerId,
-      invoice_num: op.orderId,
-      order_id: op.receiptId ?? op.orderId,
-      receipt_num: op.receiptNumber,
-      operation_date: op.operationDate.toISOString(),
-      total: op.total,
-      redeem_applied: op.redeemApplied,
-      earn_applied: op.earnApplied,
-      points_restored: op.pointsRestored,
-      points_revoked: op.pointsRevoked,
-      balance_before: op.balanceBefore ?? null,
-      balance_after: op.balanceAfter ?? null,
-      outlet_id: op.outletId,
-      device_id: op.deviceId,
-      device_code: op.deviceCode,
-      canceled_at: op.canceledAt ? op.canceledAt.toISOString() : null,
-      points_delta: op.netDelta,
-    }));
-
-    await this.logIntegrationSync(
-      req,
-      'GET /api/integrations/operations',
-      'ok',
-      {
-        invoice_num: invoiceNumRaw,
-        outlet_id: outletId,
-        device_id: deviceRaw,
-        from: query.from ?? null,
-        to: query.to ?? null,
-        count: items.length,
-        limit,
-      },
-    );
-    return { items };
   }
 
   @Post('code')
@@ -1247,7 +578,6 @@ export class IntegrationsLoyaltyController {
     }
     const customer = await this.ensureCustomer(merchantId, resolved.customerId);
 
-    await this.verifyBridgeSignatureIfRequired(req, merchantId, null, req.body);
     return {
       type: 'bonus',
       client: await this.buildClientPayload(merchantId, customer),
@@ -1311,12 +641,6 @@ export class IntegrationsLoyaltyController {
     if (outletId) {
       await this.ensureOutletContext(merchantId, outletId);
     }
-    await this.verifyBridgeSignatureIfRequired(
-      req,
-      merchantId,
-      outletId,
-      req.body,
-    );
     const result = await this.loyalty.calculateAction({
       merchantId,
       items,
@@ -1360,12 +684,6 @@ export class IntegrationsLoyaltyController {
     if (outletId) {
       await this.ensureOutletContext(merchantId, outletId);
     }
-    await this.verifyBridgeSignatureIfRequired(
-      req,
-      merchantId,
-      outletId,
-      req.body,
-    );
     const preview = await this.loyalty.calculateBonusPreview({
       merchantId,
       customerId: customer.id,
@@ -1462,13 +780,6 @@ export class IntegrationsLoyaltyController {
       effectiveOutletId = staff?.outletId ?? null;
     }
     const deviceCode = device?.code ?? deviceIdRaw ?? null;
-    await this.verifyBridgeSignatureIfRequired(
-      req,
-      merchantId,
-      effectiveOutletId,
-      req.body,
-    );
-
     const paidBonus =
       dto.paid_bonus != null ? this.sanitizeAmount(dto.paid_bonus) : null;
     const bonusValue =
@@ -1567,13 +878,6 @@ export class IntegrationsLoyaltyController {
     );
     const effectiveOutletId =
       dto.outlet_id ?? device?.outletId ?? receipt.outletId ?? null;
-    await this.verifyBridgeSignatureIfRequired(
-      req,
-      merchantId,
-      effectiveOutletId,
-      req.body,
-    );
-
     const result = await this.loyalty.refund({
       merchantId,
       invoiceNum: receipt.orderId,

@@ -1,23 +1,6 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Put,
-  Query,
-  Req,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, Req, Res, UseGuards } from '@nestjs/common';
 import { PortalGuard } from '../portal-auth/portal.guard';
-import {
-  CommunicationsService,
-  type TaskPayload,
-  type TemplatePayload,
-} from './communications.service';
-import { CommunicationChannel } from '@prisma/client';
+import { CommunicationsService } from './communications.service';
 import type { Response } from 'express';
 
 @Controller('portal/communications')
@@ -27,86 +10,6 @@ export class CommunicationsController {
 
   private merchantId(req: any) {
     return String(req.portalMerchantId);
-  }
-
-  @Get('templates')
-  listTemplates(
-    @Req() req: any,
-    @Query('channel') channel?: CommunicationChannel | 'ALL',
-  ) {
-    return this.service.listTemplates(this.merchantId(req), channel);
-  }
-
-  @Post('templates')
-  createTemplate(@Req() req: any, @Body() body: TemplatePayload) {
-    return this.service.createTemplate(this.merchantId(req), body);
-  }
-
-  @Put('templates/:id')
-  updateTemplate(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() body: TemplatePayload,
-  ) {
-    return this.service.updateTemplate(this.merchantId(req), id, body);
-  }
-
-  @Post('templates/:id/archive')
-  archiveTemplate(@Req() req: any, @Param('id') id: string) {
-    return this.service.archiveTemplate(this.merchantId(req), id);
-  }
-
-  @Get('tasks')
-  listTasks(
-    @Req() req: any,
-    @Query()
-    query: {
-      channel?: CommunicationChannel | 'ALL';
-      status?: string;
-      scope?: 'ACTIVE' | 'ARCHIVED';
-    },
-  ) {
-    return this.service.listTasks(this.merchantId(req), {
-      channel: query.channel,
-      status: query.status,
-      scope: query.scope,
-    });
-  }
-
-  @Post('tasks')
-  createTask(@Req() req: any, @Body() body: TaskPayload) {
-    return this.service.createTask(this.merchantId(req), body);
-  }
-
-  @Post('tasks/:id/status')
-  updateStatus(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() body: { status: string },
-  ) {
-    return this.service.updateTaskStatus(this.merchantId(req), id, body.status);
-  }
-
-  @Get('tasks/:id/recipients')
-  recipients(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Query() query: { limit?: string; offset?: string },
-  ) {
-    const limit =
-      query.limit === undefined ? undefined : Number(query.limit ?? 0);
-    const offset =
-      query.offset === undefined ? undefined : Number(query.offset ?? 0);
-    if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
-      throw new BadRequestException('Некорректный limit');
-    }
-    if (offset !== undefined && (!Number.isFinite(offset) || offset < 0)) {
-      throw new BadRequestException('Некорректный offset');
-    }
-    return this.service.getTaskRecipients(this.merchantId(req), id, {
-      limit,
-      offset,
-    });
   }
 
   @Get('assets/:id')

@@ -151,8 +151,7 @@ export default function ReviewsPage() {
 
   const persistSettings = React.useCallback(
     async (rulesJson: Record<string, any>) => {
-      if (!settingsSnapshot) return;
-      const payload: Record<string, unknown> = { ...settingsSnapshot, rulesJson };
+      const payload: Record<string, unknown> = { rulesJson };
       const res = await fetch("/api/portal/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

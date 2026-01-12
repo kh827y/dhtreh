@@ -16,6 +16,10 @@ export class MetricsController {
   @Header('Content-Type', 'text/plain; version=0.0.4')
   async metricsEndpoint(@Req() req: Request): Promise<string> {
     const token = process.env.METRICS_TOKEN || '';
+    const requireToken = process.env.NODE_ENV === 'production';
+    if (requireToken && !token) {
+      throw new UnauthorizedException('Metrics token required');
+    }
     if (token) {
       const got = (req.headers['x-metrics-token'] as string | undefined) || '';
       const auth = req.headers['authorization'] || '';

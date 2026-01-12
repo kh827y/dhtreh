@@ -13,6 +13,7 @@ import {
   TimeGrouping,
 } from './analytics.service';
 import { ApiKeyGuard } from '../guards/api-key.guard';
+import type { RussiaTimezone } from '../timezone/russia-timezones';
 
 @ApiTags('Analytics')
 @Controller('analytics')
@@ -50,8 +51,13 @@ export class AnalyticsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
-    return this.analyticsService.getDashboard(merchantId, period);
+    const { period, timezone } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
+    return this.analyticsService.getDashboard(merchantId, period, timezone);
   }
 
   /**
@@ -74,7 +80,12 @@ export class AnalyticsController {
     @Query('to') to?: string,
     @Query('segmentId') segmentId?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
+    const { period } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
     return this.analyticsService.getCustomerPortrait(
       merchantId,
       period,
@@ -102,7 +113,12 @@ export class AnalyticsController {
     @Query('to') to?: string,
     @Query('outletId') outletId?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
+    const { period } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
     return this.analyticsService.getRepeatPurchases(
       merchantId,
       period,
@@ -148,8 +164,12 @@ export class AnalyticsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
-    const timezone = await this.analyticsService.resolveTimezone(merchantId);
+    const { period, timezone } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
     return this.analyticsService.getReferralSummary(
       merchantId,
       period,
@@ -179,7 +199,12 @@ export class AnalyticsController {
     @Query('to') to?: string,
     @Query('minPurchases') minPurchases?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
+    const { period } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
     const n = Math.max(
       1,
       Math.min(parseInt(minPurchases || '3', 10) || 3, 100),
@@ -209,11 +234,17 @@ export class AnalyticsController {
     @Query('to') to?: string,
     @Query('group') group?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
+    const { period, timezone } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
     return this.analyticsService.getRevenueMetrics(
       merchantId,
       period,
       this.normalizeGrouping(group),
+      timezone,
     );
   }
 
@@ -233,7 +264,12 @@ export class AnalyticsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
+    const { period } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
     return this.analyticsService.getCustomerMetrics(merchantId, period);
   }
 
@@ -259,11 +295,17 @@ export class AnalyticsController {
     @Query('to') to?: string,
     @Query('group') group?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
+    const { period, timezone } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
     return this.analyticsService.getLoyaltyMetrics(
       merchantId,
       period,
       this.normalizeGrouping(group),
+      timezone,
     );
   }
 
@@ -287,7 +329,12 @@ export class AnalyticsController {
     @Query('to') to?: string,
     @Query('outletId') outletId?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
+    const { period } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
     return this.analyticsService.getAutoReturnMetrics(
       merchantId,
       period,
@@ -315,7 +362,12 @@ export class AnalyticsController {
     @Query('to') to?: string,
     @Query('outletId') outletId?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
+    const { period } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
     return this.analyticsService.getBirthdayMechanicMetrics(
       merchantId,
       period,
@@ -339,7 +391,12 @@ export class AnalyticsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
+    const { period } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
     return this.analyticsService.getCampaignMetrics(merchantId, period);
   }
 
@@ -400,8 +457,17 @@ export class AnalyticsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
-    return this.analyticsService.getTimeActivityMetrics(merchantId, period);
+    const { period, timezone } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
+    return this.analyticsService.getTimeActivityMetrics(
+      merchantId,
+      period,
+      timezone,
+    );
   }
 
   /**
@@ -453,8 +519,17 @@ export class AnalyticsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const period = this.getPeriod(periodType, from, to);
-    return this.analyticsService.getOperationalMetrics(merchantId, period);
+    const { period, timezone } = await this.getPeriodWithTimezone(
+      merchantId,
+      periodType,
+      from,
+      to,
+    );
+    return this.analyticsService.getOperationalMetrics(
+      merchantId,
+      period,
+      timezone,
+    );
   }
 
   /**
@@ -552,6 +627,17 @@ export class AnalyticsController {
     };
   }
 
+  private async getPeriodWithTimezone(
+    merchantId: string,
+    periodType?: string,
+    fromStr?: string,
+    toStr?: string,
+  ): Promise<{ period: DashboardPeriod; timezone: RussiaTimezone }> {
+    const timezone = await this.analyticsService.resolveTimezone(merchantId);
+    const period = this.getPeriod(periodType, fromStr, toStr, timezone);
+    return { period, timezone };
+  }
+
   /**
    * Helper: получить период из параметров
    */
@@ -559,81 +645,86 @@ export class AnalyticsController {
     periodType?: string,
     fromStr?: string,
     toStr?: string,
+    timezone?: RussiaTimezone,
   ): DashboardPeriod {
+    const offsetMs = (timezone?.utcOffsetMinutes ?? 0) * 60 * 1000;
+    const toLocal = (d: Date) => new Date(d.getTime() + offsetMs);
+    const fromLocal = (d: Date) => new Date(d.getTime() - offsetMs);
+
     if (fromStr && toStr) {
       const rawFrom = new Date(fromStr);
       const rawTo = new Date(toStr);
       if (!Number.isNaN(rawFrom.getTime()) && !Number.isNaN(rawTo.getTime())) {
-        let from = new Date(rawFrom);
-        let to = new Date(rawTo);
+        let from = toLocal(rawFrom);
+        let to = toLocal(rawTo);
         if (from.getTime() > to.getTime()) {
           const tmp = from;
           from = to;
           to = tmp;
         }
-        from.setHours(0, 0, 0, 0);
-        to.setHours(23, 59, 59, 999);
-        return { from, to, type: 'custom' };
+        from.setUTCHours(0, 0, 0, 0);
+        to.setUTCHours(23, 59, 59, 999);
+        return { from: fromLocal(from), to: fromLocal(to), type: 'custom' };
       }
     }
 
-    const today = new Date();
-    const from = new Date(today);
-    let to = new Date(today);
+    const todayLocal = toLocal(new Date());
+    const from = new Date(todayLocal);
+    let to = new Date(todayLocal);
 
     switch (periodType) {
       case 'yesterday':
-        from.setDate(from.getDate() - 1);
-        from.setHours(0, 0, 0, 0);
+        from.setUTCDate(from.getUTCDate() - 1);
+        from.setUTCHours(0, 0, 0, 0);
         to = new Date(from);
-        to.setHours(23, 59, 59, 999);
+        to.setUTCHours(23, 59, 59, 999);
         break;
       case 'day':
-        from.setHours(0, 0, 0, 0);
-        to.setHours(23, 59, 59, 999);
+        from.setUTCHours(0, 0, 0, 0);
+        to.setUTCHours(23, 59, 59, 999);
         break;
       case 'week': {
-        const dayOfWeek = from.getDay();
+        const dayOfWeek = from.getUTCDay();
         const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        from.setDate(from.getDate() + diff);
-        from.setHours(0, 0, 0, 0);
+        from.setUTCDate(from.getUTCDate() + diff);
+        from.setUTCHours(0, 0, 0, 0);
         to = new Date(from);
-        to.setDate(to.getDate() + 6);
-        to.setHours(23, 59, 59, 999);
+        to.setUTCDate(to.getUTCDate() + 6);
+        to.setUTCHours(23, 59, 59, 999);
         break;
       }
       case 'month':
-        from.setDate(1);
-        from.setHours(0, 0, 0, 0);
+        from.setUTCDate(1);
+        from.setUTCHours(0, 0, 0, 0);
         to = new Date(from);
-        to.setMonth(to.getMonth() + 1);
-        to.setDate(0);
-        to.setHours(23, 59, 59, 999);
+        to.setUTCMonth(to.getUTCMonth() + 1);
+        to.setUTCDate(0);
+        to.setUTCHours(23, 59, 59, 999);
         break;
       case 'quarter': {
-        const quarter = Math.floor(from.getMonth() / 3);
-        from.setMonth(quarter * 3, 1);
-        from.setHours(0, 0, 0, 0);
+        const quarter = Math.floor(from.getUTCMonth() / 3);
+        from.setUTCMonth(quarter * 3, 1);
+        from.setUTCHours(0, 0, 0, 0);
         to = new Date(from);
-        to.setMonth(to.getMonth() + 3);
-        to.setDate(0);
-        to.setHours(23, 59, 59, 999);
+        to.setUTCMonth(to.getUTCMonth() + 3);
+        to.setUTCDate(0);
+        to.setUTCHours(23, 59, 59, 999);
         break;
       }
       case 'year':
-        from.setMonth(0, 1);
-        from.setHours(0, 0, 0, 0);
+        from.setUTCMonth(0, 1);
+        from.setUTCHours(0, 0, 0, 0);
         to = new Date(from);
-        to.setMonth(11, 31);
-        to.setHours(23, 59, 59, 999);
+        to.setUTCMonth(11, 31);
+        to.setUTCHours(23, 59, 59, 999);
         break;
       default:
-        from.setDate(1);
-        from.setHours(0, 0, 0, 0);
+        from.setUTCDate(1);
+        from.setUTCHours(0, 0, 0, 0);
         to = new Date(from);
-        to.setMonth(to.getMonth() + 1);
-        to.setDate(0);
-        to.setHours(23, 59, 59, 999);
+        to.setUTCMonth(to.getUTCMonth() + 1);
+        to.setUTCDate(0);
+        to.setUTCHours(23, 59, 59, 999);
         break;
     }
 
@@ -647,7 +738,7 @@ export class AnalyticsController {
         ? (periodType as DashboardPeriod['type'])
         : 'month';
 
-    return { from, to, type: normalized };
+    return { from: fromLocal(from), to: fromLocal(to), type: normalized };
   }
 
   private normalizeGrouping(value?: string): TimeGrouping | undefined {

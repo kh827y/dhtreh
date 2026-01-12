@@ -31,8 +31,6 @@ export default function SettingsPage() {
   const [webhookKeyIdNext, setWebhookKeyIdNext] = useState<string>('');
   const [webhookSecretNext, setWebhookSecretNext] = useState<string>('');
   const [useWebhookNext, setUseWebhookNext] = useState<boolean>(false);
-  const [bridgeSecret, setBridgeSecret] = useState<string>('');
-  const [bridgeSecretNext, setBridgeSecretNext] = useState<string>('');
   const [miniappBaseUrl, setMiniappBaseUrl] = useState<string>('');
   const [miniappThemePrimary, setMiniappThemePrimary] = useState<string>('');
   const [miniappThemeBg, setMiniappThemeBg] = useState<string>('');
@@ -73,6 +71,12 @@ export default function SettingsPage() {
         qrTtlSec: s.qrTtlSec,
         redeemCooldownSec: s.redeemCooldownSec,
         earnCooldownSec: s.earnCooldownSec,
+        redeemDailyCap: s.redeemDailyCap ?? null,
+        earnDailyCap: s.earnDailyCap ?? null,
+        pointsTtlDays: s.pointsTtlDays ?? null,
+        earnDelayDays: s.earnDelayDays ?? null,
+        maxOutlets: s.maxOutlets ?? null,
+        timezone: s.timezone ?? undefined,
         rulesJson,
         webhookUrl: webhookUrl || undefined,
         webhookKeyId: webhookKeyId || undefined,
@@ -80,8 +84,6 @@ export default function SettingsPage() {
         webhookKeyIdNext: webhookKeyIdNext || undefined,
         webhookSecretNext: webhookSecretNext || undefined,
         useWebhookNext: useWebhookNext,
-        bridgeSecret: bridgeSecret || undefined,
-        bridgeSecretNext: bridgeSecretNext || undefined,
         miniappBaseUrl: miniappBaseUrl || undefined,
         miniappThemePrimary: miniappThemePrimary || undefined,
         miniappThemeBg: miniappThemeBg || undefined,
@@ -93,8 +95,6 @@ export default function SettingsPage() {
       setMsg('Сохранено');
       setWebhookSecret('');
       setWebhookSecretNext('');
-      setBridgeSecret('');
-      setBridgeSecretNext('');
     } catch (e:any) { setMsg('Ошибка сохранения: ' + (e.message || e)); }
     finally { setLoading(false); }
   };
@@ -188,6 +188,73 @@ export default function SettingsPage() {
               style={{ marginLeft: 8, width: 120 }}
             />
           </div>
+          <hr />
+          <h3>Лимиты и параметры</h3>
+          <div>
+            <label>Лимит списаний в день (баллы):</label>
+            <input
+              type="number"
+              min={0}
+              value={s.redeemDailyCap ?? ''}
+              onChange={e=>setS({ ...s, redeemDailyCap: num(e.target.value, null) })}
+              style={{ marginLeft: 8, width: 120 }}
+            />
+          </div>
+          <div>
+            <label>Лимит начислений в день (баллы):</label>
+            <input
+              type="number"
+              min={0}
+              value={s.earnDailyCap ?? ''}
+              onChange={e=>setS({ ...s, earnDailyCap: num(e.target.value, null) })}
+              style={{ marginLeft: 8, width: 120 }}
+            />
+          </div>
+          <div>
+            <label>TTL баллов (дни):</label>
+            <input
+              type="number"
+              min={0}
+              value={s.pointsTtlDays ?? ''}
+              onChange={e=>setS({ ...s, pointsTtlDays: num(e.target.value, null) })}
+              style={{ marginLeft: 8, width: 120 }}
+            />
+          </div>
+          <div>
+            <label>Задержка начисления (дни):</label>
+            <input
+              type="number"
+              min={0}
+              value={s.earnDelayDays ?? ''}
+              onChange={e=>setS({ ...s, earnDelayDays: num(e.target.value, null) })}
+              style={{ marginLeft: 8, width: 120 }}
+            />
+          </div>
+          <div>
+            <label>Максимум торговых точек:</label>
+            <input
+              type="number"
+              min={0}
+              value={s.maxOutlets ?? ''}
+              onChange={e=>setS({ ...s, maxOutlets: num(e.target.value, null) })}
+              style={{ marginLeft: 8, width: 120 }}
+            />
+          </div>
+          <div>
+            <label>Часовой пояс (код):</label>
+            <input
+              value={s.timezone ?? ''}
+              onChange={e=>setS({ ...s, timezone: e.target.value })}
+              style={{ marginLeft: 8, width: 160 }}
+              placeholder="MSK+3"
+            />
+          </div>
+          <div>
+            <label>
+              Требовать start‑параметр Telegram
+              <input type="checkbox" checked={telegramStartParamRequired} onChange={e=>setTelegramStartParamRequired(e.target.checked)} style={{ marginLeft: 8 }} />
+            </label>
+          </div>
           <div>
             <label>Правила (JSON):</label>
             <textarea value={rules} onChange={e=>setRules(e.target.value)} rows={10} style={{ width: '100%', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }} placeholder='[ {"if": {"channelIn":["SMART"]}, "then": {"earnBps":700}} ]' />
@@ -246,16 +313,6 @@ export default function SettingsPage() {
               Использовать Next Secret
               <input type="checkbox" checked={useWebhookNext} onChange={e=>setUseWebhookNext(e.target.checked)} style={{ marginLeft: 8 }} />
             </label>
-          </div>
-          <hr />
-          <h3>Bridge подпись</h3>
-          <div>
-            <label>Bridge Secret:</label>
-            <input type="password" value={bridgeSecret} onChange={e=>setBridgeSecret(e.target.value)} style={{ marginLeft: 8, width: 520 }} placeholder="вводите только при смене" />
-          </div>
-          <div>
-            <label>Bridge Secret Next:</label>
-            <input type="password" value={bridgeSecretNext} onChange={e=>setBridgeSecretNext(e.target.value)} style={{ marginLeft: 8, width: 520 }} placeholder="для ротации" />
           </div>
           <hr />
           <h3>Мини‑аппа (бренд)</h3>

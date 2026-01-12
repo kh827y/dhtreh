@@ -25,7 +25,7 @@ export default function ExportsPage() {
       <div style={{ display: 'grid', gap: 12 }}>
         <div style={{ background: '#0e1629', padding: 10, borderRadius: 8 }}>
           <h3 style={{ marginTop: 0 }}>Операции</h3>
-          <a href={csvUrl('/transactions.csv', { limit })} download style={{ color: '#89b4fa' }}>Скачать transactions.csv</a>
+          <a href={csvUrl('/transactions.csv', { batch: limit })} download style={{ color: '#89b4fa' }}>Скачать transactions.csv</a>
         </div>
         <div style={{ background: '#0e1629', padding: 10, borderRadius: 8 }}>
           <h3 style={{ marginTop: 0 }}>Чеки</h3>
@@ -33,11 +33,11 @@ export default function ExportsPage() {
             <label>OrderId: <input value={orderId} onChange={e=>setOrderId(e.target.value)} /></label>
             <label>CustomerId: <input value={customerId} onChange={e=>setCustomerId(e.target.value)} /></label>
           </div>
-          <a href={csvUrl('/receipts.csv', { limit, orderId: orderId || undefined, customerId: customerId || undefined })} download style={{ color: '#89b4fa' }}>Скачать receipts.csv</a>
+          <a href={csvUrl('/receipts.csv', { batch: limit, orderId: orderId || undefined, customerId: customerId || undefined })} download style={{ color: '#89b4fa' }}>Скачать receipts.csv</a>
         </div>
         <div style={{ background: '#0e1629', padding: 10, borderRadius: 8 }}>
           <h3 style={{ marginTop: 0 }}>Леджер</h3>
-          <a href={csvUrl('/ledger.csv', { limit })} download style={{ color: '#89b4fa' }}>Скачать ledger.csv</a>
+          <a href={csvUrl('/ledger.csv', { batch: limit })} download style={{ color: '#89b4fa' }}>Скачать ledger.csv</a>
         </div>
       </div>
     </div>

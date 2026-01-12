@@ -90,25 +90,17 @@ export class CrmService {
     id?: string,
   ) {
     let customer = null as any;
-    const associatedWithMerchant = {
-      OR: [
-        { merchantProfiles: { some: { merchantId } } },
-        { wallets: { some: { merchantId } } },
-        { transactions: { some: { merchantId } } },
-        { Receipt: { some: { merchantId } } },
-      ],
-    };
     if (id) {
       customer = await this.prisma.customer.findFirst({
-        where: Object.assign({ id }, associatedWithMerchant),
+        where: { id, merchantId },
       });
     } else if (phone) {
       customer = await this.prisma.customer.findFirst({
-        where: Object.assign({ phone }, associatedWithMerchant),
+        where: { phone, merchantId },
       });
     } else if (email) {
       customer = await this.prisma.customer.findFirst({
-        where: Object.assign({ email }, associatedWithMerchant),
+        where: { email, merchantId },
       });
     }
     if (!customer) return null;
@@ -167,7 +159,7 @@ export class CrmService {
     const take = Math.min(Math.max(limit, 1), 200);
     if (isSystemAllAudience(segment)) {
       const customers = await this.prisma.customer.findMany({
-        where: { customerStats: { some: { merchantId } } },
+        where: { merchantId },
         orderBy: { createdAt: 'desc' },
         take,
         ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -185,7 +177,7 @@ export class CrmService {
     }
 
     const items = await this.prisma.segmentCustomer.findMany({
-      where: { segmentId, segment: { merchantId } },
+      where: { segmentId, segment: { merchantId }, customer: { merchantId } },
       include: { customer: true },
       take,
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -236,7 +228,7 @@ export class CrmService {
         | undefined;
       if (isAll) {
         const customers = await this.prisma.customer.findMany({
-          where: { customerStats: { some: { merchantId } } },
+          where: { merchantId },
           orderBy: { id: 'asc' },
           take: batch,
           ...(lastId ? { skip: 1, cursor: { id: lastId } } : {}),
@@ -250,7 +242,7 @@ export class CrmService {
         lastId = customers[customers.length - 1].id;
       } else {
         const chunk = await this.prisma.segmentCustomer.findMany({
-          where: { segmentId, segment: { merchantId } },
+          where: { segmentId, segment: { merchantId }, customer: { merchantId } },
           include: { customer: true },
           orderBy: { id: 'asc' },
           take: batch,

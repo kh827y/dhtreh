@@ -3,7 +3,7 @@
 # Backup script for Loyalty Program Database
 # Run as cron job: 0 3 * * * /opt/loyalty/infra/backup/backup.sh
 
-set -e
+set -euo pipefail
 
 # Configuration
 BACKUP_DIR="/backups"
@@ -12,7 +12,7 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DB_NAME="loyalty"
 DB_USER="loyalty"
 DB_HOST="${DB_HOST:-postgres}"
-PGPASSWORD="${DB_PASSWORD}"
+PGPASSWORD="${DB_PASSWORD:-${POSTGRES_PASSWORD:-}}"
 
 # S3 Configuration (optional)
 S3_BUCKET=${S3_BUCKET:-""}
@@ -38,15 +38,20 @@ send_telegram() {
     fi
 }
 
+if [ -z "$PGPASSWORD" ]; then
+    log "ERROR: DB_PASSWORD is not set"
+    exit 1
+fi
+
 # Create backup directory
-mkdir -p $BACKUP_DIR
+mkdir -p "$BACKUP_DIR"
 
 # Start backup
 log "Starting database backup..."
 BACKUP_FILE="$BACKUP_DIR/loyalty_${TIMESTAMP}.sql.gz"
 
 # Perform backup with error handling
-if PGPASSWORD=$PGPASSWORD pg_dump -h $DB_HOST -U $DB_USER -d $DB_NAME | gzip > "$BACKUP_FILE"; then
+if PGPASSWORD="$PGPASSWORD" pg_dump -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" | gzip > "$BACKUP_FILE"; then
     SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     log "Backup created successfully: $BACKUP_FILE (Size: $SIZE)"
     
@@ -61,6 +66,9 @@ if PGPASSWORD=$PGPASSWORD pg_dump -h $DB_HOST -U $DB_USER -d $DB_NAME | gzip > "
     
     # Upload to S3 if configured
     if [ -n "$S3_BUCKET" ] && [ -n "$S3_ACCESS_KEY" ] && [ -n "$S3_SECRET_KEY" ]; then
+        if ! command -v aws >/dev/null 2>&1; then
+            log "WARNING: aws-cli not installed, skipping S3 upload"
+        else
         log "Uploading to S3 bucket: $S3_BUCKET"
         
         # Configure AWS CLI
@@ -80,14 +88,15 @@ if PGPASSWORD=$PGPASSWORD pg_dump -h $DB_HOST -U $DB_USER -d $DB_NAME | gzip > "
             log "ERROR: Failed to upload to S3"
             send_telegram "⚠️ *Backup Warning*: Failed to upload backup to S3"
         fi
+        fi
     fi
     
     # Clean old local backups
     log "Cleaning old backups (keeping last $RETENTION_DAYS days)..."
-    find $BACKUP_DIR -name "loyalty_*.sql.gz" -mtime +$RETENTION_DAYS -delete
+    find "$BACKUP_DIR" -name "loyalty_*.sql.gz" -mtime +"$RETENTION_DAYS" -delete
     
     # Clean old S3 backups if configured
-    if [ -n "$S3_BUCKET" ] && [ -n "$S3_ACCESS_KEY" ] && [ -n "$S3_SECRET_KEY" ]; then
+    if [ -n "$S3_BUCKET" ] && [ -n "$S3_ACCESS_KEY" ] && [ -n "$S3_SECRET_KEY" ] && command -v aws >/dev/null 2>&1; then
         log "Cleaning old S3 backups..."
         CUTOFF_DATE=$(date -d "$RETENTION_DAYS days ago" +%Y-%m-%d)
         

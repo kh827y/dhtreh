@@ -29,6 +29,7 @@ describe('PointsBurnWorker (unit)', () => {
         points: 100,
         consumedPoints: 20,
         earnedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+        orderId: 'order-1',
       },
       {
         id: 'L2',
@@ -37,6 +38,7 @@ describe('PointsBurnWorker (unit)', () => {
         points: 30,
         consumedPoints: 0,
         earnedAt: new Date(Date.now() - 35 * 24 * 60 * 60 * 1000),
+        orderId: 'order-2',
       },
     ];
     const remain =
@@ -54,8 +56,7 @@ describe('PointsBurnWorker (unit)', () => {
           type: 'POINTS',
           balance: 200,
         }),
-        findUnique: jest.fn().mockResolvedValue({ id: 'W1', balance: 200 }),
-        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       earnLot: {
         findMany: jest.fn().mockResolvedValue(lots),
@@ -92,11 +93,11 @@ describe('PointsBurnWorker (unit)', () => {
         data: expect.objectContaining({ type: 'ADJUST', amount: -110 }),
       }),
     );
-    // Wallet updated to new balance (200 - 110 = 90)
-    expect(txInstance.wallet.update).toHaveBeenCalledWith(
+    // Wallet decremented by burned amount (110)
+    expect(txInstance.wallet.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'W1' },
-        data: expect.objectContaining({ balance: 90 }),
+        where: { id: 'W1', balance: { gte: 110 } },
+        data: expect.objectContaining({ balance: { decrement: 110 } }),
       }),
     );
     // Lots consumed in FIFO order; ensure at least one update occurred
@@ -130,6 +131,7 @@ describe('PointsBurnWorker (unit)', () => {
         points: 100,
         consumedPoints: 100,
         earnedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+        orderId: 'order-1',
       },
     ];
 

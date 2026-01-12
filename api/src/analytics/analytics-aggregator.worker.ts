@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
+import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../pg-lock.util';
 
 type ParsedRfmSettings = {
   recencyMode: 'auto' | 'manual';
@@ -233,12 +234,24 @@ export class AnalyticsAggregatorWorker {
   // Ежедневная агрегация KPI за вчерашний день
   @Cron('0 2 * * *')
   async aggregateDailyKpis() {
+    if (process.env.WORKERS_ENABLED === '0') {
+      this.logger.log('WORKERS_ENABLED=0, skip analytics aggregation');
+      return;
+    }
+    const lock = await pgTryAdvisoryLock(
+      this.prisma,
+      'cron:analytics_daily',
+    );
+    if (!lock.ok) return;
     const today = new Date();
     const day = new Date(today);
     day.setDate(day.getDate() - 1); // вчера
     day.setHours(0, 0, 0, 0);
-
-    await this.aggregateForDate(day);
+    try {
+      await this.aggregateForDate(day);
+    } finally {
+      await pgAdvisoryUnlock(this.prisma, lock.key);
+    }
   }
 
   // Публичный метод для ручного запуска (можно дергать из скриптов/команд)

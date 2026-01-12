@@ -17,7 +17,7 @@ const q = await api.quote({
   orderId: 'O-1',
   total: 1000,
   positions: [{ productId: 'P-1', qty: 1, price: 1000 }],
-}, { staffKey: '...' });
+});
 
 // COMMIT
 const c = await api.commit({ merchantId: 'M-1', holdId: q.holdId!, orderId: 'O-1' }, { idempotencyKey: 'commit:M-1:O-1' });

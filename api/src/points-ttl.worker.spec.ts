@@ -36,6 +36,7 @@ describe('PointsTtlWorker (unit)', () => {
             points: 100,
             consumedPoints: 20,
             earnedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+            orderId: 'order-1',
             status: 'ACTIVE',
           },
           {
@@ -44,6 +45,7 @@ describe('PointsTtlWorker (unit)', () => {
             points: 50,
             consumedPoints: 0,
             earnedAt: new Date(Date.now() - 35 * 24 * 60 * 60 * 1000),
+            orderId: 'order-2',
             status: 'ACTIVE',
           },
           {
@@ -52,6 +54,7 @@ describe('PointsTtlWorker (unit)', () => {
             points: 30,
             consumedPoints: 10,
             earnedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
+            orderId: 'order-3',
             status: 'ACTIVE',
           },
         ]),

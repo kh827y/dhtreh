@@ -1089,24 +1089,23 @@ export class OperationsLogService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      const freshWallet = await tx.wallet.findUnique({
-        where: { id: wallet.id },
-      });
-      if (!freshWallet) {
-        throw new BadRequestException(
-          'У клиента отсутствует кошелёк с баллами',
-        );
+      if (delta < 0) {
+        const amount = Math.abs(delta);
+        const updated = await tx.wallet.updateMany({
+          where: { id: wallet.id, balance: { gte: amount } },
+          data: { balance: { decrement: amount } },
+        });
+        if (!updated.count) {
+          throw new BadRequestException(
+            'Недостаточно баллов на балансе клиента для отмены операции',
+          );
+        }
+      } else if (delta > 0) {
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: { increment: delta } },
+        });
       }
-      if (delta < 0 && freshWallet.balance < -delta) {
-        throw new BadRequestException(
-          'Недостаточно баллов на балансе клиента для отмены операции',
-        );
-      }
-
-      await tx.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: freshWallet.balance + delta },
-      });
 
       if (process.env.EARN_LOTS_FEATURE === '1') {
         if (delta > 0) {

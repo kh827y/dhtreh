@@ -1,15 +1,14 @@
 const BASE = '/api/admin';
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  const apiKey = (typeof process !== 'undefined' ? (process.env.NEXT_PUBLIC_API_KEY || '') : '') || '';
-  if (!apiKey) {
-    throw new Error('[Admin ENV] NEXT_PUBLIC_API_KEY not configured');
-  }
+  const method = String(init?.method || 'GET').toUpperCase();
   const mergedHeaders: HeadersInit = {
     'Content-Type': 'application/json',
-    'x-api-key': apiKey,
     ...(init?.headers as any || {}),
   };
+  if (method !== 'GET' && method !== 'HEAD' && !('x-admin-action' in mergedHeaders)) {
+    (mergedHeaders as Record<string, string>)['x-admin-action'] = 'ui';
+  }
   const res = await fetch(BASE + path, { ...(init || {}), headers: mergedHeaders });
   if (!res.ok) throw new Error(await res.text());
   return await res.json() as T;
@@ -20,7 +19,6 @@ export type MerchantSettings = {
   earnBps: number;
   redeemLimitBps: number;
   qrTtlSec: number;
-  requireBridgeSig: boolean;
   redeemCooldownSec: number;
   earnCooldownSec: number;
   redeemDailyCap?: number | null;
@@ -28,7 +26,6 @@ export type MerchantSettings = {
   maxOutlets?: number | null;
   requireJwtForQuote: boolean;
   rulesJson?: any;
-  requireStaffKey: boolean;
   pointsTtlDays?: number | null;
   telegramBotToken?: string | null;
   telegramBotUsername?: string | null;
@@ -37,15 +34,14 @@ export type MerchantSettings = {
   miniappThemePrimary?: string | null;
   miniappThemeBg?: string | null;
   miniappLogoUrl?: string | null;
-  // интеграции/вебхуки/bridge (частично серверные поля)
+  timezone?: string | null;
+  // интеграции/вебхуки (частично серверные поля)
   webhookUrl?: string | null;
   webhookSecret?: string | null;
   webhookKeyId?: string | null;
   webhookSecretNext?: string | null;
   webhookKeyIdNext?: string | null;
   useWebhookNext?: boolean;
-  bridgeSecret?: string | null;
-  bridgeSecretNext?: string | null;
   outboxPausedUntil?: string | null;
 };
 
@@ -58,6 +54,16 @@ export async function updateSettings(
   dto: Partial<MerchantSettings>,
 ): Promise<MerchantSettings> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/settings`, { method: 'PUT', body: JSON.stringify(dto) });
+}
+
+export async function resetAntifraudLimit(
+  merchantId: string,
+  payload: { scope: 'merchant' | 'customer' | 'staff' | 'device' | 'outlet'; targetId?: string },
+): Promise<{ ok: true }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/antifraud/reset`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 // ===== Telegram bot management =====
@@ -153,7 +159,7 @@ export async function customerSearch(merchantId: string, phone: string): Promise
 
 export function transactionsCsvUrl(merchantId: string, params: { limit?: number; before?: string; from?: string; to?: string; type?: string; customerId?: string; outletId?: string; staffId?: string }): string {
   const p = new URLSearchParams();
-  if (params.limit != null) p.set('limit', String(params.limit));
+  if (params.limit != null) p.set('batch', String(params.limit));
   if (params.before) p.set('before', params.before);
   if (params.from) p.set('from', params.from);
   if (params.to) p.set('to', params.to);
@@ -166,7 +172,7 @@ export function transactionsCsvUrl(merchantId: string, params: { limit?: number;
 
 export function receiptsCsvUrl(merchantId: string, params: { limit?: number; before?: string; orderId?: string; customerId?: string }): string {
   const p = new URLSearchParams();
-  if (params.limit != null) p.set('limit', String(params.limit));
+  if (params.limit != null) p.set('batch', String(params.limit));
   if (params.before) p.set('before', params.before);
   if (params.orderId) p.set('orderId', params.orderId);
   if (params.customerId) p.set('customerId', params.customerId);
@@ -249,9 +255,6 @@ export type Outlet = {
   hidden: boolean;
   posType?: 'VIRTUAL' | 'PC_POS' | 'SMART' | null;
   posLastSeenAt?: string | null;
-  bridgeSecretIssued: boolean;
-  bridgeSecretNextIssued: boolean;
-  bridgeSecretUpdatedAt?: string | null;
   createdAt: string;
   updatedAt?: string | null;
 };
@@ -270,22 +273,6 @@ export async function updateOutlet(merchantId: string, outletId: string, dto: { 
 
 export async function deleteOutlet(merchantId: string, outletId: string): Promise<{ ok: true }> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/outlets/${encodeURIComponent(outletId)}`, { method: 'DELETE' });
-}
-
-export async function issueOutletBridgeSecret(merchantId: string, outletId: string): Promise<{ secret: string }> {
-  return http(`/merchants/${encodeURIComponent(merchantId)}/outlets/${encodeURIComponent(outletId)}/bridge-secret`, { method: 'POST' });
-}
-
-export async function revokeOutletBridgeSecret(merchantId: string, outletId: string): Promise<{ ok: true }> {
-  return http(`/merchants/${encodeURIComponent(merchantId)}/outlets/${encodeURIComponent(outletId)}/bridge-secret`, { method: 'DELETE' });
-}
-
-export async function issueOutletBridgeSecretNext(merchantId: string, outletId: string): Promise<{ secret: string }> {
-  return http(`/merchants/${encodeURIComponent(merchantId)}/outlets/${encodeURIComponent(outletId)}/bridge-secret/next`, { method: 'POST' });
-}
-
-export async function revokeOutletBridgeSecretNext(merchantId: string, outletId: string): Promise<{ ok: true }> {
-  return http(`/merchants/${encodeURIComponent(merchantId)}/outlets/${encodeURIComponent(outletId)}/bridge-secret/next`, { method: 'DELETE' });
 }
 
 export async function updateOutletPos(merchantId: string, outletId: string, dto: { posType?: string | null; posLastSeenAt?: string | null }): Promise<Outlet> {

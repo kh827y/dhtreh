@@ -166,6 +166,10 @@ export default function LevelsPage() {
   const [levels, setLevels] = React.useState<TierRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [periodDays, setPeriodDays] = React.useState(365);
+  const [periodInput, setPeriodInput] = React.useState("365");
+  const [periodError, setPeriodError] = React.useState<string | null>(null);
+  const [periodSaving, setPeriodSaving] = React.useState(false);
 
   const [formState, setFormState] = React.useState<LevelFormState>(EMPTY_FORM);
   const [formError, setFormError] = React.useState<string | null>(null);
@@ -208,6 +212,7 @@ export default function LevelsPage() {
   const loadLevels = React.useCallback(async () => {
     setLoading(true);
     setError(null);
+    setPeriodError(null);
     try {
       const res = await fetch("/api/portal/loyalty/tiers", { cache: "no-store" });
       if (!res.ok)
@@ -225,6 +230,21 @@ export default function LevelsPage() {
         .map(mapTier)
         .sort((a, b) => a.thresholdAmount - b.thresholdAmount);
       setLevels(mapped);
+
+      try {
+        const settingsRes = await fetch("/api/portal/loyalty/levels", {
+          cache: "no-store",
+        });
+        if (settingsRes.ok) {
+          const settings = await settingsRes.json();
+          const nextPeriod = Number(settings?.periodDays);
+          if (Number.isFinite(nextPeriod) && nextPeriod > 0) {
+            const normalized = Math.floor(nextPeriod);
+            setPeriodDays(normalized);
+            setPeriodInput(String(normalized));
+          }
+        }
+      } catch {}
     } catch (e) {
       setLevels([]);
       setError(readableError(e, "Не удалось загрузить уровни"));
@@ -232,6 +252,38 @@ export default function LevelsPage() {
       setLoading(false);
     }
   }, [mapTier]);
+
+  const savePeriodDays = React.useCallback(async () => {
+    if (periodSaving) return;
+    const raw = Number(periodInput);
+    if (!Number.isFinite(raw) || raw <= 0) {
+      setPeriodError("Количество дней должно быть положительным");
+      return;
+    }
+    const nextPeriod = Math.floor(raw);
+    setPeriodSaving(true);
+    setPeriodError(null);
+    try {
+      const res = await fetch("/api/portal/loyalty/levels", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ periodDays: nextPeriod }),
+      });
+      if (!res.ok)
+        throw new Error(
+          (await res.text().catch(() => "")) || "Не удалось сохранить период",
+        );
+      const payload = await res.json().catch(() => null);
+      const applied = Number(payload?.periodDays);
+      const normalized = Number.isFinite(applied) && applied > 0 ? Math.floor(applied) : nextPeriod;
+      setPeriodDays(normalized);
+      setPeriodInput(String(normalized));
+    } catch (e) {
+      setPeriodError(readableError(e, "Не удалось сохранить период"));
+    } finally {
+      setPeriodSaving(false);
+    }
+  }, [periodInput, periodSaving]);
 
   React.useEffect(() => {
     void loadLevels();
@@ -397,6 +449,35 @@ export default function LevelsPage() {
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Уровни клиентов</h2>
             <p className="text-sm text-gray-500">Настройка статусов и привилегий.</p>
+            <p className="text-sm text-gray-500">
+              Уровень считается по покупкам за последние {periodDays} дней.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+              <span>Период расчёта уровня:</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  inputMode="numeric"
+                  className="w-24 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+                  value={periodInput}
+                  onChange={(event) => setPeriodInput(event.target.value)}
+                  disabled={loading || periodSaving}
+                />
+                <span>дней</span>
+                <button
+                  type="button"
+                  className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                  onClick={() => void savePeriodDays()}
+                  disabled={loading || periodSaving}
+                >
+                  {periodSaving ? "Сохраняю..." : "Сохранить"}
+                </button>
+              </div>
+            </div>
+            {periodError ? (
+              <p className="mt-2 text-xs text-red-600">{periodError}</p>
+            ) : null}
           </div>
         </div>
         <button

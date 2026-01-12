@@ -86,10 +86,9 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
             },
           });
           if (!wallet) return; // безопасная защита, кошелька нет — пропускаем
-          const w = await tx.wallet.findUnique({ where: { id: wallet.id } });
           await tx.wallet.update({
             where: { id: wallet.id },
-            data: { balance: (w!.balance || 0) + (fresh.points || 0) },
+            data: { balance: { increment: fresh.points || 0 } },
           });
 
           // Транзакция начисления (CAMPAIGN или EARN?) — считаем как EARN (отложенное начисление)

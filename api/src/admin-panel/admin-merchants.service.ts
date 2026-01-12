@@ -35,9 +35,6 @@ export interface AdminMerchantListItem {
 export interface AdminMerchantDetail extends AdminMerchantListItem {
   settings: {
     qrTtlSec: number;
-    requireBridgeSig: boolean;
-    bridgeSecret: string | null;
-    requireStaffKey: boolean;
     telegramBotToken: string | null;
     telegramBotUsername: string | null;
   };
@@ -53,9 +50,6 @@ export interface UpsertMerchantPayload {
 
 export interface UpdateMerchantSettingsPayload {
   qrTtlSec?: number;
-  requireBridgeSig?: boolean;
-  bridgeSecret?: string | null;
-  requireStaffKey?: boolean;
   telegramBotToken?: string | null;
   telegramBotUsername?: string | null;
 }
@@ -161,9 +155,6 @@ export class AdminMerchantsService {
       subscription: this.normalizeSubscription(merchant.subscription),
       settings: {
         qrTtlSec: settings.qrTtlSec,
-        requireBridgeSig: settings.requireBridgeSig,
-        bridgeSecret: settings.bridgeSecret ?? null,
-        requireStaffKey: settings.requireStaffKey,
         telegramBotToken: settings.telegramBotToken ?? null,
         telegramBotUsername: settings.telegramBotUsername ?? null,
       },
@@ -276,9 +267,10 @@ export class AdminMerchantsService {
   ) {
     if (!payload.name?.trim())
       throw new BadRequestException('Name is required');
-    if (payload.portalEmail) {
+    const normalizedEmail = normalizeEmail(payload.portalEmail);
+    if (normalizedEmail) {
       const existingEmail = await this.prisma.merchant.findFirst({
-        where: { portalEmail: payload.portalEmail },
+        where: { portalEmail: normalizedEmail },
       });
       if (existingEmail)
         throw new BadRequestException(
@@ -287,15 +279,18 @@ export class AdminMerchantsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const portalEmail = normalizedEmail ?? null;
+      const portalPasswordHash = payload.portalPassword
+        ? await hashPassword(payload.portalPassword)
+        : null;
+      const portalLoginEnabled = Boolean(portalEmail && portalPasswordHash);
       const merchant = await tx.merchant.create({
         data: {
           name: payload.name!.trim(),
           initialName: payload.name!.trim(),
-          portalEmail: payload.portalEmail?.trim().toLowerCase() ?? null,
-          portalPasswordHash: payload.portalPassword
-            ? await hashPassword(payload.portalPassword)
-            : null,
-          portalLoginEnabled: true,
+          portalEmail,
+          portalPasswordHash,
+          portalLoginEnabled,
           cashierLogin: await this.ensureUniqueCashierLogin(tx, payload.name!),
         },
       });
@@ -304,9 +299,6 @@ export class AdminMerchantsService {
         data: {
           merchantId: merchant.id,
           qrTtlSec: payload.settings?.qrTtlSec ?? 300,
-          requireBridgeSig: payload.settings?.requireBridgeSig ?? false,
-          bridgeSecret: payload.settings?.bridgeSecret ?? null,
-          requireStaffKey: payload.settings?.requireStaffKey ?? false,
           telegramBotToken: payload.settings?.telegramBotToken ?? null,
           telegramBotUsername: payload.settings?.telegramBotUsername ?? null,
         },
@@ -338,24 +330,46 @@ export class AdminMerchantsService {
     });
     if (!merchant) throw new NotFoundException('Merchant not found');
 
-    if (payload.portalEmail && payload.portalEmail !== merchant.portalEmail) {
+    const normalizedEmail =
+      payload.portalEmail === undefined
+        ? undefined
+        : normalizeEmail(payload.portalEmail);
+    if (normalizedEmail && normalizedEmail !== merchant.portalEmail) {
       const existing = await this.prisma.merchant.findFirst({
-        where: { portalEmail: payload.portalEmail, id: { not: id } },
+        where: { portalEmail: normalizedEmail, id: { not: id } },
       });
       if (existing) throw new BadRequestException('Portal email already used');
     }
 
     await this.prisma.$transaction(async (tx) => {
+      const portalEmail =
+        normalizedEmail === undefined ? merchant.portalEmail : normalizedEmail;
+      let portalPasswordHash =
+        payload.portalPassword === undefined
+          ? merchant.portalPasswordHash
+          : payload.portalPassword
+            ? await hashPassword(payload.portalPassword)
+            : null;
+      if (portalEmail === null) {
+        portalPasswordHash = null;
+      }
+      const portalLoginEnabled =
+        normalizedEmail !== undefined || payload.portalPassword !== undefined
+          ? Boolean(portalEmail && portalPasswordHash)
+          : merchant.portalLoginEnabled;
       await tx.merchant.update({
         where: { id },
         data: {
           name: payload.name?.trim() ?? merchant.name,
-          portalEmail:
-            payload.portalEmail?.trim().toLowerCase() ?? merchant.portalEmail,
-          portalPasswordHash: payload.portalPassword
-            ? await hashPassword(payload.portalPassword)
-            : merchant.portalPasswordHash,
-          archivedAt: payload.archived ? new Date() : null,
+          portalEmail,
+          portalPasswordHash,
+          portalLoginEnabled,
+          archivedAt:
+            payload.archived === undefined
+              ? merchant.archivedAt
+              : payload.archived
+                ? new Date()
+                : null,
         },
       });
 
@@ -381,23 +395,11 @@ export class AdminMerchantsService {
       create: {
         merchantId,
         qrTtlSec: payload.qrTtlSec ?? 300,
-        requireBridgeSig: payload.requireBridgeSig ?? false,
-        bridgeSecret: payload.bridgeSecret ?? null,
-        requireStaffKey: payload.requireStaffKey ?? false,
         telegramBotToken: payload.telegramBotToken ?? null,
         telegramBotUsername: payload.telegramBotUsername ?? null,
       },
       update: {
         ...(payload.qrTtlSec != null ? { qrTtlSec: payload.qrTtlSec } : {}),
-        ...(payload.requireBridgeSig != null
-          ? { requireBridgeSig: payload.requireBridgeSig }
-          : {}),
-        ...(payload.bridgeSecret !== undefined
-          ? { bridgeSecret: payload.bridgeSecret }
-          : {}),
-        ...(payload.requireStaffKey != null
-          ? { requireStaffKey: payload.requireStaffKey }
-          : {}),
         ...(payload.telegramBotToken !== undefined
           ? { telegramBotToken: payload.telegramBotToken }
           : {}),
@@ -409,9 +411,6 @@ export class AdminMerchantsService {
 
     return {
       qrTtlSec: settings.qrTtlSec,
-      requireBridgeSig: settings.requireBridgeSig,
-      bridgeSecret: settings.bridgeSecret ?? null,
-      requireStaffKey: settings.requireStaffKey,
       telegramBotToken: settings.telegramBotToken ?? null,
       telegramBotUsername: settings.telegramBotUsername ?? null,
     };
@@ -459,4 +458,11 @@ export class AdminMerchantsService {
     });
     return result;
   }
+}
+
+function normalizeEmail(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = String(value).trim().toLowerCase();
+  return trimmed.length ? trimmed : null;
 }

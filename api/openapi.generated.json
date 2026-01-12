@@ -158,35 +158,6 @@
         ]
       }
     },
-    "/loyalty/cashier/login": {
-      "post": {
-        "operationId": "LoyaltyController_cashierLogin",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    },
-                    "merchantId": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "loyalty"
-        ]
-      }
-    },
     "/loyalty/cashier/activate": {
       "post": {
         "operationId": "LoyaltyController_cashierActivate",
@@ -279,32 +250,6 @@
                   "properties": {
                     "ok": {
                       "type": "boolean"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "loyalty"
-        ]
-      }
-    },
-    "/loyalty/cashier/staff-token": {
-      "post": {
-        "operationId": "LoyaltyController_cashierStaffToken",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "token": {
-                      "type": "string"
                     }
                   }
                 }
@@ -635,26 +580,7 @@
     "/loyalty/qr": {
       "post": {
         "operationId": "LoyaltyController_mintQr",
-        "parameters": [
-          {
-            "name": "X-Staff-Key",
-            "in": "header",
-            "description": "Staff API key",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-Bridge-Signature",
-            "in": "header",
-            "description": "Bridge signature (if requireBridgeSig enabled)",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
@@ -705,26 +631,7 @@
     "/loyalty/quote": {
       "post": {
         "operationId": "LoyaltyController_quote",
-        "parameters": [
-          {
-            "name": "X-Bridge-Signature",
-            "in": "header",
-            "description": "Подпись Bridge (если включено requireBridgeSig)",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-Staff-Key",
-            "in": "header",
-            "description": "Ключ кассира (если включено requireStaffKey)",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
@@ -773,15 +680,6 @@
       "post": {
         "operationId": "LoyaltyController_commit",
         "parameters": [
-          {
-            "name": "X-Bridge-Signature",
-            "in": "header",
-            "description": "Подпись Bridge (если включено requireBridgeSig)",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
           {
             "name": "Idempotency-Key",
             "in": "header",
@@ -997,15 +895,6 @@
       "post": {
         "operationId": "LoyaltyController_refund",
         "parameters": [
-          {
-            "name": "X-Bridge-Signature",
-            "in": "header",
-            "description": "Подпись Bridge (если включено requireBridgeSig)",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
           {
             "name": "Idempotency-Key",
             "in": "header",
@@ -1621,7 +1510,7 @@
             "required": true,
             "in": "query",
             "schema": {
-              "type": "boolean"
+              "type": "string"
             }
           }
         ],
@@ -3135,270 +3024,6 @@
         ]
       }
     },
-    "/merchants/{id}/outlets/{outletId}/bridge-secret": {
-      "post": {
-        "operationId": "MerchantsController_issueOutletBridgeSecret",
-        "parameters": [
-          {
-            "name": "X-Admin-Key",
-            "in": "header",
-            "description": "Админ-ключ (в проде проксируется сервером админки)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "outletId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SecretRespDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "merchants"
-        ]
-      },
-      "delete": {
-        "operationId": "MerchantsController_revokeOutletBridgeSecret",
-        "parameters": [
-          {
-            "name": "X-Admin-Key",
-            "in": "header",
-            "description": "Админ-ключ (в проде проксируется сервером админки)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "outletId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "merchants"
-        ]
-      }
-    },
-    "/merchants/{id}/outlets/{outletId}/bridge-secret/next": {
-      "post": {
-        "operationId": "MerchantsController_issueOutletBridgeSecretNext",
-        "parameters": [
-          {
-            "name": "X-Admin-Key",
-            "in": "header",
-            "description": "Админ-ключ (в проде проксируется сервером админки)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "outletId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SecretRespDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "merchants"
-        ]
-      },
-      "delete": {
-        "operationId": "MerchantsController_revokeOutletBridgeSecretNext",
-        "parameters": [
-          {
-            "name": "X-Admin-Key",
-            "in": "header",
-            "description": "Админ-ключ (в проде проксируется сервером админки)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "outletId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "merchants"
-        ]
-      }
-    },
     "/merchants/{id}/outlets/{outletId}/pos": {
       "put": {
         "operationId": "MerchantsController_updateOutletPos",
@@ -4547,6 +4172,14 @@
             }
           },
           {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "batch",
             "required": true,
             "in": "query",
@@ -4853,9 +4486,6 @@
                     "login": {
                       "type": "string",
                       "nullable": true
-                    },
-                    "hasPassword": {
-                      "type": "boolean"
                     }
                   }
                 }
@@ -4899,9 +4529,6 @@
                   "type": "object",
                   "properties": {
                     "login": {
-                      "type": "string"
-                    },
-                    "password": {
                       "type": "string"
                     }
                   }
@@ -5130,6 +4757,22 @@
           },
           {
             "name": "before",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
             "required": true,
             "in": "query",
             "schema": {
@@ -5676,80 +5319,6 @@
                 "schema": {
                   "type": "string",
                   "description": "CSV"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "merchants"
-        ]
-      }
-    },
-    "/merchants/{id}/customer/summary": {
-      "get": {
-        "operationId": "MerchantsController_customerSummary",
-        "parameters": [
-          {
-            "name": "X-Admin-Key",
-            "in": "header",
-            "description": "Админ-ключ (в проде проксируется сервером админки)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "customerId",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "balance": {
-                      "type": "number"
-                    },
-                    "recentTx": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/TransactionItemDto"
-                      }
-                    },
-                    "recentReceipts": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/ReceiptDto"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
                 }
               }
             }
@@ -6994,35 +6563,6 @@
         ]
       }
     },
-    "/analytics/rfm/{merchantId}/heatmap": {
-      "get": {
-        "operationId": "AnalyticsController_getRfmHeatmap",
-        "parameters": [
-          {
-            "name": "merchantId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "RFM heatmap 5x5 (как в GetMeBack)",
-        "tags": [
-          "Analytics"
-        ]
-      }
-    },
     "/analytics/operations/{merchantId}": {
       "get": {
         "operationId": "AnalyticsController_getOperationalMetrics",
@@ -7172,29 +6712,6 @@
         ]
       }
     },
-    "/admin/audit/{id}": {
-      "get": {
-        "operationId": "AdminAuditController_getOne",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "AdminAudit"
-        ]
-      }
-    },
     "/admin/audit/csv": {
       "get": {
         "operationId": "AdminAuditController_exportCsv",
@@ -7219,6 +6736,29 @@
             "name": "before",
             "required": true,
             "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "AdminAudit"
+        ]
+      }
+    },
+    "/admin/audit/{id}": {
+      "get": {
+        "operationId": "AdminAuditController_getOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
             "schema": {
               "type": "string"
             }
@@ -8246,15 +7786,75 @@
     },
     "/portal/customers": {
       "get": {
-        "operationId": "CustomerAudiencesController_listCustomers",
-        "parameters": [],
+        "operationId": "PortalController_listCustomers",
+        "parameters": [
+          {
+            "name": "search",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "segmentId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "registeredOnly",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "excludeMiniapp",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
           }
         },
         "tags": [
-          "CustomerAudiences"
+          "portal"
         ]
       },
       "post": {
@@ -8497,6 +8097,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -8629,6 +8237,44 @@
                   "properties": {
                     "ok": {
                       "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "portal"
+        ]
+      }
+    },
+    "/portal/loyalty/ttl/forecast": {
+      "get": {
+        "operationId": "PortalController_ttlReminderForecast",
+        "parameters": [
+          {
+            "name": "daysBefore",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "daysBefore": {
+                      "type": "number"
                     }
                   }
                 }
@@ -9453,6 +9099,61 @@
         ]
       }
     },
+    "/portal/analytics/referral/leaderboard": {
+      "get": {
+        "operationId": "PortalController_referralLeaderboard",
+        "parameters": [
+          {
+            "name": "period",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "portal"
+        ]
+      }
+    },
     "/portal/analytics/operations": {
       "get": {
         "operationId": "PortalController_analyticsOperations",
@@ -9858,20 +9559,6 @@
         ]
       }
     },
-    "/portal/analytics/rfm-heatmap": {
-      "get": {
-        "operationId": "PortalController_rfmHeatmap",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "portal"
-        ]
-      }
-    },
     "/portal/integrations": {
       "get": {
         "operationId": "PortalController_integrations",
@@ -9946,9 +9633,6 @@
                     "baseUrl": {
                       "type": "string",
                       "nullable": true
-                    },
-                    "requireBridgeSignature": {
-                      "type": "boolean"
                     },
                     "issuedAt": {
                       "type": "string",
@@ -10700,6 +10384,32 @@
         ]
       }
     },
+    "/portal/settings/support": {
+      "get": {
+        "operationId": "PortalController_getSupportSetting",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "portal"
+        ]
+      },
+      "put": {
+        "operationId": "PortalController_updateSupportSetting",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "portal"
+        ]
+      }
+    },
     "/portal/catalog/categories": {
       "get": {
         "operationId": "PortalController_listCatalogCategories",
@@ -10878,19 +10588,6 @@
             }
           },
           {
-            "name": "status",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "visible",
-                "hidden",
-                "all"
-              ]
-            }
-          },
-          {
             "name": "points",
             "required": false,
             "in": "query",
@@ -10916,6 +10613,22 @@
             "required": false,
             "in": "query",
             "description": "Фильтр по внешнему ID товара",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
             "schema": {
               "type": "string"
             }
@@ -11157,88 +10870,68 @@
     },
     "/portal/outlets": {
       "get": {
-        "operationId": "OutletsController_list",
+        "operationId": "PortalController_listOutlets",
         "parameters": [
           {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "$ref": "#/components/schemas/Object"
-            }
-          },
-          {
-            "name": "pageSize",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "$ref": "#/components/schemas/Object"
-            }
-          },
-          {
             "name": "status",
-            "required": false,
+            "required": true,
             "in": "query",
-            "description": "Фильтр по статусу",
             "schema": {
-              "type": "string",
-              "enum": [
-                "ACTIVE",
-                "INACTIVE",
-                "ALL"
-              ]
-            }
-          },
-          {
-            "name": "hidden",
-            "required": false,
-            "in": "query",
-            "description": "Скрытые точки",
-            "schema": {
-              "example": false,
-              "type": "boolean"
+              "type": "string"
             }
           },
           {
             "name": "search",
-            "required": false,
+            "required": true,
             "in": "query",
-            "description": "Поиск по названию/адресу",
             "schema": {
-              "maxLength": 100,
               "type": "string"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalOutletListResponseDto"
+                }
+              }
+            }
           }
         },
         "tags": [
-          "portal-outlets"
+          "portal"
         ]
       },
       "post": {
-        "operationId": "OutletsController_create",
+        "operationId": "PortalController_createOutlet",
         "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpsertOutletDto"
+                "$ref": "#/components/schemas/CreatePortalOutletDto"
               }
             }
           }
         },
         "responses": {
-          "201": {
-            "description": ""
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalOutletDto"
+                }
+              }
+            }
           }
         },
         "tags": [
-          "portal-outlets"
+          "portal"
         ]
       }
     },
@@ -11311,142 +11004,6 @@
       },
       "delete": {
         "operationId": "PortalController_deleteOutlet",
-        "parameters": [
-          {
-            "name": "outletId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "portal"
-        ]
-      }
-    },
-    "/portal/outlets/{outletId}/bridge-secret": {
-      "post": {
-        "operationId": "PortalController_issueOutletBridgeSecret",
-        "parameters": [
-          {
-            "name": "outletId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "secret": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "portal"
-        ]
-      },
-      "delete": {
-        "operationId": "PortalController_revokeOutletBridgeSecret",
-        "parameters": [
-          {
-            "name": "outletId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "portal"
-        ]
-      }
-    },
-    "/portal/outlets/{outletId}/bridge-secret/next": {
-      "post": {
-        "operationId": "PortalController_issueOutletBridgeSecretNext",
-        "parameters": [
-          {
-            "name": "outletId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "secret": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "portal"
-        ]
-      },
-      "delete": {
-        "operationId": "PortalController_revokeOutletBridgeSecretNext",
         "parameters": [
           {
             "name": "outletId",
@@ -11778,29 +11335,6 @@
         ]
       }
     },
-    "/portal/customers/{id}": {
-      "get": {
-        "operationId": "CustomerAudiencesController_getCustomer",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "CustomerAudiences"
-        ]
-      }
-    },
     "/portal/audiences": {
       "get": {
         "operationId": "CustomerAudiencesController_listAudiences",
@@ -11857,11 +11391,9 @@
         "tags": [
           "CustomerAudiences"
         ]
-      }
-    },
-    "/portal/audiences/{id}/activate": {
-      "post": {
-        "operationId": "CustomerAudiencesController_activateAudience",
+      },
+      "delete": {
+        "operationId": "CustomerAudiencesController_deleteAudience",
         "parameters": [
           {
             "name": "id",
@@ -11873,7 +11405,7 @@
           }
         ],
         "responses": {
-          "201": {
+          "200": {
             "description": ""
           }
         },
@@ -11882,9 +11414,9 @@
         ]
       }
     },
-    "/portal/audiences/{id}/archive": {
+    "/portal/audiences/{id}/activate": {
       "post": {
-        "operationId": "CustomerAudiencesController_archiveAudience",
+        "operationId": "CustomerAudiencesController_activateAudience",
         "parameters": [
           {
             "name": "id",
@@ -12693,7 +12225,7 @@
           {
             "name": "merchantId",
             "required": true,
-            "in": "query",
+            "in": "path",
             "schema": {
               "type": "string"
             }
@@ -13418,60 +12950,6 @@
         ]
       }
     },
-    "/portal/outlets/{id}": {
-      "get": {
-        "operationId": "OutletsController_get",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "portal-outlets"
-        ]
-      },
-      "put": {
-        "operationId": "OutletsController_update",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpsertOutletDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "portal-outlets"
-        ]
-      }
-    },
     "/portal/cashier/credentials": {
       "get": {
         "operationId": "CashierController_credentials",
@@ -13601,6 +13079,34 @@
     "/portal/cashier/activation-codes/revoke": {
       "post": {
         "operationId": "CashierController_revokeActivationCode",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "portal-cashier"
+        ]
+      }
+    },
+    "/portal/cashier/device-sessions": {
+      "get": {
+        "operationId": "CashierController_deviceSessions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "portal-cashier"
+        ]
+      }
+    },
+    "/portal/cashier/device-sessions/revoke": {
+      "post": {
+        "operationId": "CashierController_revokeDeviceSession",
         "parameters": [],
         "responses": {
           "201": {
@@ -14460,6 +13966,10 @@
             "type": "object",
             "nullable": true
           },
+          "supportTelegram": {
+            "type": "object",
+            "nullable": true
+          },
           "reviewsEnabled": {
             "type": "object",
             "nullable": true
@@ -14630,6 +14140,16 @@
             "type": "object",
             "nullable": true
           },
+          "receiptTotal": {
+            "type": "object",
+            "nullable": true,
+            "description": "Сумма чека (рубли) для операций с orderId"
+          },
+          "redeemApplied": {
+            "type": "object",
+            "nullable": true,
+            "description": "Списано баллов по чеку (рубли) для операций с orderId"
+          },
           "customerId": {
             "type": "string"
           },
@@ -14753,12 +14273,6 @@
           "webhookKeyId": {
             "type": "object"
           },
-          "requireBridgeSig": {
-            "type": "boolean"
-          },
-          "bridgeSecret": {
-            "type": "object"
-          },
           "redeemCooldownSec": {
             "type": "number"
           },
@@ -14771,14 +14285,15 @@
           "earnDailyCap": {
             "type": "object"
           },
+          "maxOutlets": {
+            "type": "object",
+            "description": "Максимальное количество торговых точек"
+          },
           "requireJwtForQuote": {
             "type": "boolean"
           },
           "rulesJson": {
             "type": "object"
-          },
-          "requireStaffKey": {
-            "type": "boolean"
           },
           "pointsTtlDays": {
             "type": "object",
@@ -14835,11 +14350,9 @@
           "earnBps",
           "redeemLimitBps",
           "qrTtlSec",
-          "requireBridgeSig",
           "redeemCooldownSec",
           "earnCooldownSec",
           "requireJwtForQuote",
-          "requireStaffKey",
           "timezone"
         ]
       },
@@ -14899,24 +14412,17 @@
             "type": "number",
             "minimum": 0
           },
+          "maxOutlets": {
+            "type": "number",
+            "minimum": 1,
+            "description": "Максимальное количество торговых точек (без лимита, если не задано)"
+          },
           "requireJwtForQuote": {
             "type": "boolean"
           },
           "rulesJson": {
             "type": "object",
             "description": "JSON-правила для earnBps/redeemLimitBps"
-          },
-          "requireBridgeSig": {
-            "type": "boolean"
-          },
-          "bridgeSecret": {
-            "type": "string"
-          },
-          "bridgeSecretNext": {
-            "type": "string"
-          },
-          "requireStaffKey": {
-            "type": "boolean"
           },
           "pointsTtlDays": {
             "type": "number",
@@ -14973,11 +14479,7 @@
               "MSK+9"
             ]
           }
-        },
-        "required": [
-          "earnBps",
-          "redeemLimitBps"
-        ]
+        }
       },
       "OutletDto": {
         "type": "object",
@@ -15014,17 +14516,6 @@
             "format": "date-time",
             "nullable": true
           },
-          "bridgeSecretIssued": {
-            "type": "boolean"
-          },
-          "bridgeSecretNextIssued": {
-            "type": "boolean"
-          },
-          "bridgeSecretUpdatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -15040,8 +14531,6 @@
           "name",
           "status",
           "hidden",
-          "bridgeSecretIssued",
-          "bridgeSecretNextIssued",
           "createdAt",
           "updatedAt"
         ]
@@ -15070,17 +14559,6 @@
             "type": "string"
           }
         }
-      },
-      "SecretRespDto": {
-        "type": "object",
-        "properties": {
-          "secret": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "secret"
-        ]
       },
       "UpdateOutletPosDto": {
         "type": "object",
@@ -15617,6 +15095,12 @@
               "ACTIVE",
               "ARCHIVED"
             ]
+          },
+          "assignProductIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -15648,6 +15132,18 @@
               "ACTIVE",
               "ARCHIVED"
             ]
+          },
+          "assignProductIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unassignProductIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -15698,9 +15194,6 @@
           "previewImage": {
             "type": "object"
           },
-          "visible": {
-            "type": "boolean"
-          },
           "accruePoints": {
             "type": "boolean"
           },
@@ -15723,7 +15216,6 @@
         "required": [
           "id",
           "name",
-          "visible",
           "accruePoints",
           "allowRedeem",
           "redeemPercent",
@@ -15830,9 +15322,6 @@
           "previewImage": {
             "type": "object"
           },
-          "visible": {
-            "type": "boolean"
-          },
           "accruePoints": {
             "type": "boolean"
           },
@@ -15927,7 +15416,6 @@
         "required": [
           "id",
           "name",
-          "visible",
           "accruePoints",
           "allowRedeem",
           "redeemPercent",
@@ -15997,9 +15485,6 @@
           "disableCart": {
             "type": "boolean",
             "description": "Тумблер «Запретить добавление в корзину» (false = можно добавлять)"
-          },
-          "visible": {
-            "type": "boolean"
           },
           "accruePoints": {
             "type": "boolean"
@@ -16124,9 +15609,6 @@
             "type": "boolean",
             "description": "Тумблер «Запретить добавление в корзину» (false = можно добавлять)"
           },
-          "visible": {
-            "type": "boolean"
-          },
           "accruePoints": {
             "type": "boolean"
           },
@@ -16198,8 +15680,6 @@
           "action": {
             "type": "string",
             "enum": [
-              "show",
-              "hide",
               "allow_redeem",
               "forbid_redeem",
               "delete"
@@ -16265,52 +15745,6 @@
           "products"
         ]
       },
-      "OutletScheduleDayDto": {
-        "type": "object",
-        "properties": {
-          "day": {
-            "type": "string",
-            "description": "mon/tue/.../sun"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "from": {
-            "type": "string",
-            "description": "Формат HH:mm"
-          },
-          "to": {
-            "type": "string",
-            "description": "Формат HH:mm"
-          }
-        },
-        "required": [
-          "day",
-          "enabled"
-        ]
-      },
-      "OutletScheduleDto": {
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": "string",
-            "enum": [
-              "24_7",
-              "CUSTOM"
-            ]
-          },
-          "days": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OutletScheduleDayDto"
-            }
-          }
-        },
-        "required": [
-          "mode",
-          "days"
-        ]
-      },
       "PortalDeviceDto": {
         "type": "object",
         "properties": {
@@ -16350,78 +15784,11 @@
           "name": {
             "type": "string"
           },
-          "address": {
-            "type": "object"
-          },
           "works": {
             "type": "boolean"
           },
-          "hidden": {
-            "type": "boolean"
-          },
-          "status": {
-            "type": "string"
-          },
           "staffCount": {
             "type": "number"
-          },
-          "posType": {
-            "type": "string",
-            "enum": [
-              "VIRTUAL",
-              "PC_POS",
-              "SMART"
-            ],
-            "nullable": true
-          },
-          "posLastSeenAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "bridgeSecretIssued": {
-            "type": "boolean"
-          },
-          "bridgeSecretNextIssued": {
-            "type": "boolean"
-          },
-          "bridgeSecretUpdatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "description": {
-            "type": "object"
-          },
-          "phone": {
-            "type": "object"
-          },
-          "adminEmails": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "timezone": {
-            "type": "object"
-          },
-          "showSchedule": {
-            "type": "boolean"
-          },
-          "schedule": {
-            "$ref": "#/components/schemas/OutletScheduleDto"
-          },
-          "latitude": {
-            "type": "object"
-          },
-          "longitude": {
-            "type": "object"
-          },
-          "manualLocation": {
-            "type": "boolean"
-          },
-          "externalId": {
-            "type": "object"
           },
           "devices": {
             "type": "array",
@@ -16437,32 +15804,13 @@
               "nullable": true
             },
             "nullable": true
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string"
           }
         },
         "required": [
           "id",
           "name",
-          "address",
           "works",
-          "hidden",
-          "status",
-          "bridgeSecretIssued",
-          "bridgeSecretNextIssued",
-          "adminEmails",
-          "showSchedule",
-          "schedule",
-          "manualLocation",
-          "devices",
-          "createdAt",
-          "updatedAt"
+          "devices"
         ]
       },
       "PortalOutletListResponseDto": {
@@ -16503,46 +15851,7 @@
           "works": {
             "type": "boolean"
           },
-          "hidden": {
-            "type": "boolean"
-          },
           "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "phone": {
-            "type": "string"
-          },
-          "address": {
-            "type": "string"
-          },
-          "manualLocation": {
-            "type": "boolean"
-          },
-          "latitude": {
-            "type": "number"
-          },
-          "longitude": {
-            "type": "number"
-          },
-          "adminEmails": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "timezone": {
-            "type": "string"
-          },
-          "showSchedule": {
-            "type": "boolean"
-          },
-          "schedule": {
-            "$ref": "#/components/schemas/OutletScheduleDto"
-          },
-          "externalId": {
             "type": "string"
           },
           "devices": {
@@ -16571,46 +15880,7 @@
           "works": {
             "type": "boolean"
           },
-          "hidden": {
-            "type": "boolean"
-          },
           "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "phone": {
-            "type": "string"
-          },
-          "address": {
-            "type": "string"
-          },
-          "manualLocation": {
-            "type": "boolean"
-          },
-          "latitude": {
-            "type": "number"
-          },
-          "longitude": {
-            "type": "number"
-          },
-          "adminEmails": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "timezone": {
-            "type": "string"
-          },
-          "showSchedule": {
-            "type": "boolean"
-          },
-          "schedule": {
-            "$ref": "#/components/schemas/OutletScheduleDto"
-          },
-          "externalId": {
             "type": "string"
           },
           "devices": {
@@ -16885,6 +16155,10 @@
             "type": "string",
             "description": "ID клиента в системе лояльности"
           },
+          "phone": {
+            "type": "string",
+            "description": "Телефон клиента"
+          },
           "items": {
             "type": "array",
             "items": {
@@ -16897,7 +16171,6 @@
           }
         },
         "required": [
-          "id_client",
           "items"
         ]
       },
@@ -16951,6 +16224,10 @@
           "id_client": {
             "type": "string",
             "description": "ID клиента в системе лояльности"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Телефон клиента"
           },
           "outlet_id": {
             "type": "string"
@@ -17037,8 +16314,13 @@
             "type": "string",
             "description": "Кастомный номер чека от мерчанта (опционально)"
           },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Уникальный ключ идемпотентности операции"
+          },
           "total": {
             "type": "number",
+            "description": "Сумма заказа (если не передана — считаем по items)",
             "minimum": 0
           },
           "device_id": {
@@ -17080,7 +16362,7 @@
           }
         },
         "required": [
-          "total"
+          "idempotency_key"
         ]
       },
       "IntegrationRefundDto": {
@@ -17248,172 +16530,6 @@
         },
         "required": [
           "staffIds"
-        ]
-      },
-      "OutletScheduleItemInput": {
-        "type": "object",
-        "properties": {
-          "day": {
-            "type": "number",
-            "description": "День недели (0-6)"
-          },
-          "enabled": {
-            "type": "boolean",
-            "description": "Рабочий день"
-          },
-          "opensAt": {
-            "type": "object",
-            "description": "Время открытия HH:mm"
-          },
-          "closesAt": {
-            "type": "object",
-            "description": "Время закрытия HH:mm"
-          }
-        },
-        "required": [
-          "day",
-          "enabled"
-        ]
-      },
-      "OutletScheduleInput": {
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": "string",
-            "description": "Режим работы",
-            "enum": [
-              "24_7",
-              "CUSTOM"
-            ]
-          },
-          "days": {
-            "description": "Расписание по дням",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OutletScheduleItemInput"
-            }
-          }
-        },
-        "required": [
-          "mode",
-          "days"
-        ]
-      },
-      "OutletReviewsShareLinksInput": {
-        "type": "object",
-        "properties": {
-          "yandex": {
-            "type": "object",
-            "description": "Ссылка на Яндекс.Карты"
-          },
-          "twogis": {
-            "type": "object",
-            "description": "Ссылка на 2ГИС"
-          },
-          "google": {
-            "type": "object",
-            "description": "Ссылка на Google"
-          }
-        }
-      },
-      "OutletDeviceInput": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "description": "Код устройства"
-          }
-        },
-        "required": [
-          "code"
-        ]
-      },
-      "UpsertOutletDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Название точки"
-          },
-          "description": {
-            "type": "object",
-            "description": "Описание"
-          },
-          "address": {
-            "type": "object",
-            "description": "Адрес"
-          },
-          "phone": {
-            "type": "object",
-            "description": "Телефон"
-          },
-          "adminEmails": {
-            "description": "Emails администраторов",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "works": {
-            "type": "boolean",
-            "description": "Точка работает"
-          },
-          "hidden": {
-            "type": "boolean",
-            "description": "Скрыть точку от клиентов"
-          },
-          "timezone": {
-            "type": "object",
-            "description": "Часовой пояс"
-          },
-          "schedule": {
-            "$ref": "#/components/schemas/OutletScheduleInput"
-          },
-          "externalId": {
-            "type": "object",
-            "description": "Внешний идентификатор"
-          },
-          "integrationProvider": {
-            "type": "object",
-            "description": "Провайдер интеграции"
-          },
-          "integrationLocationCode": {
-            "type": "object",
-            "description": "Код локации интеграции"
-          },
-          "integrationPayload": {
-            "type": "object",
-            "description": "Произвольные данные интеграции (JSON string)"
-          },
-          "manualLocation": {
-            "type": "boolean",
-            "description": "Координаты задаются вручную"
-          },
-          "latitude": {
-            "type": "object",
-            "description": "Широта"
-          },
-          "longitude": {
-            "type": "object",
-            "description": "Долгота"
-          },
-          "reviewsShareLinks": {
-            "description": "Ссылки на внешние площадки для отзывов",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/OutletReviewsShareLinksInput"
-              }
-            ]
-          },
-          "devices": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OutletDeviceInput"
-            }
-          }
-        },
-        "required": [
-          "name"
         ]
       },
       "RotateCashierDto": {

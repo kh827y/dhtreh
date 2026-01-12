@@ -1,7 +1,8 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Res } from '@nestjs/common';
 import { ApiTags, ApiOkResponse } from '@nestjs/swagger';
 import { AppService } from './app.service';
 import { PrismaService } from './prisma.service';
+import type { Response } from 'express';
 
 @Controller()
 @ApiTags('health')
@@ -18,31 +19,34 @@ export class AppController {
 
   @Get('health')
   @ApiOkResponse({ description: 'Health check' })
-  getHealth() {
-    return { status: 'ok', timestamp: new Date().toISOString() };
+  async getHealth(@Res({ passthrough: true }) res: Response) {
+    const timestamp = new Date().toISOString();
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+      res.status(200);
+      return { status: 'ok', timestamp, checks: { database: 'ok' } };
+    } catch {
+      res.status(503);
+      return { status: 'error', timestamp, checks: { database: 'failed' } };
+    }
   }
 
   @Get('ready')
   @ApiOkResponse({ description: 'Readiness check' })
-  async getReady() {
+  async getReady(@Res({ passthrough: true }) res: Response) {
+    const timestamp = new Date().toISOString();
+    let dbOk = false;
     try {
       // Check database connectivity
       await this.prisma.$queryRaw`SELECT 1`;
-      return {
-        status: 'ready',
-        timestamp: new Date().toISOString(),
-        checks: {
-          database: 'ok',
-        },
-      };
-    } catch (error) {
-      return {
-        status: 'not_ready',
-        timestamp: new Date().toISOString(),
-        checks: {
-          database: 'failed',
-        },
-      };
+      dbOk = true;
+    } catch {}
+    const status = dbOk ? 'ready' : 'not_ready';
+    res.status(dbOk ? 200 : 503);
+    return {
+      status,
+      timestamp,
+      checks: { database: dbOk ? 'ok' : 'failed' },
     }
   }
 

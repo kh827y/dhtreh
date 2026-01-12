@@ -33,7 +33,7 @@ export default function OutboxEventPage({ params }: { params: { id: string } }) 
   const doRetry = async () => {
     try {
       if (!merchantId) return;
-      const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}/retry`, { method: 'POST' });
+      const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}/retry`, { method: 'POST', headers: { 'x-admin-action': 'ui' } });
       if (!r.ok) throw new Error(await r.text());
       await load(); alert('Retry scheduled');
     } catch (e: any) { alert(String(e?.message || e)); }
@@ -42,7 +42,7 @@ export default function OutboxEventPage({ params }: { params: { id: string } }) 
     if (!confirm('Удалить событие?')) return;
     try {
       if (!merchantId) return;
-      const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'x-admin-action': 'ui' } });
       if (!r.ok) throw new Error(await r.text());
       location.href = '/outbox';
     } catch (e: any) { alert(String(e?.message || e)); }

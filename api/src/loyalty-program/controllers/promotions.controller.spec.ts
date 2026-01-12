@@ -12,6 +12,7 @@ type ServiceMock = {
 
 const baseReq = {
   portalMerchantId: 'm-1',
+  portalPermissions: { allowAll: true },
 } as any;
 
 function createServiceMock(): ServiceMock {
@@ -109,10 +110,15 @@ describe('PromotionsController — portal payload mapping', () => {
     const response = await controller.list(baseReq, 'ALL');
 
     expect(response).toHaveLength(1);
-    expect(response[0].metrics.revenueGenerated).toBe(12000);
-    expect(response[0].metrics.discountTotal).toBe(3000);
-    expect(response[0].metrics.participantsCount).toBe(7);
-    expect(response[0].audience.id).toBe('seg-1');
-    expect(response[0].audience.name).toBe('VIP');
+    const item = response[0];
+    expect(item.metrics).not.toBeNull();
+    expect(item.audience).not.toBeNull();
+    const metrics = item.metrics!;
+    const audience = item.audience!;
+    expect(metrics.revenueGenerated).toBe(12000);
+    expect(metrics.discountTotal).toBe(3000);
+    expect(metrics.participantsCount).toBe(7);
+    expect(audience.id).toBe('seg-1');
+    expect(audience.name).toBe('VIP');
   });
 });

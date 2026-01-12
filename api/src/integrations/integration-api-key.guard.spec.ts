@@ -24,7 +24,6 @@ describe('IntegrationApiKeyGuard', () => {
     restIntegrations = {
       findByApiKey: jest.fn(),
       normalizeConfig: jest.fn().mockReturnValue({
-        requireBridgeSignature: true,
         rateLimits: { code: { limit: 1, ttl: 1000 } },
       }),
     };
@@ -70,16 +69,15 @@ describe('IntegrationApiKeyGuard', () => {
       isActive: true,
       archivedAt: null,
       apiKeyHash: 'hash-2',
-      config: { requireBridgeSignature: true },
+      config: {},
     });
-    const req = { headers: { authorization: 'Bearer rk_live' } };
+    const req: any = { headers: { authorization: 'Bearer rk_live' } };
     const ok = await guard.canActivate(createContext(req));
 
     expect(ok).toBe(true);
     expect(req.integrationId).toBe('INT-2');
     expect(req.integrationMerchantId).toBe('M-2');
     expect(req.integrationProvider).toBe('REST_API');
-    expect(req.integrationRequireBridgeSignature).toBe(true);
     expect(req.integrationApiKeyHash).toBe('hash-2');
   });
 });

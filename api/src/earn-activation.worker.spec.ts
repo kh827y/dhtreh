@@ -43,7 +43,6 @@ describe('EarnActivationWorker (unit)', () => {
           customerId: 'C1',
           type: 'POINTS',
         }),
-        findUnique: jest.fn().mockResolvedValue({ id: 'W1', balance: 10 }),
         update: jest.fn().mockResolvedValue({}),
       },
       transaction: { create: jest.fn().mockResolvedValue({}) },
@@ -68,7 +67,7 @@ describe('EarnActivationWorker (unit)', () => {
     });
     expect(tx.wallet.update).toHaveBeenCalledWith({
       where: { id: 'W1' },
-      data: { balance: 10 + 70 },
+      data: { balance: { increment: 70 } },
     });
     expect(tx.transaction.create).toHaveBeenCalledWith(
       expect.objectContaining({

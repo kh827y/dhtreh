@@ -18,6 +18,15 @@ export type LevelsConfig = {
 export const DEFAULT_LEVELS_PERIOD_DAYS = 365;
 export const DEFAULT_LEVELS_METRIC: LevelsConfig['metric'] = 'earn';
 
+export function normalizeLevelsPeriodDays(
+  value: unknown,
+  fallback = DEFAULT_LEVELS_PERIOD_DAYS,
+): number {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return fallback;
+  return Math.floor(num);
+}
+
 export type LevelsMetrics =
   | Pick<MetricsService, 'inc'>
   | { inc?: (metric: string, labels?: Record<string, string>) => unknown };
