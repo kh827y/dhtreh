@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
@@ -1843,6 +1844,39 @@ export class LoyaltyService {
       );
     }
 
+    const enabledAtRaw = reg && reg.enabledAt != null ? reg.enabledAt : null;
+    let enabledAt: Date | null = null;
+    if (enabledAtRaw) {
+      const parsed =
+        enabledAtRaw instanceof Date
+          ? enabledAtRaw
+          : new Date(String(enabledAtRaw));
+      if (!Number.isNaN(parsed.getTime())) enabledAt = parsed;
+    }
+    if (enabledAt) {
+      const customerMeta = await this.prisma.customer.findFirst({
+        where: { id: customerId, merchantId },
+        select: { createdAt: true },
+      });
+      if (!customerMeta) throw new BadRequestException('customer not found');
+      if (customerMeta.createdAt < enabledAt) {
+        const walletEx = await this.prisma.wallet.findFirst({
+          where: { merchantId, customerId, type: WalletType.POINTS },
+        });
+        return {
+          ok: true,
+          alreadyGranted: true,
+          pointsIssued: 0,
+          pending: false,
+          maturesAt: null,
+          pointsExpireInDays: ttlDays,
+          expiresInDays: ttlDays,
+          pointsExpireAt: null,
+          balance: walletEx?.balance ?? 0,
+        } as const;
+      }
+    }
+
     // Idempotency: if already issued, return existing state
     const existingTxn = await this.prisma.transaction.findFirst({
       where: { merchantId, customerId, orderId: 'registration_bonus' },
@@ -2358,12 +2392,12 @@ export class LoyaltyService {
     merchantId: string,
     customerId: string,
     amount: number,
-    ctx: { orderId?: string | null },
+    ctx: { orderId?: string | null; receiptId?: string | null },
   ) {
     const earnLot = tx?.earnLot ?? (this.prisma as any)?.earnLot;
     if (!earnLot?.findMany || !earnLot?.update) return; // в тестовых моках может отсутствовать
     const lots = await earnLot.findMany({
-      where: { merchantId, customerId },
+      where: { merchantId, customerId, status: 'ACTIVE' },
       orderBy: { earnedAt: 'asc' },
     });
     const updates = require('./lots.util').planConsume(
@@ -2403,12 +2437,17 @@ export class LoyaltyService {
     merchantId: string,
     customerId: string,
     amount: number,
-    ctx: { orderId?: string | null },
+    ctx: { orderId?: string | null; receiptId?: string | null },
   ) {
     const earnLot = tx?.earnLot ?? (this.prisma as any)?.earnLot;
     if (!earnLot?.findMany || !earnLot?.update) return;
     const lots = await earnLot.findMany({
-      where: { merchantId, customerId, consumedPoints: { gt: 0 } },
+      where: {
+        merchantId,
+        customerId,
+        status: 'ACTIVE',
+        consumedPoints: { gt: 0 },
+      },
       orderBy: { earnedAt: 'desc' },
     });
     const updates = require('./lots.util').planUnconsume(
@@ -2448,12 +2487,18 @@ export class LoyaltyService {
     merchantId: string,
     customerId: string,
     amount: number,
-    ctx: { orderId?: string | null },
+    ctx: { orderId?: string | null; receiptId?: string | null },
   ) {
     const earnLot = tx?.earnLot ?? (this.prisma as any)?.earnLot;
     if (!earnLot?.findMany || !earnLot?.update) return;
+    const where: any = { merchantId, customerId, status: 'ACTIVE' };
+    if (ctx?.receiptId) {
+      where.receiptId = ctx.receiptId;
+    } else if (ctx?.orderId) {
+      where.orderId = ctx.orderId;
+    }
     const lots = await earnLot.findMany({
-      where: { merchantId, customerId },
+      where,
       orderBy: { earnedAt: 'desc' },
     });
     const updates = require('./lots.util').planRevoke(
@@ -2619,7 +2664,14 @@ export class LoyaltyService {
     prisma: Prisma.TransactionClient | PrismaService = this.prisma,
   ) {
     try {
-      const assignment = await prisma.loyaltyTierAssignment.findFirst({
+      try {
+        await this.refreshTierAssignmentIfExpired(
+          prisma,
+          merchantId,
+          customerId,
+        );
+      } catch {}
+      let assignment = await prisma.loyaltyTierAssignment.findFirst({
         where: {
           merchantId,
           customerId,
@@ -2627,6 +2679,68 @@ export class LoyaltyService {
         },
         orderBy: { assignedAt: 'desc' },
       });
+      if (assignment?.source === 'promocode' && !assignment.expiresAt) {
+        const promoCodeId =
+          assignment.metadata &&
+          typeof assignment.metadata === 'object' &&
+          !Array.isArray(assignment.metadata)
+            ? (assignment.metadata as Record<string, any>).promoCodeId
+            : null;
+        let expiresInDays: number | null = null;
+        if (promoCodeId) {
+          try {
+            const promo = await prisma.promoCode.findUnique({
+              where: { id: promoCodeId },
+              select: { metadata: true },
+            });
+            const meta =
+              promo?.metadata &&
+              typeof promo.metadata === 'object' &&
+              !Array.isArray(promo.metadata)
+                ? (promo.metadata as Record<string, any>)
+                : null;
+            const raw = meta?.level?.expiresInDays;
+            if (Number.isFinite(Number(raw)) && Number(raw) >= 0) {
+              expiresInDays = Math.floor(Number(raw));
+            }
+          } catch {}
+        }
+        if (expiresInDays == null) {
+          expiresInDays = DEFAULT_LEVELS_PERIOD_DAYS;
+        }
+        if (expiresInDays > 0) {
+          const assignedBase = assignment.assignedAt ?? new Date();
+          const promoExpiresAt = new Date(
+            assignedBase.getTime() + expiresInDays * 24 * 60 * 60 * 1000,
+          );
+          try {
+            await prisma.loyaltyTierAssignment.update({
+              where: {
+                merchantId_customerId: {
+                  merchantId,
+                  customerId,
+                },
+              },
+              data: { expiresAt: promoExpiresAt },
+            });
+          } catch {}
+          if (promoExpiresAt.getTime() <= Date.now()) {
+            try {
+              await this.recomputeTierProgress(prisma, { merchantId, customerId });
+            } catch {}
+            assignment = await prisma.loyaltyTierAssignment.findFirst({
+              where: {
+                merchantId,
+                customerId,
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+              },
+              orderBy: { assignedAt: 'desc' },
+            });
+          } else {
+            assignment = { ...assignment, expiresAt: promoExpiresAt };
+          }
+        }
+      }
       let tier: any = null;
       if (assignment) {
         tier = await prisma.loyaltyTier.findUnique({
@@ -3438,6 +3552,7 @@ export class LoyaltyService {
       manualEarnPoints?: number | null;
       manualRedeemAmount?: number | null;
       positions?: PositionInput[] | null;
+      expectedMerchantId?: string | null;
     },
   ) {
     const hold = await this.prisma.hold.findUnique({
@@ -3445,6 +3560,12 @@ export class LoyaltyService {
       include: { items: true },
     });
     if (!hold) throw new BadRequestException('Hold not found');
+    const expectedMerchantId = opts?.expectedMerchantId
+      ? String(opts.expectedMerchantId).trim()
+      : '';
+    if (expectedMerchantId && hold.merchantId !== expectedMerchantId) {
+      throw new ForbiddenException('Hold belongs to another merchant');
+    }
     if (hold.expiresAt && hold.expiresAt.getTime() < Date.now()) {
       throw new BadRequestException(
         'Код истёк по времени. Попросите клиента обновить его в приложении и попробуйте ещё раз.',
@@ -3629,6 +3750,7 @@ export class LoyaltyService {
         let appliedEarn = 0;
         let redeemTxId: string | null = null;
         let earnTxId: string | null = null;
+        const createdEarnLotIds: string[] = [];
         let promoResult: PromoCodeApplyResult | null = null;
         if (opts?.promoCode && hold.customerId && manualEarnOverride == null) {
           if (accrualsBlocked) {
@@ -3923,7 +4045,7 @@ export class LoyaltyService {
                           maturesAt.getTime() + ttlDays * 24 * 60 * 60 * 1000,
                         )
                       : null;
-                  await earnLot.create({
+                  const createdLot = await earnLot.create({
                     data: {
                       merchantId: hold.merchantId,
                       customerId: hold.customerId,
@@ -3940,7 +4062,9 @@ export class LoyaltyService {
                       status: 'PENDING',
                       createdAt: operationDateObj,
                     },
+                    select: { id: true },
                   });
+                  if (createdLot?.id) createdEarnLotIds.push(createdLot.id);
                 }
                 if (promoBonus > 0) {
                   const promoExpiresAt = promoExpireDays
@@ -3949,7 +4073,7 @@ export class LoyaltyService {
                           promoExpireDays * 24 * 60 * 60 * 1000,
                       )
                     : null;
-                  await earnLot.create({
+                  const createdPromoLot = await earnLot.create({
                     data: {
                       merchantId: hold.merchantId,
                       customerId: hold.customerId,
@@ -3958,7 +4082,7 @@ export class LoyaltyService {
                       earnedAt: maturesAt,
                       maturesAt,
                       expiresAt: promoExpiresAt,
-                      orderId: null,
+                      orderId,
                       receiptId: null,
                       outletId: hold.outletId ?? null,
                       staffId: hold.staffId ?? null,
@@ -3966,7 +4090,10 @@ export class LoyaltyService {
                       status: 'PENDING',
                       createdAt: operationDateObj,
                     },
+                    select: { id: true },
                   });
+                  if (createdPromoLot?.id)
+                    createdEarnLotIds.push(createdPromoLot.id);
                 }
                 if (extraEarn > 0) {
                   const expiresAtStd =
@@ -3975,7 +4102,7 @@ export class LoyaltyService {
                           maturesAt.getTime() + ttlDays * 24 * 60 * 60 * 1000,
                         )
                       : null;
-                  await earnLot.create({
+                  const createdExtraLot = await earnLot.create({
                     data: {
                       merchantId: hold.merchantId,
                       customerId: hold.customerId,
@@ -3992,7 +4119,10 @@ export class LoyaltyService {
                       status: 'PENDING',
                       createdAt: operationDateObj,
                     },
+                    select: { id: true },
                   });
+                  if (createdExtraLot?.id)
+                    createdEarnLotIds.push(createdExtraLot.id);
                 }
               }
             }
@@ -4084,7 +4214,7 @@ export class LoyaltyService {
                     expires = new Date(
                       operationTimestamp + ttlDays * 24 * 60 * 60 * 1000,
                     );
-                  await earnLot.create({
+                  const createdLot = await earnLot.create({
                     data: {
                       merchantId: hold.merchantId,
                       customerId: hold.customerId,
@@ -4101,7 +4231,9 @@ export class LoyaltyService {
                       status: 'ACTIVE',
                       createdAt: operationDateObj,
                     },
+                    select: { id: true },
                   });
+                  if (createdLot?.id) createdEarnLotIds.push(createdLot.id);
                 }
                 if (promoBonus > 0) {
                   const expiresPromo = promoExpireDays
@@ -4110,7 +4242,7 @@ export class LoyaltyService {
                           promoExpireDays * 24 * 60 * 60 * 1000,
                       )
                     : null;
-                  await earnLot.create({
+                  const createdPromoLot = await earnLot.create({
                     data: {
                       merchantId: hold.merchantId,
                       customerId: hold.customerId,
@@ -4127,7 +4259,10 @@ export class LoyaltyService {
                       status: 'ACTIVE',
                       createdAt: operationDateObj,
                     },
+                    select: { id: true },
                   });
+                  if (createdPromoLot?.id)
+                    createdEarnLotIds.push(createdPromoLot.id);
                 }
                 if (extraEarn > 0) {
                   let expires: Date | null = null;
@@ -4135,7 +4270,7 @@ export class LoyaltyService {
                     expires = new Date(
                       operationTimestamp + ttlDays * 24 * 60 * 60 * 1000,
                     );
-                  await earnLot.create({
+                  const createdExtraLot = await earnLot.create({
                     data: {
                       merchantId: hold.merchantId,
                       customerId: hold.customerId,
@@ -4152,7 +4287,10 @@ export class LoyaltyService {
                       status: 'ACTIVE',
                       createdAt: operationDateObj,
                     },
+                    select: { id: true },
                   });
+                  if (createdExtraLot?.id)
+                    createdEarnLotIds.push(createdExtraLot.id);
                 }
               }
             }
@@ -4228,6 +4366,12 @@ export class LoyaltyService {
             createdAt: operationDateObj,
           },
         });
+        if (createdEarnLotIds.length > 0) {
+          await tx.earnLot.updateMany({
+            where: { id: { in: createdEarnLotIds } },
+            data: { receiptId: created.id },
+          });
+        }
 
         const receiptItemsCreated: Array<{
           id: string;
@@ -4840,6 +4984,7 @@ export class LoyaltyService {
       params.requestId ?? undefined,
       {
         operationDate,
+        expectedMerchantId: merchantId,
         manualRedeemAmount:
           manualRedeem && manualRedeemOverride != null
             ? manualRedeemOverride
@@ -4875,9 +5020,14 @@ export class LoyaltyService {
     };
   }
 
-  async cancel(holdId: string) {
+  async cancel(holdId: string, merchantId?: string | null) {
     const hold = await this.prisma.hold.findUnique({ where: { id: holdId } });
     if (!hold) throw new BadRequestException('Hold not found');
+    const expectedMerchantId =
+      typeof merchantId === 'string' ? merchantId.trim() : '';
+    if (expectedMerchantId && hold.merchantId !== expectedMerchantId) {
+      throw new ForbiddenException('Hold belongs to another merchant');
+    }
     if (hold.status !== HoldStatus.PENDING)
       throw new ConflictException('Hold already finished');
     const qrJti = hold.qrJti ?? null;
@@ -5336,7 +5486,6 @@ export class LoyaltyService {
     const refundDeviceId = deviceCtx?.id ?? receipt.deviceId ?? null;
 
     const pointsToRestore = Math.max(0, Math.round(receipt.redeemApplied || 0));
-    const pointsToRevoke = Math.max(0, Math.round(receipt.earnApplied || 0));
     const refundMeta = {
       receiptId: receipt.id,
     } as Prisma.JsonObject;
@@ -5448,6 +5597,52 @@ export class LoyaltyService {
           customerId: merchantContext.customerId,
         };
       }
+      let pointsToRevoke = 0;
+      if (receipt.orderId) {
+        const earnTxs = await tx.transaction.findMany({
+          where: {
+            merchantId,
+            orderId: receipt.orderId,
+            type: TxnType.EARN,
+            canceledAt: null,
+          },
+          select: { amount: true },
+        });
+        pointsToRevoke = earnTxs.reduce(
+          (sum, tx) => sum + Math.max(0, Number(tx.amount || 0)),
+          0,
+        );
+      }
+      pointsToRevoke = Math.max(0, Math.round(pointsToRevoke));
+      if (process.env.EARN_LOTS_FEATURE === '1' && receipt.orderId) {
+        const pendingLots = await tx.earnLot.findMany({
+          where: {
+            merchantId,
+            customerId: receipt.customerId,
+            orderId: receipt.orderId,
+            status: 'PENDING',
+          },
+          select: {
+            id: true,
+            points: true,
+            consumedPoints: true,
+            maturesAt: true,
+          },
+        });
+        for (const lot of pendingLots) {
+          const points = Math.max(0, Number(lot.points || 0));
+          const consumed = Math.max(0, Number(lot.consumedPoints || 0));
+          const nextConsumed = Math.max(consumed, points);
+          await tx.earnLot.update({
+            where: { id: lot.id },
+            data: {
+              consumedPoints: nextConsumed,
+              status: 'ACTIVE',
+              earnedAt: lot.maturesAt ?? operationDateObj,
+            },
+          });
+        }
+      }
       if (pointsToRestore > 0) {
         await tx.wallet.update({
           where: { id: wallet.id },
@@ -5522,7 +5717,7 @@ export class LoyaltyService {
             merchantId,
             receipt.customerId,
             pointsToRevoke,
-            { orderId: receipt.orderId },
+            { orderId: receipt.orderId, receiptId: receipt.id },
           );
         }
         if (process.env.LEDGER_FEATURE === '1') {
@@ -6369,15 +6564,25 @@ export class LoyaltyService {
       orderBy: { assignedAt: 'desc' },
       include: { tier: true },
     });
-    if (currentAssign?.tier?.isHidden) return;
-    if (currentAssign?.tierId === target.id) return;
-    const assignedAt = new Date();
-    const periodDays = normalizeLevelsPeriodDays(
+    const basePeriodDays = normalizeLevelsPeriodDays(
       params.periodDays,
       DEFAULT_LEVELS_PERIOD_DAYS,
     );
+    if (currentAssign?.source === 'manual') {
+      if (!currentAssign.expiresAt || currentAssign.expiresAt > new Date()) {
+        return;
+      }
+    }
+    if (currentAssign?.source === 'promocode') {
+      if (!currentAssign.expiresAt || currentAssign.expiresAt > new Date()) {
+        return;
+      }
+    }
+    if (currentAssign?.tier?.isHidden) return;
+    if (currentAssign?.tierId === target.id) return;
+    const assignedAt = new Date();
     const expiresAt = new Date(
-      assignedAt.getTime() + periodDays * 24 * 60 * 60 * 1000,
+      assignedAt.getTime() + basePeriodDays * 24 * 60 * 60 * 1000,
     );
     await tx.loyaltyTierAssignment.upsert({
       where: {

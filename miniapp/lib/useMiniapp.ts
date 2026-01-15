@@ -8,6 +8,8 @@ import {
   setTelegramAuthInitData,
   type TeleauthResponse,
 } from './api';
+import { getTelegramUserId, getTelegramWebApp } from './telegram';
+import { emitLoyaltyEvent } from './loyaltyEvents';
 
 export type AuthStatus = 'idle' | 'authenticating' | 'authenticated' | 'failed';
 
@@ -64,6 +66,21 @@ export function decodeBase64UrlPayload(payload: string): string | null {
   }
 }
 
+export function getTelegramUserIdFromInitData(initData: string | null): string | null {
+  if (!initData) return null;
+  try {
+    const params = new URLSearchParams(initData);
+    const rawUser = params.get('user');
+    if (!rawUser) return null;
+    const parsed = JSON.parse(rawUser);
+    const id = parsed?.id;
+    if (id == null) return null;
+    return String(id);
+  } catch {
+    return null;
+  }
+}
+
 export function getMerchantFromContext(initData: string | null): string | undefined {
   try {
     const q = new URLSearchParams(window.location.search);
@@ -103,12 +120,14 @@ export function useMiniappAuth(defaultMerchant: string) {
   const [merchantId, setMerchantId] = useState<string>(defaultMerchant);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [initData, setInitData] = useState<string | null>(null);
+  const [telegramUserId, setTelegramUserId] = useState<string | null>(() => getTelegramUserId());
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [theme, setTheme] = useState<{ primary?: string|null; bg?: string|null; logo?: string|null; ttl?: number }>({});
   const [supportTelegram, setSupportTelegram] = useState<string | null>(null);
   const [shareSettings, setShareSettings] = useState<ReviewsShareSettings>(null);
   const [reviewsEnabled, setReviewsEnabled] = useState<boolean | null>(null);
+  const [referralEnabled, setReferralEnabled] = useState<boolean | null>(null);
   const [status, setStatus] = useState<AuthStatus>('idle');
   const [teleOnboarded, setTeleOnboarded] = useState<boolean | null>(null);
   const [teleHasPhone, setTeleHasPhone] = useState<boolean | null>(null);
@@ -116,15 +135,34 @@ export function useMiniappAuth(defaultMerchant: string) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const tg = getTelegramWebApp();
+      if (tg) {
+        try {
+          tg.ready?.();
+        } catch {}
+        const expand = () => {
+          try {
+            tg.expand?.();
+          } catch {}
+        };
+        expand();
+        setTimeout(expand, 200);
+      }
       setStatus('authenticating');
       setLoading(true);
       setError('');
       setTeleOnboarded(null);
       setTeleHasPhone(null);
       setCustomerId(null);
+      setReferralEnabled(null);
       const resolvedInitData = await waitForInitData();
       if (cancelled) return;
       setInitData(resolvedInitData);
+      const initDataUserId = getTelegramUserIdFromInitData(resolvedInitData);
+      const resolvedTelegramUserId = initDataUserId || telegramUserId || getTelegramUserId();
+      if (resolvedTelegramUserId && resolvedTelegramUserId !== telegramUserId) {
+        setTelegramUserId(resolvedTelegramUserId);
+      }
       setTelegramAuthInitData(
         isValidInitData(resolvedInitData) ? resolvedInitData : null,
       );
@@ -145,23 +183,38 @@ export function useMiniappAuth(defaultMerchant: string) {
         setLoading(false);
         return;
       }
-      const customerKey = (m: string) => `miniapp.customerId.v1:${m}`;
-      const legacyCustomerKey = (m: string) => `miniapp.merchantCustomerId.v1:${m}`;
-      const profileKey = (m: string) => `miniapp.profile.v2:${m}`;
+      const customerKey = (m: string, tgId: string | null) =>
+        tgId ? `miniapp.customerId.v2:${m}:${tgId}` : null;
+      const profileKey = (m: string, tgId: string | null) =>
+        tgId ? `miniapp.profile.v3:${m}:${tgId}` : null;
+      const cleanupLegacyKeys = (m: string) => {
+        try {
+          localStorage.removeItem('miniapp.customerId');
+          localStorage.removeItem('miniapp.merchantCustomerId');
+          localStorage.removeItem(`miniapp.customerId.v1:${m}`);
+          localStorage.removeItem(`miniapp.merchantCustomerId.v1:${m}`);
+          localStorage.removeItem(`miniapp.profile.v2:${m}`);
+          localStorage.removeItem(`miniapp.profile.pending.v1:${m}`);
+          localStorage.removeItem(`miniapp.onboarded.v1:${m}`);
+        } catch {}
+      };
       let previousScoped: string | null = null;
       try {
-        const stored =
-          localStorage.getItem(customerKey(fallbackMerchant)) ||
-          localStorage.getItem(legacyCustomerKey(fallbackMerchant));
-        previousScoped =
-          stored && stored !== 'undefined' && stored.trim() ? stored : null;
+        if (resolvedTelegramUserId) {
+          const key = customerKey(fallbackMerchant, resolvedTelegramUserId);
+          if (key) {
+            const stored = localStorage.getItem(key);
+            previousScoped =
+              stored && stored !== 'undefined' && stored.trim() ? stored : null;
+          }
+        }
       } catch {
         previousScoped = null;
       }
       try {
         const [settingsResult, authResult] = await Promise.allSettled([
           publicSettings(fallbackMerchant),
-          teleauth(fallbackMerchant, resolvedInitData),
+          teleauth(fallbackMerchant, resolvedInitData, { create: false }),
         ]);
         if (cancelled) return;
         if (settingsResult.status === 'fulfilled') {
@@ -181,6 +234,11 @@ export function useMiniappAuth(defaultMerchant: string) {
             setReviewsEnabled(s.reviewsEnabled);
           } else {
             setReviewsEnabled(null);
+          }
+          if (typeof s.referralEnabled === 'boolean') {
+            setReferralEnabled(s.referralEnabled);
+          } else {
+            setReferralEnabled(null);
           }
           const normalizedShare = s.reviewsShare
             ? {
@@ -222,21 +280,39 @@ export function useMiniappAuth(defaultMerchant: string) {
               ? payload.merchantCustomerId
               : null;
         if (!resolvedCustomerId) {
-          throw new Error('customerId missing in teleauth response');
+          if (resolvedTelegramUserId) {
+            const key = customerKey(fallbackMerchant, resolvedTelegramUserId);
+            const profileKeyValue = profileKey(fallbackMerchant, resolvedTelegramUserId);
+            if (key) {
+              try {
+                localStorage.removeItem(key);
+                if (profileKeyValue) localStorage.removeItem(profileKeyValue);
+              } catch {}
+            }
+          }
+          cleanupLegacyKeys(fallbackMerchant);
+          setCustomerId(null);
+          setTeleOnboarded(false);
+          setTeleHasPhone(false);
+          setError('');
+          setStatus('authenticated');
+          setLoading(false);
+          return;
         }
         setCustomerId(resolvedCustomerId);
         setTeleOnboarded(Boolean(payload.onboarded));
         setTeleHasPhone(Boolean(payload.hasPhone));
         try {
-          localStorage.setItem(
-            customerKey(fallbackMerchant),
-            resolvedCustomerId,
-          );
-          localStorage.removeItem('miniapp.customerId');
-          localStorage.removeItem('miniapp.merchantCustomerId');
-          localStorage.removeItem(legacyCustomerKey(fallbackMerchant));
+          if (resolvedTelegramUserId) {
+            const key = customerKey(fallbackMerchant, resolvedTelegramUserId);
+            if (key) {
+              localStorage.setItem(key, resolvedCustomerId);
+            }
+          }
+          cleanupLegacyKeys(fallbackMerchant);
           if (previousScoped && previousScoped !== resolvedCustomerId) {
-            localStorage.removeItem(profileKey(fallbackMerchant));
+            const profileKeyValue = profileKey(fallbackMerchant, resolvedTelegramUserId ?? null);
+            if (profileKeyValue) localStorage.removeItem(profileKeyValue);
             localStorage.removeItem(
               `regBonus:${fallbackMerchant}:${previousScoped}`,
             );
@@ -261,16 +337,27 @@ export function useMiniappAuth(defaultMerchant: string) {
     (async () => {
       try {
         if (!merchantId || !customerId) return;
+        if (!teleOnboarded) return;
         const key = `regBonus:${merchantId}:${customerId}`;
         const attempted = localStorage.getItem(key);
         if (attempted) return;
-        await grantRegistrationBonus(merchantId, customerId).catch(() => void 0);
+        const resp = await grantRegistrationBonus(merchantId, customerId).catch(() => null);
+        if (resp?.ok) {
+          emitLoyaltyEvent({
+            eventType: 'loyalty.transaction',
+            transactionType: 'earn',
+            merchantId,
+            customerId,
+            amount: resp.pointsIssued,
+            emittedAt: new Date().toISOString(),
+          });
+        }
         localStorage.setItem(key, '1');
       } catch {
         // глушим, чтобы не ломать UX миниаппы — сервер идемпотентен и может быть временно недоступен
       }
     })();
-  }, [merchantId, customerId]);
+  }, [merchantId, customerId, teleOnboarded]);
 
   return {
     merchantId,
@@ -281,12 +368,14 @@ export function useMiniappAuth(defaultMerchant: string) {
     setTeleOnboarded,
     teleHasPhone,
     setTeleHasPhone,
+    telegramUserId,
     loading,
     error,
     theme,
     supportTelegram,
     shareSettings,
     reviewsEnabled,
+    referralEnabled,
     initData,
     status,
   } as const;

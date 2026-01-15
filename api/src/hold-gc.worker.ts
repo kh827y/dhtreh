@@ -21,8 +21,8 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') {
-      this.logger.log('Workers disabled (WORKERS_ENABLED=0)');
+    if (process.env.WORKERS_ENABLED !== '1') {
+      this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
     const intervalMs = Number(process.env.HOLD_GC_INTERVAL_MS || '30000');

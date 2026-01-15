@@ -70,6 +70,7 @@ import {
 } from "lucide-react";
 
 const PHONE_NOT_LINKED_MESSAGE = "Вы не привязали номер, попробуйте еще раз";
+const PHONE_PENDING_MESSAGE = "Телеграм еще передает номер, попробуйте через несколько секунд.";
 const REFERRAL_SHARE_FALLBACK =
   "Переходите по ссылке {link} и получите {bonusamount} бонусов на баланс в программе лояльности {businessname}.";
 const REFERRAL_PLACEHOLDER_REGEX = /\{businessname\}|\{bonusamount\}|\{code\}|\{link\}/gi;
@@ -134,12 +135,18 @@ type PromoBadge = {
   color: string;
 };
 
-const profileStorageKey = (merchantId: string) => `miniapp.profile.v2:${merchantId}`;
-const profilePendingKey = (merchantId: string) => `miniapp.profile.pending.v1:${merchantId}`;
-const localCustomerKey = (merchantId: string) => `miniapp.customerId.v1:${merchantId}`;
-const legacyLocalCustomerKey = (merchantId: string) => `miniapp.merchantCustomerId.v1:${merchantId}`;
-const onboardKey = (merchantId: string) => `miniapp.onboarded.v1:${merchantId}`;
-const cacheStorageKey = (merchantId: string) => `miniapp.cache.v1:${merchantId}`;
+const profileStorageKey = (merchantId: string, tgId: string | null) =>
+  tgId ? `miniapp.profile.v3:${merchantId}:${tgId}` : null;
+const profilePendingKey = (merchantId: string, tgId: string | null) =>
+  tgId ? `miniapp.profile.pending.v2:${merchantId}:${tgId}` : null;
+const localCustomerKey = (merchantId: string, tgId: string | null) =>
+  tgId ? `miniapp.customerId.v2:${merchantId}:${tgId}` : null;
+const legacyLocalCustomerKey = (merchantId: string) => `miniapp.customerId.v1:${merchantId}`;
+const legacyMerchantCustomerKey = (merchantId: string) => `miniapp.merchantCustomerId.v1:${merchantId}`;
+const onboardKey = (merchantId: string, tgId: string | null) =>
+  tgId ? `miniapp.onboarded.v2:${merchantId}:${tgId}` : null;
+const cacheStorageKey = (merchantId: string, customerId: string) =>
+  `miniapp.cache.v1:${merchantId}:${customerId}`;
 
 const normalizeReferralTemplate = (template: string | null | undefined, fallback: string): string => {
   if (typeof template === "string") {
@@ -169,12 +176,12 @@ const buildTelegramShareUrl = (text: string): string => {
   return query ? `${TELEGRAM_SHARE_URL}?${query}` : TELEGRAM_SHARE_URL;
 };
 
-function readStoredCustomerId(merchantId?: string | null): string | null {
-  if (!merchantId || typeof window === "undefined") return null;
+function readStoredCustomerId(merchantId?: string | null, tgId?: string | null): string | null {
+  if (!merchantId || !tgId || typeof window === "undefined") return null;
   try {
-    const stored =
-      localStorage.getItem(localCustomerKey(merchantId)) ||
-      localStorage.getItem(legacyLocalCustomerKey(merchantId));
+    const key = localCustomerKey(merchantId, tgId);
+    if (!key) return null;
+    const stored = localStorage.getItem(key);
     if (stored && stored !== "undefined" && stored.trim()) {
       return stored.trim();
     }
@@ -184,16 +191,18 @@ function readStoredCustomerId(merchantId?: string | null): string | null {
   return null;
 }
 
-function readStoredProfile(merchantId?: string | null): {
+function readStoredProfile(merchantId?: string | null, tgId?: string | null): {
   form: { name: string; gender: "male" | "female" | ""; birthDate: string };
   completed: boolean;
 } {
   const fallback = { name: "", gender: "", birthDate: "" } as const;
-  if (typeof window === "undefined" || !merchantId) {
+  if (typeof window === "undefined" || !merchantId || !tgId) {
     return { form: { ...fallback }, completed: false };
   }
   try {
-    const saved = localStorage.getItem(profileStorageKey(merchantId));
+    const key = profileStorageKey(merchantId, tgId);
+    if (!key) return { form: { ...fallback }, completed: false };
+    const saved = localStorage.getItem(key);
     if (!saved) return { form: { ...fallback }, completed: false };
     const parsed = JSON.parse(saved) as { name?: string; gender?: "male" | "female"; birthDate?: string };
     const name = typeof parsed?.name === "string" ? parsed.name : "";
@@ -206,19 +215,24 @@ function readStoredProfile(merchantId?: string | null): {
   }
 }
 
-function readStoredOnboardFlag(merchantId?: string | null): boolean {
-  if (!merchantId || typeof window === "undefined") return false;
+function readStoredOnboardFlag(merchantId?: string | null, tgId?: string | null): boolean {
+  if (!merchantId || !tgId || typeof window === "undefined") return false;
   try {
-    return localStorage.getItem(onboardKey(merchantId)) === "1";
+    const key = onboardKey(merchantId, tgId);
+    if (!key) return false;
+    return localStorage.getItem(key) === "1";
   } catch {
     return false;
   }
 }
 
-function readCachedState(merchantId?: string | null): MiniappCache | null {
-  if (!merchantId || typeof window === "undefined") return null;
+function readCachedState(
+  merchantId?: string | null,
+  customerId?: string | null,
+): MiniappCache | null {
+  if (!merchantId || !customerId || typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(cacheStorageKey(merchantId));
+    const raw = localStorage.getItem(cacheStorageKey(merchantId, customerId));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
@@ -228,10 +242,17 @@ function readCachedState(merchantId?: string | null): MiniappCache | null {
   }
 }
 
-function writeCachedState(merchantId: string | null | undefined, payload: MiniappCache) {
-  if (!merchantId || typeof window === "undefined") return;
+function writeCachedState(
+  merchantId: string | null | undefined,
+  customerId: string | null | undefined,
+  payload: MiniappCache,
+) {
+  if (!merchantId || !customerId || typeof window === "undefined") return;
   try {
-    localStorage.setItem(cacheStorageKey(merchantId), JSON.stringify(payload));
+    localStorage.setItem(
+      cacheStorageKey(merchantId, customerId),
+      JSON.stringify(payload),
+    );
   } catch {
     // ignore storage issues
   }
@@ -256,6 +277,7 @@ function pickCashbackPercent(levelInfo: LevelInfo | null, levelCatalog: Mechanic
 }
 
 type TelegramUser = {
+  id?: string;
   firstName?: string;
   lastName?: string;
   username?: string;
@@ -268,6 +290,7 @@ function getTelegramUser(): TelegramUser | null {
     const user = tg?.initDataUnsafe?.user;
     if (!user) return null;
     return {
+      id: user.id != null ? String(user.id) : undefined,
       firstName: user.first_name,
       lastName: user.last_name,
       username: user.username,
@@ -740,12 +763,33 @@ function MiniappPage() {
   const initData = auth.initData;
   const themeTtl = auth.theme?.ttl;
   const supportTelegram = auth.supportTelegram;
+  const settingsReferralEnabled = auth.referralEnabled;
 
-  const storedProfile = useMemo(() => readStoredProfile(merchantId), [merchantId]);
-  const storedCustomerId = useMemo(() => readStoredCustomerId(merchantId), [merchantId]);
-  const cachedState = useMemo(() => readCachedState(merchantId), [merchantId]);
+  const [telegramUser] = useState<TelegramUser | null>(() => getTelegramUser());
+  const telegramUserId = auth.telegramUserId ?? telegramUser?.id ?? null;
+
+  const storedProfile = useMemo(
+    () => readStoredProfile(merchantId, telegramUserId),
+    [merchantId, telegramUserId],
+  );
+  const storedCustomerId = useMemo(
+    () => readStoredCustomerId(merchantId, telegramUserId),
+    [merchantId, telegramUserId],
+  );
+  const cachedCustomerId =
+    teleOnboarded === false ? null : auth.customerId ?? storedCustomerId;
+  const cachedState = useMemo(
+    () => readCachedState(merchantId, cachedCustomerId),
+    [merchantId, cachedCustomerId],
+  );
 
   const [customerId, setCustomerId] = useState<string | null>(() => storedCustomerId);
+  const authCustomerId = auth.customerId;
+  const customerSynced =
+    !authCustomerId || (customerId && authCustomerId === customerId);
+  const canLoadCustomerData = Boolean(
+    merchantId && customerId && customerSynced && teleOnboarded === true,
+  );
   const [bal, setBal] = useState<number | null>(() => cachedState?.balance ?? null);
   const [tx, setTx] = useState<TransactionItem[]>([]);
   const [txNextBefore, setTxNextBefore] = useState<string | null>(null);
@@ -757,7 +801,6 @@ function MiniappPage() {
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(() => cachedState?.levelInfo ?? null);
   const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>(() => cachedState?.levelCatalog ?? []);
   const [cashbackPercent, setCashbackPercent] = useState<number | null>(() => cachedState?.cashbackPercent ?? null);
-  const [telegramUser] = useState<TelegramUser | null>(() => getTelegramUser());
   const [phone, setPhone] = useState<string | null>(null);
   const [pendingCustomerIdForPhone, setPendingCustomerIdForPhone] = useState<string | null>(null);
   const [phoneShareStage, setPhoneShareStage] = useState<"idle" | "waiting" | "saving">("idle");
@@ -769,7 +812,9 @@ function MiniappPage() {
   const [profileConsent, setProfileConsent] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSaving, setProfileSaving] = useState(false);
-  const [localOnboarded, setLocalOnboarded] = useState<boolean>(() => readStoredOnboardFlag(merchantId));
+  const [localOnboarded, setLocalOnboarded] = useState<boolean>(() =>
+    readStoredOnboardFlag(merchantId, telegramUserId),
+  );
   const [referralInfo, setReferralInfo] = useState<ReferralInfo | null>(() => cachedState?.referralInfo ?? null);
   const [referralEnabled, setReferralEnabled] = useState<boolean>(() => cachedState?.referralEnabled ?? false);
   const [referralLoading, setReferralLoading] = useState(false);
@@ -803,8 +848,8 @@ function MiniappPage() {
   const txLoadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setLocalOnboarded(readStoredOnboardFlag(merchantId));
-  }, [merchantId]);
+    setLocalOnboarded(readStoredOnboardFlag(merchantId, telegramUserId));
+  }, [merchantId, telegramUserId]);
 
   useEffect(() => {
     setBootstrapReady(false);
@@ -819,12 +864,11 @@ function MiniappPage() {
   }, [merchantId, customerId]);
 
   useEffect(() => {
-    if (!merchantId) return;
-    const cached = readCachedState(merchantId);
+    if (!merchantId || !cachedCustomerId) return;
+    const cached = readCachedState(merchantId, cachedCustomerId);
     if (!cached) {
       setBal(null);
       setLevelInfo(null);
-      setLevelCatalog([]);
       setCashbackPercent(null);
       setReferralInfo(null);
       setReferralEnabled(false);
@@ -840,36 +884,51 @@ function MiniappPage() {
     }
     setReferralInfo(cached.referralInfo ?? null);
     setCachedBonusCount(typeof cached.bonusCount === "number" ? cached.bonusCount : null);
-  }, [merchantId]);
+  }, [merchantId, cachedCustomerId]);
 
   useEffect(() => {
     setLoading(auth.loading);
     setError(auth.error);
-    if (!auth.loading && auth.customerId) {
-      setCustomerId(auth.customerId);
+    if (!auth.loading) {
+      if (auth.customerId) {
+        setCustomerId(auth.customerId);
+      } else if (teleOnboarded === false) {
+        setCustomerId(null);
+      }
     }
-  }, [auth.loading, auth.error, auth.customerId]);
+  }, [auth.loading, auth.error, auth.customerId, teleOnboarded]);
+
+  useEffect(() => {
+    if (typeof settingsReferralEnabled !== "boolean") return;
+    if (referralInfo) return;
+    setReferralEnabled(settingsReferralEnabled);
+  }, [settingsReferralEnabled, referralInfo]);
 
   useEffect(() => {
     if (teleOnboarded === null) return;
     if (!merchantId) return;
+    if (!telegramUserId) return;
+    const key = onboardKey(merchantId, telegramUserId);
+    if (!key) return;
     if (teleOnboarded) {
       try {
-        localStorage.setItem(onboardKey(merchantId), "1");
+        localStorage.setItem(key, "1");
       } catch {}
       setLocalOnboarded(true);
     } else {
       setLocalOnboarded(false);
       try {
-        localStorage.removeItem(onboardKey(merchantId));
+        localStorage.removeItem(key);
       } catch {}
     }
-  }, [teleOnboarded, merchantId]);
+  }, [teleOnboarded, merchantId, telegramUserId]);
 
   useEffect(() => {
-    if (!merchantId) return;
+    if (!merchantId || !telegramUserId) return;
     try {
-      const stored = localStorage.getItem(profileStorageKey(merchantId));
+      const key = profileStorageKey(merchantId, telegramUserId);
+      if (!key) return;
+      const stored = localStorage.getItem(key);
       if (!stored) return;
       const parsed = JSON.parse(stored);
       if (parsed && typeof parsed === "object") {
@@ -881,10 +940,10 @@ function MiniappPage() {
     } catch {
       // ignore
     }
-  }, [merchantId]);
+  }, [merchantId, telegramUserId]);
 
   useEffect(() => {
-    if (!merchantId) return;
+    if (!canLoadCustomerData) return;
     const snapshot: MiniappCache = {
       balance: typeof bal === "number" ? bal : null,
       levelInfo: levelInfo ?? null,
@@ -894,12 +953,38 @@ function MiniappPage() {
       referralInfo: referralInfo ?? null,
       bonusCount: typeof cachedBonusCount === "number" ? cachedBonusCount : null,
     };
-    writeCachedState(merchantId, snapshot);
-  }, [merchantId, bal, levelInfo, levelCatalog, cashbackPercent, referralEnabled, referralInfo, cachedBonusCount]);
+    writeCachedState(merchantId, customerId, snapshot);
+  }, [
+    canLoadCustomerData,
+    merchantId,
+    customerId,
+    bal,
+    levelInfo,
+    levelCatalog,
+    cashbackPercent,
+    referralEnabled,
+    referralInfo,
+    cachedBonusCount,
+  ]);
 
   useEffect(() => {
     setPromotionsResolved(false);
     setBootstrapReady(false);
+  }, [customerId]);
+
+  const lastCustomerRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!customerId) return;
+    if (lastCustomerRef.current && lastCustomerRef.current !== customerId) {
+      setTx([]);
+      setTxNextBefore(null);
+      setPromotions([]);
+      setPromotionsResolved(false);
+      setReferralInfo(null);
+      setReferralEnabled(false);
+      setCachedBonusCount(null);
+    }
+    lastCustomerRef.current = customerId;
   }, [customerId]);
 
   const applyServerProfile = useCallback(
@@ -910,15 +995,21 @@ function MiniappPage() {
       const birthDate = typeof profile?.birthDate === "string" ? profile.birthDate : "";
       setProfileForm((prev) => ({ ...prev, name, gender, birthDate }));
       const valid = Boolean(name && gender && birthDate);
-      if (merchantId && valid) {
+      if (merchantId && telegramUserId && valid) {
         try {
-          localStorage.setItem(profileStorageKey(merchantId), JSON.stringify({ name, gender, birthDate }));
-          localStorage.setItem(onboardKey(merchantId), "1");
+          const profileKey = profileStorageKey(merchantId, telegramUserId);
+          const onboardStorageKey = onboardKey(merchantId, telegramUserId);
+          if (profileKey) {
+            localStorage.setItem(profileKey, JSON.stringify({ name, gender, birthDate }));
+          }
+          if (onboardStorageKey) {
+            localStorage.setItem(onboardStorageKey, "1");
+          }
         } catch {}
         setLocalOnboarded(true);
       }
     },
-    [merchantId],
+    [merchantId, telegramUserId],
   );
 
   const applyProfileSaveResult = useCallback(
@@ -932,10 +1023,14 @@ function MiniappPage() {
           ? profile.customerId.trim()
           : fallback;
       if (!nextIdRaw) return fallback || null;
-      if (merchantId) {
+      if (merchantId && telegramUserId) {
         try {
-          localStorage.setItem(localCustomerKey(merchantId), nextIdRaw);
+          const key = localCustomerKey(merchantId, telegramUserId);
+          if (key) {
+            localStorage.setItem(key, nextIdRaw);
+          }
           localStorage.removeItem(legacyLocalCustomerKey(merchantId));
+          localStorage.removeItem(legacyMerchantCustomerKey(merchantId));
         } catch {
           // ignore
         }
@@ -944,12 +1039,11 @@ function MiniappPage() {
       setAuthCustomerId(nextIdRaw);
       return nextIdRaw;
     },
-    [merchantId, setAuthCustomerId],
+    [merchantId, telegramUserId, setAuthCustomerId],
   );
 
   useEffect(() => {
-    if (!merchantId || !customerId) return;
-    if (teleOnboarded === false) return;
+    if (!canLoadCustomerData) return;
     if (!bootstrapAttempted || bootstrapReady || bootstrapInFlightRef.current) return;
     let cancelled = false;
     (async () => {
@@ -964,14 +1058,15 @@ function MiniappPage() {
     return () => {
       cancelled = true;
     };
-  }, [merchantId, customerId, teleOnboarded, bootstrapAttempted, bootstrapReady, applyServerProfile]);
+  }, [canLoadCustomerData, bootstrapAttempted, bootstrapReady, applyServerProfile]);
 
   useEffect(() => {
-    if (!merchantId || !customerId) return;
+    if (!merchantId || !customerId || !telegramUserId) return;
     if (teleHasPhone === false) return;
     if (pendingProfileSync.current) return;
-    const key = profileStorageKey(merchantId);
-    const pendingKey = profilePendingKey(merchantId);
+    const key = profileStorageKey(merchantId, telegramUserId);
+    const pendingKey = profilePendingKey(merchantId, telegramUserId);
+    if (!key || !pendingKey) return;
     let rawPending: string | null = null;
     try {
       rawPending = localStorage.getItem(pendingKey);
@@ -1007,7 +1102,8 @@ function MiniappPage() {
         setAuthTeleOnboarded(true);
         setLocalOnboarded(true);
         try {
-          localStorage.setItem(onboardKey(merchantId), "1");
+          const onboardStorageKey = onboardKey(merchantId, telegramUserId);
+          if (onboardStorageKey) localStorage.setItem(onboardStorageKey, "1");
         } catch {}
       } catch (error) {
         setToast({ msg: `Не удалось синхронизировать профиль: ${resolveErrorMessage(error)}`, type: "error" });
@@ -1018,6 +1114,7 @@ function MiniappPage() {
   }, [
     merchantId,
     customerId,
+    telegramUserId,
     teleHasPhone,
     applyProfileSaveResult,
     setToast,
@@ -1057,7 +1154,7 @@ function MiniappPage() {
   }, [initData, profileForm.inviteCode]);
 
   const syncConsent = useCallback(async () => {
-    if (!customerId || !merchantId) return;
+    if (!canLoadCustomerData) return;
     try {
       const r = await consentGet(merchantId, customerId);
       if (!r.consentAt && !r.granted) {
@@ -1069,20 +1166,20 @@ function MiniappPage() {
     } catch {
       // ignore
     }
-  }, [customerId, merchantId]);
+  }, [canLoadCustomerData, customerId, merchantId]);
 
   const loadBalance = useCallback(async () => {
-    if (!merchantId || !customerId) return;
+    if (!canLoadCustomerData) return;
     try {
       const resp = await balance(merchantId, customerId);
       setBal(resp.balance);
     } catch (error) {
       setToast({ msg: `Не удалось загрузить баланс: ${resolveErrorMessage(error)}`, type: "error" });
     }
-  }, [merchantId, customerId]);
+  }, [canLoadCustomerData, merchantId, customerId]);
 
   const loadTx = useCallback(async (opts?: { fresh?: boolean }) => {
-    if (!merchantId || !customerId) return;
+    if (!canLoadCustomerData) return;
     const requestId = ++txLoadSeq.current;
     try {
       const resp = await transactions(merchantId, customerId, TX_PAGE_LIMIT, undefined, { fresh: opts?.fresh });
@@ -1094,10 +1191,10 @@ function MiniappPage() {
     } catch (error) {
       setToast({ msg: `Не удалось загрузить историю: ${resolveErrorMessage(error)}`, type: "error" });
     }
-  }, [merchantId, customerId]);
+  }, [canLoadCustomerData, merchantId, customerId]);
 
   const loadMoreTx = useCallback(async () => {
-    if (!merchantId || !customerId) return;
+    if (!canLoadCustomerData) return;
     if (!txNextBefore || txLoadingMoreRef.current) return;
     txLoadingMoreRef.current = true;
     setTxLoadingMore(true);
@@ -1118,17 +1215,17 @@ function MiniappPage() {
       txLoadingMoreRef.current = false;
       setTxLoadingMore(false);
     }
-  }, [merchantId, customerId, txNextBefore]);
+  }, [canLoadCustomerData, merchantId, customerId, txNextBefore]);
 
   const loadLevels = useCallback(async () => {
-    if (!merchantId || !customerId) return;
+    if (!canLoadCustomerData) return;
     try {
       const resp = await levels(merchantId, customerId);
       setLevelInfo(resp);
     } catch (error) {
       setToast({ msg: `Не удалось загрузить уровни: ${resolveErrorMessage(error)}`, type: "error" });
     }
-  }, [merchantId, customerId]);
+  }, [canLoadCustomerData, merchantId, customerId]);
 
   const loadLevelCatalog = useCallback(async () => {
     if (!merchantId) return;
@@ -1142,7 +1239,7 @@ function MiniappPage() {
   }, [merchantId]);
 
   const loadPromotions = useCallback(async () => {
-    if (!merchantId || !customerId) return;
+    if (!canLoadCustomerData) return;
     try {
       const resp = await promotionsList(merchantId, customerId);
       setPromotions(resp || []);
@@ -1150,10 +1247,10 @@ function MiniappPage() {
     } catch (error) {
       setToast({ msg: `Не удалось загрузить акции: ${resolveErrorMessage(error)}`, type: "error" });
     }
-  }, [merchantId, customerId]);
+  }, [canLoadCustomerData, merchantId, customerId]);
 
   const loadBootstrap = useCallback(async () => {
-    if (!merchantId || !customerId) return false;
+    if (!canLoadCustomerData) return false;
     if (bootstrapInFlightRef.current) return false;
     bootstrapInFlightRef.current = true;
     if (typeof window !== "undefined") {
@@ -1203,10 +1300,11 @@ function MiniappPage() {
         }
       }
     }
-  }, [merchantId, customerId, applyServerProfile]);
+  }, [canLoadCustomerData, merchantId, customerId, applyServerProfile]);
 
   useEffect(() => {
     if (auth.loading || !customerId) return;
+    if (!canLoadCustomerData) return;
     if (bootstrapAttempted) return;
     if (bootstrapInFlightRef.current) return;
     (async () => {
@@ -1222,6 +1320,7 @@ function MiniappPage() {
   }, [
     auth.loading,
     customerId,
+    canLoadCustomerData,
     bootstrapAttempted,
     loadBootstrap,
     syncConsent,
@@ -1274,6 +1373,7 @@ function MiniappPage() {
   }, [customerId, levelInfo, levelCatalog]);
 
   useEffect(() => {
+    if (!canLoadCustomerData) return;
     const unsubscribe = subscribeToLoyaltyEvents((payload) => {
       if (!payload || typeof payload !== "object") return;
       const data = payload as Record<string, unknown>;
@@ -1307,12 +1407,13 @@ function MiniappPage() {
     return () => {
       unsubscribe();
     };
-  }, [merchantId, customerId, loadBalance, loadTx, loadLevels]);
+  }, [canLoadCustomerData, merchantId, customerId, loadBalance, loadTx, loadLevels]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
+        if (!canLoadCustomerData) return;
         loadBalance();
         loadTx({ fresh: true });
         loadLevels();
@@ -1322,7 +1423,7 @@ function MiniappPage() {
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [loadBalance, loadTx, loadLevels]);
+  }, [canLoadCustomerData, loadBalance, loadTx, loadLevels]);
 
   const handlePromotionClaim = useCallback(
     async (promotionId: string) => {
@@ -1338,7 +1439,17 @@ function MiniappPage() {
             ? `Начислено ${resp.pointsIssued} баллов`
             : "Получено";
         setToast({ msg: message, type: "success" });
-        await Promise.allSettled([loadBalance(), loadTx({ fresh: true }), loadLevels(), loadPromotions()]);
+        if (resp.ok) {
+          setBal(resp.balance);
+          setPromotions((prev) =>
+            prev.map((promo) =>
+              promo.id === promotionId
+                ? { ...promo, claimed: true, canClaim: false }
+                : promo,
+            ),
+          );
+        }
+        void Promise.allSettled([loadBalance(), loadTx({ fresh: true }), loadLevels(), loadPromotions()]);
       } catch (error) {
         setToast({ msg: resolveErrorMessage(error), type: "error" });
       }
@@ -1348,10 +1459,12 @@ function MiniappPage() {
 
   useEffect(() => {
     if (auth.loading) return;
-    if (!merchantId || !customerId) return;
+    if (!canLoadCustomerData) return;
+    const referralCustomerId = authCustomerId || customerId;
+    if (!merchantId || !referralCustomerId) return;
     let cancelled = false;
     setReferralLoading(true);
-    referralLink(customerId, merchantId)
+    referralLink(referralCustomerId, merchantId)
       .then((data) => {
         if (cancelled) return;
         const program = data.program as (typeof data.program & { message?: string | null }) | undefined;
@@ -1393,7 +1506,7 @@ function MiniappPage() {
     return () => {
       cancelled = true;
     };
-  }, [auth.loading, merchantId, customerId]);
+  }, [auth.loading, canLoadCustomerData, merchantId, customerId, authCustomerId]);
 
   const qrEffectiveTtl = useMemo(() => {
     if (typeof themeTtl === "number" && Number.isFinite(themeTtl)) return themeTtl;
@@ -1452,10 +1565,14 @@ function MiniappPage() {
   }, [qrOpen, refreshQr]);
 
   const finalizePhoneShare = useCallback(
-    async (options?: { capturedPhone?: string | null; waitServerSync?: boolean }) => {
+    async (options?: {
+      capturedPhone?: string | null;
+      waitServerSync?: boolean;
+      customerIdOverride?: string | null;
+    }) => {
       if (!merchantId) return false;
-      const { capturedPhone = null, waitServerSync = false } = options ?? {};
-      let effectiveCustomerId = pendingCustomerIdForPhone || customerId;
+      const { capturedPhone = null, waitServerSync = false, customerIdOverride = null } = options ?? {};
+      let effectiveCustomerId = customerIdOverride || pendingCustomerIdForPhone || customerId;
       if (!effectiveCustomerId) {
         setToast({ msg: "Не удалось определить клиента", type: "error" });
         setPhoneShareStage("idle");
@@ -1467,8 +1584,8 @@ function MiniappPage() {
         setPhoneShareStage("idle");
         return false;
       }
-      const key = profileStorageKey(merchantId);
-      const pendingKey = profilePendingKey(merchantId);
+      const key = profileStorageKey(merchantId, telegramUserId);
+      const pendingKey = profilePendingKey(merchantId, telegramUserId);
       setPhoneShareError(null);
       setPhoneShareStage("saving");
       setProfileSaving(true);
@@ -1476,6 +1593,10 @@ function MiniappPage() {
         let serverHasPhone = teleHasPhone === true;
         let statusError: unknown = null;
         let teleauthRefreshed = false;
+        const delay = (ms: number) =>
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, ms);
+          });
         const syncTeleauthCustomer = async () => {
           if (teleauthRefreshed) return effectiveCustomerId;
           teleauthRefreshed = true;
@@ -1485,7 +1606,7 @@ function MiniappPage() {
           }
           if (!isValidInitData(initForAuth)) return null;
           try {
-            const result = await teleauth(merchantId, initForAuth);
+            const result = await teleauth(merchantId, initForAuth, { create: true });
             const nextId = applyProfileSaveResult(
               { name: null, gender: null, birthDate: null, customerId: result.customerId },
               effectiveCustomerId,
@@ -1514,15 +1635,26 @@ function MiniappPage() {
             statusError = error;
           }
         };
-
-        if (waitServerSync) {
-          await refreshPhoneStatus();
-          if (!serverHasPhone && statusError && isForbiddenError(statusError)) {
-            const refreshed = await syncTeleauthCustomer();
-            if (refreshed) {
-              await refreshPhoneStatus();
+        const waitForPhoneBinding = async (attempts = 5, delayMs = 700) => {
+          for (let i = 0; i < attempts; i += 1) {
+            await refreshPhoneStatus();
+            if (serverHasPhone) return true;
+            if (statusError && isForbiddenError(statusError)) {
+              const refreshed = await syncTeleauthCustomer();
+              if (refreshed) {
+                await refreshPhoneStatus();
+                if (serverHasPhone) return true;
+              }
+            }
+            if (i < attempts - 1) {
+              await delay(delayMs);
             }
           }
+          return serverHasPhone;
+        };
+
+        if (waitServerSync) {
+          await waitForPhoneBinding();
         }
 
         const normalizedPhone =
@@ -1533,7 +1665,7 @@ function MiniappPage() {
               : null;
 
         if (!serverHasPhone && !normalizedPhone) {
-          setPhoneShareError(PHONE_NOT_LINKED_MESSAGE);
+          setPhoneShareError(waitServerSync ? PHONE_PENDING_MESSAGE : PHONE_NOT_LINKED_MESSAGE);
           setPhoneShareStage("idle");
           setProfileSaving(false);
           return false;
@@ -1549,9 +1681,14 @@ function MiniappPage() {
         const saved = await profileSave(merchantId, effectiveCustomerId, payload);
         applyProfileSaveResult(saved, effectiveCustomerId);
         try {
-          localStorage.setItem(key, JSON.stringify({ name: payload.name, gender: payload.gender, birthDate: payload.birthDate }));
-          localStorage.removeItem(pendingKey);
-          localStorage.setItem(onboardKey(merchantId), "1");
+          if (key) {
+            localStorage.setItem(key, JSON.stringify({ name: payload.name, gender: payload.gender, birthDate: payload.birthDate }));
+          }
+          if (pendingKey) localStorage.removeItem(pendingKey);
+          const onboardStorageKey = onboardKey(merchantId, telegramUserId);
+          if (onboardStorageKey) {
+            localStorage.setItem(onboardStorageKey, "1");
+          }
         } catch {}
 
         const inviteCode = profileForm.inviteCode.trim();
@@ -1596,10 +1733,14 @@ function MiniappPage() {
           lowered.includes("phone_required") ||
           lowered.includes("phone is required");
         if (phoneMissing) {
-          setPhoneShareError(PHONE_NOT_LINKED_MESSAGE);
+          setPhoneShareError(waitServerSync ? PHONE_PENDING_MESSAGE : PHONE_NOT_LINKED_MESSAGE);
         }
         setToast({
-          msg: phoneMissing ? PHONE_NOT_LINKED_MESSAGE : `Не удалось сохранить профиль: ${message}`,
+          msg: phoneMissing
+            ? waitServerSync
+              ? PHONE_PENDING_MESSAGE
+              : PHONE_NOT_LINKED_MESSAGE
+            : `Не удалось сохранить профиль: ${message}`,
           type: "error",
         });
         setPhoneShareStage("idle");
@@ -1610,6 +1751,7 @@ function MiniappPage() {
     },
     [
       merchantId,
+      telegramUserId,
       pendingCustomerIdForPhone,
       customerId,
       profileForm,
@@ -1623,7 +1765,7 @@ function MiniappPage() {
     ],
   );
 
-  const handleRequestPhone = useCallback(async () => {
+  const handleRequestPhone = useCallback(async (customerIdOverride?: string | null) => {
     if (!merchantId) return;
     if (phoneShareStage !== "idle") return;
     const tg = getTelegramWebApp();
@@ -1719,37 +1861,33 @@ function MiniappPage() {
       }
       if (!phoneCaptured && canRequestContact) {
         promptTriggered = true;
-        await new Promise<void>((resolve) => {
+        const result = await new Promise<unknown>((resolve, reject) => {
           let settled = false;
-          const finish = () => {
+          const finish = (value: unknown) => {
             if (settled) return;
             settled = true;
-            resolve();
+            resolve(value);
           };
-          const timeout = window.setTimeout(() => {
-            finish();
-          }, 5000);
           try {
-            tg.requestContact?.((payload: unknown) => {
-              const normalized = normalize(payload);
-              if (!markPhone(normalized) && detectShareConfirmation(payload)) {
-                shareConfirmed = true;
-              }
-              clearTimeout(timeout);
-              finish();
-            });
-          } catch {
-            clearTimeout(timeout);
-            finish();
+            const maybe = tg.requestContact?.((payload: unknown) => finish(payload));
+            if (maybe && typeof (maybe as Promise<unknown>).then === "function") {
+              (maybe as Promise<unknown>).then((payload) => finish(payload)).catch(reject);
+            }
+          } catch (err) {
+            reject(err);
           }
         });
+        const normalized = normalize(result);
+        if (!markPhone(normalized) && detectShareConfirmation(result)) {
+          shareConfirmed = true;
+        }
       }
       if (phoneCaptured && capturedPhone) {
-        await finalizePhoneShare({ capturedPhone });
+        await finalizePhoneShare({ capturedPhone, customerIdOverride: customerIdOverride ?? null });
         return;
       }
       if (shareConfirmed) {
-        await finalizePhoneShare({ waitServerSync: true });
+        await finalizePhoneShare({ waitServerSync: true, customerIdOverride: customerIdOverride ?? null });
         return;
       }
       if (!promptTriggered) {
@@ -1794,8 +1932,8 @@ function MiniappPage() {
     }
 
     setProfileSaving(true);
-    const key = merchantId ? profileStorageKey(merchantId) : null;
-    const pendingKey = merchantId ? profilePendingKey(merchantId) : null;
+    const key = merchantId ? profileStorageKey(merchantId, telegramUserId) : null;
+    const pendingKey = merchantId ? profilePendingKey(merchantId, telegramUserId) : null;
     if (key) {
       try {
         localStorage.setItem(key, JSON.stringify({
@@ -1814,7 +1952,7 @@ function MiniappPage() {
       }
       if (merchantId && isValidInitData(initForAuth)) {
         try {
-          const result = await teleauth(merchantId, initForAuth);
+          const result = await teleauth(merchantId, initForAuth, { create: true });
           effectiveCustomerId = applyProfileSaveResult(
             { name: null, gender: null, birthDate: null, customerId: result.customerId },
             result.customerId,
@@ -1847,11 +1985,12 @@ function MiniappPage() {
       setPendingCustomerIdForPhone(effectiveCustomerId);
     }
     setProfileSaving(false);
-    await handleRequestPhone();
+    await handleRequestPhone(effectiveCustomerId);
   }, [
     profileForm,
     profileConsent,
     merchantId,
+    telegramUserId,
     customerId,
     initData,
     setToast,
@@ -2102,8 +2241,8 @@ function MiniappPage() {
   );
 
   const renderHome = () => (
-    <div className="flex flex-col min-h-screen pb-safe">
-      <div className="bg-ios-bg px-5 pt-8 pb-4 flex justify-between items-end sticky top-0 z-10 backdrop-blur-xl bg-ios-bg/80">
+    <div className="flex flex-col h-full pb-safe overflow-y-auto">
+      <div className="bg-ios-bg px-5 pt-8 pb-4 flex justify-between items-end">
         <div className="flex-1 min-w-0 mr-4">
           <div className="text-gray-500 text-sm font-medium mb-1">Добрый день,</div>
           <h1 className="text-3xl font-bold text-gray-900 leading-tight truncate">{displayName || ""}</h1>
@@ -2116,7 +2255,7 @@ function MiniappPage() {
         </button>
       </div>
 
-      <div className="px-5 space-y-6">
+      <div className="px-5 space-y-6 pb-8">
         <div className="w-full bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-6 text-white shadow-soft relative overflow-hidden transform transition-transform active:scale-[0.99]">
           <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full -mr-10 -mt-10 blur-2xl" />
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-400 opacity-20 rounded-full -ml-8 -mb-8 blur-2xl" />
@@ -2259,7 +2398,7 @@ function MiniappPage() {
   );
 
   const renderHistory = () => (
-    <div className="min-h-screen bg-ios-bg pb-safe">
+    <div className="h-full bg-ios-bg pb-safe flex flex-col">
       <div className="sticky top-0 bg-ios-bg/90 backdrop-blur-md z-20 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
         <button
           onClick={() => setView("HOME")}
@@ -2271,7 +2410,7 @@ function MiniappPage() {
         <div className="w-10" />
       </div>
 
-      <div className="px-5 py-6">
+      <div className="flex-1 overflow-y-auto px-5 py-6">
         <TransactionHistory
           transactions={historyTransactions}
           title="Ваши операции"
@@ -2378,7 +2517,7 @@ function MiniappPage() {
     };
 
     return (
-      <div className="min-h-screen bg-[#F5F5F7] pb-safe">
+      <div className="h-full bg-[#F5F5F7] pb-safe flex flex-col">
         <div className="sticky top-0 z-30 bg-[#F5F5F7]/80 backdrop-blur-xl border-b border-gray-300/50 px-4 py-3 flex items-center justify-between">
           <button
             onClick={() => setView("HOME")}
@@ -2391,7 +2530,7 @@ function MiniappPage() {
           <div className="w-10" />
         </div>
 
-        <div className="space-y-8 pb-10 pt-4">
+        <div className="flex-1 overflow-y-auto space-y-8 pb-10 pt-4">
           <div className="space-y-4">
             <div className="px-5 flex items-center justify-between">
               <div className="flex items-center space-x-2">
@@ -2506,7 +2645,7 @@ function MiniappPage() {
     })();
 
     return (
-      <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
+      <div className="h-full bg-[#F2F2F7] flex flex-col">
       <div className="sticky top-0 z-30 bg-[#F2F2F7]/80 backdrop-blur-xl border-b border-gray-300/50 px-4 py-3 flex items-center justify-between">
         <button
           onClick={() => setView("HOME")}
@@ -2597,7 +2736,7 @@ function MiniappPage() {
   };
 
   const renderAbout = () => (
-    <div className="min-h-screen bg-[#F2F2F7] flex flex-col pb-safe">
+    <div className="h-full bg-[#F2F2F7] flex flex-col pb-safe">
       <div className="sticky top-0 z-30 bg-[#F2F2F7]/80 backdrop-blur-xl border-b border-gray-300/50 px-4 py-3 flex items-center justify-between">
         <button
           onClick={() => setView("SETTINGS")}
@@ -2723,7 +2862,7 @@ function MiniappPage() {
   );
 
   const renderSettings = () => (
-    <div className="min-h-screen bg-ios-bg pb-safe relative">
+    <div className="h-full bg-ios-bg pb-safe relative flex flex-col">
       <div className="sticky top-0 bg-ios-bg/90 backdrop-blur-md z-20 px-4 py-3 border-b border-gray-200 flex items-center">
         <button
           onClick={() => setView("HOME")}
@@ -2734,7 +2873,7 @@ function MiniappPage() {
         </button>
       </div>
 
-      <div className="px-5 py-6">
+      <div className="flex-1 overflow-y-auto px-5 py-6">
         <h2 className="text-3xl font-bold text-gray-900 mb-6">Настройки</h2>
 
         <div className="bg-white rounded-2xl shadow-card overflow-hidden mb-6">
@@ -2810,7 +2949,7 @@ function MiniappPage() {
   );
 
   const dashboardView = (
-    <div className="bg-ios-bg min-h-screen text-gray-900 font-sans mx-auto max-w-md shadow-2xl overflow-hidden relative selection:bg-blue-100">
+    <div className="bg-ios-bg h-screen text-gray-900 font-sans mx-auto max-w-md shadow-2xl overflow-hidden relative selection:bg-blue-100">
       {view === "HOME" && renderHome()}
       {view === "PROMOS" && renderPromos()}
       {view === "INVITE" && renderInvite()}

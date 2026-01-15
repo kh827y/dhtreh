@@ -140,9 +140,17 @@ export default function AnalyticsReferralsPage() {
   const [leaderboardHasMore, setLeaderboardHasMore] = React.useState(true);
   const [canConfigure, setCanConfigure] = React.useState(true);
   const leaderboardOffsetRef = React.useRef(0);
+  const leaderboardLoadingRef = React.useRef(false);
+  const leaderboardHasMoreRef = React.useRef(true);
   const router = useRouter();
 
   React.useEffect(() => setMounted(true), []);
+  React.useEffect(() => {
+    leaderboardLoadingRef.current = leaderboardLoading;
+  }, [leaderboardLoading]);
+  React.useEffect(() => {
+    leaderboardHasMoreRef.current = leaderboardHasMore;
+  }, [leaderboardHasMore]);
 
   React.useEffect(() => {
     let active = true;
@@ -198,9 +206,10 @@ export default function AnalyticsReferralsPage() {
 
   const loadLeaderboardPage = React.useCallback(
     async (reset = false) => {
-      if (leaderboardLoading) return;
-      if (!reset && !leaderboardHasMore) return;
+      if (leaderboardLoadingRef.current) return;
+      if (!reset && !leaderboardHasMoreRef.current) return;
       const offset = reset ? 0 : leaderboardOffsetRef.current;
+      leaderboardLoadingRef.current = true;
       setLeaderboardLoading(true);
       setLeaderboardError("");
       try {
@@ -215,19 +224,24 @@ export default function AnalyticsReferralsPage() {
         const items = Array.isArray(json?.items) ? json.items : [];
         leaderboardOffsetRef.current = offset + items.length;
         setLeaderboardItems((prev) => (reset ? items : [...prev, ...items]));
-        setLeaderboardHasMore(items.length === LEADERBOARD_PAGE_SIZE);
+        const hasMore = items.length === LEADERBOARD_PAGE_SIZE;
+        leaderboardHasMoreRef.current = hasMore;
+        setLeaderboardHasMore(hasMore);
       } catch (err: any) {
         setLeaderboardError(normalizeErrorMessage(err, "Не удалось загрузить полный отчёт"));
       } finally {
+        leaderboardLoadingRef.current = false;
         setLeaderboardLoading(false);
       }
     },
-    [leaderboardHasMore, leaderboardLoading, period],
+    [period],
   );
 
   React.useEffect(() => {
     if (!isModalOpen) return;
     leaderboardOffsetRef.current = 0;
+    leaderboardLoadingRef.current = false;
+    leaderboardHasMoreRef.current = true;
     setLeaderboardItems([]);
     setLeaderboardHasMore(true);
     setLeaderboardError("");
@@ -237,12 +251,12 @@ export default function AnalyticsReferralsPage() {
   const handleLeaderboardScroll = React.useCallback(
     (event: React.UIEvent<HTMLDivElement>) => {
       const target = event.currentTarget;
-      if (leaderboardLoading || !leaderboardHasMore) return;
+      if (leaderboardLoadingRef.current || !leaderboardHasMoreRef.current) return;
       if (target.scrollHeight - target.scrollTop - target.clientHeight < 120) {
         loadLeaderboardPage();
       }
     },
-    [leaderboardHasMore, leaderboardLoading, loadLeaderboardPage],
+    [loadLeaderboardPage],
   );
 
   const timeline = React.useMemo(

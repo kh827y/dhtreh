@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Post,
   Put,
@@ -27,6 +28,7 @@ import { PortalGuard } from '../portal-auth/portal.guard';
 import {
   assertPortalPermissions,
   hasPortalPermission,
+  PortalPermissionsHandled,
 } from '../portal-auth/portal-permissions.util';
 import { MerchantsService } from '../merchants/merchants.service';
 import {
@@ -882,6 +884,7 @@ export class PortalController {
   }
 
   @Get('me')
+  @PortalPermissionsHandled()
   @ApiOkResponse({
     schema: {
       type: 'object',
@@ -1071,6 +1074,7 @@ export class PortalController {
       accrualsBlocked?: boolean;
       redemptionsBlocked?: boolean;
       levelId?: string | null;
+      levelExpireDays?: number | null;
     },
   ) {
     return this.customersService.create(this.getMerchantId(req), body || {});
@@ -1095,6 +1099,7 @@ export class PortalController {
       accrualsBlocked?: boolean;
       redemptionsBlocked?: boolean;
       levelId?: string | null;
+      levelExpireDays?: number | null;
     },
   ) {
     return this.customersService.update(
@@ -1161,6 +1166,15 @@ export class PortalController {
         outletId: body?.outletId,
         comment: body?.comment,
       },
+    );
+  }
+
+  @Post('customers/:customerId/erase')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  eraseCustomer(@Req() req: any, @Param('customerId') customerId: string) {
+    return this.customersService.erasePersonalData(
+      this.getMerchantId(req),
+      String(customerId || ''),
     );
   }
 
@@ -2049,6 +2063,7 @@ export class PortalController {
   }
 
   @Post('integrations/rest-api/issue')
+  @Header('Cache-Control', 'no-store')
   @ApiOkResponse({
     schema: {
       type: 'object',
@@ -2255,6 +2270,7 @@ export class PortalController {
 
   // Settings
   @Get('settings')
+  @PortalPermissionsHandled()
   @ApiOkResponse({ type: MerchantSettingsRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   getSettings(@Req() req: any) {
@@ -2267,6 +2283,7 @@ export class PortalController {
   }
 
   @Put('settings')
+  @PortalPermissionsHandled()
   @ApiOkResponse({ type: MerchantSettingsRespDto })
   @ApiBadRequestResponse({ type: ErrorDto })
   async updateSettings(
@@ -2278,7 +2295,7 @@ export class PortalController {
       where: { merchantId: id },
     });
     this.assertSettingsUpdateAccess(req, current, dto);
-    return this.service.updateSettings(
+    const updated = await this.service.updateSettings(
       id,
       dto.earnBps,
       dto.redeemLimitBps,
@@ -2293,6 +2310,10 @@ export class PortalController {
       dto.requireJwtForQuote,
       dto.rulesJson,
       dto,
+    );
+    return this.filterSettingsByPermissions(
+      req,
+      this.maskSettingsSecrets(req, updated),
     );
   }
 

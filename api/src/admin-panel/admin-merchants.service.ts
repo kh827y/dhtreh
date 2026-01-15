@@ -11,6 +11,7 @@ import {
   type SubscriptionState,
   FULL_PLAN_ID,
 } from '../subscription/subscription.service';
+import { createAccessGroupsFromPresets } from '../access-group-presets';
 
 interface MerchantFilters {
   search?: string;
@@ -155,7 +156,7 @@ export class AdminMerchantsService {
       subscription: this.normalizeSubscription(merchant.subscription),
       settings: {
         qrTtlSec: settings.qrTtlSec,
-        telegramBotToken: settings.telegramBotToken ?? null,
+        telegramBotToken: null,
         telegramBotUsername: settings.telegramBotUsername ?? null,
       },
     };
@@ -318,6 +319,7 @@ export class AdminMerchantsService {
           isOwner: true,
         },
       });
+      await createAccessGroupsFromPresets(tx, merchant.id);
 
       return this.getMerchant(merchant.id);
     });
@@ -421,7 +423,7 @@ export class AdminMerchantsService {
 
     return {
       qrTtlSec: settings.qrTtlSec,
-      telegramBotToken: settings.telegramBotToken ?? null,
+      telegramBotToken: null,
       telegramBotUsername: settings.telegramBotUsername ?? null,
     };
   }

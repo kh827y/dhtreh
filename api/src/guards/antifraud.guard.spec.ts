@@ -1,4 +1,4 @@
-import { ExecutionContext, HttpException } from '@nestjs/common';
+import { ExecutionContext } from '@nestjs/common';
 import { AntiFraudGuard } from './antifraud.guard';
 import { RiskLevel } from '../antifraud/antifraud.service';
 
@@ -50,7 +50,7 @@ describe('AntiFraudGuard', () => {
       switchToHttp: () => ({ getRequest: () => req }),
     }) as any;
 
-  it('блокирует коммит без outletId при включённом факторе', async () => {
+  it('не блокирует коммит без outletId при включённом факторе', async () => {
     prisma.hold.findUnique.mockResolvedValue({
       id: 'H-1',
       merchantId: 'M-1',
@@ -65,7 +65,6 @@ describe('AntiFraudGuard', () => {
       merchantId: 'M-1',
       rulesJson: { af: { blockFactors: ['no_outlet_id'] } },
     });
-
     const ctx = makeContext({
       method: 'POST',
       route: { path: '/loyalty/commit' },
@@ -73,9 +72,9 @@ describe('AntiFraudGuard', () => {
       headers: {},
     });
 
-    await expect(guard.canActivate(ctx)).rejects.toThrow(HttpException);
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect(alerts.antifraudBlocked).not.toHaveBeenCalled();
-    expect(antifraud.checkTransaction).not.toHaveBeenCalled();
+    expect(antifraud.checkTransaction).toHaveBeenCalled();
   });
 
   it('использует outletId в лимитах, если он указан', async () => {

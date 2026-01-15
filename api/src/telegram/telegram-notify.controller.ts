@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Post, UseGuards, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TelegramNotifyService } from './telegram-notify.service';
 import { AdminGuard } from '../admin.guard';
@@ -20,13 +20,11 @@ export class TelegramNotifyController {
     const expected = (
       this.config.get<string>('TELEGRAM_NOTIFY_WEBHOOK_SECRET') || ''
     ).trim();
-    if (!expected) {
-      throw new ServiceUnavailableException('Webhook secret is not configured');
-    }
-    if (!secret || secret.trim() !== expected) {
-      throw new UnauthorizedException('Invalid webhook secret');
-    }
-    await this.notify.processUpdate(update);
+    if (!expected) return { ok: true };
+    if (!secret || secret.trim() !== expected) return { ok: true };
+    try {
+      await this.notify.processUpdate(update);
+    } catch {}
     return { ok: true };
   }
 

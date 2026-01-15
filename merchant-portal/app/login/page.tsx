@@ -1,6 +1,6 @@
 "use client";
 import React, { Suspense } from "react";
-import { ArrowRight, Eye, EyeOff, KeyRound, Loader2, Lock, Mail } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, KeyRound, Loader2, Lock, User } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { normalizeErrorMessage } from "lib/portal-errors";
 
@@ -101,7 +101,7 @@ function LoginForm() {
           throw new Error(
             message && message.length < 200
               ? message
-              : "Не удалось войти. Проверьте email и пароль.",
+              : "Не удалось войти. Проверьте логин и пароль.",
           );
         }
 
@@ -141,14 +141,14 @@ function LoginForm() {
           >
             <div className="space-y-1.5">
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                Email
+                Логин
               </label>
               <div className="relative group">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-gray-400 group-focus-within:text-purple-500 transition-colors" />
+                  <User className="h-5 w-5 text-gray-400 group-focus-within:text-purple-500 transition-colors" />
                 </div>
                 <input
-                  type="email"
+                  type="text"
                   required
                   value={email}
                   onChange={(e) => {
@@ -156,8 +156,8 @@ function LoginForm() {
                     setMsg("");
                   }}
                   className="block w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                  placeholder="name@company.com"
-                  autoComplete="email"
+                  placeholder="ваш логин"
+                  autoComplete="username"
                 />
               </div>
             </div>
@@ -183,7 +183,7 @@ function LoginForm() {
                   />
                 </div>
                 <p className="text-[11px] text-gray-500">
-                  Введите ID мерчанта, если такой email встречается у нескольких.
+                  Введите ID мерчанта, если такой логин встречается у нескольких.
                 </p>
               </div>
             )}

@@ -33,8 +33,8 @@ export class CommunicationsDispatcherWorker
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') {
-      this.logger.log('Communications worker disabled (WORKERS_ENABLED=0)');
+    if (process.env.WORKERS_ENABLED !== '1') {
+      this.logger.log('Communications worker disabled (WORKERS_ENABLED!=1)');
       return;
     }
     const intervalMs = Number(process.env.COMM_WORKER_INTERVAL_MS || '15000');
@@ -145,6 +145,33 @@ export class CommunicationsDispatcherWorker
 
     const payload = this.asRecord(task.payload);
     const text = String(payload.text || '').trim();
+    const payloadEvent = String(payload.event || '').trim();
+    if (
+      task.promotionId &&
+      (payloadEvent === 'promotion.start' ||
+        payloadEvent === 'promotion.reminder')
+    ) {
+      const hasPush = await this.prisma.communicationTask.findFirst({
+        where: {
+          merchantId: task.merchantId,
+          promotionId: task.promotionId,
+          channel: CommunicationChannel.PUSH,
+          archivedAt: null,
+          payload: { path: ['event'], equals: payloadEvent },
+        },
+        select: { id: true },
+      });
+      if (hasPush) {
+        await this.finishTask(task.id, {
+          status: 'COMPLETED',
+          total: 0,
+          sent: 0,
+          failed: 0,
+          error: 'skipped: handled by push channel',
+        });
+        return;
+      }
+    }
     if (!text) {
       await this.finishTask(task.id, {
         status: 'FAILED',
@@ -471,6 +498,7 @@ export class CommunicationsDispatcherWorker
     const customers = await this.prisma.customer.findMany({
       where: {
         merchantId,
+        erasedAt: null,
         tgId: { not: null },
         consents: { some: { merchantId } },
         ...(Array.isArray(customerIds) ? { id: { in: customerIds } } : {}),

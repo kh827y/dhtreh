@@ -1,10 +1,11 @@
 export type LoyaltyApiOptions = { baseUrl: string; fetch?: typeof fetch };
 export type TeleauthResponse = {
   ok: boolean;
-  customerId: string;
-  merchantCustomerId?: string;
+  customerId: string | null;
+  merchantCustomerId?: string | null;
   hasPhone: boolean;
   onboarded: boolean;
+  registered?: boolean;
 };
 
 export class LoyaltyApi {
@@ -64,10 +65,12 @@ export class LoyaltyApi {
     return this.http(`/loyalty/transactions?${q.toString()}`);
   }
 
-  teleauth(merchantId: string, initData: string) {
-    return this.http<TeleauthResponse>('/loyalty/teleauth', { method: 'POST', body: JSON.stringify({ merchantId, initData }) }).then((res) => ({
+  teleauth(merchantId: string, initData: string, opts?: { create?: boolean }) {
+    const payload: Record<string, unknown> = { merchantId, initData };
+    if (opts && typeof opts.create === 'boolean') payload.create = opts.create;
+    return this.http<TeleauthResponse>('/loyalty/teleauth', { method: 'POST', body: JSON.stringify(payload) }).then((res) => ({
       ...res,
-      merchantCustomerId: res.merchantCustomerId ?? res.customerId,
+      merchantCustomerId: res.merchantCustomerId ?? res.customerId ?? null,
     }));
   }
 

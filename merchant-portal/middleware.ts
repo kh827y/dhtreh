@@ -8,6 +8,7 @@ export function middleware(req: NextRequest) {
     /^\/api\/session\/refresh(\/.*)?$/,
     /^\/_next\//,
     /^\/favicon\.ico$/,
+    /^\/favicon\.svg$/,
     /^\/public\//,
   ];
   const { pathname } = req.nextUrl;
@@ -53,6 +54,6 @@ export function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next|favicon.ico|public).*)',
+    '/((?!_next|favicon.ico|favicon.svg|public).*)',
   ],
 };

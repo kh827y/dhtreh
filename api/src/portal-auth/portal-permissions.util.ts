@@ -1,10 +1,14 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, SetMetadata } from '@nestjs/common';
 import { PromotionRewardType } from '@prisma/client';
 
 type PortalPermissionState = {
   allowAll?: boolean;
   resources?: Map<string, Set<string>> | Record<string, any>;
 };
+
+export const PORTAL_PERMISSIONS_HANDLED_KEY = 'portal_permissions_handled';
+export const PortalPermissionsHandled = () =>
+  SetMetadata(PORTAL_PERMISSIONS_HANDLED_KEY, true);
 
 const EDIT_ACTIONS = new Set(['create', 'update', 'delete', 'manage', '*']);
 

@@ -17,6 +17,11 @@ export default function WebhooksDocPage() {
         <li><code>X-Signature-Key-Id</code> — идентификатор ключа (если задан);</li>
         <li><code>X-Event-Id</code> — ID события в outbox.</li>
       </ul>
+      <h3>Доставка</h3>
+      <ul>
+        <li>Webhooks доставляются как минимум один раз. При таймаутах/5xx/429 возможны повторы — дедупликация по <code>X-Event-Id</code>.</li>
+        <li>Если webhook не настроен, события считаются пропущенными и не доставляются ретроспективно.</li>
+      </ul>
       <h3>Проверка подписи</h3>
       <ol>
         <li>Извлеките <code>ts</code> и <code>sig</code> из заголовка.</li>

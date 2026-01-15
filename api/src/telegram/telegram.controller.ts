@@ -43,7 +43,16 @@ export class TelegramController {
       // Silent acknowledge to avoid retries storm, but do not process
       return { ok: true };
     }
-    await this.bots.processWebhook(merchantId, update);
+    try {
+      await this.bots.processWebhook(merchantId, update);
+    } catch (error) {
+      // Do not propagate to Telegram to avoid retries storm.
+      // We intentionally drop the update on failure (best-effort processing).
+      try {
+        this.metrics.inc('telegram_updates_failed_total');
+      } catch {}
+      return { ok: true };
+    }
     try {
       this.metrics.inc('telegram_updates_total');
     } catch {}

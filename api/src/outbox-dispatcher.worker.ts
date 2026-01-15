@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { MetricsService } from './metrics.service';
-import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
 import { isIP } from 'net';
 
 type OutboxRow = {
@@ -43,8 +42,8 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') {
-      this.logger.log('Workers disabled (WORKERS_ENABLED=0)');
+    if (process.env.WORKERS_ENABLED !== '1') {
+      this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
     const intervalMs = Number(process.env.OUTBOX_WORKER_INTERVAL_MS || '15000');
@@ -452,15 +451,6 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private async tick() {
     if (this.running) return;
     this.running = true;
-    // лидер-лок между инстансами
-    const lock = await pgTryAdvisoryLock(
-      this.prisma,
-      'worker:outbox_dispatcher',
-    );
-    if (!lock.ok) {
-      this.running = false;
-      return;
-    }
     try {
       this.lastTickAt = new Date();
       try {
@@ -581,7 +571,6 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       } catch {}
     } finally {
       this.running = false;
-      await pgAdvisoryUnlock(this.prisma, lock.key);
     }
   }
 

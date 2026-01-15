@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma.service';
 import { TelegramStaffNotificationsService } from './staff-notifications.service';
 import { DEFAULT_TIMEZONE_CODE, findTimezone } from '../timezone/russia-timezones';
 import { STAFF_DIGEST_LOCAL_HOUR } from './staff-digest.constants';
+import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../pg-lock.util';
 
 const normalizeRulesJson = (raw: unknown): Record<string, any> => {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
@@ -50,7 +51,9 @@ export class TelegramStaffDigestWorker {
 
   @Cron('*/15 * * * *')
   async handleDailyDigest() {
-    if (process.env.WORKERS_ENABLED === '0') return;
+    if (process.env.WORKERS_ENABLED !== '1') return;
+    const lock = await pgTryAdvisoryLock(this.prisma, 'cron:telegram_staff_digest');
+    if (!lock.ok) return;
     try {
       const merchants = await this.prisma.telegramStaffSubscriber.findMany({
         where: { isActive: true },
@@ -120,6 +123,8 @@ export class TelegramStaffDigestWorker {
       }
     } catch (error) {
       this.logger.error(`handleDailyDigest failed: ${error}`);
+    } finally {
+      await pgAdvisoryUnlock(this.prisma, lock.key);
     }
   }
 }

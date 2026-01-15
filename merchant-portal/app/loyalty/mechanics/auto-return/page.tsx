@@ -637,5 +637,9 @@ function AutoReturnPageInner() {
 }
 
 export default function AutoReturnPage() {
-  return <AutoReturnPageInner />;
+  return (
+    <React.Suspense fallback={<div>Загрузка…</div>}>
+      <AutoReturnPageInner />
+    </React.Suspense>
+  );
 }

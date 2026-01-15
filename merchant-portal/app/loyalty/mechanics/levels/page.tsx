@@ -257,7 +257,7 @@ export default function LevelsPage() {
     if (periodSaving) return;
     const raw = Number(periodInput);
     if (!Number.isFinite(raw) || raw <= 0) {
-      setPeriodError("Количество дней должно быть положительным");
+      setPeriodError("Период расчета уровня должен быть положительным");
       return;
     }
     const nextPeriod = Math.floor(raw);

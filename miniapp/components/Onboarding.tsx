@@ -74,7 +74,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-ios-bg flex flex-col relative pb-safe">
+    <div className="h-screen bg-ios-bg flex flex-col relative pb-safe overflow-hidden">
       <div className="flex-1 overflow-y-auto px-6 pt-12 pb-40">
         <div className="mb-8 text-center animate-in slide-in-from-bottom-4 fade-in duration-500">
           <div className="w-20 h-20 bg-blue-600 rounded-3xl mx-auto flex items-center justify-center shadow-xl shadow-blue-200 mb-6 rotate-3">

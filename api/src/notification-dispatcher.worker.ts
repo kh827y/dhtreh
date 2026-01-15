@@ -8,7 +8,6 @@ import { PrismaService } from './prisma.service';
 import { MetricsService } from './metrics.service';
 import { PushService } from './notifications/push/push.service';
 import { EmailService } from './notifications/email/email.service';
-import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
 import { isSystemAllAudience } from './customer-audiences/audience.utils';
 import {
   TelegramStaffNotificationsService,
@@ -74,12 +73,12 @@ export class NotificationDispatcherWorker
   }
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') {
-      this.logger.log('Workers disabled (WORKERS_ENABLED=0)');
+    if (process.env.WORKERS_ENABLED !== '1') {
+      this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
     this.loadRpsConfig();
-    const intervalMs = Number(process.env.NOTIFY_WORKER_INTERVAL_MS || '15000');
+    const intervalMs = Number(process.env.NOTIFY_WORKER_INTERVAL_MS || '3000');
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     try {
       if (this.timer && typeof this.timer.unref === 'function')
@@ -211,13 +210,13 @@ export class NotificationDispatcherWorker
             });
             if (segment && isSystemAllAudience(segment)) {
               const rows = await this.prisma.customerStats.findMany({
-                where: { merchantId },
+                where: { merchantId, customer: { erasedAt: null } },
                 select: { customerId: true },
               });
               customerIds = rows.map((r) => r.customerId);
             } else {
               const rows = await this.prisma.segmentCustomer.findMany({
-                where: { segmentId },
+                where: { segmentId, customer: { erasedAt: null } },
                 select: { customerId: true },
               });
               customerIds = rows.map((r) => r.customerId);
@@ -297,7 +296,11 @@ export class NotificationDispatcherWorker
               if (emailCustomerIds.length) {
                 // Send basic campaign email one-by-one to avoid template mismatch
                 const customers = await this.prisma.customer.findMany({
-                  where: { id: { in: emailCustomerIds }, email: { not: null } },
+                  where: {
+                    id: { in: emailCustomerIds },
+                    email: { not: null },
+                    erasedAt: null,
+                  },
                   select: { id: true, email: true, name: true },
                 });
                 const merchant = await this.prisma.merchant.findUnique({
@@ -481,7 +484,7 @@ export class NotificationDispatcherWorker
         }
 
         const customer = await this.prisma.customer.findFirst({
-          where: { id: customerId, merchantId },
+          where: { id: customerId, merchantId, erasedAt: null },
           select: { name: true },
         });
         if (!customer) {
@@ -663,14 +666,6 @@ export class NotificationDispatcherWorker
   private async tick() {
     if (this.running) return;
     this.running = true;
-    const lock = await pgTryAdvisoryLock(
-      this.prisma,
-      'worker:notification_dispatcher',
-    );
-    if (!lock.ok) {
-      this.running = false;
-      return;
-    }
     try {
       this.lastTickAt = new Date();
       try {
@@ -714,7 +709,6 @@ export class NotificationDispatcherWorker
       }
     } finally {
       this.running = false;
-      await pgAdvisoryUnlock(this.prisma, lock.key);
     }
   }
 }

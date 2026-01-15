@@ -4,6 +4,8 @@ import {
   BadRequestException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { lookup } from 'dns/promises';
+import { isIP } from 'net';
 import { hashPassword, verifyPassword } from '../password.util';
 import { PrismaService } from '../prisma.service';
 import {
@@ -27,6 +29,7 @@ import {
   findTimezone,
   serializeTimezone,
 } from '../timezone/russia-timezones';
+import { createAccessGroupsFromPresets } from '../access-group-presets';
 // Lazy Ajv import to avoid TS2307 when dependency isn't installed yet
 const __AjvLib: any = (() => {
   try {
@@ -171,6 +174,30 @@ export class MerchantsService {
     return {
       login: m.cashierLogin || null,
     } as any;
+  }
+  async setCashierCredentials(merchantId: string, login: string) {
+    const m = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { id: true },
+    });
+    if (!m) throw new NotFoundException('Merchant not found');
+    const normalized = String(login || '').trim().toLowerCase();
+    if (!normalized) {
+      throw new BadRequestException('cashier login required');
+    }
+    const clash = await this.prisma.merchant.findFirst({
+      where: { cashierLogin: normalized, id: { not: merchantId } },
+      select: { id: true },
+    });
+    if (clash) {
+      throw new BadRequestException('cashier login already used');
+    }
+    const updated = await this.prisma.merchant.update({
+      where: { id: merchantId },
+      data: { cashierLogin: normalized },
+      select: { cashierLogin: true },
+    });
+    return { login: updated.cashierLogin } as any;
   }
   async rotateCashierCredentials(
     merchantId: string,
@@ -478,6 +505,7 @@ export class MerchantsService {
     pinCode: string,
     rememberPin?: boolean,
     context?: { ip?: string | null; userAgent?: string | null },
+    deviceSessionId?: string | null,
   ) {
     const mid = String(merchantId || '').trim();
     if (!mid) throw new BadRequestException('merchantId required');
@@ -488,11 +516,19 @@ export class MerchantsService {
     const { access, staff } = await this.resolveActiveAccessByPin(
       mid,
       normalizedPin,
+      deviceSessionId,
     );
     if (!access.outletId)
       throw new BadRequestException('Outlet for PIN access not found');
 
-    return this.createCashierSessionRecord(mid, staff, access, rememberPin, context);
+    return this.createCashierSessionRecord(
+      mid,
+      staff,
+      access,
+      rememberPin,
+      context,
+      deviceSessionId,
+    );
   }
   private ajv: {
     validate: (schema: any, data: any) => boolean;
@@ -561,6 +597,67 @@ export class MerchantsService {
     },
     required: ['enabled', 'threshold'],
   } as const;
+
+  private isPrivateAddress(hostname: string): boolean {
+    const host = hostname.toLowerCase();
+    if (host === 'localhost' || host.endsWith('.local')) return true;
+    const ipType = isIP(host);
+    if (ipType === 4) {
+      const parts = host.split('.').map((v) => Number(v));
+      if (parts.length !== 4 || parts.some((v) => Number.isNaN(v)))
+        return false;
+      const [a, b] = parts;
+      if (a === 10) return true;
+      if (a === 127) return true;
+      if (a === 0) return true;
+      if (a === 169 && b === 254) return true;
+      if (a === 192 && b === 168) return true;
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      return false;
+    }
+    if (ipType === 6) {
+      if (host === '::1') return true;
+      if (host.startsWith('fe80:')) return true; // link-local
+      if (host.startsWith('fc') || host.startsWith('fd')) return true; // unique local
+      return false;
+    }
+    return false;
+  }
+
+  private async validateWebhookUrl(url: string): Promise<string | null> {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return 'Invalid webhook URL';
+    }
+    if (parsed.protocol !== 'https:') {
+      return 'Webhook URL must use https';
+    }
+    const host = parsed.hostname?.trim().toLowerCase();
+    if (!host) {
+      return 'Invalid webhook URL';
+    }
+    if (this.isPrivateAddress(host)) {
+      return 'Webhook URL points to a private address';
+    }
+    if (isIP(host)) {
+      return null;
+    }
+    let records: Array<{ address: string; family: number }> = [];
+    try {
+      records = await lookup(host, { all: true, verbatim: true });
+    } catch {
+      return 'Webhook URL host is not resolvable';
+    }
+    if (!records.length) {
+      return 'Webhook URL host is not resolvable';
+    }
+    if (records.some((record) => this.isPrivateAddress(record.address))) {
+      return 'Webhook URL points to a private address';
+    }
+    return null;
+  }
 
   async getSettings(merchantId: string) {
     const merchant = await this.prisma.merchant.findUnique({
@@ -702,9 +799,12 @@ export class MerchantsService {
     rulesJson?: any,
     extras?: Partial<UpdateMerchantSettingsDto>,
   ) {
-    const normalizedRulesJson = this.normalizeRulesJson(rulesJson);
+    let normalizedRulesJson = this.normalizeRulesJson(rulesJson);
+    const rulesProvided = rulesJson !== undefined;
     // JSON Schema валидация правил (если переданы) — выполняем до любых DB операций
     this.validateRules(normalizedRulesJson);
+    const normalizedWebhookUrl =
+      typeof webhookUrl === 'string' ? webhookUrl.trim() : webhookUrl;
 
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: merchantId },
@@ -713,10 +813,89 @@ export class MerchantsService {
     if (!merchant) {
       throw new NotFoundException('Merchant not found');
     }
+    if (typeof normalizedWebhookUrl === 'string' && normalizedWebhookUrl) {
+      const webhookError = await this.validateWebhookUrl(normalizedWebhookUrl);
+      if (webhookError) {
+        throw new BadRequestException(webhookError);
+      }
+    }
     const currentSettings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
       select: { pointsTtlDays: true, rulesJson: true },
     });
+    if (
+      rulesProvided &&
+      normalizedRulesJson &&
+      typeof normalizedRulesJson === 'object' &&
+      !Array.isArray(normalizedRulesJson)
+    ) {
+      const currentRules =
+        currentSettings?.rulesJson &&
+        typeof currentSettings.rulesJson === 'object' &&
+        !Array.isArray(currentSettings.rulesJson)
+          ? (currentSettings.rulesJson as Record<string, any>)
+          : null;
+      const currentRegistration =
+        currentRules && typeof currentRules.registration === 'object'
+          ? (currentRules.registration as Record<string, any>)
+          : null;
+      const nextRegistration =
+        (normalizedRulesJson as Record<string, any>).registration &&
+        typeof (normalizedRulesJson as Record<string, any>).registration ===
+          'object'
+          ? ((normalizedRulesJson as Record<string, any>)
+              .registration as Record<string, any>)
+          : null;
+      if (nextRegistration) {
+        const prevEnabled = Object.prototype.hasOwnProperty.call(
+          currentRegistration || {},
+          'enabled',
+        )
+          ? Boolean(currentRegistration?.enabled)
+          : true;
+        const nextEnabled = Object.prototype.hasOwnProperty.call(
+          nextRegistration,
+          'enabled',
+        )
+          ? Boolean(nextRegistration.enabled)
+          : true;
+        const prevPointsRaw =
+          currentRegistration && Object.prototype.hasOwnProperty.call(currentRegistration, 'points')
+            ? Number(currentRegistration.points)
+            : 0;
+        const prevPoints = Number.isFinite(prevPointsRaw)
+          ? Math.max(0, Math.floor(prevPointsRaw))
+          : 0;
+        const nextPointsRaw = Object.prototype.hasOwnProperty.call(nextRegistration, 'points')
+          ? Number(nextRegistration.points)
+          : 0;
+        const nextPoints = Number.isFinite(nextPointsRaw)
+          ? Math.max(0, Math.floor(nextPointsRaw))
+          : 0;
+        const prevActive = prevEnabled && prevPoints > 0;
+        const nextActive = nextEnabled && nextPoints > 0;
+        const hasEnabledAt =
+          Object.prototype.hasOwnProperty.call(nextRegistration, 'enabledAt') &&
+          nextRegistration.enabledAt != null &&
+          String(nextRegistration.enabledAt).trim() !== '';
+        const prevHasEnabledAt =
+          Object.prototype.hasOwnProperty.call(
+            currentRegistration || {},
+            'enabledAt',
+          ) &&
+          currentRegistration?.enabledAt != null &&
+          String(currentRegistration.enabledAt).trim() !== '';
+        if (nextActive && !hasEnabledAt && (!prevActive || !prevHasEnabledAt)) {
+          normalizedRulesJson = {
+            ...(normalizedRulesJson as Record<string, any>),
+            registration: {
+              ...nextRegistration,
+              enabledAt: new Date().toISOString(),
+            },
+          };
+        }
+      }
+    }
     const lotsEnabled = process.env.EARN_LOTS_FEATURE === '1';
     if (!lotsEnabled) {
       const ttlProvided =
@@ -729,7 +908,6 @@ export class MerchantsService {
           );
         }
       }
-      const rulesProvided = rulesJson !== undefined;
       if (rulesProvided) {
         const currentRules = this.normalizeRulesJson(
           currentSettings?.rulesJson ?? null,
@@ -750,7 +928,7 @@ export class MerchantsService {
 
     const updateData: Prisma.MerchantSettingsUpdateInput = {
       qrTtlSec: qrTtlSec ?? undefined,
-      webhookUrl,
+      webhookUrl: normalizedWebhookUrl,
       webhookSecret,
       webhookKeyId,
       webhookSecretNext: extras?.webhookSecretNext ?? undefined,
@@ -788,7 +966,7 @@ export class MerchantsService {
     const createData: Prisma.MerchantSettingsUncheckedCreateInput = {
       merchantId,
       qrTtlSec: qrTtlSec ?? 300,
-      webhookUrl: webhookUrl ?? null,
+      webhookUrl: normalizedWebhookUrl ?? null,
       webhookSecret: webhookSecret ?? null,
       webhookKeyId: webhookKeyId ?? null,
       webhookSecretNext: extras?.webhookSecretNext ?? null,
@@ -1362,6 +1540,7 @@ export class MerchantsService {
   private async resolveActiveAccessByPin(
     merchantId: string,
     pinCode: string,
+    deviceSessionId?: string | null,
   ): Promise<{
     access: {
       id: string;
@@ -1375,6 +1554,60 @@ export class MerchantsService {
     const normalizedPin = String(pinCode || '').trim();
     if (!normalizedPin)
       throw new BadRequestException('pinCode (4 digits) required');
+    const retryLimit = Math.max(
+      1,
+      Number(process.env.PIN_RETRY_LIMIT || '5'),
+    );
+    const retryWindowMs = Math.max(
+      60_000,
+      Number(process.env.PIN_RETRY_WINDOW_MS || '900000'),
+    );
+    const deviceSessionKey = deviceSessionId
+      ? String(deviceSessionId).trim()
+      : '';
+    let devicePinState: {
+      pinFailedCount: number;
+      pinFailedAt: Date | null;
+      pinLockedUntil: Date | null;
+    } | null = null;
+    if (deviceSessionKey) {
+      try {
+        devicePinState = await this.prisma.cashierDeviceSession.findUnique({
+          where: { id: deviceSessionKey },
+          select: {
+            pinFailedCount: true,
+            pinFailedAt: true,
+            pinLockedUntil: true,
+          },
+        });
+        if (
+          devicePinState?.pinLockedUntil &&
+          devicePinState.pinLockedUntil.getTime() > Date.now()
+        ) {
+          throw new UnauthorizedException(
+            'PIN временно заблокирован. Осталось попыток: 0',
+          );
+        }
+        if (
+          devicePinState?.pinLockedUntil &&
+          devicePinState.pinLockedUntil.getTime() <= Date.now()
+        ) {
+          await this.prisma.cashierDeviceSession.update({
+            where: { id: deviceSessionKey },
+            data: {
+              pinFailedCount: 0,
+              pinFailedAt: null,
+              pinLockedUntil: null,
+            },
+          });
+          devicePinState = {
+            pinFailedCount: 0,
+            pinFailedAt: null,
+            pinLockedUntil: null,
+          };
+        }
+      } catch {}
+    }
     const pinHash = this.hashPin(normalizedPin);
     let matches = await this.prisma.staffOutletAccess.findMany({
       where: {
@@ -1416,22 +1649,48 @@ export class MerchantsService {
         matches[0].pinCodeHash = pinHash;
       }
     }
-    if (!matches.length)
-      throw new NotFoundException('Staff access by PIN not found');
+    if (!matches.length) {
+      let remainingAttempts: number | null = null;
+      if (deviceSessionKey) {
+        const now = new Date();
+        const windowStart = devicePinState?.pinFailedAt ?? null;
+        const withinWindow =
+          windowStart &&
+          now.getTime() - windowStart.getTime() <= retryWindowMs;
+        const nextCount = withinWindow
+          ? (devicePinState?.pinFailedCount ?? 0) + 1
+          : 1;
+        const nextFirstFailedAt = withinWindow ? windowStart : now;
+        const lockedUntil =
+          nextCount >= retryLimit
+            ? new Date(now.getTime() + retryWindowMs)
+            : null;
+        remainingAttempts = Math.max(0, retryLimit - nextCount);
+        try {
+          await this.prisma.cashierDeviceSession.update({
+            where: { id: deviceSessionKey },
+            data: {
+              pinFailedCount: nextCount,
+              pinFailedAt: nextFirstFailedAt,
+              pinLockedUntil: lockedUntil,
+            },
+          });
+        } catch {}
+      }
+      const message =
+        remainingAttempts === null
+          ? 'Staff access by PIN not found'
+          : remainingAttempts === 0
+            ? 'Неверный PIN. Осталось попыток: 0. PIN временно заблокирован'
+            : `Неверный PIN. Осталось попыток: ${remainingAttempts}`;
+      throw new NotFoundException(message);
+    }
     if (matches.length > 1) {
       throw new BadRequestException(
         'PIN не уникален внутри мерчанта. Сгенерируйте новый PIN для сотрудников.',
       );
     }
     const access = matches[0];
-    const retryLimit = Math.max(
-      1,
-      Number(process.env.PIN_RETRY_LIMIT || '5'),
-    );
-    const retryWindowMs = Math.max(
-      60_000,
-      Number(process.env.PIN_RETRY_WINDOW_MS || '900000'),
-    );
     if (
       access.pinRetryCount >= retryLimit &&
       access.pinUpdatedAt &&
@@ -1450,6 +1709,24 @@ export class MerchantsService {
         where: { id: access.id },
         data: { pinRetryCount: 0, pinUpdatedAt: new Date() },
       });
+    }
+    if (
+      deviceSessionKey &&
+      devicePinState &&
+      (devicePinState.pinFailedCount ||
+        devicePinState.pinFailedAt ||
+        devicePinState.pinLockedUntil)
+    ) {
+      try {
+        await this.prisma.cashierDeviceSession.update({
+          where: { id: deviceSessionKey },
+          data: {
+            pinFailedCount: 0,
+            pinFailedAt: null,
+            pinLockedUntil: null,
+          },
+        });
+      } catch {}
     }
     return {
       access: {
@@ -1580,10 +1857,15 @@ export class MerchantsService {
     return { outletId, pinCode } as any;
   }
 
-  async getStaffAccessByPin(merchantId: string, pinCode: string) {
+  async getStaffAccessByPin(
+    merchantId: string,
+    pinCode: string,
+    deviceSessionId?: string | null,
+  ) {
     const { access, staff } = await this.resolveActiveAccessByPin(
       merchantId,
       pinCode,
+      deviceSessionId,
     );
     const accesses = await this.listStaffAccess(merchantId, staff.id);
     const matched =
@@ -1907,6 +2189,7 @@ export class MerchantsService {
     access: { id: string; outletId: string },
     rememberPin?: boolean,
     context?: { ip?: string | null; userAgent?: string | null },
+    deviceSessionId?: string | null,
     metadata?: Prisma.InputJsonValue,
   ) {
     const token = this.randomSessionToken();
@@ -1922,6 +2205,7 @@ export class MerchantsService {
           staffId: staff.id,
           outletId: access.outletId,
           pinAccessId: access.id,
+          deviceSessionId: deviceSessionId ?? null,
           startedAt: now,
           lastSeenAt: now,
           tokenHash: hash,
@@ -2549,7 +2833,7 @@ export class MerchantsService {
     const em = String(email || '')
       .trim()
       .toLowerCase();
-    if (!em) throw new BadRequestException('email required');
+    if (!em) throw new BadRequestException('login required');
     if (!password || String(password).length < 6)
       throw new BadRequestException('password too short');
     const parsedMaxOutlets =
@@ -2603,6 +2887,7 @@ export class MerchantsService {
         });
       } catch {}
     }
+    await createAccessGroupsFromPresets(this.prisma, m.id);
     return {
       id: m.id,
       name: m.name,

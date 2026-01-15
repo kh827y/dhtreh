@@ -8,6 +8,7 @@ import {
   Query,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Res,
   Req,
   UnauthorizedException,
@@ -130,12 +131,19 @@ export class LoyaltyController {
     return null;
   }
 
+  private shouldUseSecureCookies(): boolean {
+    const raw = (process.env.COOKIE_SECURE || '').trim().toLowerCase();
+    if (raw === '1' || raw === 'true') return true;
+    if (raw === '0' || raw === 'false') return false;
+    return process.env.NODE_ENV === 'production';
+  }
+
   private writeCashierSessionCookie(
     res: Response,
     token: string,
     maxAgeMs: number,
   ) {
-    const secure = process.env.NODE_ENV === 'production';
+    const secure = this.shouldUseSecureCookies();
     res.cookie('cashier_session', token, {
       httpOnly: true,
       secure,
@@ -171,7 +179,7 @@ export class LoyaltyController {
   }
 
   private clearCashierSessionCookie(res: Response) {
-    const secure = process.env.NODE_ENV === 'production';
+    const secure = this.shouldUseSecureCookies();
     res.cookie('cashier_session', '', {
       httpOnly: true,
       secure,
@@ -186,7 +194,7 @@ export class LoyaltyController {
     token: string,
     maxAgeMs: number,
   ) {
-    const secure = process.env.NODE_ENV === 'production';
+    const secure = this.shouldUseSecureCookies();
     res.cookie('cashier_device', token, {
       httpOnly: true,
       secure,
@@ -197,7 +205,7 @@ export class LoyaltyController {
   }
 
   private clearCashierDeviceCookie(res: Response) {
-    const secure = process.env.NODE_ENV === 'production';
+    const secure = this.shouldUseSecureCookies();
     res.cookie('cashier_device', '', {
       httpOnly: true,
       secure,
@@ -207,17 +215,60 @@ export class LoyaltyController {
     });
   }
 
+  private resolveCashierAllowedOrigins(): string[] {
+    const raw = (process.env.CORS_ORIGINS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (raw.length) return raw;
+    if (process.env.NODE_ENV === 'production') return [];
+    return [
+      'http://localhost:3001',
+      'http://127.0.0.1:3001',
+      'http://localhost:3002',
+      'http://127.0.0.1:3002',
+      'http://localhost:3003',
+      'http://127.0.0.1:3003',
+      'http://localhost:3004',
+      'http://127.0.0.1:3004',
+    ];
+  }
+
+  private assertCashierOrigin(req: Request) {
+    const originHeader =
+      typeof req?.headers?.origin === 'string' ? req.headers.origin : '';
+    const refererHeader =
+      typeof req?.headers?.referer === 'string' ? req.headers.referer : '';
+    if (!originHeader && !refererHeader) return;
+    let origin = originHeader;
+    if (!origin && refererHeader) {
+      try {
+        origin = new URL(refererHeader).origin;
+      } catch {
+        origin = '';
+      }
+    }
+    if (!origin) return;
+    let originHost = '';
+    try {
+      originHost = new URL(origin).host;
+    } catch {
+      originHost = '';
+    }
+    const requestHost = String(req.headers.host || '');
+    if (originHost && requestHost && originHost === requestHost) return;
+    const allowedOrigins = this.resolveCashierAllowedOrigins();
+    if (allowedOrigins.length && allowedOrigins.includes(origin)) return;
+    throw new ForbiddenException('Invalid origin');
+  }
+
   private resolveClientIp(req: Request): string | null {
-    const header = req.headers['x-forwarded-for'];
-    if (Array.isArray(header) && header.length) {
-      return header[0]?.split(',')?.[0]?.trim() || null;
-    }
-    if (typeof header === 'string' && header.trim()) {
-      return header.split(',')[0]?.trim() || null;
-    }
-    if (req.ip) return req.ip;
-    const remote = (req as any)?.socket?.remoteAddress;
-    return remote ? String(remote) : null;
+    const ip =
+      req.ip ||
+      req.ips?.[0] ||
+      (req as any)?.socket?.remoteAddress ||
+      (req as any)?.connection?.remoteAddress;
+    return ip ? String(ip) : null;
   }
 
   private normalizePhoneStrict(phone?: string): string {
@@ -1562,6 +1613,7 @@ export class LoyaltyController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
+    this.assertCashierOrigin(req);
     const token = this.readCookie(req, 'cashier_device');
     if (token) {
       await this.merchants.revokeCashierDeviceSessionByToken(token);
@@ -1592,6 +1644,7 @@ export class LoyaltyController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
+    this.assertCashierOrigin(req);
     const merchantLogin = String(body?.merchantLogin || '')
       .trim()
       .toLowerCase();
@@ -1620,7 +1673,11 @@ export class LoyaltyController {
       throw new UnauthorizedException('Device activated for another merchant');
     }
 
-    return this.merchants.getStaffAccessByPin(deviceSession.merchantId, pinCode);
+    return this.merchants.getStaffAccessByPin(
+      deviceSession.merchantId,
+      pinCode,
+      deviceSession.id,
+    );
   }
 
   @Post('cashier/session')
@@ -1648,6 +1705,7 @@ export class LoyaltyController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
+    this.assertCashierOrigin(req);
     const merchantLogin = String(body?.merchantLogin || '')
       .trim()
       .toLowerCase();
@@ -1685,6 +1743,7 @@ export class LoyaltyController {
         ip: this.resolveClientIp(req),
         userAgent: req.headers['user-agent'] || null,
       },
+      deviceSession.id,
     );
     const ttlMs = rememberPin
       ? 1000 * 60 * 60 * 24 * 180 // ~180 дней
@@ -1749,6 +1808,7 @@ export class LoyaltyController {
     @Req() req: any,
     @Body() dto: CashierCustomerResolveDto,
   ) {
+    this.assertCashierOrigin(req);
     const merchantId =
       typeof dto?.merchantId === 'string' ? dto.merchantId.trim() : '';
     const userToken =
@@ -1823,6 +1883,7 @@ export class LoyaltyController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
+    this.assertCashierOrigin(req);
     const token = this.readCookie(req, 'cashier_session');
     if (token) {
       await this.merchants.endCashierSessionByToken(token, 'logout');
@@ -2166,9 +2227,18 @@ export class LoyaltyController {
     try {
       const idemKey =
         (req.headers['idempotency-key'] as string | undefined) || undefined;
+      const expectedMerchantId =
+        typeof dto?.merchantId === 'string' ? dto.merchantId.trim() : '';
+      const commitOptsPayload: Record<string, any> = {};
+      if (dto.positions && Array.isArray(dto.positions)) {
+        commitOptsPayload.positions = dto.positions;
+      }
+      if (expectedMerchantId) {
+        commitOptsPayload.expectedMerchantId = expectedMerchantId;
+      }
       const commitOpts =
-        dto.positions && Array.isArray(dto.positions)
-          ? { positions: dto.positions }
+        Object.keys(commitOptsPayload).length > 0
+          ? commitOptsPayload
           : undefined;
       const merchantForIdem = merchantIdEff || undefined;
       const scope = 'loyalty/commit';
@@ -2317,9 +2387,12 @@ export class LoyaltyController {
 
   @Post('cancel')
   @ApiOkResponse({ type: OkDto })
-  async cancel(@Body('holdId') holdId: string, @Req() req: Request) {
+  async cancel(
+    @Body('holdId') holdId: string,
+    @Req() req: Request & { cashierSession?: { merchantId: string } },
+  ) {
     if (!holdId) throw new BadRequestException('holdId required');
-    return this.service.cancel(holdId);
+    return this.service.cancel(holdId, req.cashierSession?.merchantId);
   }
 
   @Get('balance/:merchantId/:customerId')
@@ -2339,6 +2412,11 @@ export class LoyaltyController {
   async publicSettings(@Param('merchantId') merchantId: string) {
     const { settings: s, share } =
       await this.buildReviewsShareSettings(merchantId);
+    const referralActive = await this.prisma.referralProgram.findFirst({
+      where: { merchantId, status: 'ACTIVE', isActive: true },
+      select: { id: true },
+    });
+    const referralEnabled = Boolean(referralActive);
     const rulesRaw =
       s?.rulesJson && typeof s.rulesJson === 'object' && !Array.isArray(s.rulesJson)
         ? (s.rulesJson as Record<string, any>)
@@ -2365,6 +2443,7 @@ export class LoyaltyController {
       miniappLogoUrl: (s as any)?.miniappLogoUrl ?? null,
       supportTelegram,
       reviewsEnabled,
+      referralEnabled,
       reviewsShare: share,
     } as any;
   }
@@ -2658,10 +2737,14 @@ export class LoyaltyController {
   // Telegram miniapp auth: принимает merchantId + initData, валидирует токеном бота мерчанта и возвращает customerId
   @Post('teleauth')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  async teleauth(@Body() body: { merchantId?: string; initData?: string }) {
+  async teleauth(
+    @Body()
+    body: { merchantId?: string; initData?: string; create?: boolean },
+  ) {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
     const initData = body?.initData || '';
+    const shouldCreate = body?.create !== false;
     if (!merchantId) {
       throw new BadRequestException('merchantId required');
     }
@@ -2729,6 +2812,15 @@ export class LoyaltyController {
     });
 
     if (!customer) {
+      if (!shouldCreate) {
+        return {
+          ok: true,
+          customerId: null,
+          registered: false,
+          hasPhone: false,
+          onboarded: false,
+        };
+      }
       customer = await this.prisma.customer.create({
         data: { merchantId, tgId },
       });
@@ -2741,7 +2833,7 @@ export class LoyaltyController {
     }
 
     const flags = await this.fetchCustomerProfileFlags(customer.id);
-    return { ok: true, customerId: customer.id, ...flags };
+    return { ok: true, customerId: customer.id, registered: true, ...flags };
   }
 
   @Get('profile')
@@ -2815,8 +2907,10 @@ export class LoyaltyController {
       );
     }
     let phoneNormalized: string | null = null;
+    let phoneDigits: string | null = null;
     if (phoneRaw) {
       phoneNormalized = this.normalizePhoneStrict(phoneRaw);
+      phoneDigits = phoneNormalized.replace(/\D/g, '');
     }
 
     // Customer теперь per-merchant модель, обновляем напрямую
@@ -2827,9 +2921,14 @@ export class LoyaltyController {
         let mergedCustomerId: string | null = null;
 
         if (phoneNormalized) {
-          const existingByPhone = await tx.customer.findFirst({
-            where: { merchantId, phone: phoneNormalized },
+          let existingByPhone = await tx.customer.findUnique({
+            where: { merchantId_phone: { merchantId, phone: phoneNormalized } },
           });
+          if (!existingByPhone && phoneDigits) {
+            existingByPhone = await tx.customer.findUnique({
+              where: { merchantId_phone: { merchantId, phone: phoneDigits } },
+            });
+          }
           if (existingByPhone && existingByPhone.id !== customer.id) {
             const currentTgId =
               typeof customer.tgId === 'string' ? customer.tgId : null;
@@ -3007,7 +3106,6 @@ export class LoyaltyController {
     });
     return items.map((s) => ({
       id: s.id,
-      login: s.login ?? undefined,
       role: s.role,
     }));
   }

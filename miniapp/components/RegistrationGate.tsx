@@ -21,10 +21,6 @@ export function RegistrationGate({
   splashView,
 }: RegistrationGateProps) {
   const canTrustLocal = localOnboarded && teleOnboarded !== false;
-  if (status === "authenticating" && !canTrustLocal) {
-    return <>{splashView}</>;
-  }
-
   const mustOnboard = teleOnboarded === false && !localOnboarded;
   if (mustOnboard) {
     return <>{onboardingView}</>;
@@ -34,7 +30,11 @@ export function RegistrationGate({
     return <>{dashboardView}</>;
   }
 
-  if (status === "failed" && !localOnboarded) {
+  if (status === "authenticating") {
+    return <>{splashView}</>;
+  }
+
+  if (status === "failed") {
     return <>{onboardingView}</>;
   }
 

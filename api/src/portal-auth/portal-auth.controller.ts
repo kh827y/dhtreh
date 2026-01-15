@@ -4,12 +4,10 @@ import {
   Get,
   Headers,
   Post,
-  Req,
   UnauthorizedException,
   BadRequestException,
-  HttpException,
-  HttpStatus,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma.service';
 import {
@@ -29,62 +27,9 @@ import { StaffStatus } from '@prisma/client';
 
 const LOGIN_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const LOGIN_ATTEMPT_LIMIT = 10;
-type LoginAttemptState = { count: number; resetAt: number };
-const loginAttempts = new Map<string, LoginAttemptState>();
 
 function hashPortalToken(value: string) {
   return createHash('sha256').update(value).digest('hex');
-}
-
-function resolveClientIp(req: any): string | null {
-  const forwarded = String(req?.headers?.['x-forwarded-for'] || '').trim();
-  if (forwarded) return forwarded.split(',')[0]?.trim() || null;
-  const ip = String(req?.ip || req?.connection?.remoteAddress || '').trim();
-  return ip || null;
-}
-
-function buildAttemptKeys(email: string, ip: string | null) {
-  const keys: string[] = [];
-  if (email) keys.push(`email:${email}`);
-  if (ip) keys.push(`ip:${ip}`);
-  return keys;
-}
-
-function getAttemptState(key: string, now: number) {
-  const existing = loginAttempts.get(key);
-  if (!existing || existing.resetAt <= now) {
-    const next = { count: 0, resetAt: now + LOGIN_ATTEMPT_WINDOW_MS };
-    loginAttempts.set(key, next);
-    return next;
-  }
-  return existing;
-}
-
-function ensureNotRateLimited(keys: string[]) {
-  const now = Date.now();
-  for (const key of keys) {
-    const state = getAttemptState(key, now);
-    if (state.count >= LOGIN_ATTEMPT_LIMIT) {
-      throw new HttpException(
-        'Слишком много попыток входа, попробуйте позже',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-  }
-}
-
-function recordLoginFailure(keys: string[]) {
-  const now = Date.now();
-  for (const key of keys) {
-    const state = getAttemptState(key, now);
-    state.count += 1;
-  }
-}
-
-function clearLoginAttempts(keys: string[]) {
-  for (const key of keys) {
-    loginAttempts.delete(key);
-  }
 }
 
 function isTokenRevoked(
@@ -102,13 +47,15 @@ export class PortalAuthController {
   constructor(private prisma: PrismaService) {}
 
   @Post('login')
+  @Throttle({
+    default: { limit: LOGIN_ATTEMPT_LIMIT, ttl: LOGIN_ATTEMPT_WINDOW_MS },
+  })
   @ApiOkResponse({
     schema: { type: 'object', properties: { token: { type: 'string' } } },
   })
   @ApiUnauthorizedResponse({ description: 'Invalid credentials' })
   @ApiBadRequestResponse({ description: 'Bad request' })
   async login(
-    @Req() req: any,
     @Body()
     body: { email: string; password: string; code?: string; merchantId?: string },
   ) {
@@ -122,8 +69,6 @@ export class PortalAuthController {
         ? body.merchantId.trim()
         : null;
     if (!email || !password) throw new UnauthorizedException('Unauthorized');
-    const attemptKeys = buildAttemptKeys(email, resolveClientIp(req));
-    if (attemptKeys.length) ensureNotRateLimited(attemptKeys);
     try {
       const merchant = await (this.prisma.merchant as any).findFirst({
         where: merchantId
@@ -172,7 +117,6 @@ export class PortalAuthController {
               portalRefreshTokenHash: hashPortalToken(refreshToken),
             },
           });
-          clearLoginAttempts(attemptKeys);
           return { token, refreshToken };
         }
         merchantAuthError = new UnauthorizedException('Unauthorized');
@@ -191,7 +135,7 @@ export class PortalAuthController {
       });
       if (!merchantId && staffMatches.length > 1) {
         throw new BadRequestException(
-          'Укажите мерчанта для входа с этим email',
+          'Укажите мерчанта для входа с этим логином',
         );
       }
       const staff = staffMatches[0] ?? null;
@@ -232,10 +176,8 @@ export class PortalAuthController {
           portalRefreshTokenHash: hashPortalToken(refreshToken),
         },
       });
-      clearLoginAttempts(attemptKeys);
       return { token, refreshToken };
     } catch (error) {
-      recordLoginFailure(attemptKeys);
       throw error;
     }
   }

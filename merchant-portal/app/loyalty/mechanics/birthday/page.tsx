@@ -584,5 +584,9 @@ function BirthdayPageInner() {
 }
 
 export default function BirthdayPage() {
-  return <BirthdayPageInner />;
+  return (
+    <React.Suspense fallback={<div>Загрузка…</div>}>
+      <BirthdayPageInner />
+    </React.Suspense>
+  );
 }

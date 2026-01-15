@@ -23,7 +23,7 @@ export class SubscriptionCronService {
    */
   @Cron('0 10 * * *')
   async sendExpirationReminders() {
-    if (process.env.WORKERS_ENABLED === '0') return;
+    if (process.env.WORKERS_ENABLED !== '1') return;
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:subscription_reminders',
@@ -111,7 +111,7 @@ export class SubscriptionCronService {
    */
   @Cron('5 0 * * *')
   async deactivateExpiredSubscriptions() {
-    if (process.env.WORKERS_ENABLED === '0') return;
+    if (process.env.WORKERS_ENABLED !== '1') return;
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:subscription_deactivate',
@@ -182,7 +182,7 @@ export class SubscriptionCronService {
    */
   @Cron('0 8 1 * *')
   async generateMonthlyReports() {
-    if (process.env.WORKERS_ENABLED === '0') return;
+    if (process.env.WORKERS_ENABLED !== '1') return;
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:subscription_reports',
@@ -262,7 +262,7 @@ export class SubscriptionCronService {
    */
   @Cron('0 4 * * 0')
   async cleanupOldData() {
-    if (process.env.WORKERS_ENABLED === '0') return;
+    if (process.env.WORKERS_ENABLED !== '1') return;
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:subscription_cleanup',

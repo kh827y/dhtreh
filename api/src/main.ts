@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
@@ -67,7 +68,19 @@ async function bootstrap() {
         throw new Error('[ENV] CORS_ORIGINS must be configured in production');
     }
   })();
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  const trustProxyRaw = String(process.env.TRUST_PROXY || '').trim();
+  if (trustProxyRaw) {
+    const normalized = trustProxyRaw.toLowerCase();
+    const trustProxy =
+      ['1', 'true', 'yes'].includes(normalized)
+        ? true
+        : ['0', 'false', 'no'].includes(normalized)
+          ? false
+          : trustProxyRaw;
+    app.set('trust proxy', trustProxy);
+  }
 
   // CORS из ENV (запятая-разделённый список); если не задан — дефолты для локалки
   const corsOrigins = (process.env.CORS_ORIGINS || '')
@@ -128,10 +141,15 @@ async function bootstrap() {
         paths: [
           'req.headers.authorization',
           'req.headers["x-admin-key"]',
+          'req.headers["x-admin-otp"]',
           'req.headers["idempotency-key"]',
+          'req.headers["x-api-key"]',
           'req.headers["x-metrics-token"]',
+          'req.headers["x-telegram-bot-api-secret-token"]',
+          'req.headers.cookie',
           'req.body.userToken',
           'req.body.initData',
+          'res.headers["set-cookie"]',
           'res.headers["x-loyalty-signature"]',
         ],
         censor: '[REDACTED]',

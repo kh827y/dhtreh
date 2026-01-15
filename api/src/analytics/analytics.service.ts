@@ -743,7 +743,11 @@ export class AnalyticsService {
       localTodayEpoch + withinDays * 24 * 60 * 60 * 1000;
 
     const customers = await this.prisma.customer.findMany({
-      where: { birthday: { not: null }, wallets: { some: { merchantId } } },
+      where: {
+        birthday: { not: null },
+        wallets: { some: { merchantId } },
+        erasedAt: null,
+      },
       select: { id: true, name: true, phone: true, birthday: true },
     });
 
@@ -1146,7 +1150,11 @@ export class AnalyticsService {
     for (let i = cohorts.length - 1; i >= 0; i--) {
       const { label, start, end } = cohorts[i];
       const cohortCustomers = await this.prisma.customerStats.findMany({
-        where: { merchantId, firstSeenAt: { gte: start, lte: end } },
+        where: {
+          merchantId,
+          firstSeenAt: { gte: start, lte: end },
+          customer: { erasedAt: null },
+        },
         select: { customerId: true },
       });
       const ids = cohortCustomers.map((c) => c.customerId);
@@ -1480,7 +1488,7 @@ export class AnalyticsService {
         select: { rulesJson: true },
       }),
       this.prisma.customerStats.findMany({
-        where: { merchantId },
+        where: { merchantId, customer: { erasedAt: null } },
         select: {
           rfmClass: true,
           rfmR: true,
@@ -2166,6 +2174,7 @@ export class AnalyticsService {
           outletId,
           createdAt: { lte: to },
           canceledAt: null,
+          customer: { erasedAt: null },
         },
         select: { customerId: true },
       });
@@ -2181,6 +2190,7 @@ export class AnalyticsService {
         merchantId,
         invitedAt: { gte: from, lte: to },
         status: { not: 'CANCELED' },
+        customer: { erasedAt: null },
       },
       select: {
         id: true,
@@ -2264,7 +2274,11 @@ export class AnalyticsService {
       customerIds.length === 0
         ? []
         : await this.prisma.customerStats.findMany({
-            where: { merchantId, customerId: { in: customerIds } },
+            where: {
+              merchantId,
+              customerId: { in: customerIds },
+              customer: { erasedAt: null },
+            },
             select: { customerId: true, rfmClass: true },
           });
     const rfmByCustomer = new Map<string, string>();
@@ -2281,6 +2295,7 @@ export class AnalyticsService {
       customerId: { in: customerIds },
       createdAt: { gte: from, lte: to },
       canceledAt: null,
+      customer: { erasedAt: null },
     };
     if (outletId && outletId !== 'all') {
       receiptWhere.outletId = outletId;
@@ -3605,7 +3620,7 @@ export class AnalyticsService {
 
   private async calculateCustomerLTV(merchantId: string): Promise<number> {
     const result = await this.prisma.transaction.aggregate({
-      where: { merchantId, type: 'EARN' },
+      where: { merchantId, type: 'EARN', customer: { erasedAt: null } },
       _sum: { amount: true },
       _count: { customerId: true },
     });
@@ -3621,7 +3636,7 @@ export class AnalyticsService {
     // Группировка транзакций по клиенту (вся история для мерчанта, как и в исходном SQL)
     const grouped = await this.prisma.transaction.groupBy({
       by: ['customerId'],
-      where: { merchantId, type: 'EARN' },
+      where: { merchantId, type: 'EARN', customer: { erasedAt: null } },
       _sum: { amount: true },
       _count: { _all: true },
       _max: { createdAt: true },
@@ -3636,11 +3651,16 @@ export class AnalyticsService {
 
     const [customers, wallets] = await Promise.all([
       this.prisma.customer.findMany({
-        where: { id: { in: ids } },
+        where: { id: { in: ids }, erasedAt: null },
         select: { id: true, name: true, phone: true },
       }),
       this.prisma.wallet.findMany({
-        where: { merchantId, customerId: { in: ids }, type: 'POINTS' as any },
+        where: {
+          merchantId,
+          customerId: { in: ids },
+          type: 'POINTS' as any,
+          customer: { erasedAt: null },
+        },
         select: { customerId: true, balance: true },
       }),
     ]);

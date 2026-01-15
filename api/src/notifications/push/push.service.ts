@@ -367,7 +367,7 @@ export class PushService {
 
   async getCustomerWithDevice(customerId: string) {
     const record = await this.prisma.customer.findFirst({
-      where: { id: customerId, tgId: { not: null } },
+      where: { id: customerId, tgId: { not: null }, erasedAt: null },
       select: { id: true, merchantId: true },
     });
     if (!record) return null;
@@ -392,6 +392,7 @@ export class PushService {
   ): Promise<PushRecipient[]> {
     const where: Prisma.CustomerWhereInput = {
       merchantId,
+      erasedAt: null,
       tgId: { not: null },
       consents: { some: { merchantId } },
     };

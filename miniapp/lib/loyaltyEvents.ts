@@ -131,6 +131,13 @@ function releasePoller(key: string) {
   }
 }
 
+export function emitLoyaltyEvent(payload: unknown) {
+  if (typeof window === "undefined") return;
+  ensureChannel();
+  ensureStorageListener();
+  dispatchEvent(payload, true);
+}
+
 export function subscribeToLoyaltyEvents(handler: EventHandler, options: SubscriptionOptions = {}) {
   if (typeof window === "undefined") return () => undefined;
   const { emitCached = true, merchantId, customerId } = options;

@@ -61,8 +61,8 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') {
-      this.logger.log('BirthdayWorker disabled (WORKERS_ENABLED=0)');
+    if (process.env.WORKERS_ENABLED !== '1') {
+      this.logger.log('BirthdayWorker disabled (WORKERS_ENABLED!=1)');
       return;
     }
     const rawInterval = Number(process.env.BIRTHDAY_WORKER_INTERVAL_MS);
@@ -279,6 +279,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     const pending = await this.prisma.birthdayGreeting.findMany({
       where: {
         merchantId: merchant.id,
+        customer: { erasedAt: null },
         status: { in: ['PENDING', 'FAILED'] },
         sentAt: null,
         sendDate: { lte: target },
@@ -312,6 +313,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     const existing = await this.prisma.birthdayGreeting.findMany({
       where: {
         merchantId: merchant.id,
+        customer: { erasedAt: null },
         customerId: { in: candidateIds },
         birthdayDate: {
           gte: this.startOfYearInTimezone(minYear, merchant.timezone),
@@ -368,6 +370,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     const rows = await this.prisma.customer.findMany({
       where: {
         merchantId: merchant.id,
+        erasedAt: null,
         tgId: { not: null },
         birthday: { not: null },
         accrualsBlocked: false,
@@ -563,6 +566,24 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     merchant: MerchantConfig,
     greeting: BirthdayGreeting,
   ) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: greeting.customerId, merchantId: merchant.id, erasedAt: null },
+      select: { id: true },
+    });
+    if (!customer) {
+      await this.prisma.birthdayGreeting.update({
+        where: { id: greeting.id },
+        data: {
+          status: 'FAILED',
+          error: 'customer erased',
+        },
+      });
+      this.metrics.inc('birthday_push_failed_total', {
+        merchantId: merchant.id,
+        reason: 'customer_erased',
+      });
+      return;
+    }
     const body = greeting.message?.trim()
       ? greeting.message.trim()
       : 'С днём рождения! Мы подготовили для вас подарок.';

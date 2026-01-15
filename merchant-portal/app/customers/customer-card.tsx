@@ -21,6 +21,7 @@ import {
   Store,
   Star,
   RotateCcw,
+  Trash2,
   ExternalLink,
   ChevronLeft,
   ChevronRight,
@@ -186,6 +187,7 @@ export default function CustomerCard({
   const [modalType, setModalType] = React.useState<"block" | "accrue" | "redeem" | "gift" | null>(null);
   const [blockForm, setBlockForm] = React.useState<"accrual" | "full">("accrual");
   const [blockSubmitting, setBlockSubmitting] = React.useState(false);
+  const [eraseSubmitting, setEraseSubmitting] = React.useState(false);
 
   const levelLookups = React.useMemo(() => buildLevelLookups(levels), [levels]);
 
@@ -265,6 +267,7 @@ export default function CustomerCard({
       aborted = true;
     };
   }, []);
+
 
   React.useEffect(() => {
     let cancelled = false;
@@ -402,6 +405,7 @@ export default function CustomerCard({
   const ageValue = customerSafe.age ?? calculateAge(customerSafe.birthday);
   const isBlocked = customerSafe.blocked || customerSafe.redeemBlocked;
   const blockType = customerSafe.redeemBlocked ? "full" : "accrual";
+  const isErased = Boolean(customerSafe.erasedAt);
 
   function handleCopy(value?: string | null) {
     if (!value) return;
@@ -483,6 +487,9 @@ export default function CustomerCard({
 
   async function handleEditSubmit(payload: CustomerFormPayload) {
     const trimmedName = payload.firstName.trim();
+    const expireRaw = payload.levelExpireDays.trim();
+    const levelExpireDays =
+      expireRaw && Number.isFinite(Number(expireRaw)) ? Math.max(0, Math.floor(Number(expireRaw))) : undefined;
     const baseBody = {
       phone: payload.login.trim(),
       email: payload.email.trim() || undefined,
@@ -492,6 +499,7 @@ export default function CustomerCard({
       gender: payload.gender,
       comment: payload.comment.trim() || undefined,
       levelId: payload.levelId || undefined,
+      levelExpireDays: payload.levelId && levelExpireDays !== undefined ? levelExpireDays : undefined,
     };
     try {
       const saved = await api<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}`, {
@@ -505,6 +513,28 @@ export default function CustomerCard({
       setEditOpen(false);
     } catch (e: any) {
       setToast(readApiError(e?.message || e) || "Ошибка при сохранении клиента");
+    }
+  }
+
+  async function handleErasePersonalData() {
+    if (eraseSubmitting) return;
+    const confirmMessage = window.confirm(
+      "Удалить персональные данные клиента? Очистим телефон, email, ФИО, профиль, привязки Telegram и устройства. История операций сохранится.",
+    );
+    if (!confirmMessage) return;
+    try {
+      setEraseSubmitting(true);
+      const saved = await api<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}/erase`, {
+        method: "POST",
+      });
+      const normalized = normalizeCustomer(saved ?? customerSafe);
+      setCustomer(normalized);
+      onCustomerUpdated?.(normalized);
+      setToast("Персональные данные удалены");
+    } catch (error: any) {
+      setToast(readApiError(error?.message || error) || "Не удалось удалить персональные данные");
+    } finally {
+      setEraseSubmitting(false);
     }
   }
 
@@ -564,6 +594,11 @@ export default function CustomerCard({
                         Активен
                       </span>
                     )}
+                    {isErased && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                        Данные удалены
+                      </span>
+                    )}
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${badgeClass}`}>
                       {levelLabel}
                     </span>
@@ -618,6 +653,21 @@ export default function CustomerCard({
                     {isBlocked ? <Unlock size={16} /> : <Ban size={16} />}
                     <span>{isBlocked ? "Разблок." : "Блокировка"}</span>
                   </button>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  <button
+                    onClick={handleErasePersonalData}
+                    disabled={eraseSubmitting || isErased}
+                    className="flex w-full items-center justify-center space-x-2 py-2.5 px-3 bg-white border border-red-200 text-red-700 hover:bg-red-50 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 size={16} /> <span>Удалить персональные данные</span>
+                  </button>
+                  {isErased && (
+                    <div className="text-xs text-gray-500">
+                      Удалено: {formatDateTime(customer.erasedAt)}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

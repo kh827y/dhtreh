@@ -54,12 +54,20 @@ export class AdminIpGuard implements CanActivate {
     // In tests, do not enforce IP whitelist
     if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID)
       return true;
+    const allowAll = ['1', 'true', 'yes'].includes(
+      String(process.env.ADMIN_IP_ALLOW_ALL || '').trim().toLowerCase(),
+    );
     const wl = (
       process.env.ADMIN_IP_WHITELIST ||
       process.env.ADMIN_ALLOWED_IPS ||
       ''
     ).trim();
-    if (!wl) return true; // no whitelist -> allow
+    if (!wl) {
+      if (process.env.NODE_ENV === 'production' && !allowAll) {
+        throw new UnauthorizedException('Admin IP whitelist not configured');
+      }
+      return true;
+    }
 
     const ip = getClientIp(req);
     const rules = wl

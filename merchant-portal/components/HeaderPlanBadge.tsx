@@ -5,6 +5,7 @@ import { Crown, Clock, AlertTriangle } from "lucide-react";
 
 type PortalSubscription = {
   status: string;
+  planId: string | null;
   planName: string | null;
   currentPeriodEnd: string | null;
   daysLeft: number | null;
@@ -30,7 +31,8 @@ function formatDateShort(dateStr: string | null): string {
 export function HeaderPlanBadge({ subscription }: HeaderPlanBadgeProps) {
   if (!subscription) return null;
   
-  const { planName, daysLeft, expiresSoon, expired, currentPeriodEnd } = subscription;
+  const { planId, planName, daysLeft, expiresSoon, expired, currentPeriodEnd } = subscription;
+  const planLabel = planName || planId || "Тариф";
   
   const statusColor = expired 
     ? "var(--danger)" 
@@ -67,7 +69,7 @@ export function HeaderPlanBadge({ subscription }: HeaderPlanBadgeProps) {
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <Crown size={16} style={{ color: "var(--brand-primary-light)" }} />
         <span style={{ fontWeight: 600, color: "var(--fg)" }}>
-          {planName || "Тариф"}
+          {planLabel}
         </span>
       </div>
       

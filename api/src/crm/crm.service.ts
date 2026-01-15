@@ -135,7 +135,7 @@ export class CrmService {
   async getRfmDistribution(merchantId: string) {
     const rows = await this.prisma.customerStats.groupBy({
       by: ['rfmClass'],
-      where: { merchantId },
+      where: { merchantId, customer: { erasedAt: null } },
       _count: { _all: true },
     });
     const distribution = Object.fromEntries(
@@ -159,7 +159,7 @@ export class CrmService {
     const take = Math.min(Math.max(limit, 1), 200);
     if (isSystemAllAudience(segment)) {
       const customers = await this.prisma.customer.findMany({
-        where: { merchantId },
+        where: { merchantId, erasedAt: null },
         orderBy: { createdAt: 'desc' },
         take,
         ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -177,7 +177,11 @@ export class CrmService {
     }
 
     const items = await this.prisma.segmentCustomer.findMany({
-      where: { segmentId, segment: { merchantId }, customer: { merchantId } },
+      where: {
+        segmentId,
+        segment: { merchantId },
+        customer: { merchantId, erasedAt: null },
+      },
       include: { customer: true },
       take,
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -228,7 +232,7 @@ export class CrmService {
         | undefined;
       if (isAll) {
         const customers = await this.prisma.customer.findMany({
-          where: { merchantId },
+          where: { merchantId, erasedAt: null },
           orderBy: { id: 'asc' },
           take: batch,
           ...(lastId ? { skip: 1, cursor: { id: lastId } } : {}),
@@ -242,7 +246,11 @@ export class CrmService {
         lastId = customers[customers.length - 1].id;
       } else {
         const chunk = await this.prisma.segmentCustomer.findMany({
-          where: { segmentId, segment: { merchantId }, customer: { merchantId } },
+          where: {
+            segmentId,
+            segment: { merchantId },
+            customer: { merchantId, erasedAt: null },
+          },
           include: { customer: true },
           orderBy: { id: 'asc' },
           take: batch,

@@ -8,7 +8,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { assertPortalPermissions } from '../../portal-auth/portal-permissions.util';
+import {
+  assertPortalPermissions,
+  PortalPermissionsHandled,
+} from '../../portal-auth/portal-permissions.util';
 import { PrismaService } from '../../prisma.service';
 
 function ensureObject(input: any): Record<string, any> {
@@ -30,6 +33,7 @@ export class RedeemLimitsController {
   }
 
   @Get()
+  @PortalPermissionsHandled()
   async getSettings(@Req() req: any) {
     assertPortalPermissions(
       req,
@@ -55,6 +59,7 @@ export class RedeemLimitsController {
   }
 
   @Put()
+  @PortalPermissionsHandled()
   async updateSettings(
     @Req() req: any,
     @Body()

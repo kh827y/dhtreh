@@ -196,6 +196,7 @@ export class CustomerAudiencesService {
           { Receipt: { some: { merchantId } } },
         ],
       },
+      { erasedAt: null },
     ];
     const post: ParsedSegmentFilters['post'] = {};
     if (!filters || typeof filters !== 'object') {
@@ -604,7 +605,10 @@ export class CustomerAudiencesService {
       ?.map((id) => id?.trim())
       .filter((id): id is string => Boolean(id));
 
-    const walletWhere: Prisma.WalletWhereInput = { merchantId };
+    const walletWhere: Prisma.WalletWhereInput = {
+      merchantId,
+      customer: { erasedAt: null },
+    };
     if (ids?.length) {
       walletWhere.customerId = { in: ids };
     }
@@ -708,7 +712,7 @@ export class CustomerAudiencesService {
   private async getAllCustomersCount(merchantId: string): Promise<number> {
     try {
       return await this.prisma.customer.count({
-        where: { merchantId },
+        where: { merchantId, erasedAt: null },
       });
     } catch (err) {
       this.logger.warn(
@@ -774,7 +778,7 @@ export class CustomerAudiencesService {
     merchantId: string,
     filters: CustomerFilters,
   ): Prisma.CustomerWhereInput {
-    const base: Prisma.CustomerWhereInput = {};
+    const base: Prisma.CustomerWhereInput = { erasedAt: null };
     if (filters.segmentId) {
       base.segments = { some: { segmentId: filters.segmentId } };
     }

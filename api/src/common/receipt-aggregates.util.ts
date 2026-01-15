@@ -41,6 +41,7 @@ export async function fetchReceiptAggregates(
   const joinClause = useImportedBase
     ? Prisma.sql`LEFT JOIN "CustomerStats" cs ON cs."merchantId" = r."merchantId" AND cs."customerId" = r."customerId"`
     : Prisma.sql``;
+  const customerJoin = Prisma.sql`JOIN "Customer" c ON c."id" = r."customerId" AND c."merchantId" = r."merchantId"`;
   const importBoundaryClause = useImportedBase
     ? Prisma.sql`AND (cs."importedLastPurchaseAt" IS NULL OR r."createdAt" > cs."importedLastPurchaseAt")`
     : Prisma.sql``;
@@ -61,8 +62,10 @@ export async function fetchReceiptAggregates(
       MIN(r."createdAt") AS "firstPurchaseAt",
       MAX(r."createdAt") AS "lastPurchaseAt"
     FROM "Receipt" r
+    ${customerJoin}
     ${joinClause}
     WHERE r."merchantId" = ${params.merchantId}
+      AND c."erasedAt" IS NULL
       AND r."total" > 0
       AND r."canceledAt" IS NULL
       ${periodClause}
@@ -93,6 +96,7 @@ export async function fetchReceiptAggregates(
 
   const importWhere: Prisma.CustomerStatsWhereInput = {
     merchantId: params.merchantId,
+    customer: { erasedAt: null },
     OR: [
       { importedTotalSpent: { not: null } },
       { importedVisits: { not: null } },

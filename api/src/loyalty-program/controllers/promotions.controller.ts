@@ -16,6 +16,7 @@ import { PortalGuard } from '../../portal-auth/portal.guard';
 import {
   assertPortalPermissions,
   hasPortalPermission,
+  PortalPermissionsHandled,
   resolvePromotionResource,
 } from '../../portal-auth/portal-permissions.util';
 import {
@@ -107,6 +108,7 @@ export class PromotionsController {
   }
 
   @Get()
+  @PortalPermissionsHandled()
   async list(@Req() req: any, @Query('status') status?: string) {
     const normalized =
       status && status !== 'ALL' ? (status as PromotionStatus) : 'ALL';
@@ -134,6 +136,7 @@ export class PromotionsController {
   }
 
   @Post()
+  @PortalPermissionsHandled()
   async create(@Req() req: any, @Body() body: PortalPromotionPayload) {
     const merchantId = this.merchantId(req);
     const payload = normalizePayload(body);
@@ -148,6 +151,7 @@ export class PromotionsController {
   }
 
   @Put(':id')
+  @PortalPermissionsHandled()
   async update(
     @Req() req: any,
     @Param('id') id: string,
@@ -172,6 +176,7 @@ export class PromotionsController {
   }
 
   @Post(':id/status')
+  @PortalPermissionsHandled()
   async changeStatus(
     @Req() req: any,
     @Param('id') id: string,
@@ -195,6 +200,7 @@ export class PromotionsController {
   }
 
   @Post('bulk/status')
+  @PortalPermissionsHandled()
   bulkStatus(
     @Req() req: any,
     @Body() body: { ids: string[]; status: PromotionStatus },
@@ -220,6 +226,7 @@ export class PromotionsController {
   }
 
   @Get(':id')
+  @PortalPermissionsHandled()
   async getById(@Req() req: any, @Param('id') id: string) {
     const merchantId = this.merchantId(req);
     const promotion = await this.service.getPromotion(merchantId, id);
@@ -272,6 +279,7 @@ export class PromotionsController {
   }
 
   @Delete(':id')
+  @PortalPermissionsHandled()
   async delete(@Req() req: any, @Param('id') id: string) {
     const merchantId = this.merchantId(req);
     const current = await this.service.getPromotion(merchantId, id);

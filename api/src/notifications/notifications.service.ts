@@ -108,7 +108,9 @@ export class NotificationsService {
         });
         if (!segment) return 0;
         if (isSystemAllAudience(segment)) {
-          return this.prisma.customerStats.count({ where: { merchantId } });
+          return this.prisma.customerStats.count({
+            where: { merchantId, customer: { erasedAt: null } },
+          });
         }
         const size = await this.prisma.segmentCustomer.count({
           where: { segmentId },
@@ -121,7 +123,10 @@ export class NotificationsService {
       if (channel === 'EMAIL' || channel === 'ALL') {
         // Customers of merchant with non-null email (via CustomerStats relation)
         emailCount = await (this.prisma as any).customerStats.count({
-          where: { merchantId, customer: { email: { not: null } } },
+          where: {
+            merchantId,
+            customer: { email: { not: null }, erasedAt: null },
+          },
         });
         // If consents are used, take the minimum of granted consents and emails
         try {
@@ -138,7 +143,7 @@ export class NotificationsService {
         // Distinct customers with active devices
         const groups = await (this.prisma as any).pushDevice.groupBy({
           by: ['customerId'],
-          where: { merchantId, isActive: true },
+          where: { merchantId, isActive: true, customer: { erasedAt: null } },
           _count: true,
         });
         pushCount = Array.isArray(groups) ? groups.length : 0;

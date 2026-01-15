@@ -54,6 +54,9 @@ type AccessRow = {
   status?: string;
 };
 
+const ALLOWED_AVATAR_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
+
 function mapAccessRows(accessData: any): AccessRow[] {
   const accessItems: any[] = Array.isArray(accessData?.items)
     ? accessData.items
@@ -181,6 +184,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
   const [outlets, setOutlets] = React.useState<Outlet[]>([]);
   const [groups, setGroups] = React.useState<AccessGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = React.useState(false);
+  const avatarInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [newOutletId, setNewOutletId] = React.useState("");
   const [isAddOutletOpen, setIsAddOutletOpen] = React.useState(false);
@@ -194,6 +198,9 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     avatarUrl: "",
   });
   const [saving, setSaving] = React.useState(false);
+  const [avatarFile, setAvatarFile] = React.useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = React.useState("");
+  const [avatarError, setAvatarError] = React.useState("");
 
   const [passwordOpen, setPasswordOpen] = React.useState(false);
   const [passwordForm, setPasswordForm] = React.useState({ current: "", next: "", confirm: "" });
@@ -381,6 +388,9 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
         comment: item.comment || "",
         avatarUrl: item.avatarUrl || "",
       });
+      setAvatarFile(null);
+      setAvatarPreviewUrl("");
+      setAvatarError("");
     }
   }, [item]);
 
@@ -413,19 +423,30 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     return accesses.some((a) => (a.transactionsTotal || 0) > 0);
   }, [item, accesses]);
 
+  React.useEffect(() => {
+    return () => {
+      if (avatarPreviewUrl && avatarPreviewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(avatarPreviewUrl);
+      }
+    };
+  }, [avatarPreviewUrl]);
+
+  const resolvedAvatarUrl = React.useMemo(() => {
+    if (avatarPreviewUrl) return avatarPreviewUrl;
+    return (item?.avatarUrl || "").trim();
+  }, [avatarPreviewUrl, item?.avatarUrl]);
+
   const profileChanged = React.useMemo(() => {
     if (!item) return false;
-    const nextAvatar = (editForm.avatarUrl || "").trim();
-    const currentAvatar = (item.avatarUrl || "").trim();
     return (
       editForm.firstName.trim() !== (item.firstName || "") ||
       editForm.lastName.trim() !== (item.lastName || "") ||
       editForm.position.trim() !== (item.position || "") ||
       editForm.phone.trim() !== (item.phone || "") ||
       editForm.comment.trim() !== (item.comment || "") ||
-      nextAvatar !== currentAvatar
+      Boolean(avatarFile)
     );
-  }, [editForm, item]);
+  }, [avatarFile, editForm, item]);
 
   const accessChanged = React.useMemo(() => {
     if (!item) return false;
@@ -474,6 +495,33 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     portalSectionOpen,
   ]);
 
+  const handleAvatarChange = React.useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if (!ALLOWED_AVATAR_TYPES.has(file.type)) {
+        setAvatarError("Поддерживаются только PNG, JPG или WEBP.");
+        event.target.value = "";
+        return;
+      }
+      if (file.size > MAX_AVATAR_SIZE) {
+        setAvatarError("Размер файла не должен превышать 2MB.");
+        event.target.value = "";
+        return;
+      }
+      setAvatarFile(file);
+      setAvatarPreviewUrl((prev) => {
+        if (prev && prev.startsWith("blob:")) {
+          URL.revokeObjectURL(prev);
+        }
+        return URL.createObjectURL(file);
+      });
+      setAvatarError("");
+      event.target.value = "";
+    },
+    [],
+  );
+
   async function handleSaveAll() {
     if (!item || saving || (!profileChanged && !accessChanged)) return;
     setSaving(true);
@@ -486,7 +534,23 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
         payload.position = editForm.position.trim() || null;
         payload.phone = editForm.phone.trim() || null;
         payload.comment = editForm.comment.trim() || null;
-        payload.avatarUrl = editForm.avatarUrl.trim() || null;
+        if (avatarFile) {
+          const formData = new FormData();
+          formData.append("file", avatarFile);
+          const uploadRes = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/avatar`, {
+            method: "POST",
+            body: formData,
+          });
+          if (!uploadRes.ok) {
+            throw new Error(await uploadRes.text());
+          }
+          const uploadPayload = await uploadRes.json().catch(() => ({}));
+          const assetId = typeof uploadPayload?.assetId === "string" ? uploadPayload.assetId : "";
+          if (!assetId) {
+            throw new Error("Не удалось загрузить аватар");
+          }
+          payload.avatarUrl = `/api/portal/staff/avatar/${encodeURIComponent(assetId)}`;
+        }
       }
 
       if (accessChanged) {
@@ -581,6 +645,9 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
         comment: updated?.comment || "",
         avatarUrl: updated?.avatarUrl || "",
       });
+      setAvatarFile(null);
+      setAvatarPreviewUrl("");
+      setAvatarError("");
       const updatedPortalEnabled = !!(
         updated?.isOwner || updated?.portalAccessEnabled || updated?.canAccessPortal
       );
@@ -842,11 +909,16 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
         <div className="space-y-6">
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-6">
             <div className="flex flex-col items-center">
-              <div className="relative group cursor-pointer">
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                className="relative group cursor-pointer focus:outline-none"
+                aria-label="Загрузить аватар"
+              >
                 <div className="w-32 h-32 rounded-full bg-gray-100 flex items-center justify-center border-4 border-white shadow-sm overflow-hidden">
-                  {item?.avatarUrl ? (
+                  {resolvedAvatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={item.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    <img src={resolvedAvatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                   ) : (
                     <span className="text-4xl font-bold text-gray-400">
                       {displayName.slice(0, 1).toUpperCase()}
@@ -856,7 +928,15 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
                 <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <Camera className="text-white" size={24} />
                 </div>
-              </div>
+              </button>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                ref={avatarInputRef}
+                onChange={handleAvatarChange}
+                className="hidden"
+              />
+              {avatarError ? <p className="mt-2 text-xs text-red-600">{avatarError}</p> : null}
             </div>
 
             <div className="space-y-4">
@@ -904,16 +984,6 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
                   value={editForm.comment}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, comment: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none resize-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Аватар (ссылка)</label>
-                <input
-                  type="url"
-                  value={editForm.avatarUrl}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, avatarUrl: e.target.value }))}
-                  placeholder="https://..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
                 />
               </div>
             </div>

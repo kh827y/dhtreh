@@ -29,11 +29,6 @@ type PendingListener = {
 export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LoyaltyEventsService.name);
   private readonly listeners = new Set<PendingListener>();
-  private readonly customerCache = new Map<string, string>();
-  private readonly reverseCustomerCache = new Map<
-    string,
-    { merchantId: string; customerId: string }
-  >();
   private readonly activeCustomerPolls = new Map<string, number>();
   private nextListenerId = 1;
   private pgClient?: PgClient;
@@ -198,11 +193,6 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private mapRecord(record: any): LoyaltyRealtimeEvent {
-    const customerId =
-      typeof record?.customerId === 'string' ? record.customerId : null;
-    if (customerId) {
-      this.rememberCustomer(record.merchantId, customerId);
-    }
     return {
       id: record.id,
       merchantId: record.merchantId,
@@ -252,16 +242,6 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
         );
       }
     }
-  }
-
-  // После рефакторинга Customer это per-merchant модель, кеширование упрощено
-  private rememberCustomer(merchantId: string, customerId: string) {
-    const key = `${merchantId}:${customerId}`;
-    this.customerCache.set(key, customerId);
-    this.reverseCustomerCache.set(customerId, {
-      merchantId,
-      customerId,
-    });
   }
 
   private async ensurePgSubscriber() {
@@ -346,7 +326,6 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
       const customerId =
         typeof data?.customerId === 'string' ? data.customerId : null;
       if (!id || !merchantId || !customerId) return;
-      this.rememberCustomer(merchantId, customerId);
       const event: LoyaltyRealtimeEvent = {
         id,
         merchantId,

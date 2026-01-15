@@ -1,12 +1,16 @@
 "use client";
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 export default function Toast({ message, type = 'info', onClose, timeout = 3000 }: { message: string; type?: 'info'|'error'|'success'; onClose?: () => void; timeout?: number }) {
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
   useEffect(() => {
     if (!timeout) return;
-    const id = setTimeout(() => onClose && onClose(), timeout);
+    const id = setTimeout(() => closeRef.current && closeRef.current(), timeout);
     return () => clearTimeout(id);
-  }, [timeout, onClose]);
+  }, [message, timeout]);
   const bg = type === 'error' ? '#3f1d2e' : type === 'success' ? '#1f2e1f' : '#1f2533';
   const color = type === 'error' ? '#f38ba8' : type === 'success' ? '#a6e3a1' : '#cdd6f4';
   return (
@@ -15,4 +19,3 @@ export default function Toast({ message, type = 'info', onClose, timeout = 3000 
     </div>
   );
 }
-

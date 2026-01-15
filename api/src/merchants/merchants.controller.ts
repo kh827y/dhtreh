@@ -109,18 +109,22 @@ export class MerchantsController {
     @Body()
     body: {
       name: string;
-      email: string;
-      password: string;
+      email?: string;
+      password?: string;
+      portalEmail?: string;
+      portalPassword?: string;
       ownerName?: string;
       maxOutlets?: number | null;
     },
   ) {
+    const email = body?.email ?? body?.portalEmail;
+    const password = body?.password ?? body?.portalPassword;
     return this.service.createMerchant(
       (body?.name || '').trim(),
-      String(body?.email || '')
+      String(email || '')
         .trim()
         .toLowerCase(),
-      String(body?.password || ''),
+      String(password || ''),
       body?.ownerName ? String(body.ownerName).trim() : undefined,
       body?.maxOutlets ?? null,
     );
@@ -141,12 +145,21 @@ export class MerchantsController {
   })
   updateMerchant(
     @Param('id') id: string,
-    @Body() body: { name?: string; email?: string; password?: string },
+    @Body()
+    body: {
+      name?: string;
+      email?: string;
+      password?: string;
+      portalEmail?: string;
+      portalPassword?: string;
+    },
   ) {
+    const email = body?.email ?? body?.portalEmail;
+    const password = body?.password ?? body?.portalPassword;
     return this.service.updateMerchant(id, {
       name: body?.name,
-      email: body?.email,
-      password: body?.password,
+      email,
+      password,
     });
   }
 
@@ -181,7 +194,9 @@ export class MerchantsController {
   @ApiOkResponse({ type: MerchantSettingsRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   getSettings(@Param('id') id: string) {
-    return this.service.getSettings(id);
+    return this.service
+      .getSettings(id)
+      .then((settings) => this.maskSettingsSecrets(settings));
   }
 
   @Get(':id/rules/preview')
@@ -224,22 +239,34 @@ export class MerchantsController {
     @Param('id') id: string,
     @Body() dto: UpdateMerchantSettingsDto,
   ) {
-    return this.service.updateSettings(
-      id,
-      dto.earnBps,
-      dto.redeemLimitBps,
-      dto.qrTtlSec,
-      dto.webhookUrl,
-      dto.webhookSecret,
-      dto.webhookKeyId,
-      dto.redeemCooldownSec,
-      dto.earnCooldownSec,
-      dto.redeemDailyCap,
-      dto.earnDailyCap,
-      dto.requireJwtForQuote,
-      dto.rulesJson,
-      dto, // передаём доп.поля (next секреты/флажок) без ломки сигнатуры
-    );
+    return this.service
+      .updateSettings(
+        id,
+        dto.earnBps,
+        dto.redeemLimitBps,
+        dto.qrTtlSec,
+        dto.webhookUrl,
+        dto.webhookSecret,
+        dto.webhookKeyId,
+        dto.redeemCooldownSec,
+        dto.earnCooldownSec,
+        dto.redeemDailyCap,
+        dto.earnDailyCap,
+        dto.requireJwtForQuote,
+        dto.rulesJson,
+        dto, // передаём доп.поля (next секреты/флажок) без ломки сигнатуры
+      )
+      .then((settings) => this.maskSettingsSecrets(settings));
+  }
+
+  private maskSettingsSecrets(settings: any) {
+    if (!settings || typeof settings !== 'object') return settings;
+    return {
+      ...settings,
+      webhookSecret: null,
+      webhookSecretNext: null,
+      telegramBotToken: null,
+    };
   }
 
   @Post(':id/antifraud/reset')
@@ -566,6 +593,16 @@ export class MerchantsController {
   })
   getCashier(@Param('id') id: string) {
     return this.service.getCashierCredentials(id);
+  }
+  @Post(':id/cashier')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: { login: { type: 'string' } },
+    },
+  })
+  setCashier(@Param('id') id: string, @Body() body: { login?: string }) {
+    return this.service.setCashierCredentials(id, String(body?.login || ''));
   }
   @Post(':id/cashier/rotate')
   @ApiOkResponse({

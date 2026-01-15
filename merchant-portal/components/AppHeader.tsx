@@ -37,6 +37,7 @@ import { sidebarIconMap } from "./SidebarNav";
 
 type PortalSubscription = {
   status: string;
+  planId: string | null;
   planName: string | null;
   currentPeriodEnd: string | null;
   daysLeft: number | null;
@@ -414,8 +415,19 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
     }
   };
 
+  const formatDaysLeft = (value: number) => {
+    const abs = Math.abs(value);
+    const mod100 = abs % 100;
+    const mod10 = abs % 10;
+    if (mod100 >= 11 && mod100 <= 14) return `${value} дней`;
+    if (mod10 === 1) return `${value} день`;
+    if (mod10 >= 2 && mod10 <= 4) return `${value} дня`;
+    return `${value} дней`;
+  };
+
   const daysLeft = subscription?.daysLeft;
   const showExpiryNotice = Boolean(subscription?.expiresSoon && !subscription?.expired);
+  const planLabel = subscription?.planName || subscription?.planId || "Full";
 
   return (
     <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-8 sticky top-0 z-20">
@@ -497,7 +509,7 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
           <div className="flex items-center space-x-1.5 mr-3 border-r border-purple-200 pr-3">
             <Crown size={14} className="text-purple-600 fill-current" />
             <span className="text-xs font-bold text-purple-900 uppercase tracking-wider">
-              {subscription?.planName || "Full"}
+              {planLabel}
             </span>
           </div>
           <div
@@ -505,7 +517,7 @@ export function AppHeader({ subscription, navSections }: AppHeaderProps) {
             title="До окончания подписки"
           >
             <Clock size={14} />
-            <span>{daysLeft != null ? `${daysLeft} дня` : "—"}</span>
+            <span>{daysLeft != null ? formatDaysLeft(daysLeft) : "—"}</span>
           </div>
         </div>
 

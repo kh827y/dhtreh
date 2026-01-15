@@ -217,6 +217,7 @@ function CustomersPageInner() {
     };
   }, []);
 
+
   React.useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(null), 4000);
@@ -250,6 +251,9 @@ function CustomersPageInner() {
   async function handleModalSubmit(payload: CustomerFormPayload) {
     if (!modalState) return;
     const trimmedName = payload.firstName.trim();
+    const expireRaw = payload.levelExpireDays.trim();
+    const levelExpireDays =
+      expireRaw && Number.isFinite(Number(expireRaw)) ? Math.max(0, Math.floor(Number(expireRaw))) : undefined;
     const baseBody = {
       phone: payload.login.trim(),
       email: payload.email.trim() || undefined,
@@ -259,6 +263,7 @@ function CustomersPageInner() {
       gender: payload.gender,
       comment: payload.comment.trim() || undefined,
       levelId: payload.levelId || undefined,
+      levelExpireDays: payload.levelId && levelExpireDays !== undefined ? levelExpireDays : undefined,
     };
 
     if (modalState.mode === "create") {

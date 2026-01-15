@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Controller,
   Post,
   Body,
@@ -854,7 +855,7 @@ export class IntegrationsLoyaltyController {
           })
         : null;
     if (!receipt && invoiceNum) {
-      receipt = await this.prisma.receipt.findFirst({
+      const matches = await this.prisma.receipt.findMany({
         where: {
           merchantId,
           OR: [{ orderId: invoiceNum }, { receiptNumber: invoiceNum }],
@@ -866,7 +867,14 @@ export class IntegrationsLoyaltyController {
           customerId: true,
           merchantId: true,
         },
+        take: 2,
       });
+      if (matches.length > 1) {
+        throw new ConflictException(
+          'Ambiguous invoice_num/receiptNumber, provide order_id',
+        );
+      }
+      receipt = matches[0] ?? null;
     }
     if (!receipt) {
       throw new BadRequestException('Receipt not found');

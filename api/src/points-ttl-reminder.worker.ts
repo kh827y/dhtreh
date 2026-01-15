@@ -42,8 +42,8 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') {
-      this.logger.log('PointsTtlReminderWorker disabled (WORKERS_ENABLED=0)');
+    if (process.env.WORKERS_ENABLED !== '1') {
+      this.logger.log('PointsTtlReminderWorker disabled (WORKERS_ENABLED!=1)');
       return;
     }
     if (process.env.POINTS_TTL_REMINDER !== '1') {
@@ -70,14 +70,7 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
   private async tick() {
     if (this.running) return;
     this.running = true;
-    const lock = await pgTryAdvisoryLock(
-      this.prisma,
-      'worker:points_ttl_reminder',
-    );
-    if (!lock.ok) {
-      this.running = false;
-      return;
-    }
+    let lock: { ok: boolean; key: [number, number] } | null = null;
     try {
       this.lastTickAt = new Date();
       try {
@@ -87,6 +80,11 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
           { worker: 'points_ttl_reminder' },
         );
       } catch {}
+      lock = await pgTryAdvisoryLock(
+        this.prisma,
+        'worker:points_ttl_reminder',
+      );
+      if (!lock.ok) return;
       const configs = await this.loadConfigs();
       for (const config of configs) {
         await this.processMerchant(config).catch((error) => {
@@ -98,8 +96,10 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
         });
       }
     } finally {
-      await pgAdvisoryUnlock(this.prisma, lock.key);
       this.running = false;
+      if (lock?.ok) {
+        await pgAdvisoryUnlock(this.prisma, lock.key);
+      }
     }
   }
 

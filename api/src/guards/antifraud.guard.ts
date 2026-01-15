@@ -596,14 +596,8 @@ export class AntiFraudGuard implements CanActivate {
             where: { id: holdId },
           });
           if (hold && hold.customerId && hold.merchantId) {
-            const xfwd =
-              (req.headers?.['x-forwarded-for'] as string | undefined) || '';
             const ipAddr =
-              xfwd.split(',')[0]?.trim() ||
-              req.ip ||
-              req.ips?.[0] ||
-              req.socket?.remoteAddress ||
-              undefined;
+              req.ip || req.ips?.[0] || req.socket?.remoteAddress || undefined;
             const ua =
               (req.headers?.['user-agent'] as string | undefined) || undefined;
             const ctx = {
@@ -667,9 +661,11 @@ export class AntiFraudGuard implements CanActivate {
                 : [];
               const hasOutletRule = blockFactors.includes('no_outlet_id');
               const hasDeviceRule = blockFactors.includes('no_device_id');
+              const hasStaffRule = blockFactors.includes('no_staff_id');
               const shouldApplyNoOutlet = hasOutletRule && !hold.outletId;
               const shouldApplyNoDevice =
                 hasDeviceRule && !(hold.deviceId || resolvedDeviceIdFinal);
+              const shouldApplyNoStaff = hasStaffRule && !staffId;
               if (shouldApplyNoOutlet) {
                 const factor = 'no_outlet_id';
                 this.metrics.inc('antifraud_block_factor_total', { factor });
@@ -688,10 +684,6 @@ export class AntiFraudGuard implements CanActivate {
                     })
                     .catch(() => {});
                 } catch {}
-                throw new HttpException(
-                  `Антифрод: заблокировано правилом по фактору (${factor})`,
-                  HttpStatus.TOO_MANY_REQUESTS,
-                );
               }
               if (shouldApplyNoDevice) {
                 const factor = 'no_device_id';
@@ -711,10 +703,25 @@ export class AntiFraudGuard implements CanActivate {
                     })
                     .catch(() => {});
                 } catch {}
-                throw new HttpException(
-                  `Антифрод: заблокировано правилом по фактору (${factor})`,
-                  HttpStatus.TOO_MANY_REQUESTS,
-                );
+              }
+              if (shouldApplyNoStaff) {
+                const factor = 'no_staff_id';
+                this.metrics.inc('antifraud_block_factor_total', { factor });
+                try {
+                  this.staffNotify
+                    .enqueueEvent(hold.merchantId, {
+                      kind: 'FRAUD',
+                      reason: 'factor',
+                      scope: factor,
+                      operation: isCommit ? 'commit' : 'refund',
+                      customerId: hold.customerId ?? null,
+                      outletId: hold.outletId ?? null,
+                      staffId: hold.staffId ?? null,
+                      deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
+                      at: new Date().toISOString(),
+                    })
+                    .catch(() => {});
+                } catch {}
               }
             } catch (e) {
               if (e instanceof HttpException) throw e;
@@ -750,10 +757,6 @@ export class AntiFraudGuard implements CanActivate {
                   })
                   .catch(() => {});
               } catch {}
-              throw new HttpException(
-                `Антифрод: высокий риск (${score.level}). Факторы: ${score.factors?.slice(0, 5).join(', ')}`,
-                HttpStatus.TOO_MANY_REQUESTS,
-              );
             }
             // Правила блокировки по факторам (rulesJson.af.blockFactors: string[])
             let blockFactors: string[] = [];
@@ -796,10 +799,6 @@ export class AntiFraudGuard implements CanActivate {
                     })
                     .catch(() => {});
                 } catch {}
-                throw new HttpException(
-                  `Антифрод: заблокировано правилом по фактору (${matched})`,
-                  HttpStatus.TOO_MANY_REQUESTS,
-                );
               }
             }
             // HIGH риск: не требуем дополнительных подтверждений (по требованию заказчика)

@@ -8,10 +8,15 @@ import {
   Put,
   Query,
   Req,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { hasPortalPermission } from '../../portal-auth/portal-permissions.util';
 import { MerchantPanelService, StaffFilters } from '../merchant-panel.service';
@@ -123,6 +128,41 @@ export class StaffController {
       },
     );
     return staff as StaffDetailDto;
+  }
+
+  @Post(':id/avatar')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }),
+  )
+  async uploadAvatar(
+    @Req() req: any,
+    @Param('id') id: string,
+    @UploadedFile() file: any,
+  ) {
+    return this.service.uploadStaffAvatar(this.getMerchantId(req), id, file);
+  }
+
+  @Get('avatar/:assetId')
+  async downloadAvatar(
+    @Req() req: any,
+    @Param('assetId') assetId: string,
+    @Res() res: Response,
+  ) {
+    const asset = await this.service.getStaffAvatarAsset(
+      this.getMerchantId(req),
+      assetId,
+    );
+    res.setHeader(
+      'Content-Type',
+      asset.mimeType ?? 'application/octet-stream',
+    );
+    res.setHeader(
+      'Content-Length',
+      String(asset.byteSize ?? asset.data?.length ?? 0),
+    );
+    if (asset.fileName)
+      res.setHeader('X-Filename', encodeURIComponent(asset.fileName));
+    res.send(asset.data);
   }
 
   @Post(':id/status')

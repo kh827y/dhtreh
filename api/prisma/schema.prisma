@@ -377,6 +377,7 @@ model Customer {
   comment            String?
   accrualsBlocked    Boolean   @default(false)
   redemptionsBlocked Boolean   @default(false)
+  erasedAt           DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -1020,6 +1021,7 @@ model CashierSession {
   staffId     String
   outletId    String?
   pinAccessId String?
+  deviceSessionId String?
   startedAt   DateTime  @default(now())
   lastSeenAt  DateTime?
   endedAt     DateTime?
@@ -1036,9 +1038,11 @@ model CashierSession {
   staff     Staff              @relation(fields: [staffId], references: [id])
   outlet    Outlet?            @relation(fields: [outletId], references: [id])
   pinAccess StaffOutletAccess? @relation(fields: [pinAccessId], references: [id])
+  deviceSession CashierDeviceSession? @relation(fields: [deviceSessionId], references: [id])
 
   @@index([merchantId, startedAt])
   @@index([staffId, startedAt])
+  @@index([deviceSessionId])
 }
 
 model CashierActivationCode {
@@ -1072,10 +1076,14 @@ model CashierDeviceSession {
   activationCodeId  String?
   ipAddress         String?
   userAgent         String?
+  pinFailedCount    Int      @default(0)
+  pinFailedAt       DateTime?
+  pinLockedUntil    DateTime?
   metadata          Json?
 
   merchant         Merchant              @relation(fields: [merchantId], references: [id])
   activationCode   CashierActivationCode? @relation(fields: [activationCodeId], references: [id])
+  cashierSessions  CashierSession[]
 
   @@index([merchantId, createdAt])
   @@index([merchantId, expiresAt])
@@ -1336,7 +1344,9 @@ model EarnLot {
   outletId       String?
   staffId        String?
   deviceId       String?
-  status         String    @default("ACTIVE") // ACTIVE | PENDING
+  status         String    @default("ACTIVE") // ACTIVE | PENDING | FAILED
+  activationAttempts Int   @default(0)
+  activationLastError String?
   createdAt      DateTime  @default(now())
 
   device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)

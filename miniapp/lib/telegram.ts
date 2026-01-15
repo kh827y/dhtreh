@@ -6,7 +6,15 @@ export type TelegramBackButton = {
 };
 
 export type TelegramWebApp = {
-  initDataUnsafe?: { user?: { first_name?: string; last_name?: string; username?: string; photo_url?: string } };
+  initDataUnsafe?: {
+    user?: {
+      id?: number | string;
+      first_name?: string;
+      last_name?: string;
+      username?: string;
+      photo_url?: string;
+    };
+  };
   ready?: () => void;
   expand?: () => void;
   requestPhoneNumber?: () => Promise<unknown>;
@@ -25,6 +33,17 @@ export function getTelegramWebApp(): TelegramWebApp | null {
   if (typeof window === "undefined") return null;
   try {
     return (window as TelegramWindow).Telegram?.WebApp ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function getTelegramUserId(): string | null {
+  try {
+    const tg = getTelegramWebApp();
+    const id = tg?.initDataUnsafe?.user?.id;
+    if (id == null) return null;
+    return String(id);
   } catch {
     return null;
   }

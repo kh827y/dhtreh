@@ -108,6 +108,15 @@ function computePurchaseStats(
   frequencyDays: number | null;
 } {
   const purchases = transactions.filter((txn) => {
+    if (txn.canceledAt) return false;
+    const type = typeof txn.type === "string" ? txn.type.toLowerCase() : "";
+    const kind = typeof txn.kind === "string" ? txn.kind.toLowerCase() : "";
+    const orderId = typeof txn.orderId === "string" ? txn.orderId.trim().toLowerCase() : "";
+    if (orderId === "registration_bonus") return false;
+    if (kind.includes("registration")) return false;
+    if (type === "refund" || kind === "refund" || /возврат/.test(kind)) {
+      return false;
+    }
     if (
       hasPositiveValue(txn.total) ||
       hasPositiveValue(txn.purchaseAmount) ||
@@ -115,9 +124,7 @@ function computePurchaseStats(
     ) {
       return true;
     }
-    const type = typeof txn.type === "string" ? txn.type.toLowerCase() : "";
     if (["earn", "purchase", "order", "sale"].includes(type)) return true;
-    const kind = typeof txn.kind === "string" ? txn.kind.toLowerCase() : "";
     if (/(purchase|order|sale|покуп)/.test(kind)) return true;
     return false;
   });
@@ -256,7 +263,7 @@ export function normalizeCustomer(input: any): CustomerRecord {
   const visitsFromApiRaw = toOptionalNumber(input?.visits ?? input?.purchaseCount);
   const purchaseStats = computePurchaseStats(transactionsForStats, visitsFromApiRaw);
   const visitsFromApi = visitsFromApiRaw != null ? Math.max(0, Math.round(visitsFromApiRaw)) : null;
-  const visits = visitsFromApi && visitsFromApi > 0 ? visitsFromApi : purchaseStats.purchaseCount;
+  const visits = visitsFromApi != null ? visitsFromApi : purchaseStats.purchaseCount;
 
   let visitFrequencyDays =
     visitFrequencyDaysRaw != null ? Math.max(0, Math.round(visitFrequencyDaysRaw)) : null;
@@ -298,6 +305,7 @@ export function normalizeCustomer(input: any): CustomerRecord {
     spendTotal: Math.max(0, toNumber(input?.spendTotal)),
     tags,
     registeredAt,
+    erasedAt: toStringOrNull(input?.erasedAt),
     comment: toStringOrNull(input?.comment),
     blocked: Boolean(input?.accrualsBlocked ?? input?.blocked),
     redeemBlocked: Boolean(

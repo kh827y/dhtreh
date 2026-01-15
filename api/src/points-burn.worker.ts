@@ -23,8 +23,8 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') {
-      this.logger.log('Workers disabled (WORKERS_ENABLED=0)');
+    if (process.env.WORKERS_ENABLED !== '1') {
+      this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
     if (process.env.POINTS_TTL_BURN !== '1') {
@@ -50,13 +50,14 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
   private async tick() {
     if (this.running) return;
     this.running = true;
-    const lock = await pgTryAdvisoryLock(this.prisma, 'worker:points_ttl_burn');
-    if (!lock.ok) {
-      this.running = false;
-      return;
-    }
+    let lock: { ok: boolean; key: [number, number] } | null = null;
     try {
       this.lastTickAt = new Date();
+      lock = await pgTryAdvisoryLock(
+        this.prisma,
+        'worker:points_ttl_burn',
+      );
+      if (!lock.ok) return;
       if (process.env.EARN_LOTS_FEATURE !== '1') {
         this.logger.log('EARN_LOTS_FEATURE not enabled, skip TTL burn');
         return;
@@ -93,6 +94,11 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
             status: 'ACTIVE',
             OR: conditions,
           },
+          select: {
+            customerId: true,
+            points: true,
+            consumedPoints: true,
+          },
         });
         const map = new Map<string, number>();
         for (const lot of lots) {
@@ -122,9 +128,11 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
               where: {
                 merchantId: s.merchantId,
                 customerId,
+                status: 'ACTIVE',
                 OR: conditions,
               },
               orderBy: { earnedAt: 'asc' },
+              select: { id: true, points: true, consumedPoints: true },
             });
             const lotUpdates: Array<{ id: string; consumedPoints: number }> = [];
             for (const lot of expLots) {
@@ -198,7 +206,9 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
       }
     } finally {
       this.running = false;
-      await pgAdvisoryUnlock(this.prisma, lock.key);
+      if (lock?.ok) {
+        await pgAdvisoryUnlock(this.prisma, lock.key);
+      }
     }
   }
 }

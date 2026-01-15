@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   AccessScope,
+  CommunicationChannel,
   Prisma,
   StaffOutletAccessStatus,
   StaffRole,
@@ -79,60 +80,6 @@ type PortalActorContext = {
   role?: string | null;
 };
 
-interface AccessGroupPreset {
-  key: string;
-  name: string;
-  description?: string;
-  scope: AccessScope;
-  isSystem: boolean;
-  isDefault: boolean;
-  permissions: Array<{ resource: string; action: string; conditions?: any }>;
-}
-
-type CrudAction = 'create' | 'read' | 'update' | 'delete';
-
-const DEFAULT_CRUD_ACTIONS: CrudAction[] = [
-  'create',
-  'read',
-  'update',
-  'delete',
-];
-
-const MANAGER_EDIT_RESOURCES = [
-  'products',
-  'categories',
-  'audiences',
-  'customers',
-  'points_promotions',
-  'product_promotions',
-  'promocodes',
-  'telegram_notifications',
-  'broadcasts',
-  'feedback',
-  'staff_motivation',
-  'mechanic_birthday',
-  'mechanic_auto_return',
-  'mechanic_levels',
-  'mechanic_redeem_limits',
-  'mechanic_registration_bonus',
-  'mechanic_ttl',
-  'mechanic_referral',
-  'cashier_panel',
-  'import',
-  'wallet',
-];
-
-const MANAGER_VIEW_RESOURCES = [
-  'staff',
-  'outlets',
-  'integrations',
-  'antifraud',
-  'access_groups',
-  'system_settings',
-  'analytics',
-  'rfm_analysis',
-];
-
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function normalizeEmailValue(value?: string | null) {
@@ -145,13 +92,6 @@ function assertEmailFormat(value: string, message: string) {
   if (!EMAIL_REGEX.test(value)) {
     throw new BadRequestException(message);
   }
-}
-
-function crudPermissions(
-  resource: string,
-  actions: CrudAction[] = DEFAULT_CRUD_ACTIONS,
-) {
-  return actions.map((action) => ({ resource, action }));
 }
 
 export interface OutletFilters {
@@ -179,76 +119,18 @@ type StaffAccessView = {
 @Injectable()
 export class MerchantPanelService {
   private readonly logger = new Logger(MerchantPanelService.name);
+  private readonly allowedAvatarMimeTypes = new Set([
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+  ]);
+  private readonly maxAvatarBytes = 2 * 1024 * 1024;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly merchants: MerchantsService,
     private readonly metrics: MetricsService,
   ) {}
-
-  private readonly defaultAccessGroupPresets: AccessGroupPreset[] = [
-    {
-      key: 'owner',
-      name: 'Владелец',
-      description: 'Полный доступ ко всем разделам портала',
-      scope: AccessScope.PORTAL,
-      isSystem: true,
-      isDefault: true,
-      permissions: [
-        ...crudPermissions('staff'),
-        ...crudPermissions('outlets'),
-        ...crudPermissions('loyalty'),
-        ...crudPermissions('analytics'),
-      ],
-    },
-    {
-      key: 'admin',
-      name: 'Администратор',
-      description: 'Полный доступ ко всем разделам и настройкам системы.',
-      scope: AccessScope.PORTAL,
-      isSystem: false,
-      isDefault: false,
-      permissions: [{ resource: '__all__', action: 'manage' }],
-    },
-    {
-      key: 'manager',
-      name: 'Менеджер',
-      description: 'Работа с сотрудниками и программой лояльности',
-      scope: AccessScope.PORTAL,
-      isSystem: false,
-      isDefault: false,
-      permissions: [
-        ...MANAGER_EDIT_RESOURCES.flatMap((resource) =>
-          crudPermissions(resource, ['create', 'read', 'update']),
-        ),
-        ...MANAGER_VIEW_RESOURCES.map((resource) => ({
-          resource,
-          action: 'read',
-        })),
-      ],
-    },
-    {
-      key: 'analyst',
-      name: 'Аналитик',
-      description: 'Доступ только на чтение для отчётности',
-      scope: AccessScope.PORTAL,
-      isSystem: false,
-      isDefault: false,
-      permissions: [
-        ...crudPermissions('analytics', ['read']),
-        ...crudPermissions('loyalty', ['read']),
-      ],
-    },
-    {
-      key: 'cashier',
-      name: 'Кассир',
-      description: 'Доступ к операциям на точке продаж',
-      scope: AccessScope.CASHIER,
-      isSystem: false,
-      isDefault: false,
-      permissions: [...crudPermissions('loyalty', ['read'])],
-    },
-  ];
 
   private normalizePagination(
     pagination?: Partial<PaginationOptions>,
@@ -271,142 +153,14 @@ export class MerchantPanelService {
     };
   }
 
-  private async ensureDefaultAccessGroups(merchantId: string) {
-    const existing = await this.prisma.accessGroup.findMany({
-      where: { merchantId },
-      select: {
-        id: true,
-        name: true,
-        scope: true,
-        metadata: true,
-        updatedById: true,
-        isSystem: true,
-        isDefault: true,
-      },
-    });
-    const existingKeys = new Set(
-      existing.map(
-        (group) => `${group.scope}:${group.name.trim().toLowerCase()}`,
-      ),
-    );
-    const presetGroups = new Map<
-      string,
-      (typeof existing)[number]
-    >();
-    for (const group of existing) {
-      const metadata =
-        group.metadata && typeof group.metadata === 'object'
-          ? (group.metadata as Record<string, unknown>)
-          : null;
-      const presetKey =
-        metadata && typeof metadata.presetKey === 'string'
-          ? metadata.presetKey
-          : null;
-      if (presetKey) presetGroups.set(presetKey, group);
-    }
-    const missingPresets = this.defaultAccessGroupPresets.filter((preset) => {
-      const key = `${preset.scope}:${preset.name.trim().toLowerCase()}`;
-      return !existingKeys.has(key);
-    });
-    const updatablePresets = this.defaultAccessGroupPresets.filter((preset) => {
-      const group = presetGroups.get(preset.key);
-      if (!group) return false;
-      if (group.updatedById) return false;
-      return true;
-    });
-    if (!missingPresets.length && !updatablePresets.length) return;
-
-    let created = 0;
-    await this.prisma.$transaction(async (tx) => {
-      for (const preset of missingPresets) {
-        try {
-          const createdGroup = await tx.accessGroup.create({
-            data: {
-              merchantId,
-              name: preset.name,
-              description: preset.description ?? null,
-              scope: preset.scope,
-              isSystem: preset.isSystem,
-              isDefault: preset.isDefault,
-              metadata: {
-                bootstrap: true,
-                presetKey: preset.key,
-              } as Prisma.JsonObject,
-            },
-          });
-          if (preset.permissions.length) {
-            await tx.accessGroupPermission.createMany({
-              data: preset.permissions.map((permission) => ({
-                groupId: createdGroup.id,
-                resource: permission.resource,
-                action: permission.action,
-                conditions: permission.conditions ?? null,
-              })),
-            });
-          }
-          created += 1;
-        } catch (error: unknown) {
-          if (
-            error instanceof Prisma.PrismaClientKnownRequestError &&
-            (error.code === 'P2002' || error.code === 'P2003')
-          ) {
-            continue;
-          }
-          throw error;
-        }
-      }
-      for (const preset of updatablePresets) {
-        const group = presetGroups.get(preset.key);
-        if (!group) continue;
-        const baseMeta =
-          group.metadata && typeof group.metadata === 'object'
-            ? (group.metadata as Prisma.JsonObject)
-            : {};
-        await tx.accessGroup.update({
-          where: { id: group.id },
-          data: {
-            name: preset.name,
-            description: preset.description ?? null,
-            scope: preset.scope,
-            isSystem: preset.isSystem,
-            isDefault: preset.isDefault,
-            metadata: {
-              ...baseMeta,
-              bootstrap: true,
-              presetKey: preset.key,
-            } as Prisma.JsonObject,
-          },
-        });
-        await tx.accessGroupPermission.deleteMany({ where: { groupId: group.id } });
-        if (preset.permissions.length) {
-          await tx.accessGroupPermission.createMany({
-            data: preset.permissions.map((permission) => ({
-              groupId: group.id,
-              resource: permission.resource,
-              action: permission.action,
-              conditions: permission.conditions ?? null,
-            })),
-          });
-        }
-      }
-    });
-
-    if (created > 0) {
-      try {
-        this.logger.log(
-          JSON.stringify({
-            event: 'portal.access-group.bootstrap',
-            merchantId,
-            created,
-          }),
-        );
-        this.metrics.inc('portal_access_group_bootstrap_total', {}, created);
-      } catch {}
-    }
-  }
-
   private randomPin(): string {
     return String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+  }
+
+  private defaultAvatarFileName(mimeType: string) {
+    if (mimeType === 'image/png') return 'avatar.png';
+    if (mimeType === 'image/webp') return 'avatar.webp';
+    return 'avatar.jpg';
   }
 
   private async generateUniquePin(
@@ -1356,6 +1110,69 @@ export class MerchantPanelService {
     return this.getStaff(merchantId, staffId);
   }
 
+  async uploadStaffAvatar(
+    merchantId: string,
+    staffId: string,
+    file: {
+      buffer?: Buffer;
+      mimetype?: string;
+      originalname?: string;
+      size?: number;
+    },
+  ) {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('Файл не найден');
+    }
+    const staff = await this.prisma.staff.findFirst({
+      where: { id: staffId, merchantId },
+      select: { id: true },
+    });
+    if (!staff) throw new NotFoundException('Сотрудник не найден');
+    const size = Number(file.size ?? file.buffer.length ?? 0);
+    if (!Number.isFinite(size) || size <= 0) {
+      throw new BadRequestException('Пустой файл');
+    }
+    if (size > this.maxAvatarBytes) {
+      throw new BadRequestException('Размер файла не должен превышать 2MB');
+    }
+    const mimeType = String(file.mimetype || '').toLowerCase();
+    if (!this.allowedAvatarMimeTypes.has(mimeType)) {
+      throw new BadRequestException('Поддерживаются только PNG, JPG или WEBP');
+    }
+    const fileName =
+      typeof file.originalname === 'string' && file.originalname.trim()
+        ? file.originalname.trim()
+        : this.defaultAvatarFileName(mimeType);
+
+    const asset = await this.prisma.communicationAsset.create({
+      data: {
+        merchantId,
+        channel: CommunicationChannel.INAPP,
+        kind: 'AVATAR',
+        fileName,
+        mimeType,
+        byteSize: size,
+        data: file.buffer,
+      },
+      select: { id: true },
+    });
+
+    return { assetId: asset.id };
+  }
+
+  async getStaffAvatarAsset(merchantId: string, assetId: string) {
+    const asset = await this.prisma.communicationAsset.findUnique({
+      where: { id: assetId },
+    });
+    if (!asset || asset.merchantId !== merchantId) {
+      throw new NotFoundException('Файл не найден');
+    }
+    if (asset.kind !== 'AVATAR') {
+      throw new NotFoundException('Файл не найден');
+    }
+    return asset;
+  }
+
   async changeStaffStatus(
     merchantId: string,
     staffId: string,
@@ -1592,7 +1409,6 @@ export class MerchantPanelService {
     pagination?: Partial<PaginationOptions>,
   ) {
     const paging = this.normalizePagination(pagination);
-    await this.ensureDefaultAccessGroups(merchantId);
     const where: Prisma.AccessGroupWhereInput = { merchantId };
     if (filters.scope && filters.scope !== 'ALL') {
       where.scope = filters.scope;
@@ -1692,26 +1508,15 @@ export class MerchantPanelService {
       where: { merchantId, id: groupId },
     });
     if (!group) throw new NotFoundException('Группа не найдена');
-    if (group.isSystem) {
-      const nameLower = group.name.trim().toLowerCase();
-      const metadata =
-        group.metadata && typeof group.metadata === 'object'
-          ? (group.metadata as Record<string, unknown>)
-          : null;
-      const presetKey =
-        metadata && typeof metadata.presetKey === 'string'
-          ? metadata.presetKey
-          : null;
-      const isOwnerGroup =
-        presetKey === 'owner' ||
-        nameLower === 'владелец' ||
-        nameLower === 'owner' ||
-        nameLower === 'merchant';
-      if (isOwnerGroup) {
-        throw new ForbiddenException(
-          'Нельзя редактировать группу доступа владельца',
-        );
-      }
+    const nameLower = group.name.trim().toLowerCase();
+    const isOwnerGroup =
+      nameLower === 'владелец' ||
+      nameLower === 'owner' ||
+      nameLower === 'merchant';
+    if (isOwnerGroup) {
+      throw new ForbiddenException(
+        'Нельзя редактировать группу доступа владельца',
+      );
     }
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.accessGroup.update({
@@ -1774,8 +1579,16 @@ export class MerchantPanelService {
       where: { merchantId, id: groupId },
     });
     if (!group) throw new NotFoundException('Группа не найдена');
-    if (group.isSystem)
-      throw new ForbiddenException('Нельзя удалить системную группу');
+    const nameLower = group.name.trim().toLowerCase();
+    const isOwnerGroup =
+      nameLower === 'владелец' ||
+      nameLower === 'owner' ||
+      nameLower === 'merchant';
+    if (isOwnerGroup) {
+      throw new ForbiddenException(
+        'Нельзя удалить группу доступа владельца',
+      );
+    }
     await this.prisma.$transaction(async (tx) => {
       await tx.staffAccessGroup.deleteMany({ where: { groupId } });
       await tx.accessGroupPermission.deleteMany({ where: { groupId } });

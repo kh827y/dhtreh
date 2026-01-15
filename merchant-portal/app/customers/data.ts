@@ -87,6 +87,7 @@ export type CustomerRecord = {
   spendTotal: number;
   tags: string[];
   registeredAt: string | null;
+  erasedAt: string | null;
   comment: string | null;
   blocked: boolean;
   redeemBlocked: boolean;

@@ -263,6 +263,8 @@ export class PublicSettingsDto {
   supportTelegram?: string | null;
   @ApiPropertyOptional({ nullable: true })
   reviewsEnabled?: boolean | null;
+  @ApiPropertyOptional({ nullable: true })
+  referralEnabled?: boolean | null;
   @ApiPropertyOptional({ type: ReviewsShareSettingsDto, nullable: true })
   reviewsShare?: ReviewsShareSettingsDto | null;
 }
@@ -459,7 +461,6 @@ export class PublicOutletDto {
 
 export class PublicStaffDto {
   @ApiProperty() id!: string;
-  @ApiPropertyOptional() login?: string;
   @ApiProperty() role!: string;
 }
 

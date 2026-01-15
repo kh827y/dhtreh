@@ -21,8 +21,8 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') {
-      this.logger.log('Workers disabled (WORKERS_ENABLED=0)');
+    if (process.env.WORKERS_ENABLED !== '1') {
+      this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
     const intervalMs = Number(
@@ -42,7 +42,7 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
 
   private async tick() {
     if (this.running) return;
-    this.running = true;
+      this.running = true;
     const lock = await pgTryAdvisoryLock(this.prisma, 'worker:earn_activation');
     if (!lock.ok) {
       this.running = false;
@@ -50,6 +50,10 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
     }
     try {
       const batchSize = Number(process.env.EARN_ACTIVATION_BATCH || 500);
+      const maxAttempts = Math.max(
+        1,
+        Number(process.env.EARN_ACTIVATION_MAX_RETRIES || '5'),
+      );
       const now = new Date();
       // Выбираем порцию PENDING лотов, срок которых наступил
       const lots = await this.prisma.earnLot.findMany({
@@ -75,13 +79,33 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
               return;
 
             const points = Math.max(0, Number(fresh.points || 0));
+            const consumedPoints = Math.max(
+              0,
+              Number(fresh.consumedPoints || 0),
+            );
+            const effectivePoints = Math.max(0, points - consumedPoints);
             if (fresh.expiresAt && fresh.expiresAt.getTime() <= Date.now()) {
               await tx.earnLot.update({
                 where: { id: fresh.id },
                 data: {
                   status: 'ACTIVE',
                   earnedAt: fresh.maturesAt,
-                  consumedPoints: points,
+                  consumedPoints: Math.max(points, consumedPoints),
+                  activationAttempts: 0,
+                  activationLastError: null,
+                },
+              });
+              return;
+            }
+            if (effectivePoints <= 0) {
+              await tx.earnLot.update({
+                where: { id: fresh.id },
+                data: {
+                  status: 'ACTIVE',
+                  earnedAt: fresh.maturesAt,
+                  consumedPoints: Math.max(points, consumedPoints),
+                  activationAttempts: 0,
+                  activationLastError: null,
                 },
               });
               return;
@@ -96,19 +120,24 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
                   type: 'POINTS' as any,
                 } as any,
               },
-              update: { balance: { increment: points } },
+              update: { balance: { increment: effectivePoints } },
               create: {
                 merchantId: fresh.merchantId,
                 customerId: fresh.customerId,
                 type: 'POINTS' as any,
-                balance: points,
+                balance: effectivePoints,
               },
             } as any);
 
             // Обновляем статус лота на ACTIVE
             await tx.earnLot.update({
               where: { id: fresh.id },
-              data: { status: 'ACTIVE', earnedAt: fresh.maturesAt },
+              data: {
+                status: 'ACTIVE',
+                earnedAt: fresh.maturesAt,
+                activationAttempts: 0,
+                activationLastError: null,
+              },
             });
 
             // Транзакция начисления (CAMPAIGN или EARN?) — считаем как EARN (отложенное начисление)
@@ -117,7 +146,7 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
                 merchantId: fresh.merchantId,
                 customerId: fresh.customerId,
                 type: TxnType.EARN,
-                amount: points,
+                amount: effectivePoints,
                 orderId: fresh.orderId ?? undefined,
                 outletId: fresh.outletId ?? undefined,
                 staffId: fresh.staffId ?? undefined,
@@ -133,7 +162,7 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
                   customerId: fresh.customerId,
                   debit: LedgerAccount.MERCHANT_LIABILITY,
                   credit: LedgerAccount.CUSTOMER_BALANCE,
-                  amount: points,
+                  amount: effectivePoints,
                   orderId: fresh.orderId ?? undefined,
                   outletId: fresh.outletId ?? undefined,
                   staffId: fresh.staffId ?? undefined,
@@ -149,7 +178,7 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
                 payload: {
                   merchantId: fresh.merchantId,
                   customerId: fresh.customerId,
-                  points,
+                  points: effectivePoints,
                   earnLotId: fresh.id,
                   activatedAt: new Date().toISOString(),
                   outletId: fresh.outletId ?? null,
@@ -164,7 +193,7 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
                   payload: {
                     merchantId: fresh.merchantId,
                     customerId: fresh.customerId,
-                    points,
+                    points: effectivePoints,
                   },
                 },
               });
@@ -174,11 +203,36 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
             this.metrics.inc('loyalty_delayed_earn_activated_total');
           } catch {}
         } catch (error: any) {
+          const rawMessage = String(error?.message || error || '');
+          const errorMessage =
+            rawMessage.length > 500 ? rawMessage.slice(0, 500) : rawMessage;
           this.logger.error(
-            `Failed to activate earn lot (id=${lot.id}): ${
-              error?.message || error
-            }`,
+            `Failed to activate earn lot (id=${lot.id}): ${errorMessage}`,
           );
+          try {
+            const updated = await this.prisma.earnLot.updateMany({
+              where: { id: lot.id, status: 'PENDING' },
+              data: {
+                activationAttempts: { increment: 1 },
+                activationLastError: errorMessage || null,
+              },
+            });
+            if (updated.count > 0) {
+              const fresh = await this.prisma.earnLot.findUnique({
+                where: { id: lot.id },
+                select: { activationAttempts: true, status: true },
+              });
+              if (
+                fresh?.status === 'PENDING' &&
+                (fresh.activationAttempts ?? 0) >= maxAttempts
+              ) {
+                await this.prisma.earnLot.update({
+                  where: { id: lot.id },
+                  data: { status: 'FAILED' },
+                });
+              }
+            }
+          } catch {}
         }
       }
     } finally {

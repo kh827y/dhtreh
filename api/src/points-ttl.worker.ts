@@ -22,8 +22,8 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') {
-      this.logger.log('Workers disabled (WORKERS_ENABLED=0)');
+    if (process.env.WORKERS_ENABLED !== '1') {
+      this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
     if (process.env.POINTS_TTL_FEATURE !== '1') {
@@ -49,14 +49,7 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
   private async tick() {
     if (this.running) return;
     this.running = true;
-    const lock = await pgTryAdvisoryLock(
-      this.prisma,
-      'worker:points_ttl_preview',
-    );
-    if (!lock.ok) {
-      this.running = false;
-      return;
-    }
+    let lock: { ok: boolean; key: [number, number] } | null = null;
     try {
       this.lastTickAt = new Date();
       try {
@@ -66,15 +59,41 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
           { worker: 'points_ttl' },
         );
       } catch {}
+      lock = await pgTryAdvisoryLock(
+        this.prisma,
+        'worker:points_ttl_preview',
+      );
+      if (!lock.ok) return;
       const merchants = await this.prisma.merchantSettings.findMany({
         where: { pointsTtlDays: { not: null } },
       });
       const now = Date.now();
+      const lotBatchSize = Math.max(
+        100,
+        Number(process.env.POINTS_TTL_BATCH || '2000'),
+      );
+      const outboxBatchSize = Math.max(
+        50,
+        Number(process.env.POINTS_TTL_OUTBOX_BATCH || '500'),
+      );
       for (const s of merchants) {
         const ttlDays = (s as any).pointsTtlDays as number | null;
         if (!ttlDays || ttlDays <= 0) continue;
         const previewDate = new Date(now).toISOString().slice(0, 10);
         const existingKeys = new Set<string>();
+        const outboxBatch: any[] = [];
+        const flushOutbox = async () => {
+          if (!outboxBatch.length) return;
+          const outbox = (this.prisma as any).eventOutbox;
+          if (outbox?.createMany) {
+            await outbox.createMany({ data: outboxBatch });
+          } else if (outbox?.create) {
+            for (const row of outboxBatch) {
+              await outbox.create({ data: row });
+            }
+          }
+          outboxBatch.length = 0;
+        };
         try {
           const existing = await this.prisma.eventOutbox.findMany({
             where: {
@@ -120,89 +139,115 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
             },
           ];
           // Точный превью: неиспользованные lot'ы, «заработанные» ранее cutoff
-          const lots = await this.prisma.earnLot.findMany({
-            where: {
-              merchantId: s.merchantId,
-              status: 'ACTIVE',
-              OR: conditions,
-            },
-          });
           const byCustomer = new Map<string, number>();
-          for (const lot of lots) {
-            const remain = Math.max(0, lot.points - lot.consumedPoints);
-            if (remain <= 0) continue;
-            byCustomer.set(
-              lot.customerId,
-              (byCustomer.get(lot.customerId) || 0) + remain,
-            );
+          let cursor: string | undefined = undefined;
+          while (true) {
+            const lots = await this.prisma.earnLot.findMany({
+              where: {
+                merchantId: s.merchantId,
+                status: 'ACTIVE',
+                OR: conditions,
+              },
+              select: {
+                id: true,
+                customerId: true,
+                points: true,
+                consumedPoints: true,
+              },
+              orderBy: { id: 'asc' },
+              take: lotBatchSize,
+              ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+            });
+            if (!lots.length) break;
+            for (const lot of lots) {
+              const remain = Math.max(0, lot.points - lot.consumedPoints);
+              if (remain <= 0) continue;
+              byCustomer.set(
+                lot.customerId,
+                (byCustomer.get(lot.customerId) || 0) + remain,
+              );
+            }
+            cursor = lots[lots.length - 1].id;
           }
           for (const [customerId, expiringPoints] of byCustomer.entries()) {
             const key = `${customerId}|${String(ttlDays)}|lots|${previewDate}`;
             if (existingKeys.has(key)) continue;
-            await this.prisma.eventOutbox.create({
-              data: {
+            outboxBatch.push({
+              merchantId: s.merchantId,
+              eventType: 'loyalty.points_ttl.preview',
+              payload: {
                 merchantId: s.merchantId,
-                eventType: 'loyalty.points_ttl.preview',
-                payload: {
-                  merchantId: s.merchantId,
-                  customerId,
-                  ttlDays,
-                  expiringPoints,
-                  previewDate,
-                  computedAt: new Date().toISOString(),
-                  mode: 'lots',
-                } as any,
-              },
+                customerId,
+                ttlDays,
+                expiringPoints,
+                previewDate,
+                computedAt: new Date().toISOString(),
+                mode: 'lots',
+              } as any,
             });
             existingKeys.add(key);
+            if (outboxBatch.length >= outboxBatchSize) {
+              await flushOutbox();
+            }
           }
+          await flushOutbox();
         } else {
           // Приблизённый превью от баланса/начислений за период
           const wallets = await this.prisma.wallet.findMany({
-            where: { merchantId: s.merchantId, type: 'POINTS' as any },
+            where: { merchantId: s.merchantId, type: 'POINTS' as any, balance: { gt: 0 } },
+            select: { id: true, customerId: true, balance: true },
           });
+          const recentEarn = await this.prisma.transaction.groupBy({
+            by: ['customerId'],
+            where: {
+              merchantId: s.merchantId,
+              type: 'EARN' as any,
+              ...purchaseOnly,
+              createdAt: { gte: cutoff },
+            },
+            _sum: { amount: true },
+          });
+          const recentEarnByCustomer = new Map<string, number>();
+          for (const row of recentEarn) {
+            if (!row.customerId) continue;
+            recentEarnByCustomer.set(row.customerId, row._sum.amount || 0);
+          }
           for (const w of wallets) {
             try {
-              const recentEarn = await this.prisma.transaction.aggregate({
-                _sum: { amount: true },
-                where: {
-                  merchantId: s.merchantId,
-                  customerId: w.customerId,
-                  type: 'EARN' as any,
-                  ...purchaseOnly,
-                  createdAt: { gte: cutoff },
-                },
-              });
-              const recent = recentEarn._sum.amount || 0;
+              const recent = recentEarnByCustomer.get(w.customerId) || 0;
               const tentativeExpire = Math.max(0, (w.balance || 0) - recent);
               if (tentativeExpire > 0) {
                 const key = `${w.customerId}|${String(ttlDays)}|approx|${previewDate}`;
                 if (existingKeys.has(key)) continue;
-                await this.prisma.eventOutbox.create({
-                  data: {
+                outboxBatch.push({
+                  merchantId: s.merchantId,
+                  eventType: 'loyalty.points_ttl.preview',
+                  payload: {
                     merchantId: s.merchantId,
-                    eventType: 'loyalty.points_ttl.preview',
-                    payload: {
-                      merchantId: s.merchantId,
-                      customerId: w.customerId,
-                      walletId: w.id,
-                      ttlDays,
-                      tentativeExpire,
-                      previewDate,
-                      computedAt: new Date().toISOString(),
-                      mode: 'approx',
-                    } as any,
-                  },
+                    customerId: w.customerId,
+                    walletId: w.id,
+                    ttlDays,
+                    tentativeExpire,
+                    previewDate,
+                    computedAt: new Date().toISOString(),
+                    mode: 'approx',
+                  } as any,
                 });
                 existingKeys.add(key);
+                if (outboxBatch.length >= outboxBatchSize) {
+                  await flushOutbox();
+                }
               }
             } catch {}
           }
+          await flushOutbox();
         }
       }
     } finally {
       this.running = false;
-      await pgAdvisoryUnlock(this.prisma, lock.key);
+      if (lock?.ok) {
+        await pgAdvisoryUnlock(this.prisma, lock.key);
+      }
     }
   }
 }

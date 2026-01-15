@@ -18,6 +18,10 @@ import { ensureBaseTier } from '../loyalty/tier-defaults.util';
 import { CustomerAudiencesService } from '../customer-audiences/customer-audiences.service';
 import { isSystemAllAudience } from '../customer-audiences/audience.utils';
 import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
+import {
+  normalizePhoneDigits,
+  normalizePhoneE164,
+} from '../common/phone.util';
 
 export type PortalCustomerReferrerDto = {
   id: string;
@@ -106,11 +110,13 @@ export type PortalCustomerDto = {
   spendTotal: number;
   registeredAt: string | null;
   createdAt: string | null;
+  erasedAt: string | null;
   comment: string | null;
   accrualsBlocked: boolean;
   redemptionsBlocked?: boolean;
   levelId?: string | null;
   levelName?: string | null;
+  levelExpireDays?: number | null;
   referrer?: PortalCustomerReferrerDto | null;
   invite?: PortalCustomerInviteDto | null;
   expiry?: PortalCustomerExpiryDto[];
@@ -131,10 +137,8 @@ export type ListCustomersQuery = {
 
 const msPerDay = 24 * 60 * 60 * 1000;
 
-const normalizePhoneValue = (value?: string | null) => {
-  const digits = String(value ?? '').replace(/\D/g, '');
-  return digits ? digits : null;
-};
+const normalizePhoneValue = (value?: string | null) =>
+  normalizePhoneDigits(value);
 
 // После рефактора Customer = per-merchant модель, все поля напрямую
 const customerBaseSelect = (merchantId: string) =>
@@ -152,6 +156,7 @@ const customerBaseSelect = (merchantId: string) =>
     redemptionsBlocked: true,
     createdAt: true,
     updatedAt: true,
+    erasedAt: true,
     tierAssignments: {
       where: {
         merchantId,
@@ -497,6 +502,9 @@ export class PortalCustomersService {
     const registeredAt = registeredSource
       ? new Date(registeredSource).toISOString()
       : null;
+    const erasedAt = entity.erasedAt
+      ? new Date(entity.erasedAt).toISOString()
+      : null;
     const levelName = tierAssignment?.tier?.name ?? null;
     const levelId = tierAssignment?.tier?.id ?? null;
 
@@ -531,6 +539,7 @@ export class PortalCustomersService {
       spendTotal,
       registeredAt,
       createdAt: registeredAt,
+      erasedAt,
       comment: entity.comment ?? null,
       accrualsBlocked: Boolean(entity.accrualsBlocked),
       redemptionsBlocked: Boolean(entity.redemptionsBlocked),
@@ -2137,7 +2146,15 @@ export class PortalCustomersService {
       lastName?: string;
     },
   ) {
-    const phone = normalizePhoneValue(dto.phone) || undefined;
+    const phoneRaw = dto.phone;
+    const phoneDigits = normalizePhoneDigits(phoneRaw);
+    const phone = normalizePhoneE164(phoneRaw) || undefined;
+    if (phoneRaw !== undefined) {
+      const trimmed = String(phoneRaw ?? '').trim();
+      if (trimmed && !phoneDigits) {
+        throw new BadRequestException('Неверный формат телефона');
+      }
+    }
     const email = dto.email?.trim()?.toLowerCase() || undefined;
     const fullName =
       dto.name?.trim() ||
@@ -2146,10 +2163,26 @@ export class PortalCustomersService {
 
     const prismaAny = this.prisma as any;
     if (phone) {
-      const existingPhone = await prismaAny?.customer?.findUnique?.({
-        where: { merchantId_phone: { merchantId, phone } },
-      });
+      const existingPhone =
+        (await prismaAny?.customer?.findUnique?.({
+          where: { merchantId_phone: { merchantId, phone } },
+          select: { id: true, phone: true },
+        })) ??
+        (phoneDigits
+          ? await prismaAny?.customer?.findUnique?.({
+              where: { merchantId_phone: { merchantId, phone: phoneDigits } },
+              select: { id: true, phone: true },
+            })
+          : null);
       if (existingPhone) {
+        if (existingPhone.phone && existingPhone.phone !== phone) {
+          await prismaAny?.customer
+            ?.update?.({
+              where: { id: existingPhone.id },
+              data: { phone },
+            })
+            .catch(() => {});
+        }
         return this.get(merchantId, existingPhone.id);
       }
     }
@@ -2191,8 +2224,17 @@ export class PortalCustomersService {
       typeof dto.levelId === 'string' && dto.levelId.trim()
         ? dto.levelId.trim()
         : null;
+    const levelExpireDays =
+      dto.levelExpireDays != null && Number.isFinite(Number(dto.levelExpireDays))
+        ? Math.max(0, Math.floor(Number(dto.levelExpireDays)))
+        : undefined;
     if (requestedLevelId) {
-      await this.applyTierAssignment(merchantId, customer.id, requestedLevelId);
+      await this.applyTierAssignment(
+        merchantId,
+        customer.id,
+        requestedLevelId,
+        levelExpireDays,
+      );
     } else {
       const initialTier = await this.prisma.loyaltyTier.findFirst({
         where: { merchantId },
@@ -2212,7 +2254,12 @@ export class PortalCustomersService {
         ? dto.levelId.trim()
         : null;
     if (levelId) {
-      await this.applyTierAssignment(merchantId, customer.id, levelId);
+      await this.applyTierAssignment(
+        merchantId,
+        customer.id,
+        levelId,
+        levelExpireDays,
+      );
     }
 
     try {
@@ -2243,16 +2290,31 @@ export class PortalCustomersService {
     const updateCustomer: Prisma.CustomerUpdateInput = {};
 
     if (dto.phone !== undefined) {
-      const phone = normalizePhoneValue(dto.phone) || null;
-      if (phone) {
+      const trimmed = String(dto.phone ?? '').trim();
+      if (!trimmed) {
+        updateCustomer.phone = null;
+      } else {
+        const phoneDigits = normalizePhoneDigits(trimmed);
+        if (!phoneDigits) {
+          throw new BadRequestException('Неверный формат телефона');
+        }
+        const phone = `+${phoneDigits}`;
         const clash = await prismaAny?.customer?.findUnique?.({
           where: { merchantId_phone: { merchantId, phone } },
+          select: { id: true },
         });
         if (clash && clash.id !== customerId) {
           throw new BadRequestException('Телефон уже используется');
         }
+        const legacyClash = await prismaAny?.customer?.findUnique?.({
+          where: { merchantId_phone: { merchantId, phone: phoneDigits } },
+          select: { id: true },
+        });
+        if (legacyClash && legacyClash.id !== customerId) {
+          throw new BadRequestException('Телефон уже используется');
+        }
+        updateCustomer.phone = phone;
       }
-      updateCustomer.phone = phone;
     }
 
     if (dto.email !== undefined) {
@@ -2315,13 +2377,33 @@ export class PortalCustomersService {
       });
     }
 
-    if (dto.levelId !== undefined) {
+    const levelExpireDays =
+      dto.levelExpireDays != null && Number.isFinite(Number(dto.levelExpireDays))
+        ? Math.max(0, Math.floor(Number(dto.levelExpireDays)))
+        : undefined;
+    if (dto.levelId !== undefined || dto.levelExpireDays !== undefined) {
       const sanitized =
         typeof dto.levelId === 'string' && dto.levelId.trim()
           ? dto.levelId.trim()
           : null;
       if (sanitized) {
-        await this.applyTierAssignment(merchantId, customerId, sanitized);
+        const currentAssignment = await this.prisma.loyaltyTierAssignment.findFirst({
+          where: { merchantId, customerId },
+          select: { tierId: true },
+        });
+        const levelChanged = !currentAssignment || currentAssignment.tierId !== sanitized;
+        if (levelChanged || dto.levelExpireDays !== undefined) {
+          const expiresToApply =
+            levelChanged && levelExpireDays === undefined
+              ? 0
+              : levelExpireDays;
+          await this.applyTierAssignment(
+            merchantId,
+            customerId,
+            sanitized,
+            expiresToApply,
+          );
+        }
       }
     }
 
@@ -2342,6 +2424,7 @@ export class PortalCustomersService {
     merchantId: string,
     customerId: string,
     tierId?: string | null,
+    expiresInDays?: number,
   ) {
     if (!tierId) return;
     const tier = await this.prisma.loyaltyTier.findFirst({
@@ -2349,12 +2432,16 @@ export class PortalCustomersService {
     });
     if (!tier) throw new BadRequestException('Уровень не найден');
     const assignedAt = new Date();
+    const expiresAt =
+      expiresInDays != null && Number.isFinite(Number(expiresInDays)) && Number(expiresInDays) > 0
+        ? new Date(assignedAt.getTime() + Number(expiresInDays) * 24 * 60 * 60 * 1000)
+        : null;
     await this.prisma.loyaltyTierAssignment.upsert({
       where: { merchantId_customerId: { merchantId, customerId } },
       update: {
         tierId: tier.id,
         assignedAt,
-        expiresAt: null,
+        ...(expiresInDays !== undefined ? { expiresAt } : {}),
         source: 'manual',
       },
       create: {
@@ -2362,7 +2449,7 @@ export class PortalCustomersService {
         customerId,
         tierId: tier.id,
         assignedAt,
-        expiresAt: null,
+        expiresAt,
         source: 'manual',
       },
     });
@@ -2387,6 +2474,57 @@ export class PortalCustomersService {
     if (mode === 'redeem' && profile.redemptionsBlocked) {
       throw new BadRequestException('Списания заблокированы администратором');
     }
+  }
+
+  async erasePersonalData(merchantId: string, customerId: string) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, merchantId },
+      select: { id: true },
+    });
+    if (!customer) throw new NotFoundException('Customer not found');
+
+    const erasedAt = new Date();
+
+    await this.prisma.$transaction([
+      this.prisma.segmentCustomer.deleteMany({
+        where: { customerId },
+      }),
+      this.prisma.customerConsent.deleteMany({
+        where: { merchantId, customerId },
+      }),
+      this.prisma.consent.deleteMany({
+        where: { merchantId, customerId },
+      }),
+      this.prisma.customerTelegram.deleteMany({
+        where: { merchantId, customerId },
+      }),
+      this.prisma.pushDevice.deleteMany({
+        where: { customerId },
+      }),
+      this.prisma.customer.update({
+        where: { id: customerId },
+        data: {
+          externalId: null,
+          tgId: null,
+          phone: null,
+          email: null,
+          name: null,
+          profileName: null,
+          birthday: null,
+          gender: null,
+          city: null,
+          tags: [],
+          metadata: Prisma.DbNull,
+          profileGender: null,
+          profileBirthDate: null,
+          profileCompletedAt: null,
+          comment: null,
+          erasedAt,
+        },
+      }),
+    ]);
+
+    return this.get(merchantId, customerId);
   }
 
   async remove(merchantId: string, customerId: string) {

@@ -27,6 +27,7 @@ export function normalizeLevelsPeriodDays(
   return Math.floor(num);
 }
 
+
 export type LevelsMetrics =
   | Pick<MetricsService, 'inc'>
   | { inc?: (metric: string, labels?: Record<string, string>) => unknown };

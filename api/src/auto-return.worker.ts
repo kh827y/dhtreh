@@ -52,8 +52,8 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') {
-      this.logger.log('AutoReturnWorker disabled (WORKERS_ENABLED=0)');
+    if (process.env.WORKERS_ENABLED !== '1') {
+      this.logger.log('AutoReturnWorker disabled (WORKERS_ENABLED!=1)');
       return;
     }
     const rawInterval = Number(process.env.AUTO_RETURN_WORKER_INTERVAL_MS);
@@ -217,7 +217,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
     const thresholdDate = new Date(now.getTime() - config.days * DAY_MS);
 
     const attempts = await this.prisma.autoReturnAttempt.findMany({
-      where: { merchantId },
+      where: { merchantId, customer: { erasedAt: null } },
       orderBy: { invitedAt: 'asc' },
     });
 
@@ -417,13 +417,17 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
       await this.prisma.$queryRaw<
         Array<{ customerId: string; lastPurchaseAt: Date }>
       >`
-        SELECT "customerId", MAX("createdAt") AS "lastPurchaseAt"
-        FROM "Receipt"
-        WHERE "merchantId" = ${merchantId}
-          AND "canceledAt" IS NULL
-        GROUP BY "customerId"
-        HAVING MAX("createdAt") <= ${thresholdDate}
-        ORDER BY MAX("createdAt") ASC
+        SELECT r."customerId", MAX(r."createdAt") AS "lastPurchaseAt"
+        FROM "Receipt" r
+        JOIN "Customer" c
+          ON c."id" = r."customerId"
+         AND c."merchantId" = r."merchantId"
+        WHERE r."merchantId" = ${merchantId}
+          AND r."canceledAt" IS NULL
+          AND c."erasedAt" IS NULL
+        GROUP BY r."customerId"
+        HAVING MAX(r."createdAt") <= ${thresholdDate}
+        ORDER BY MAX(r."createdAt") ASC
         LIMIT ${this.batchLimit}
       `;
 
@@ -485,8 +489,8 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
     const invitedAt = new Date();
 
     // Customer теперь per-merchant модель, id = customerId
-    const customer = await this.prisma.customer.findUnique({
-      where: { id: customerId },
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, merchantId, erasedAt: null },
       select: { id: true, name: true, tgId: true, merchantId: true },
     });
     if (!customer || customer.merchantId !== merchantId || !customer.tgId) {
@@ -564,6 +568,26 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
     merchant: MerchantConfig,
     attempt: AutoReturnAttempt,
   ) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: attempt.customerId, merchantId: merchant.id, erasedAt: null },
+      select: { id: true },
+    });
+    if (!customer) {
+      await this.prisma.autoReturnAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: 'CANCELED',
+          completedAt: new Date(),
+          completionReason: 'customer_erased',
+          lastError: 'customer erased',
+        },
+      });
+      this.metrics.inc('auto_return_push_failed_total', {
+        merchantId: merchant.id,
+        reason: 'customer_erased',
+      });
+      return;
+    }
     const pushText =
       attempt.message?.trim() || 'Возвращайтесь в нашу программу лояльности';
     const titleBase = pushText.length > 120 ? pushText.slice(0, 120) : pushText;

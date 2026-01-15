@@ -27,6 +27,8 @@ const REVIEW_PLATFORM_LABELS: Record<string, string> = {
   twogis: "2ГИС",
   google: "Google",
 };
+const dismissedStorageKey = (merchantId?: string | null, customerId?: string | null) =>
+  merchantId && customerId ? `miniapp.dismissedTransactions.v1:${merchantId}:${customerId}` : null;
 
 type ToastState = { msg: string; type: "success" | "error" } | null;
 
@@ -239,7 +241,9 @@ export function FeedbackManager() {
   const auth = useMiniappAuthContext();
   const merchantId = auth.merchantId;
   const customerId = auth.customerId;
+  const teleOnboarded = auth.teleOnboarded;
   const reviewsEnabled = auth.reviewsEnabled !== false;
+  const canLoadCustomerData = Boolean(merchantId && customerId && teleOnboarded === true);
   const [transactionsList, setTransactionsList] = useState<TransactionItem[]>([]);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackRating, setFeedbackRating] = useState(0);
@@ -272,7 +276,7 @@ export function FeedbackManager() {
   }, []);
 
   const loadTransactions = useCallback(async (opts?: { fresh?: boolean }) => {
-    if (!merchantId || !customerId) return;
+    if (!canLoadCustomerData) return;
     try {
       if (!opts?.fresh) {
         const cached = readTxCache(merchantId, customerId);
@@ -301,24 +305,24 @@ export function FeedbackManager() {
     } catch (error) {
       setToast({ msg: `Не удалось обновить историю: ${resolveErrorMessage(error)}`, type: "error" });
     }
-  }, [merchantId, customerId]);
+  }, [merchantId, customerId, canLoadCustomerData]);
 
   const persistDismissedTransaction = useCallback(
     async (transactionId: string) => {
-      if (!transactionId || !merchantId || !customerId) return;
+      if (!transactionId || !canLoadCustomerData) return;
       try {
         await dismissReviewPrompt(merchantId, customerId, transactionId);
       } catch {
         // игнорируем сбои сохранения скрытия, это не должно блокировать UI
       }
     },
-    [merchantId, customerId],
+    [merchantId, customerId, canLoadCustomerData],
   );
 
   useEffect(() => {
-    if (!customerId) return;
+    if (!canLoadCustomerData) return;
     void loadTransactions();
-  }, [customerId, loadTransactions]);
+  }, [canLoadCustomerData, loadTransactions]);
 
   useEffect(() => {
     if (!reviewsEnabled && feedbackOpen) {
@@ -328,17 +332,31 @@ export function FeedbackManager() {
 
   useEffect(() => {
     if (!dismissedReady) return;
+    const key = dismissedStorageKey(merchantId, customerId);
+    if (!key) return;
     try {
-      localStorage.setItem("miniapp.dismissedTransactions", JSON.stringify(dismissedReviewKeys));
+      localStorage.setItem(key, JSON.stringify(dismissedReviewKeys));
     } catch {
       // ignore
     }
-  }, [dismissedReviewKeys, dismissedReady]);
+  }, [dismissedReviewKeys, dismissedReady, merchantId, customerId]);
 
   useEffect(() => {
     try {
       if (typeof window === "undefined") return;
-      const saved = localStorage.getItem("miniapp.dismissedTransactions");
+      if (!merchantId || !customerId) {
+        setDismissedReviewKeys([]);
+        setDismissedReady(true);
+        return;
+      }
+      setDismissedReady(false);
+      const key = dismissedStorageKey(merchantId, customerId);
+      if (!key) {
+        setDismissedReviewKeys([]);
+        setDismissedReady(true);
+        return;
+      }
+      const saved = localStorage.getItem(key);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
@@ -353,7 +371,7 @@ export function FeedbackManager() {
     } finally {
       setDismissedReady(true);
     }
-  }, []);
+  }, [merchantId, customerId]);
 
   useEffect(() => {
     if (!dismissedReady) return;
@@ -631,6 +649,7 @@ export function FeedbackManager() {
   );
 
   useEffect(() => {
+    if (!canLoadCustomerData) return;
     const unsubscribe = subscribeToLoyaltyEvents((payload) => {
       if (!payload || typeof payload !== "object") return;
       const data = payload as Record<string, unknown>;
@@ -685,11 +704,11 @@ export function FeedbackManager() {
             : null;
       setPreferredTxId(txId || null);
       void loadTransactions({ fresh: true });
-    }, merchantId && customerId ? { merchantId, customerId } : undefined);
+    }, { merchantId, customerId });
     return () => {
       unsubscribe();
     };
-  }, [merchantId, customerId, loadTransactions]);
+  }, [merchantId, customerId, canLoadCustomerData, loadTransactions]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;

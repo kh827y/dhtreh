@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import { toLevelRule } from '../loyalty/tier-defaults.util';
 
 interface BotConfig {
   token: string;
@@ -75,6 +76,30 @@ export class TelegramBotService {
 
   private getMiniappBaseUrl(): string | null {
     return this.normalizeBaseUrl(this.configService.get('MINIAPP_BASE_URL'));
+  }
+
+  private getTelegramTimeoutMs(): number {
+    const raw = Number(process.env.TELEGRAM_HTTP_TIMEOUT_MS || '15000');
+    if (!Number.isFinite(raw) || raw <= 0) return 15000;
+    return Math.floor(raw);
+  }
+
+  private async fetchTelegram(url: string, init?: RequestInit) {
+    const timeoutMs = this.getTelegramTimeoutMs();
+    const Controller = (globalThis as any).AbortController;
+    if (!Controller) return fetch(url, init);
+    const controller = new Controller();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        throw new Error(`Telegram timeout after ${timeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async loadBots() {
@@ -332,7 +357,7 @@ export class TelegramBotService {
   }
 
   private async setWebhook(token: string, url: string, secretToken?: string) {
-    const response = await fetch(
+    const response = await this.fetchTelegram(
       `https://api.telegram.org/bot${token}/setWebhook`,
       {
         method: 'POST',
@@ -354,7 +379,9 @@ export class TelegramBotService {
   }
 
   private async getBotInfo(token: string) {
-    const response = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    const response = await this.fetchTelegram(
+      `https://api.telegram.org/bot${token}/getMe`,
+    );
     if (!response.ok) {
       throw new Error(`Неверный токен бота: ${await response.text()}`);
     }
@@ -375,11 +402,14 @@ export class TelegramBotService {
       { command: 'help', description: 'Помощь' },
     ];
 
-    await fetch(`https://api.telegram.org/bot${token}/setMyCommands`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ commands }),
-    });
+    await this.fetchTelegram(
+      `https://api.telegram.org/bot${token}/setMyCommands`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commands }),
+      },
+    );
   }
 
   async fetchBotInfo(token: string) {
@@ -387,7 +417,7 @@ export class TelegramBotService {
   }
 
   async fetchWebhookInfo(token: string): Promise<TelegramWebhookInfo> {
-    const response = await fetch(
+    const response = await this.fetchTelegram(
       `https://api.telegram.org/bot${token}/getWebhookInfo`,
     );
     if (!response.ok) {
@@ -422,7 +452,7 @@ export class TelegramBotService {
         } else if (text === '/miniapp') {
           await this.handleMiniApp(bot, chatId, merchantId);
         } else if (text === '/help') {
-          await this.handleHelp(bot, chatId);
+          await this.handleHelp(bot, chatId, merchantId);
         }
       } else if (update.message?.contact) {
         // Пользователь поделился контактом (номер телефона)
@@ -499,10 +529,13 @@ export class TelegramBotService {
     userId: number,
     merchantId: string,
   ) {
-    // Пер-мерчантная учётка на основе tgId
+    // Не создаем клиента на /start — только показываем ID, если он уже есть
     const tgId = String(userId);
-    const profile = await this.resolveCustomer(merchantId, { tgId });
-    const customerId = profile.customerId;
+    const existing = await this.prisma.customer.findUnique({
+      where: { merchantId_tgId: { merchantId, tgId } },
+      select: { id: true },
+    });
+    const customerId = existing?.id ?? null;
 
     // Получаем настройки мерчанта
     const settings = await this.prisma.merchantSettings.findUnique({
@@ -510,8 +543,14 @@ export class TelegramBotService {
     });
 
     const message = settings?.miniappThemePrimary
-      ? `🎉 Добро пожаловать в программу лояльности!\n\nВаш ID: ${profile.customerId}\n\nИспользуйте кнопки ниже для работы с программой.`
-      : `🎉 Добро пожаловать в программу лояльности!\n\nВаш ID: ${profile.customerId}`;
+      ? `🎉 Добро пожаловать в программу лояльности!\n\n${
+          customerId
+            ? `Ваш ID: ${customerId}\n\n`
+            : 'Откройте миниапп для регистрации.\n\n'
+        }Используйте кнопки ниже для работы с программой.`
+      : `🎉 Добро пожаловать в программу лояльности!\n\n${
+          customerId ? `Ваш ID: ${customerId}` : 'Откройте миниапп для регистрации.'
+        }`;
 
     const keyboard = {
       inline_keyboard: [
@@ -539,8 +578,19 @@ export class TelegramBotService {
     merchantId: string,
   ) {
     const tgId = String(userId);
-    const profile = await this.resolveCustomer(merchantId, { tgId });
-    const customerId = profile.customerId;
+    const existing = await this.prisma.customer.findUnique({
+      where: { merchantId_tgId: { merchantId, tgId } },
+      select: { id: true },
+    });
+    if (!existing?.id) {
+      await this.sendMessage(
+        bot.token,
+        chatId,
+        'Сначала откройте миниапп и завершите регистрацию.',
+      );
+      return;
+    }
+    const customerId = existing.id;
 
     const wallet = await this.prisma.wallet.findFirst({
       where: {
@@ -584,7 +634,60 @@ export class TelegramBotService {
     );
   }
 
-  private async handleHelp(bot: BotConfig, chatId: number) {
+  private async handleHelp(
+    bot: BotConfig,
+    chatId: number,
+    merchantId: string,
+  ) {
+    const [tiers, settings] = await Promise.all([
+      this.prisma.loyaltyTier.findMany({
+        where: { merchantId, isHidden: false },
+        orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
+      }),
+      this.prisma.merchantSettings.findUnique({
+        where: { merchantId },
+        select: { rulesJson: true },
+      }),
+    ]);
+    const levelLines = tiers.length
+      ? tiers.map((tier) => {
+          const rule = toLevelRule(tier);
+          const threshold = Math.max(0, Math.round(rule.threshold));
+          const thresholdLabel =
+            threshold <= 0
+              ? 'Базовый уровень'
+              : `от ${threshold.toLocaleString('ru-RU')} ₽`;
+          const percent =
+            typeof rule.earnRateBps === 'number'
+              ? rule.earnRateBps / 100
+              : null;
+          const percentLabel =
+            percent != null
+              ? percent.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
+              : '—';
+          return `• ${rule.name}: ${thresholdLabel}, кэшбэк ${percentLabel}%`;
+        })
+      : ['• Уровни не настроены'];
+    levelLines.push('• 1 балл = 1 рубль при списании');
+
+    const rules =
+      settings?.rulesJson &&
+      typeof settings.rulesJson === 'object' &&
+      !Array.isArray(settings.rulesJson)
+        ? (settings.rulesJson as Record<string, any>)
+        : {};
+    const supportTelegramRaw =
+      rules?.miniapp && typeof rules.miniapp === 'object'
+        ? (rules.miniapp as Record<string, any>)?.supportTelegram
+        : null;
+    const supportTelegram =
+      typeof supportTelegramRaw === 'string' && supportTelegramRaw.trim()
+        ? supportTelegramRaw.trim()
+        : null;
+    const supportLine = supportTelegram
+      ? `По всем вопросам пишите ${supportTelegram}.`
+      : 'По всем вопросам обращайтесь к администратору.';
+
     const helpText = `
 ℹ️ *Помощь по программе лояльности*
 
@@ -599,12 +702,10 @@ export class TelegramBotService {
 2. Покажите QR-код кассиру при покупке
 3. Получайте и тратьте баллы
 
-*Правила начисления:*
-• 5% от суммы покупки в баллах
-• 1 балл = 1 рубль при списании
-• Максимум 50% от чека можно оплатить баллами
+*Уровни лояльности:*
+${levelLines.join('\n')}
 
-По всем вопросам обращайтесь к администратору.
+${supportLine}
     `;
 
     await this.sendMessage(bot.token, chatId, helpText, null, 'Markdown');
@@ -630,7 +731,7 @@ export class TelegramBotService {
         await this.handleTransactionHistory(bot, chatId, userId, merchantId);
         break;
       case 'help':
-        await this.handleHelp(bot, chatId);
+        await this.handleHelp(bot, chatId, merchantId);
         break;
     }
   }
@@ -642,8 +743,19 @@ export class TelegramBotService {
     merchantId: string,
   ) {
     const tgId = String(userId);
-    const profile = await this.resolveCustomer(merchantId, { tgId });
-    const customerId = profile.customerId;
+    const existing = await this.prisma.customer.findUnique({
+      where: { merchantId_tgId: { merchantId, tgId } },
+      select: { id: true },
+    });
+    if (!existing?.id) {
+      await this.sendMessage(
+        bot.token,
+        chatId,
+        'Сначала откройте миниапп и завершите регистрацию.',
+      );
+      return;
+    }
+    const customerId = existing.id;
 
     const transactions = await this.prisma.transaction.findMany({
       where: {
@@ -674,11 +786,14 @@ export class TelegramBotService {
     method: string,
     body: Record<string, any>,
   ) {
-    const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const res = await this.fetchTelegram(
+      `https://api.telegram.org/bot${token}/${method}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    );
     return this.assertTelegramResponseOk(res);
   }
 
@@ -722,10 +837,13 @@ export class TelegramBotService {
       type: payload.mimeType || 'image/jpeg',
     });
     form.append('photo', blob, payload.fileName || 'image.jpg');
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
-      method: 'POST',
-      body: form,
-    });
+    const res = await this.fetchTelegram(
+      `https://api.telegram.org/bot${token}/sendPhoto`,
+      {
+        method: 'POST',
+        body: form,
+      },
+    );
     await this.assertTelegramResponseOk(res);
   }
 
@@ -856,7 +974,7 @@ export class TelegramBotService {
   }
 
   private async answerCallbackQuery(token: string, queryId: string) {
-    const res = await fetch(
+    const res = await this.fetchTelegram(
       `https://api.telegram.org/bot${token}/answerCallbackQuery`,
       {
         method: 'POST',
@@ -906,7 +1024,7 @@ export class TelegramBotService {
   }
 
   private async deleteWebhook(token: string) {
-    const response = await fetch(
+    const response = await this.fetchTelegram(
       `https://api.telegram.org/bot${token}/deleteWebhook`,
       {
         method: 'POST',
@@ -964,19 +1082,37 @@ export class TelegramBotService {
 
     // Поиск по phone
     if (phone) {
-      const existingByPhone = await this.prisma.customer.findUnique({
-        where: { merchantId_phone: { merchantId, phone } },
-        select: { id: true },
+      const { normalized, digits } = this.normalizePhoneVariants(phone);
+      let existingByPhone = await this.prisma.customer.findUnique({
+        where: { merchantId_phone: { merchantId, phone: normalized } },
+        select: { id: true, phone: true },
       });
+      if (!existingByPhone && digits) {
+        existingByPhone = await this.prisma.customer.findUnique({
+          where: { merchantId_phone: { merchantId, phone: digits } },
+          select: { id: true, phone: true },
+        });
+        if (existingByPhone && existingByPhone.phone !== normalized) {
+          await this.prisma.customer
+            .update({
+              where: { id: existingByPhone.id },
+              data: { phone: normalized },
+            })
+            .catch(() => {});
+        }
+      }
       if (existingByPhone) return { customerId: existingByPhone.id };
     }
 
     // Создаём нового Customer (per-merchant)
+    const normalizedPhone = phone
+      ? this.normalizePhoneVariants(phone).normalized
+      : null;
     const created = await this.prisma.customer.create({
       data: {
         merchantId,
         tgId: tgId ?? null,
-        phone: phone ?? null,
+        phone: normalizedPhone,
       },
       select: { id: true },
     });
@@ -1006,10 +1142,26 @@ export class TelegramBotService {
   }
 
   private async findCustomerByPhone(merchantId: string, phone: string) {
-    return this.prisma.customer.findUnique({
-      where: { merchantId_phone: { merchantId, phone } },
-      select: { id: true },
+    const { normalized, digits } = this.normalizePhoneVariants(phone);
+    let existing = await this.prisma.customer.findUnique({
+      where: { merchantId_phone: { merchantId, phone: normalized } },
+      select: { id: true, phone: true },
     });
+    if (!existing && digits) {
+      existing = await this.prisma.customer.findUnique({
+        where: { merchantId_phone: { merchantId, phone: digits } },
+        select: { id: true, phone: true },
+      });
+      if (existing && existing.phone !== normalized) {
+        await this.prisma.customer
+          .update({
+            where: { id: existing.id },
+            data: { phone: normalized },
+          })
+          .catch(() => {});
+      }
+    }
+    return existing;
   }
 
   private async linkTelegramToCustomer(
@@ -1164,6 +1316,12 @@ export class TelegramBotService {
       this.logger.error(`Ошибка деактивации бота для ${merchantId}:`, error);
       throw error;
     }
+  }
+
+  private normalizePhoneVariants(phone?: string) {
+    const normalized = this.normalizePhoneStrict(phone);
+    const digits = normalized.replace(/\D/g, '');
+    return { normalized, digits };
   }
 
   private normalizePhoneStrict(phone?: string): string {

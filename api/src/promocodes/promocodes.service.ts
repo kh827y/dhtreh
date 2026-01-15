@@ -7,6 +7,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
+import { DEFAULT_LEVELS_PERIOD_DAYS } from '../loyalty/levels.util';
 
 export type PortalPromoCodePayload = {
   code: string;
@@ -570,12 +571,21 @@ export class PromoCodesService {
       throw this.promoUnavailableError();
     }
     this.ensureUsageWindow(promo);
-    const meta = (promo.metadata as any) ?? {};
-    const levelExpiresInDaysRaw =
-      meta?.level?.expiresInDays != null ? Number(meta.level.expiresInDays) : 0;
-    const levelExpiresInDays = Number.isFinite(levelExpiresInDaysRaw)
-      ? Math.max(0, levelExpiresInDaysRaw)
-      : 0;
+    let promoLevelExpireDays: number | null = null;
+    if (promo.assignTierId) {
+      const meta =
+        promo.metadata &&
+        typeof promo.metadata === 'object' &&
+        !Array.isArray(promo.metadata)
+          ? (promo.metadata as Record<string, any>)
+          : null;
+      const raw = meta?.level?.expiresInDays;
+      if (Number.isFinite(Number(raw)) && Number(raw) >= 0) {
+        promoLevelExpireDays = Math.floor(Number(raw));
+      } else {
+        promoLevelExpireDays = DEFAULT_LEVELS_PERIOD_DAYS;
+      }
+    }
 
     let assignedTier: {
       id: string;
@@ -630,9 +640,9 @@ export class PromoCodesService {
             );
           }
         }
-        if (levelExpiresInDays > 0) {
+        if (promoLevelExpireDays && promoLevelExpireDays > 0) {
           tierExpiresAt = new Date(
-            Date.now() + levelExpiresInDays * 24 * 3600 * 1000,
+            Date.now() + promoLevelExpireDays * 24 * 3600 * 1000,
           );
         }
       }

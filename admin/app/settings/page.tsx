@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getSettings, updateSettings, previewRules, type MerchantSettings } from '../../lib/admin';
 import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
@@ -10,7 +10,7 @@ function num(v: any, def: number | null = null): number | null {
   return n;
 }
 
-export default function SettingsPage() {
+function SettingsPageInner() {
   const searchParams = useSearchParams();
   const initialMerchantId = searchParams.get('merchantId') || '';
   const { merchantId, setMerchantId } = usePreferredMerchantId(initialMerchantId);
@@ -439,5 +439,13 @@ export default function SettingsPage() {
 
       {msg && <div style={{ marginTop: 12 }}>{msg}</div>}
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div>Загрузка…</div>}>
+      <SettingsPageInner />
+    </Suspense>
   );
 }

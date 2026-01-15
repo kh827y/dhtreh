@@ -22,11 +22,15 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     try {
       const ip =
         req.ip || req.ips?.[0] || req.socket?.remoteAddress || 'unknown';
+      const routePath =
+        typeof req.route?.path === 'string'
+          ? `${req.baseUrl || ''}${req.route.path}`
+          : '';
       const path = (
+        routePath ||
         req.originalUrl ||
         (req.baseUrl ? `${req.baseUrl}${req.path || ''}` : '') ||
         req.path ||
-        req.route?.path ||
         ''
       ).split('?')[0];
       const integrationId = req.integrationId || req.integration?.id;

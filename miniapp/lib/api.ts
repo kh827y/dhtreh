@@ -165,23 +165,29 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type TeleauthResponse = {
   ok: boolean;
-  customerId: string;
-  merchantCustomerId?: string;
+  customerId: string | null;
+  merchantCustomerId?: string | null;
   hasPhone: boolean;
   onboarded: boolean;
+  registered?: boolean;
 };
 
 export async function teleauth(
   merchantId: string,
   initData: string,
+  opts?: { create?: boolean },
 ): Promise<TeleauthResponse> {
   const res = await http<TeleauthResponse>('/loyalty/teleauth', {
     method: 'POST',
-    body: JSON.stringify({ merchantId, initData }),
+    body: JSON.stringify({
+      merchantId,
+      initData,
+      ...(opts && typeof opts.create === 'boolean' ? { create: opts.create } : {}),
+    }),
   });
   return {
     ...res,
-    merchantCustomerId: res.merchantCustomerId ?? res.customerId,
+    merchantCustomerId: res.merchantCustomerId ?? res.customerId ?? null,
   };
 }
 
@@ -278,6 +284,7 @@ export type PublicSettingsResp = {
   miniappThemeBg?: string | null;
   miniappLogoUrl?: string | null;
   reviewsEnabled?: boolean | null;
+  referralEnabled?: boolean | null;
   reviewsShare?: ReviewsShareSettings;
   supportTelegram?: string | null;
 };

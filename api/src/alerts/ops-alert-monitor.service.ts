@@ -107,7 +107,7 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
   }
 
   private collectWorkers(): WorkerState[] {
-    const workersEnabled = process.env.WORKERS_ENABLED !== '0';
+    const workersEnabled = process.env.WORKERS_ENABLED === '1';
     const workerStates: WorkerState[] = [];
     const warmupPassed = Date.now() - this.bootAt > this.warmupMs;
     const entries: Array<{
@@ -125,7 +125,7 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
         Number(process.env.OUTBOX_WORKER_INTERVAL_MS || '15000'),
       ),
       expected: workersEnabled,
-      reason: workersEnabled ? undefined : 'WORKERS_ENABLED=0',
+      reason: workersEnabled ? undefined : 'WORKERS_ENABLED!=1',
     });
     entries.push({
       name: 'notifications',
@@ -135,7 +135,7 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
         Number(process.env.NOTIFY_WORKER_INTERVAL_MS || '15000'),
       ),
       expected: workersEnabled,
-      reason: workersEnabled ? undefined : 'WORKERS_ENABLED=0',
+      reason: workersEnabled ? undefined : 'WORKERS_ENABLED!=1',
     });
     const ttlEnabled = workersEnabled && process.env.POINTS_TTL_FEATURE === '1';
     entries.push({

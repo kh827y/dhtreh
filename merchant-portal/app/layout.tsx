@@ -10,8 +10,11 @@ import { AlertTriangle, Lock, CreditCard } from "lucide-react";
 import { ContentWrapper } from "../components/ContentWrapper";
 
 export const metadata = {
-  title: "Merchant Portal — Программа лояльности",
+  title: "Panel Loyalty",
   description: "Личный кабинет мерчанта: настройки лояльности, аналитика и CRM",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 // Секции sidebar — 1:1 как в new design/components/Sidebar.tsx
@@ -119,6 +122,7 @@ type PortalTimezonePayload = {
 
 type PortalSubscription = {
   status: string;
+  planId: string | null;
   planName: string | null;
   currentPeriodEnd: string | null;
   daysLeft: number | null;
@@ -359,6 +363,7 @@ async function fetchPortalSubscription(): Promise<PortalSubscription | null> {
     const daysLeftRaw = Number(data?.daysLeft);
     return {
       status: typeof data?.status === "string" ? data.status : "missing",
+      planId: typeof data?.planId === "string" ? data.planId : null,
       planName: typeof data?.planName === "string" ? data.planName : null,
       currentPeriodEnd: end,
       daysLeft: Number.isFinite(daysLeftRaw) ? daysLeftRaw : null,
@@ -464,6 +469,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const filteredSections = filterSectionsByProfile(profile);
   const staffLabel = profile?.staff?.name || profile?.staff?.email || null;
   const expired = subscription?.expired ?? false;
+  const expiredPlanLabel =
+    subscription?.planName || subscription?.planId || "—";
   
   return (
     <html lang="ru" className={inter.variable} suppressHydrationWarning>
@@ -538,7 +545,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                                       Ваш тариф
                                     </span>
                                     <div className="font-bold text-gray-900 text-lg">
-                                      {subscription.planName || "—"}
+                                      {expiredPlanLabel}
                                     </div>
                                   </div>
                                   <span className="bg-red-100 text-red-700 text-xs px-2 py-1 rounded-md font-medium">

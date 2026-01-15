@@ -13,7 +13,10 @@ import {
 import { SubscriptionService } from '../subscription/subscription.service';
 import { Reflector } from '@nestjs/core';
 import { ALLOW_INACTIVE_SUBSCRIPTION_KEY } from '../guards/subscription.guard';
-import { hasPortalPermission } from './portal-permissions.util';
+import {
+  hasPortalPermission,
+  PORTAL_PERMISSIONS_HANDLED_KEY,
+} from './portal-permissions.util';
 
 @Injectable()
 export class PortalGuard implements CanActivate {
@@ -26,6 +29,15 @@ export class PortalGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req: any = context.switchToHttp().getRequest();
     if (!req) return false;
+    const permissionsHandled =
+      this.reflector.get<boolean>(
+        PORTAL_PERMISSIONS_HANDLED_KEY,
+        context.getHandler(),
+      ) ||
+      this.reflector.get<boolean>(
+        PORTAL_PERMISSIONS_HANDLED_KEY,
+        context.getClass(),
+      );
     const allowInactive =
       this.reflector.get<boolean>(
         ALLOW_INACTIVE_SUBSCRIPTION_KEY,
@@ -143,7 +155,7 @@ export class PortalGuard implements CanActivate {
       req.portalTimezone = timezone.code;
       req.portalTimezoneOffsetMinutes = timezone.utcOffsetMinutes;
       req.portalTimezoneIana = timezone.iana;
-      this.enforcePortalPermissions(req);
+      this.enforcePortalPermissions(req, Boolean(permissionsHandled));
       return true;
     } catch (error) {
       if (error instanceof ForbiddenException) {
@@ -274,7 +286,7 @@ export class PortalGuard implements CanActivate {
     return null;
   }
 
-  private enforcePortalPermissions(req: any) {
+  private enforcePortalPermissions(req: any, permissionsHandled: boolean) {
     if (!req || req.portalActor !== 'STAFF') return;
     const permissions = req.portalPermissions;
     if (!permissions || permissions.allowAll) return;
@@ -283,7 +295,12 @@ export class PortalGuard implements CanActivate {
       throw new ForbiddenException('Недостаточно прав');
     }
     const { resources, action } = target;
-    if (!resources.length) return;
+    if (!resources.length) {
+      if (!permissionsHandled) {
+        throw new ForbiddenException('Недостаточно прав');
+      }
+      return;
+    }
     const allowed = resources.every((resource) =>
       hasPortalPermission(permissions, resource, action),
     );

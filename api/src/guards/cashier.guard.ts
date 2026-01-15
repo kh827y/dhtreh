@@ -130,6 +130,7 @@ export class CashierGuard implements CanActivate {
         endedAt: true,
         expiresAt: true,
         lastSeenAt: true,
+        deviceSessionId: true,
         staff: { select: { status: true } },
       },
     });
@@ -154,6 +155,28 @@ export class CashierGuard implements CanActivate {
       });
       return null;
     }
+    if (session.deviceSessionId) {
+      const deviceToken = this.readCookie(req, 'cashier_device');
+      if (!deviceToken) return null;
+      const deviceHash = crypto
+        .createHash('sha256')
+        .update(deviceToken, 'utf8')
+        .digest('hex');
+      const device = await this.prisma.cashierDeviceSession.findFirst({
+        where: { tokenHash: deviceHash, revokedAt: null },
+        select: { id: true, expiresAt: true },
+      });
+      if (!device || device.id !== session.deviceSessionId) return null;
+      if (device.expiresAt && device.expiresAt <= now) {
+        try {
+          await this.prisma.cashierDeviceSession.update({
+            where: { id: device.id },
+            data: { revokedAt: now },
+          });
+        } catch {}
+        return null;
+      }
+    }
     if (
       !session.lastSeenAt ||
       now.getTime() - session.lastSeenAt.getTime() > 60_000
@@ -177,18 +200,24 @@ export class CashierGuard implements CanActivate {
     const req = context.switchToHttp().getRequest();
     const body = req.body || {};
     const method: string = (req.method || 'GET').toUpperCase();
-    const path: string =
-      req?.route?.path || req?.path || req?.originalUrl || '';
-    const normalizedPath = this.normalizePath(path || '');
+    const rawPath: string =
+      req?.originalUrl ||
+      (req?.baseUrl ? `${req.baseUrl}${req.path || ''}` : '') ||
+      req?.path ||
+      req?.route?.path ||
+      '';
+    const normalizedPath = this.normalizePath(
+      String(rawPath || '').split('?')[0],
+    );
     // whitelist публичных GET маршрутов (всегда разрешены): balance, settings, transactions, публичные списки
     const isPublicGet =
-      method === 'GET' && path.startsWith('/loyalty/settings/');
+      method === 'GET' && normalizedPath.startsWith('/loyalty/settings/');
     const isAlwaysPublic =
-      path === '/loyalty/teleauth' ||
-      path === '/loyalty/cashier/activate' ||
-      path === '/loyalty/cashier/device' ||
-      path === '/loyalty/cashier/staff-access' ||
-      path === '/loyalty/cashier/session';
+      normalizedPath === '/loyalty/teleauth' ||
+      normalizedPath === '/loyalty/cashier/activate' ||
+      normalizedPath === '/loyalty/cashier/device' ||
+      normalizedPath === '/loyalty/cashier/staff-access' ||
+      normalizedPath === '/loyalty/cashier/session';
     if (isPublicGet || isAlwaysPublic) return true;
 
     let merchantIdFromRequest: string | undefined =

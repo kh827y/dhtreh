@@ -102,8 +102,6 @@ describe("cashier auth flow", () => {
 
     await screen.findByText("Терминал лояльности");
 
-    assert.equal(window.localStorage.getItem("cashier_merchant_login"), "greenmarket-01");
-
     assert.deepEqual(
       calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
       [

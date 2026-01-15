@@ -12,6 +12,7 @@ export type CustomerFormPayload = {
   tags: string;
   birthday: string;
   levelId: string | null;
+  levelExpireDays: string;
   gender: Gender;
   comment: string;
 };
@@ -36,6 +37,7 @@ const defaultValues: CustomerFormPayload = {
   tags: "",
   birthday: "",
   levelId: null,
+  levelExpireDays: "",
   gender: "unknown",
   comment: "",
 };
@@ -108,6 +110,13 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
       const date = new Date(form.birthday);
       if (Number.isNaN(date.getTime())) {
         nextErrors.birthday = "Некорректная дата";
+      }
+    }
+
+    if (form.levelExpireDays.trim()) {
+      const raw = Number(form.levelExpireDays);
+      if (!Number.isFinite(raw) || raw < 0) {
+        nextErrors.levelExpireDays = "Срок уровня должен быть 0 или больше";
       }
     }
 
@@ -227,7 +236,31 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
                 </option>
               ))}
             </select>
+            {mode === "edit" && (
+              <p className="text-xs text-gray-500 mt-1">
+                Ручной уровень не пересчитывается покупками. Его можно заменить вручную или промокодом.
+              </p>
+            )}
           </div>
+
+          {mode === "edit" && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Срок ручного уровня (дней)</label>
+              <input
+                type="number"
+                min={0}
+                inputMode="numeric"
+                placeholder="Не менять"
+                value={form.levelExpireDays}
+                onChange={(e) => update("levelExpireDays", e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              {errors.levelExpireDays && (
+                <span className="text-xs text-red-600 mt-1 block">{errors.levelExpireDays}</span>
+              )}
+              <p className="text-xs text-gray-500 mt-1">0 = бессрочно. Пусто — не менять срок.</p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий</label>

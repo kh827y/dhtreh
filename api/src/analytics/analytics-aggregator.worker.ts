@@ -234,8 +234,8 @@ export class AnalyticsAggregatorWorker {
   // Ежедневная агрегация KPI за вчерашний день
   @Cron('0 2 * * *')
   async aggregateDailyKpis() {
-    if (process.env.WORKERS_ENABLED === '0') {
-      this.logger.log('WORKERS_ENABLED=0, skip analytics aggregation');
+    if (process.env.WORKERS_ENABLED !== '1') {
+      this.logger.log('WORKERS_ENABLED!=1, skip analytics aggregation');
       return;
     }
     const lock = await pgTryAdvisoryLock(
@@ -314,12 +314,20 @@ export class AnalyticsAggregatorWorker {
 
     const [newCustomers, activeCustomers] = await Promise.all([
       this.prisma.wallet.count({
-        where: { merchantId, createdAt: { gte: from, lte: to } },
+        where: {
+          merchantId,
+          createdAt: { gte: from, lte: to },
+          customer: { erasedAt: null },
+        },
       }),
       this.prisma.transaction
         .groupBy({
           by: ['customerId'],
-          where: { merchantId, createdAt: { gte: from, lte: to } },
+          where: {
+            merchantId,
+            createdAt: { gte: from, lte: to },
+            customer: { erasedAt: null },
+          },
         })
         .then((x) => x.length),
     ]);
@@ -357,7 +365,7 @@ export class AnalyticsAggregatorWorker {
         select: { rulesJson: true },
       }),
       this.prisma.wallet.findMany({
-        where: { merchantId },
+        where: { merchantId, customer: { erasedAt: null } },
         select: { customerId: true, createdAt: true },
       }),
       fetchReceiptAggregates(this.prisma, {

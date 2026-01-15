@@ -56,7 +56,9 @@ export class SubscriptionGuard implements CanActivate {
       } catch {}
     }
     if (!merchantId && req.body?.merchantLogin) {
-      const merchantLogin = String(req.body.merchantLogin || '').trim();
+      const merchantLogin = String(req.body.merchantLogin || '')
+        .trim()
+        .toLowerCase();
       if (merchantLogin) {
         try {
           const merchant = await this.prisma.merchant.findFirst({

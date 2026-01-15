@@ -1,6 +1,6 @@
 "use client";
 import React from 'react';
-import { listMerchants, createMerchant, updateMerchant as apiUpdateMerchant, deleteMerchant as apiDeleteMerchant, setPortalLoginEnabled, initTotp, verifyTotp, disableTotp, impersonatePortal, getCashier, rotateCashier, grantSubscription as apiGrantSubscription, resetSubscription as apiResetSubscription, updateMerchantSettings, type MerchantRow } from "../../lib/merchants";
+import { listMerchants, createMerchant, updateMerchant as apiUpdateMerchant, setPortalLoginEnabled, initTotp, verifyTotp, disableTotp, impersonatePortal, getCashier, rotateCashier, setCashier, grantSubscription as apiGrantSubscription, resetSubscription as apiResetSubscription, updateMerchantSettings, type MerchantRow } from "../../lib/merchants";
 
 const PORTAL_BASE = process.env.NEXT_PUBLIC_PORTAL_BASE || 'http://localhost:3004';
 
@@ -85,10 +85,6 @@ export default function AdminMerchantsPage() {
     });
     await load();
   }
-  async function removeRow(id: string) {
-    setMsg('');
-    try { await apiDeleteMerchant(id); await load(); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
-  }
   async function toggleLogin(id: string, enabled: boolean) {
     setMsg(''); try { await setPortalLoginEnabled(id, enabled); await load(); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
   }
@@ -152,7 +148,7 @@ export default function AdminMerchantsPage() {
 
       <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center', marginBottom: 16 }}>
         <label style={{ display:'flex', flexDirection:'column', gap:4, color:'#cbd5e1', fontSize:13 }}>
-          Поиск (id/название/email)
+          Поиск (id/название/логин)
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Поиск..." style={{ padding: 8, minWidth:240 }} />
         </label>
         <label style={{ display:'flex', flexDirection:'column', gap:4, color:'#cbd5e1', fontSize:13 }}>
@@ -171,13 +167,13 @@ export default function AdminMerchantsPage() {
         <div style={{ fontWeight:600, marginBottom:8 }}>Создать мерчанта</div>
         <div style={{ display:'grid', gap: 8, alignItems:'center', gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr auto' }}>
           <input value={name} onChange={e=>setName(e.target.value)} placeholder="Название мерчанта" style={{ padding: 8 }} />
-          <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" style={{ padding: 8 }} />
+          <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Логин" type="text" autoComplete="username" style={{ padding: 8 }} />
           <input value={password} onChange={e=>setPassword(e.target.value)} placeholder="Пароль (мин. 6)" type="password" style={{ padding: 8 }} />
           <input value={ownerName} onChange={e=>setOwnerName(e.target.value)} placeholder="Имя владельца (обяз.)" style={{ padding: 8 }} />
           <input value={maxOutlets} onChange={e=>setMaxOutlets(e.target.value)} placeholder="Лимит точек (опц.)" type="number" min={1} inputMode="numeric" style={{ padding: 8 }} />
           <button onClick={create} disabled={!name.trim() || !email.trim() || password.length < 6 || !ownerName.trim() || maxOutletsInvalid} style={{ padding: '8px 12px' }}>Создать</button>
         </div>
-        <div style={{ fontSize:12, opacity:.8, marginTop:6 }}>Требуется минимум: имя, email, пароль (≥6), имя владельца. Лимит точек можно не задавать — тогда ограничений нет.</div>
+        <div style={{ fontSize:12, opacity:.8, marginTop:6 }}>Требуется минимум: имя, логин, пароль (≥6), имя владельца. Лимит точек можно не задавать — тогда ограничений нет.</div>
       </div>
       {msg && <div style={{ marginBottom: 12, color: '#f44' }}>{msg}</div>}
       <div style={{ display:'grid', gap: 12 }}>
@@ -187,7 +183,6 @@ export default function AdminMerchantsPage() {
               <RowEditor
                 row={m}
                 onSave={saveRow}
-                onDelete={removeRow}
                 onGrantSubscription={grantPlan}
                 onResetSubscription={resetPlan}
                 onUpdateMaxOutlets={updateMaxOutlets}
@@ -233,10 +228,9 @@ function StatTile({ label, value, color = '#e6edf3' }: { label: string; value: n
   );
 }
 
-function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscription, onUpdateMaxOutlets }: {
+function RowEditor({ row, onSave, onGrantSubscription, onResetSubscription, onUpdateMaxOutlets }: {
   row: MerchantRow;
   onSave: (id: string, patch: { name?: string; email?: string; password?: string }) => void;
-  onDelete: (id: string) => void;
   onGrantSubscription: (id: string, days: number) => void;
   onResetSubscription: (id: string) => void;
   onUpdateMaxOutlets: (id: string, maxOutletsValue: number | null) => Promise<void>;
@@ -245,9 +239,9 @@ function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscrip
   const [email, setEmail] = React.useState(row.portalEmail || '');
   const [pwd, setPwd] = React.useState('');
   const [saving, setSaving] = React.useState(false);
-  const [deleting, setDeleting] = React.useState(false);
   const [cashier, setCashier] = React.useState<{ login: string|null }|null>(null);
   const [cashierMsg, setCashierMsg] = React.useState('');
+  const [cashierInput, setCashierInput] = React.useState('');
   const [subscriptionDays, setSubscriptionDays] = React.useState(30);
   const [subscriptionMsg, setSubscriptionMsg] = React.useState('');
   const [subscriptionBusy, setSubscriptionBusy] = React.useState(false);
@@ -258,19 +252,57 @@ function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscrip
   const [maxOutletsBusy, setMaxOutletsBusy] = React.useState(false);
   const parsedMaxOutlets = parseOptionalPositiveInt(maxOutletsInput);
   const maxOutletsInvalid = parsedMaxOutlets === null;
-  async function save() { setSaving(true); try { await onSave(row.id, { name, email, password: pwd || undefined }); setPwd(''); } finally { setSaving(false); } }
-  async function del() { if (!confirm('Удалить мерчанта?')) return; setDeleting(true); try { await onDelete(row.id); } finally { setDeleting(false); } }
+  async function save() {
+    setSaving(true);
+    try {
+      const patch: { name?: string; email?: string; password?: string } = {};
+      const nextName = name.trim();
+      if (nextName && nextName !== row.name) patch.name = nextName;
+      const nextLogin = email.trim();
+      const currentLogin = row.portalEmail ?? '';
+      if (nextLogin && nextLogin !== currentLogin) patch.email = nextLogin;
+      if (pwd.trim()) patch.password = pwd;
+      if (Object.keys(patch).length === 0) return;
+      await onSave(row.id, patch);
+      setPwd('');
+    } finally {
+      setSaving(false);
+    }
+  }
   async function loadCashier() {
     setCashierMsg('');
-    try { setCashier(await getCashier(row.id)); } catch (e: any) { setCashierMsg(String(e?.message || e)); }
+    try {
+      const current = await getCashier(row.id);
+      setCashier(current);
+      setCashierInput(current.login || '');
+    } catch (e: any) {
+      setCashierMsg(String(e?.message || e));
+    }
   }
   async function rotateLogin(regenLogin?: boolean) {
     setCashierMsg('');
     try {
       const r = await rotateCashier(row.id, !!regenLogin);
       setCashier({ login: r.login });
+      setCashierInput(r.login || '');
       setCashierMsg('Логин кассира обновлён');
     } catch (e: any) { setCashierMsg(String(e?.message || e)); }
+  }
+  async function saveCashierLogin() {
+    setCashierMsg('');
+    const nextLogin = cashierInput.trim();
+    if (!nextLogin) {
+      setCashierMsg('Введите логин кассира');
+      return;
+    }
+    try {
+      const r = await setCashier(row.id, nextLogin);
+      setCashier({ login: r.login });
+      setCashierInput(r.login || '');
+      setCashierMsg('Логин кассира обновлён');
+    } catch (e: any) {
+      setCashierMsg(String(e?.message || e));
+    }
   }
   async function grantSubscription() {
     const days = Number(subscriptionDays);
@@ -340,16 +372,17 @@ function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscrip
       </div>
       <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
         <input value={name} onChange={e=>setName(e.target.value)} style={{ padding:6 }} />
-        <input value={email} onChange={e=>setEmail(e.target.value)} style={{ padding:6 }} placeholder="email (опц.)" />
+        <input value={email} onChange={e=>setEmail(e.target.value)} style={{ padding:6 }} placeholder="логин (опц.)" type="text" autoComplete="username" />
         <input value={pwd} onChange={e=>setPwd(e.target.value)} type="password" placeholder="новый пароль (опц.)" style={{ padding:6 }} />
         <button onClick={save} disabled={saving} style={{ padding:'6px 10px' }}>{saving?'Сохранение…':'Сохранить'}</button>
-        <button onClick={del} disabled={deleting} style={{ padding:'6px 10px', color:'#f33' }}>{deleting?'Удаление…':'Удалить'}</button>
       </div>
       <div style={{ marginTop:6, paddingTop:6, borderTop:'1px dashed #ddd', display:'grid', gap:8 }}>
         <div style={{ fontSize:13, opacity:.8 }}>Учётные данные кассира</div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
           <button onClick={loadCashier} className="btn">Показать логин</button>
           <button onClick={()=>rotateLogin(true)} className="btn">Регенерировать логин</button>
+          <input value={cashierInput} onChange={e=>setCashierInput(e.target.value)} placeholder="новый логин" style={{ padding:6 }} />
+          <button onClick={saveCashierLogin} className="btn">Сохранить логин</button>
           {cashier && (
             <div style={{ display:'flex', gap:8, alignItems:'center' }}>
               <span style={{ opacity:.7 }}>Логин:</span>

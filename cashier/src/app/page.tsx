@@ -222,8 +222,6 @@ type DesktopView = 'main' | 'history' | 'return' | 'rating';
 
 type TxMode = 'accrue' | 'redeem';
 
-const STORAGE_MERCHANT_LOGIN_KEY = 'cashier_merchant_login';
-
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || '';
 const LOYALTY_EVENT_CHANNEL = 'loyalty:events';
@@ -241,24 +239,6 @@ const buildApiUrl = (path: string) => {
     return new URL(normalizedPath, window.location.origin);
   }
   return new URL(normalizedPath, API_ORIGIN_FALLBACK);
-};
-
-const readStorage = (key: string): string | null => {
-  if (!isBrowser) return null;
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-};
-
-const writeStorage = (key: string, value: string) => {
-  if (!isBrowser) return;
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    /* noop */
-  }
 };
 
 const base64UrlDecode = (s: string) => {
@@ -592,9 +572,10 @@ export default function Page() {
   const [session, setSession] = useState<CashierSessionInfo | null>(null);
   const [rememberPin, setRememberPin] = useState<boolean>(false);
   const [deviceActive, setDeviceActive] = useState<boolean>(false);
-  const [deviceLogin, setDeviceLogin] = useState<string | null>(null);
 
-  const [authStep, setAuthStep] = useState<'app_login' | 'staff_pin' | 'authorized'>('app_login');
+  const [authStep, setAuthStep] = useState<
+    'app_login' | 'staff_pin' | 'authorized'
+  >('app_login');
   const [appLogin, setAppLogin] = useState('');
   const [appPassword, setAppPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -624,6 +605,7 @@ export default function Page() {
   const [holdId, setHoldId] = useState<string | null>(null);
   const [result, setResult] = useState<QuoteRedeemResp | QuoteEarnResp | null>(null);
   const [actionError, setActionError] = useState('');
+  const [searchBusy, setSearchBusy] = useState(false);
 
   const [historyRaw, setHistoryRaw] = useState<Txn[]>([]);
   const [histBusy, setHistBusy] = useState(false);
@@ -677,11 +659,6 @@ export default function Page() {
   const [isMobile, setIsMobile] = useState(false);
 
   const normalizedLogin = appLogin.trim().toLowerCase();
-
-  useEffect(() => {
-    const savedLogin = readStorage(STORAGE_MERCHANT_LOGIN_KEY);
-    if (savedLogin) setAppLogin(savedLogin);
-  }, []);
 
   useEffect(() => {
     if (!isBrowser || !window.matchMedia) return;
@@ -769,12 +746,8 @@ export default function Page() {
             const login = typeof data?.login === 'string' ? String(data.login) : '';
             const mid = typeof data?.merchantId === 'string' ? String(data.merchantId) : '';
             setDeviceActive(true);
-            setDeviceLogin(login || null);
             if (mid) setMerchantId(mid);
-            if (login) {
-              setAppLogin(login);
-              writeStorage(STORAGE_MERCHANT_LOGIN_KEY, login);
-            }
+            if (login) setAppLogin(login);
             setAuthStep('staff_pin');
             return;
           }
@@ -785,7 +758,6 @@ export default function Page() {
 
       if (cancelled) return;
       setDeviceActive(false);
-      setDeviceLogin(null);
       setPin('');
       setAuthError('');
       setAuthStep('app_login');
@@ -856,9 +828,7 @@ export default function Page() {
       const resolvedLogin = data?.login ? String(data.login) : normalizedLogin;
       if (resolvedMerchantId) setMerchantId(resolvedMerchantId);
       setDeviceActive(true);
-      setDeviceLogin(resolvedLogin);
       setAppLogin(resolvedLogin);
-      writeStorage(STORAGE_MERCHANT_LOGIN_KEY, resolvedLogin);
       setPin('');
       setAppPassword('');
       setAuthStep('staff_pin');
@@ -885,7 +855,6 @@ export default function Page() {
       setSession(sessionInfo);
       setMerchantId(sessionInfo.merchantId || MERCHANT);
       setRememberPin(Boolean(sessionInfo.rememberPin));
-      writeStorage(STORAGE_MERCHANT_LOGIN_KEY, normalizedLogin);
       setPin('');
       setAuthStep('authorized');
     } catch (e: unknown) {
@@ -937,15 +906,11 @@ export default function Page() {
       if (resp.ok) {
         const data = await resp.json().catch(() => null);
         if (data?.active) {
-          const login = typeof data?.login === 'string' ? String(data.login) : normalizedLogin;
+          const login = typeof data?.login === 'string' ? String(data.login) : '';
           const mid = typeof data?.merchantId === 'string' ? String(data.merchantId) : '';
           setDeviceActive(true);
-          setDeviceLogin(login || null);
           if (mid) setMerchantId(mid);
-          if (login) {
-            setAppLogin(login);
-            writeStorage(STORAGE_MERCHANT_LOGIN_KEY, login);
-          }
+          if (login) setAppLogin(login);
           setAuthStep('staff_pin');
           return;
         }
@@ -955,7 +920,6 @@ export default function Page() {
     }
 
     setDeviceActive(false);
-    setDeviceLogin(null);
     setAuthStep('app_login');
   };
 
@@ -970,7 +934,6 @@ export default function Page() {
       /* ignore */
     }
     setDeviceActive(false);
-    setDeviceLogin(null);
     setPin('');
     setAppPassword('');
     setAuthStep('app_login');
@@ -1631,8 +1594,14 @@ export default function Page() {
       setMobileMode('scanning');
       return;
     }
+    if (searchBusy) return;
     setActionError('');
-    await beginFlow(inputValue);
+    setSearchBusy(true);
+    try {
+      await beginFlow(inputValue);
+    } finally {
+      setSearchBusy(false);
+    }
   };
 
   const handleCopy = (id: string, text: string) => {
@@ -2351,9 +2320,13 @@ export default function Page() {
                       <span>Камера</span>
                     </button>
                     <button
-                      disabled={!inputValue}
+                      disabled={!inputValue || searchBusy}
                       onClick={() => handleSearchAction('search')}
-                      className="h-14 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-xl font-semibold text-base flex items-center justify-center space-x-2 transition-all shadow-md shadow-purple-200 active:scale-[0.98]"
+                      className={`h-14 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold text-base flex items-center justify-center space-x-2 transition-all shadow-md shadow-purple-200 active:scale-[0.98] ${
+                        searchBusy
+                          ? 'disabled:bg-purple-600 disabled:text-white disabled:cursor-wait ring-2 ring-purple-300 ring-offset-2'
+                          : 'disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed'
+                      }`}
                     >
                       <span>Найти</span>
                       <ChevronRight size={20} />

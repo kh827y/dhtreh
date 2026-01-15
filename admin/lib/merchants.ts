@@ -70,6 +70,8 @@ export async function createMerchant(
     method: 'POST',
     body: JSON.stringify({
       name,
+      email,
+      password,
       portalEmail: email,
       portalPassword: password,
       ownerName,
@@ -80,8 +82,8 @@ export async function createMerchant(
 export async function updateMerchant(id: string, patch: { name?: string; email?: string; password?: string }): Promise<{ id: string; name: string; email: string|null }> {
   const payload = {
     ...(patch.name !== undefined ? { name: patch.name } : {}),
-    ...(patch.email !== undefined ? { portalEmail: patch.email } : {}),
-    ...(patch.password !== undefined ? { portalPassword: patch.password } : {}),
+    ...(patch.email !== undefined ? { email: patch.email, portalEmail: patch.email } : {}),
+    ...(patch.password !== undefined ? { password: patch.password, portalPassword: patch.password } : {}),
   };
   return http(`/merchants/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) });
 }
@@ -110,6 +112,12 @@ export async function getCashier(merchantId: string): Promise<{ login: string|nu
 }
 export async function rotateCashier(merchantId: string, regenerateLogin?: boolean): Promise<{ login: string }> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/cashier/rotate`, { method: 'POST', body: JSON.stringify({ regenerateLogin: !!regenerateLogin }) });
+}
+export async function setCashier(merchantId: string, login: string): Promise<{ login: string }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/cashier`, {
+    method: 'POST',
+    body: JSON.stringify({ login }),
+  });
 }
 
 export async function updateMerchantSettings(

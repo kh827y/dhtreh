@@ -279,6 +279,7 @@ export class EmailService {
       where: {
         id: { in: allowedCustomerIds },
         merchantId: promotion.merchantId,
+        erasedAt: null,
         email: { not: null },
       },
     });

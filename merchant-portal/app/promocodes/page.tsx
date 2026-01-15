@@ -105,6 +105,13 @@ function extractAssignTierId(row: PortalPromocodeRow): string | null {
   return target ? String(target) : null;
 }
 
+function extractLevelExpireDays(row: PortalPromocodeRow): number | null {
+  const meta = row.metadata as any;
+  const raw = meta?.level?.expiresInDays;
+  if (!Number.isFinite(Number(raw)) || Number(raw) < 0) return null;
+  return Math.floor(Number(raw));
+}
+
 function resolvePromocodeStatus(row: PortalPromocodeRow): PromocodeStatus {
   return String(row.status || "").toUpperCase() === "ACTIVE" ? "active" : "archived";
 }
@@ -210,6 +217,7 @@ const PromocodesPage: React.FC = () => {
     pointsValue: 100,
     hasLevel: false,
     levelValue: "",
+    levelExpireDays: 365,
 
     isLimited: false,
     limitValue: 100,
@@ -312,6 +320,7 @@ const PromocodesPage: React.FC = () => {
         formData.hasPoints && formData.isPointsBurning ? Math.max(1, safeInt(formData.pointsBurnDays, 30)) : undefined,
       levelEnabled: hasLevel,
       levelId: hasLevel ? formData.levelValue : undefined,
+      levelExpireDays: hasLevel ? Math.max(0, safeInt(formData.levelExpireDays, 365)) : undefined,
       usageLimit: formData.isLimited ? ("once_total" as const) : ("none" as const),
       usageLimitValue: formData.isLimited ? Math.max(1, safeInt(formData.limitValue, 1)) : undefined,
       perCustomerLimit: formData.hasPerClientLimit ? Math.max(1, safeInt(formData.perClientLimit, 1)) : undefined,
@@ -370,6 +379,7 @@ const PromocodesPage: React.FC = () => {
     const hasPerClientLimit = perCustomerLimitRaw != null && Number.isFinite(Number(perCustomerLimitRaw));
     const perClientLimit = hasPerClientLimit ? Math.max(1, safeInt(perCustomerLimitRaw, 1)) : 1;
     const cooldownDays = safeInt(item.source.cooldownDays, 0);
+    const levelExpireDays = extractLevelExpireDays(item.source);
 
     setFormData({
       code: item.code,
@@ -378,6 +388,7 @@ const PromocodesPage: React.FC = () => {
       pointsValue: item.points ?? 100,
       hasLevel: item.assignsLevelId != null,
       levelValue: item.assignsLevelId ?? defaultLevelId,
+      levelExpireDays: levelExpireDays != null ? levelExpireDays : 365,
       isLimited: item.usageLimit !== "unlimited",
       limitValue: item.usageLimit === "unlimited" ? 100 : item.usageLimit,
       hasPerClientLimit,
@@ -614,23 +625,42 @@ const PromocodesPage: React.FC = () => {
                       onChange={(e) => setFormData({ ...formData, hasLevel: e.target.checked })}
                       className="mt-1 rounded text-purple-600 focus:ring-purple-500"
                     />
-                    <div>
-                      <span className="block font-medium text-gray-900">Присвоить уровень</span>
-                      <span className="text-sm text-gray-500">Изменить текущий уровень лояльности клиента</span>
-                    </div>
+                  <div>
+                    <span className="block font-medium text-gray-900">Присвоить уровень</span>
+                    <span className="text-sm text-gray-500">Изменить текущий уровень лояльности клиента</span>
+                    {formData.hasLevel && (
+                      <span className="text-xs text-gray-500 mt-1 block">
+                        Укажите срок действия уровня в днях. 0 = бессрочно.
+                      </span>
+                    )}
                   </div>
+                </div>
                   {formData.hasLevel && (
-                    <select
-                      value={formData.levelValue}
-                      onChange={(e) => setFormData({ ...formData, levelValue: e.target.value })}
-                      className="w-32 border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white"
-                    >
-                      {tiers.map((tier) => (
-                        <option key={tier.id} value={tier.id}>
-                          {tier.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={formData.levelValue}
+                        onChange={(e) => setFormData({ ...formData, levelValue: e.target.value })}
+                        className="w-32 border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white"
+                      >
+                        {tiers.map((tier) => (
+                          <option key={tier.id} value={tier.id}>
+                            {tier.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="relative w-24">
+                        <input
+                          type="number"
+                          min={0}
+                          value={formData.levelExpireDays}
+                          onChange={(e) =>
+                            setFormData({ ...formData, levelExpireDays: Number(e.target.value) })
+                          }
+                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white pr-8"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">дн.</span>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -780,6 +810,7 @@ const PromocodesPage: React.FC = () => {
               pointsValue: 100,
               hasLevel: false,
               levelValue: defaultLevelId,
+              levelExpireDays: 365,
               isLimited: false,
               limitValue: 100,
               hasPerClientLimit: true,

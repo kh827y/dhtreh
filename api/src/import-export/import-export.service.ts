@@ -1406,7 +1406,10 @@ export class ImportExportService {
         : null;
 
     if (!customer) {
-      const or: Array<Record<string, any>> = [{ phone }];
+      const phoneVariants = this.buildPhoneVariants(phone);
+      const or: Array<Record<string, any>> = phoneVariants.map((value) => ({
+        phone: value,
+      }));
       if (email) or.push({ email });
       customer = await prisma.customer.findFirst({
         where: { merchantId, OR: or },
@@ -1429,8 +1432,9 @@ export class ImportExportService {
         updates.externalId = externalId;
       }
       if (phone !== customer.phone) {
+        const phoneVariants = this.buildPhoneVariants(phone);
         const clash = await prisma.customer.findFirst({
-          where: { merchantId, phone },
+          where: { merchantId, OR: phoneVariants.map((value) => ({ phone: value })) },
         });
         if (clash && clash.id !== customer.id) {
           throw new Error('Телефон уже используется другим клиентом');
@@ -1698,8 +1702,12 @@ export class ImportExportService {
     }
 
     if (phone) {
+      const phoneVariants = this.buildPhoneVariants(phone);
       const found = await this.prisma.customer.findFirst({
-        where: { merchantId, phone },
+        where: {
+          merchantId,
+          OR: phoneVariants.map((value) => ({ phone: value })),
+        },
         select: { id: true, tags: true },
       });
       if (found) return found;
@@ -1724,7 +1732,11 @@ export class ImportExportService {
     }
 
     const or: any[] = [];
-    if (phone) or.push({ phone });
+    if (phone) {
+      for (const value of this.buildPhoneVariants(phone)) {
+        or.push({ phone: value });
+      }
+    }
     if (email) or.push({ email });
 
     return this.prisma.customer.findFirst({
@@ -1740,6 +1752,13 @@ export class ImportExportService {
         },
       },
     });
+  }
+
+  private buildPhoneVariants(phone?: string | null): string[] {
+    if (!phone) return [];
+    const digits = phone.replace(/\D/g, '');
+    if (!digits || digits === phone) return [phone];
+    return [phone, digits];
   }
 
   private normalizePhone(phone?: string): string | null {

@@ -29,35 +29,41 @@ describe('PointsTtlWorker (unit)', () => {
           .mockResolvedValue([{ merchantId: 'M1', pointsTtlDays: 30 }]),
       },
       earnLot: {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            merchantId: 'M1',
-            customerId: 'C1',
-            points: 100,
-            consumedPoints: 20,
-            earnedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
-            orderId: 'order-1',
-            status: 'ACTIVE',
-          },
-          {
-            merchantId: 'M1',
-            customerId: 'C1',
-            points: 50,
-            consumedPoints: 0,
-            earnedAt: new Date(Date.now() - 35 * 24 * 60 * 60 * 1000),
-            orderId: 'order-2',
-            status: 'ACTIVE',
-          },
-          {
-            merchantId: 'M1',
-            customerId: 'C2',
-            points: 30,
-            consumedPoints: 10,
-            earnedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
-            orderId: 'order-3',
-            status: 'ACTIVE',
-          },
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([
+            {
+              id: 'L1',
+              merchantId: 'M1',
+              customerId: 'C1',
+              points: 100,
+              consumedPoints: 20,
+              earnedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+              orderId: 'order-1',
+              status: 'ACTIVE',
+            },
+            {
+              id: 'L2',
+              merchantId: 'M1',
+              customerId: 'C1',
+              points: 50,
+              consumedPoints: 0,
+              earnedAt: new Date(Date.now() - 35 * 24 * 60 * 60 * 1000),
+              orderId: 'order-2',
+              status: 'ACTIVE',
+            },
+            {
+              id: 'L3',
+              merchantId: 'M1',
+              customerId: 'C2',
+              points: 30,
+              consumedPoints: 10,
+              earnedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
+              orderId: 'order-3',
+              status: 'ACTIVE',
+            },
+          ])
+          .mockResolvedValueOnce([]),
       },
       eventOutbox: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -112,7 +118,9 @@ describe('PointsTtlWorker (unit)', () => {
           ]),
       },
       transaction: {
-        aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 30 } }),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([{ customerId: 'C1', _sum: { amount: 30 } }]),
       },
       eventOutbox: {
         findMany: jest.fn().mockResolvedValue([]),

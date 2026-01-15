@@ -221,17 +221,6 @@ export class LoyaltyProgramService {
     return d.getTime() > Date.now() ? d : null;
   }
 
-  private async isTelegramEnabled(merchantId: string): Promise<boolean> {
-    try {
-      const m = await this.prisma.merchant.findUnique({
-        where: { id: merchantId },
-        select: { telegramBotEnabled: true },
-      });
-      return !!m?.telegramBotEnabled;
-    } catch {}
-    return false;
-  }
-
   private async taskExists(params: {
     merchantId: string;
     promotionId: string;
@@ -384,32 +373,6 @@ export class LoyaltyProgramService {
             actorId: actorId ?? undefined,
           });
         }
-        // TELEGRAM — если включён бот
-        if (await this.isTelegramEnabled(merchantId)) {
-          if (
-            !(await this.taskExists({
-              merchantId,
-              promotionId: promotion.id,
-              channel: CommunicationChannel.TELEGRAM,
-              scheduledAt: when,
-            }))
-          ) {
-            await this.comms.createTask(merchantId, {
-              channel: CommunicationChannel.TELEGRAM,
-              promotionId: promotion.id,
-              audienceId,
-              audienceName: null,
-              audienceSnapshot: { code: audienceCode },
-              scheduledAt: when,
-              payload: {
-                text,
-                event: 'promotion.start',
-                promotionId: promotion.id,
-              },
-              actorId: actorId ?? undefined,
-            });
-          }
-        }
       }
     }
 
@@ -452,31 +415,6 @@ export class LoyaltyProgramService {
               },
               actorId: actorId ?? undefined,
             });
-          }
-          if (await this.isTelegramEnabled(merchantId)) {
-            if (
-              !(await this.taskExists({
-                merchantId,
-                promotionId: promotion.id,
-                channel: CommunicationChannel.TELEGRAM,
-                scheduledAt: when,
-              }))
-            ) {
-              await this.comms.createTask(merchantId, {
-                channel: CommunicationChannel.TELEGRAM,
-                promotionId: promotion.id,
-                audienceId,
-                audienceName: null,
-                audienceSnapshot: { code: audienceCode },
-                scheduledAt: when,
-                payload: {
-                  text,
-                  event: 'promotion.reminder',
-                  promotionId: promotion.id,
-                },
-                actorId: actorId ?? undefined,
-              });
-            }
           }
         }
       }
@@ -1118,9 +1056,6 @@ export class LoyaltyProgramService {
     const productIds = this.normalizeIdList(rewardMetadata.productIds);
     const categoryIds = this.normalizeIdList(rewardMetadata.categoryIds);
     const hasTargets = productIds.length > 0 || categoryIds.length > 0;
-    if (rewardType === PromotionRewardType.POINTS && !hasTargets) {
-      throw new BadRequestException('Выберите товары или категории');
-    }
     if (rewardType === PromotionRewardType.DISCOUNT && !hasTargets) {
       throw new BadRequestException('Выберите товары или категории');
     }
@@ -1289,9 +1224,6 @@ export class LoyaltyProgramService {
     const productIds = this.normalizeIdList(rewardMetadata.productIds);
     const categoryIds = this.normalizeIdList(rewardMetadata.categoryIds);
     const hasTargets = productIds.length > 0 || categoryIds.length > 0;
-    if (rewardType === PromotionRewardType.POINTS && !hasTargets) {
-      throw new BadRequestException('Выберите товары или категории');
-    }
     if (rewardType === PromotionRewardType.DISCOUNT && !hasTargets) {
       throw new BadRequestException('Выберите товары или категории');
     }

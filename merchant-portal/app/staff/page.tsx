@@ -671,6 +671,8 @@ export default function StaffPage() {
                   const outletNames = activeAccesses
                     .map((access) => access.outletName)
                     .filter(Boolean) as string[];
+                  const avatarUrl =
+                    typeof staff.avatarUrl === "string" ? staff.avatarUrl.trim() : "";
                   const outletFallback =
                     outletNames.length === 0 && activeAccesses.length
                       ? `${activeAccesses.length} точек`
@@ -684,8 +686,13 @@ export default function StaffPage() {
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center space-x-3">
-                          <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold text-sm">
-                            {(displayName || "?").slice(0, 1).toUpperCase()}
+                          <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold text-sm overflow-hidden">
+                            {avatarUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              (displayName || "?").slice(0, 1).toUpperCase()
+                            )}
                           </div>
                           <div>
                             <div className="font-medium text-gray-900">{displayName}</div>
