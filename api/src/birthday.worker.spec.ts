@@ -21,6 +21,11 @@ describe('BirthdayWorker helpers', () => {
     };
   }
 
+  function toLocalDate(date: Date, timezone: { utcOffsetMinutes: number }) {
+    const offsetMs = timezone.utcOffsetMinutes * 60 * 1000;
+    return new Date(date.getTime() + offsetMs);
+  }
+
   it('computes upcoming birthday within the same year', () => {
     const worker = createWorker() as any;
     const timezone = findTimezone(DEFAULT_TIMEZONE_CODE);
@@ -31,9 +36,10 @@ describe('BirthdayWorker helpers', () => {
     const actual = worker.resolveBirthdayEvent(birthDate, config, target, timezone);
 
     expect(actual).not.toBeNull();
-    expect(actual?.getFullYear()).toBe(2025);
-    expect(actual?.getMonth()).toBe(5); // June
-    expect(actual?.getDate()).toBe(15);
+    const local = toLocalDate(actual as Date, timezone);
+    expect(local.getUTCFullYear()).toBe(2025);
+    expect(local.getUTCMonth()).toBe(5); // June
+    expect(local.getUTCDate()).toBe(15);
   });
 
   it('handles cross-year greetings (daysBefore spills into previous year)', () => {
@@ -46,9 +52,10 @@ describe('BirthdayWorker helpers', () => {
     const actual = worker.resolveBirthdayEvent(birthDate, config, target, timezone);
 
     expect(actual).not.toBeNull();
-    expect(actual?.getFullYear()).toBe(2025);
-    expect(actual?.getMonth()).toBe(0); // January
-    expect(actual?.getDate()).toBe(1);
+    const local = toLocalDate(actual as Date, timezone);
+    expect(local.getUTCFullYear()).toBe(2025);
+    expect(local.getUTCMonth()).toBe(0); // January
+    expect(local.getUTCDate()).toBe(1);
   });
 
   it('maps leap-day birthdays to Feb 28 in non-leap years when needed', () => {
@@ -61,9 +68,10 @@ describe('BirthdayWorker helpers', () => {
     const actual = worker.resolveBirthdayEvent(birthDate, config, target, timezone);
 
     expect(actual).not.toBeNull();
-    expect(actual?.getFullYear()).toBe(2025);
-    expect(actual?.getMonth()).toBe(1); // February
-    expect(actual?.getDate()).toBe(28);
+    const local = toLocalDate(actual as Date, timezone);
+    expect(local.getUTCFullYear()).toBe(2025);
+    expect(local.getUTCMonth()).toBe(1); // February
+    expect(local.getUTCDate()).toBe(28);
   });
 
   it('applies placeholders with fallback name and bonus', () => {
