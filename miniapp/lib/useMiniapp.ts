@@ -85,6 +85,38 @@ export function useMiniappAuth(defaultMerchant: string) {
   const [teleHasPhone, setTeleHasPhone] = useState<boolean | null>(null);
 
   useEffect(() => {
+    const tg = getTelegramWebApp();
+    const updateViewport = () => {
+      const tgAny = tg as { viewportStableHeight?: number; viewportHeight?: number } | null;
+      const height =
+        typeof tgAny?.viewportStableHeight === 'number'
+          ? tgAny.viewportStableHeight
+          : typeof tgAny?.viewportHeight === 'number'
+            ? tgAny.viewportHeight
+            : typeof window !== 'undefined'
+              ? window.visualViewport?.height ?? window.innerHeight
+              : 0;
+      if (!height) return;
+      document.documentElement.style.setProperty(
+        '--tg-viewport-height',
+        `${Math.round(height)}px`,
+      );
+    };
+    updateViewport();
+    const onResize = () => updateViewport();
+    window.addEventListener('resize', onResize);
+    window.visualViewport?.addEventListener('resize', onResize);
+    tg?.onEvent?.('viewportChanged', onResize);
+    const timer = setTimeout(updateViewport, 150);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
+      tg?.offEvent?.('viewportChanged', onResize);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       const tg = getTelegramWebApp();

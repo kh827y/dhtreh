@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Phone, Check, User as UserIcon, Calendar, Gift, AlertCircle } from "lucide-react";
 
 export type OnboardingForm = {
@@ -29,6 +29,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
   loading,
   error,
 }) => {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [birthInput, setBirthInput] = useState(() => {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(form.birthDate);
     return match ? `${match[3]}.${match[2]}.${match[1]}` : form.birthDate;
@@ -73,9 +74,31 @@ const Onboarding: React.FC<OnboardingProps> = ({
     }
   };
 
+  const scrollToField = (element: HTMLElement | null) => {
+    if (!element) return;
+    const run = () => {
+      const container = scrollRef.current;
+      if (!container) {
+        element.scrollIntoView({ block: "center", behavior: "smooth" });
+        return;
+      }
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+      const offsetTop = elementRect.top - containerRect.top;
+      const target = Math.max(0, container.scrollTop + offsetTop - container.clientHeight * 0.35);
+      if (typeof container.scrollTo === "function") {
+        container.scrollTo({ top: target, behavior: "smooth" });
+      } else {
+        container.scrollTop = target;
+      }
+    };
+    requestAnimationFrame(run);
+    setTimeout(run, 120);
+  };
+
   return (
-    <div className="h-screen bg-ios-bg flex flex-col relative pb-safe overflow-hidden">
-      <div className="flex-1 overflow-y-auto px-6 pt-12 pb-40">
+    <div className="tg-viewport bg-ios-bg flex flex-col relative pb-safe overflow-hidden">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pt-12 pb-40">
         <div className="mb-8 text-center animate-in slide-in-from-bottom-4 fade-in duration-500">
           <div className="w-20 h-20 bg-blue-600 rounded-3xl mx-auto flex items-center justify-center shadow-xl shadow-blue-200 mb-6 rotate-3">
             <Gift className="text-white w-10 h-10" />
@@ -99,6 +122,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
               <input
                 type="text"
                 value={form.name}
+                onFocus={(e) => scrollToField(e.currentTarget)}
                 onChange={(e) => onFieldChange("name", e.target.value)}
                 placeholder="Как к вам обращаться?"
                 className={`w-full font-medium text-gray-900 placeholder-gray-300 outline-none ${inputTextClass}`}
@@ -138,6 +162,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
                 type="tel"
                 inputMode="numeric"
                 value={birthInput}
+                onFocus={(e) => scrollToField(e.currentTarget)}
                 onChange={(e) => handleBirthInput(e.target.value)}
                 placeholder="ДД.ММ.ГГГГ"
                 className={`w-full font-medium text-gray-900 bg-transparent outline-none ${inputTextClass}`}
@@ -154,6 +179,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
               <input
                 type="text"
                 value={form.inviteCode}
+                onFocus={(e) => scrollToField(e.currentTarget)}
                 onChange={(e) => onFieldChange("inviteCode", e.target.value)}
                 placeholder="REF-12345"
                 className={`w-full font-medium text-gray-900 placeholder-gray-300 outline-none uppercase ${inputTextClass}`}

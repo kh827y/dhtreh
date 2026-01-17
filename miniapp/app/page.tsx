@@ -2220,7 +2220,7 @@ function MiniappPage() {
         : "Ввести промокод";
 
   const splashView = (
-    <div className="min-h-screen flex items-center justify-center text-gray-500">
+    <div className="tg-viewport flex items-center justify-center text-gray-500">
       <div className="text-center">
         <div className="w-10 h-10 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin mx-auto mb-4" />
         <div>Загружаем приложение…</div>
@@ -2956,7 +2956,7 @@ function MiniappPage() {
   );
 
   const dashboardView = (
-    <div className="bg-ios-bg h-screen text-gray-900 font-sans mx-auto max-w-md shadow-2xl overflow-hidden relative selection:bg-blue-100">
+    <div className="bg-ios-bg tg-viewport text-gray-900 font-sans mx-auto max-w-md shadow-2xl overflow-hidden relative selection:bg-blue-100">
       {view === "HOME" && renderHome()}
       {view === "PROMOS" && renderPromos()}
       {view === "INVITE" && renderInvite()}

@@ -3,6 +3,7 @@
 @layer base {
   :root {
     color-scheme: light;
+    --tg-viewport-height: 100vh;
   }
 
   *,
@@ -36,6 +37,11 @@
 @layer utilities {
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom, 20px);
+  }
+
+  .tg-viewport {
+    height: var(--tg-viewport-height, 100vh);
+    min-height: var(--tg-viewport-height, 100vh);
   }
 
   .pb-safe {
