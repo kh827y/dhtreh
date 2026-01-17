@@ -4,21 +4,6 @@ import OutboxLink from '../components/OutboxLink';
 import './globals.css';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // Fail-fast ENV validation for Admin
-  if (typeof window === 'undefined') {
-    const required = ['API_BASE', 'ADMIN_UI_PASSWORD', 'ADMIN_SESSION_SECRET'];
-    for (const key of required) {
-      if (!process.env[key] || process.env[key].trim() === '') {
-        throw new Error(`[Admin ENV] ${key} not configured`);
-      }
-    }
-    if (process.env.NODE_ENV === 'production') {
-      if (process.env.ADMIN_SESSION_SECRET === 'dev_change_me') {
-        throw new Error('[Admin ENV] ADMIN_SESSION_SECRET must not use dev default in production');
-      }
-    }
-  }
-  
   return (
     <html lang="ru">
       <body style={{ fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial', background: '#0b1220', color: '#e6edf3', margin: 0 }}>
