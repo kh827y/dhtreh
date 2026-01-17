@@ -115,12 +115,7 @@ jobs:
   deploy-production:
     needs: test
     runs-on: ubuntu-latest
-    if: >
-      github.ref == 'refs/heads/main' &&
-      github.event_name == 'push' &&
-      secrets.PRODUCTION_HOST != '' &&
-      secrets.PRODUCTION_USER != '' &&
-      secrets.PRODUCTION_SSH_KEY != ''
+    if: github.ref == 'refs/heads/main'
     environment: production
     
     steps:
