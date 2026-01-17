@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: miniapp-config
-  namespace: loyalty
-data:
-  NEXT_PUBLIC_API_BASE_URL: "https://api.staging.example.com"

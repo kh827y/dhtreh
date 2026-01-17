@@ -146,37 +146,6 @@ const MECHANIC_PERMISSION_IDS = [
   "mechanic_referral",
 ];
 
-const LEGACY_RESOURCE_ALIASES: Record<string, string[]> = {
-  products: ["loyalty"],
-  categories: ["loyalty"],
-  audiences: ["loyalty"],
-  customers: ["loyalty"],
-  points_promotions: ["loyalty"],
-  product_promotions: ["loyalty"],
-  promocodes: ["loyalty"],
-  telegram_notifications: ["loyalty"],
-  broadcasts: ["loyalty"],
-  system_settings: ["loyalty"],
-  feedback: ["loyalty"],
-  staff_motivation: ["loyalty"],
-  antifraud: ["loyalty"],
-  cashier_panel: ["loyalty"],
-  import: ["loyalty"],
-  integrations: ["loyalty"],
-  rfm_analysis: ["analytics"],
-  analytics: ["analytics"],
-  staff: ["staff"],
-  access_groups: ["staff"],
-  outlets: ["outlets"],
-  mechanic_birthday: ["loyalty"],
-  mechanic_auto_return: ["loyalty"],
-  mechanic_levels: ["loyalty"],
-  mechanic_redeem_limits: ["loyalty"],
-  mechanic_registration_bonus: ["loyalty"],
-  mechanic_ttl: ["loyalty"],
-  mechanic_referral: ["loyalty"],
-};
-
 const ITEM_PERMISSION_REQUIREMENTS: Record<
   string,
   Array<{ resource: string; action?: string }>
@@ -389,22 +358,15 @@ function hasPermission(
   if (Array.isArray(all) && (all.includes("*") || all.includes("manage"))) {
     return true;
   }
-  const resourcesToCheck = [
-    resource,
-    ...(LEGACY_RESOURCE_ALIASES[resource] || []),
-  ];
-  for (const key of resourcesToCheck) {
-    const actions = permissions[key];
-    if (!actions || !actions.length) continue;
-    if (actions.includes("*") || actions.includes("manage")) return true;
-    if (action === "read") {
-      if (actions.includes("read")) return true;
-      if (actions.some((value) => READ_IMPLIED_ACTIONS.has(value))) return true;
-      continue;
-    }
-    if (actions.includes(action)) return true;
+  const actions = permissions[resource];
+  if (!actions || !actions.length) return false;
+  if (actions.includes("*") || actions.includes("manage")) return true;
+  if (action === "read") {
+    if (actions.includes("read")) return true;
+    if (actions.some((value) => READ_IMPLIED_ACTIONS.has(value))) return true;
+    return false;
   }
-  return false;
+  return actions.includes(action);
 }
 
 function normalizeHref(href: string) {

@@ -7,7 +7,6 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { TelegramBotService } from '../../telegram/telegram-bot.service';
-import * as crypto from 'crypto';
 
 export interface TelegramIntegrationState {
   enabled: boolean;
@@ -278,10 +277,10 @@ export class PortalTelegramIntegrationService {
     return { ...state, message };
   }
 
-  // Generate deep link for Mini App using startapp signed token
+  // Generate deep link for Mini App using startapp param (plain string)
   async generateLink(
     merchantId: string,
-    outletId?: string,
+    _outletId?: string,
   ): Promise<{ deepLink: string; startParam: string }> {
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
@@ -290,47 +289,13 @@ export class PortalTelegramIntegrationService {
     if (!username)
       throw new BadRequestException('Бот не подключён для данного мерчанта');
 
-    const secret = this.config.get<string>('TMA_LINK_SECRET');
-    if (!secret)
-      throw new BadRequestException(
-        'Сервер не настроен: отсутствует TMA_LINK_SECRET',
-      );
-
-    // Build HS256 token (JWT-like) with base64url parts
-    const header = { alg: 'HS256', typ: 'JWT' };
-    const iat = Math.floor(Date.now() / 1000);
-    const exp = iat + 7 * 24 * 60 * 60; // 7 days TTL
-    const jti = crypto.randomBytes(12).toString('hex');
-    const payload: Record<string, any> = {
-      merchantId,
-      scope: 'miniapp',
-      iat,
-      exp,
-      jti,
-    };
-    if (outletId) payload.outletId = String(outletId);
-
-    const b64u = (input: string | Buffer) =>
-      Buffer.from(input)
-        .toString('base64')
-        .replace(/=/g, '')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_');
-    const encHeader = b64u(JSON.stringify(header));
-    const encPayload = b64u(JSON.stringify(payload));
-    const data = `${encHeader}.${encPayload}`;
-    const sig = crypto
-      .createHmac('sha256', secret)
-      .update(data)
-      .digest('base64')
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
-    const token = `${data}.${sig}`;
-
+    const startParamRequired = Boolean(settings?.telegramStartParamRequired);
+    const startParam = startParamRequired ? merchantId : '';
     const uname = username.startsWith('@') ? username.slice(1) : username;
-    const deepLink = `https://t.me/${uname}?startapp=${token}`;
-    return { deepLink, startParam: token };
+    const deepLink = startParam
+      ? `https://t.me/${uname}?startapp=${encodeURIComponent(startParam)}`
+      : `https://t.me/${uname}`;
+    return { deepLink, startParam };
   }
 
   async setupMenu(merchantId: string): Promise<{ ok: true }> {

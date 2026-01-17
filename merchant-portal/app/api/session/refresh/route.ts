@@ -25,9 +25,8 @@ export async function GET(req: NextRequest) {
     url.searchParams.set('redirect', redirectPath);
     const r = NextResponse.redirect(url);
     const secure = process.env.NODE_ENV === 'production';
-    const domain = (process.env.PORTAL_COOKIE_DOMAIN || '').trim() || undefined;
-    r.cookies.set({ name: 'portal_jwt', value: '', httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 0, domain });
-    r.cookies.set({ name: 'portal_refresh', value: '', httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 0, domain });
+    r.cookies.set({ name: 'portal_jwt', value: '', httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 0 });
+    r.cookies.set({ name: 'portal_refresh', value: '', httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 0 });
     return r;
   };
 
@@ -50,10 +49,9 @@ export async function GET(req: NextRequest) {
 
     const out = NextResponse.redirect(new URL(redirectPath, new URL(req.url).origin));
     const secure = process.env.NODE_ENV === 'production';
-    const domain = (process.env.PORTAL_COOKIE_DOMAIN || '').trim() || undefined;
-    out.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60, domain });
+    out.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60 });
     if (nextRefresh) {
-      out.cookies.set({ name: 'portal_refresh', value: nextRefresh, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 30 * 24 * 60 * 60, domain });
+      out.cookies.set({ name: 'portal_refresh', value: nextRefresh, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 30 * 24 * 60 * 60 });
     }
     return out;
   } catch {

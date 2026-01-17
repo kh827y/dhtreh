@@ -4,12 +4,10 @@
 
 - `api` — сервер (NestJS + Prisma/PostgreSQL)
 - `admin` — панель администратора/настройки (Next.js)
-- 'merchant-portal' - панель управления мерчантов
+- `merchant-portal` — панель управления мерчантов
 - `cashier` — виртуальный терминал кассира (Next.js)
 - `miniapp` — Telegram мини‑аппа клиента (Next.js)
 - `infra` — Docker Compose для БД
-
-> Внешние платёжные провайдеры (YooKassa/CloudPayments/Тинькофф) и кассовые интеграции (АТОЛ/Эвотор/Poster/МодульКасса/1С) удалены: подписки ведутся без сторонних оплат, кассовые вебхуки не используются.
 
 ## Быстрый старт (локально)
 
@@ -25,10 +23,11 @@
   - `QR_JWT_SECRET=dev_change_me`
   - `PORTAL_JWT_SECRET=change_me_portal`
   - `PORTAL_REFRESH_SECRET=change_me_portal_refresh`
-  - при наличии бота: `TELEGRAM_BOT_TOKEN=12345:ABC...`
+  - `API_KEY=test-api-key`
+  - `CORS_ORIGINS=http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004`
 - Установите зависимости: `pnpm i`
 - Примените миграции: `pnpm prisma migrate dev`
-- (опционально) Минимальный сид: `pnpm seed` (только системный план, без демо)
+- Заполните демо-данные: `pnpm seed` (создаст базовый план подписки)
 - Запустите: `pnpm start:dev` (http://localhost:3000)
 
 3) Admin (панель)
@@ -38,28 +37,27 @@
   - `ADMIN_KEY=admin123` (серверно, прокидывается в `x-admin-key` при прокси)
   - `ADMIN_SESSION_SECRET=change_me_admin_ui_cookie_secret`
   - `ADMIN_UI_PASSWORD=admin_password`
-  - (опц.) `NEXT_PUBLIC_MERCHANT_ID=<merchant_id>` (лишь для дефолта в UI)
+  - (опц.) `ADMIN_UI_TOTP_SECRET=base32secret`
 - `pnpm i` → `pnpm dev` (http://localhost:3001)
 
-4) Cashier (виртуальный терминал)
+4) Merchant Portal
+- Перейдите в `merchant-portal`
+- Создайте `.env.local` (пример):
+  - `NEXT_PUBLIC_API_BASE=http://localhost:3000`
+- `pnpm i` → `pnpm dev` (http://localhost:3004)
+
+5) Cashier (виртуальный терминал)
 - Перейдите в `cashier`
 - Создайте `.env.local` (пример):
   - `NEXT_PUBLIC_API_BASE=http://localhost:3000`
-  - `NEXT_PUBLIC_MERCHANT_ID=<merchant_id>`
 - `pnpm i` → `pnpm dev` (http://localhost:3002)
 
-5) Miniapp (Telegram мини‑аппа)
+6) Miniapp (Telegram мини‑аппа)
 - Перейдите в `miniapp`
 - `.env.local` (пример):
   - `NEXT_PUBLIC_API_BASE=http://localhost:3000`
-  - `NEXT_PUBLIC_MERCHANT_ID=<merchant_id>`
-  - `NEXT_PUBLIC_QR_TTL=60`
 - `pnpm i` → `pnpm dev` (http://localhost:3003)
-
-### Торговые точки
-
-- Переключение точки (ACTIVE/INACTIVE): `PUT /merchants/:id/outlets/:outletId/status`.
-- API работает с устройствами `Device`, привязанными к `Outlet`: идентификатор устройства передаётся в операции и антифрод, наряду с `outletId`.
+- TTL QR берётся из настроек мерчанта (`qrTtlSec`), по умолчанию 300 секунд.
 
 ## Проверка E2E (понятно и по шагам)
 
@@ -68,12 +66,12 @@ A. Создание мерчанта и базовых данных
 - Создайте мерчанта и задайте portal email/пароль
 - Выдайте подписку (plan `full`)
 - В портале создайте торговую точку и сотрудника с PIN (для кассира)
-- Если используете cashier/miniapp, пропишите `NEXT_PUBLIC_MERCHANT_ID` в их `.env.local`
+- Для miniapp укажите `merchantId` в URL (Menu Button) или используйте параметр `?merchantId=...` при открытии.
 
 B. Генерация QR клиентом (мини‑аппа)
 - Откройте miniapp: http://localhost:3003
 - Нажмите «Показать QR для оплаты» — отобразится QR
-- Если используете Telegram, установите переменную `TELEGRAM_BOT_TOKEN` в API и откройте мини‑аппу внутри Telegram — авторизация произойдёт автоматически
+- Если используете Telegram, подключите мини‑аппу в портале (Integrations → Telegram Mini App) и откройте её внутри Telegram — авторизация произойдёт автоматически
  - В продакшне `/loyalty/qr` доступен только с валидным Telegram `initData` (серверная проверка подписи).
 
 C. Продажа через виртуальный терминал кассира
@@ -96,21 +94,23 @@ D. Проверка результатов
 - Для возврата в кассире сначала загрузите историю клиента: после этого поле «Refund» подставит orderId по номеру чека и отправит на API реальный идентификатор без ввода вручную.
 
 ## Полезные ссылки
+- Документация по подписи: admin → Docs → Signature
 - Варианты интеграции: admin → Docs → Integration
 
 ## PortalAuth (Merchant Portal)
 
-Аутентификация мерчанта и сотрудников Merchant Portal основана на JWT, подписанном секретом `PORTAL_JWT_SECRET`.
+Аутентификация мерчанта и сотрудников Merchant Portal основана на access/refresh JWT, подписанных секретами `PORTAL_JWT_SECRET` и `PORTAL_REFRESH_SECRET`.
 
 - Эндпоинты API:
   - `POST /portal/auth/login` — вход по email+паролю. Для мерчантов при активном TOTP требуется доп. поле `code`. Сотрудники используют тот же эндпоинт (TOTP не запрашивается).
+  - `POST /portal/auth/refresh` — обновление access токена по refresh токену.
   - `GET /portal/auth/me` — проверка токена; ответ содержит `{ merchantId, role, actor, staffId, adminImpersonation }`.
 - Имперсонация из админки:
   - `POST /merchants/:id/portal/impersonate` — выдаёт портальный токен от имени мерчанта (требуется заголовок `X-Admin-Key`).
-- Сессия хранится в httpOnly‑cookie `portal_jwt` (устанавливается фронтом после успешного логина).
+- Сессия хранится в httpOnly‑cookie `portal_jwt` (access) и `portal_refresh` (refresh).
 - Переменные окружения:
-  - `PORTAL_JWT_SECRET` — обязательный секрет для подписи/проверки токенов портала.
-  - `PORTAL_REFRESH_SECRET` — обязательный секрет для refresh‑токенов портала.
+  - `PORTAL_JWT_SECRET` — секрет для подписи access токенов портала.
+  - `PORTAL_REFRESH_SECRET` — секрет для подписи refresh токенов портала.
 
 Особенности:
 
@@ -131,11 +131,10 @@ D. Проверка результатов
 
 ### LoyaltyPromotion — акции и коммуникации
 
-- Сущность `LoyaltyPromotion` заменяет legacy-кампании: портал и API работают с единым CRUD `/portal/loyalty/promotions`.
-- Исторические `GET /reports/export/:merchantId` отключены — используйте аналитику портала или выгрузку через API лояльности.
+- Сущность `LoyaltyPromotion` — единый CRUD `/portal/loyalty/promotions` для акций и коммуникаций.
 - Статистика применения акции формируется из записей `PromotionParticipant` (участники, начисленные баллы, ROI) и доступна в `GET /portal/loyalty/promotions/:id`.
 - Уведомления (email/push/telegram) используют `promotionId`: шаблоны получают название акции, сроки и тип из `rewardType`/`rewardMetadata.kind`.
-- Push-уведомления доставляются через Telegram Mini App: регистрация устройств и FCM-провайдеры убраны, `PushService` использует `sendNotification` и воркер коммуникаций.
+- Push-уведомления доставляются через Telegram Mini App; регистрация устройств не требуется, `PushService` использует `sendNotification` и воркер коммуникаций.
 
 ## Наблюдаемость: метрики и алерты
 
@@ -191,6 +190,7 @@ curl -s -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:3000/metrics 
 - `OUTBOX_WORKER_INTERVAL_MS`, `OUTBOX_WORKER_CONCURRENCY`, `OUTBOX_MAX_RETRIES`, `OUTBOX_RPS_DEFAULT`, `OUTBOX_RPS_BY_MERCHANT` — доставка вебхуков из `eventOutbox`.
 - `HOLD_GC_INTERVAL_MS` — сборщик просроченных hold’ов.
 - `POINTS_TTL_REMINDER_INTERVAL_MS` — частота запуска напоминаний о сгорании (по умолчанию 6 часов).
+- `POINTS_TTL_BURN_INTERVAL_MS` — частота сжигания TTL.
 
 Пример локального запуска с включёнными лотами и превью TTL:
 
@@ -207,13 +207,15 @@ POINTS_TTL_REMINDER=1
 
 ## Уровни (Levels)
 
-Уровни управляются только через портал (модель `LoyaltyTier`). Настройки из `rulesJson.levelsCfg/levelBenefits` больше не используются.
+Уровни управляются только через портал (модель `LoyaltyTier`).
 
 - Эндпоинт: `GET /levels/:merchantId/:customerId` — возвращает текущий уровень, прогресс и следующий порог. Расчёт идёт по сумме чеков за 365 дней (`metric=earn`).
 - Каталог уровней для миниаппы:`GET /loyalty/mechanics/levels/:merchantId` — отдает видимые (`isHidden=false`) уровни с порогами/ставками.
 - Если уровней нет, при первом обращении создаётся базовый `Base` (`earnRateBps=300`, `redeemRateBps=5000`, `minPaymentAmount=0`, `isInitial=true`).
 - Автоповышение: после `commit` считается прогресс за окно 365 дней по сумме чеков и выбирается максимальный видимый tier с `thresholdAmount <= progress`. Скрытые уровни не участвуют в авто‑повышении.
 - Возвраты/отмены: полный возврат помечает чек отменённым, частичный учитывается через `TxnType.REFUND.share`, прогресс уровня уменьшается и при необходимости происходит понижение tier.
+- Ручной уровень (карточка клиента) фиксируется и не сбивается покупками; срок задаётся `levelExpireDays` (0 — бессрочно).
+- Уровень по промокоду действует `levelExpireDays` (0 — бессрочно) и после окончания пересчитывается по покупкам.
 - Пример ответа `/levels/...`:
 
 ```json
@@ -243,7 +245,7 @@ POINTS_TTL_REMINDER=1
 
 2) Настройте уровни/бонусы в Admin → «Настройки мерчанта»:
 
-- Уровни и бонусы настраиваются только на страницах портала (`/loyalty/mechanics/levels`); legacy поля `levelsCfg/levelBenefits` не используются.
+- Уровни и бонусы настраиваются на страницах портала (`/loyalty/mechanics/levels`).
 - Страница «Levels» позволяет ввести `customerId`, автозагрузить уровень и увидеть прогресс‑бар.
 
 3) Превью эффективных ставок:
@@ -262,7 +264,7 @@ POINTS_TTL_REMINDER=1
 
 - Эндпоинты портала:
   - `GET /portal/promocodes?status=ACTIVE|ARCHIVE` — список последних промокодов с метриками.
-  - `POST /portal/promocodes/issue` — создание промокода. Тело соответствует `PortalPromoCodePayload` (код, описание, баллы, TTL, ограничения, период действия и т.д.; `usageLimitValue` задаёт, сколько клиентов могут применить код при `usageLimit=once_total`; `levelExpireDays` задаёт срок действия присвоенного уровня, 0 — бессрочно). Возвращает `{ ok: true, promoCodeId }`.
+  - `POST /portal/promocodes/issue` — создание промокода. Тело соответствует `PortalPromoCodePayload` (код, описание, баллы, TTL, ограничения, период действия и т.д.; `usageLimitValue` задаёт, сколько клиентов могут применить код при `usageLimit=once_total`; `levelExpireDays` задаёт срок действия присвоенного уровня, 0 — бессрочно, если не задан — используется дефолт 365 дней). Возвращает `{ ok: true, promoCodeId }`.
   - `POST /portal/promocodes/deactivate` — `{ promoCodeId }` переводит промокод в архив (паузит использование).
   - `POST /portal/promocodes/activate` — `{ promoCodeId }` повторно активирует промокод.
   - `PUT /portal/promocodes/:promoCodeId` — обновляет настройки существующего промокода.
@@ -280,14 +282,13 @@ POINTS_TTL_REMINDER=1
 
 Волна 3 добавляет заготовку рассылок:
 
-- Админка: `admin/app/notifications` — форма для широковещательной рассылки по каналу `ALL/EMAIL/PUSH`, есть `dry-run`.
 - API: `POST /notifications/broadcast` и `POST /notifications/test` (защищено `AdminGuard`/`AdminIpGuard`).
 - Воркер: `NotificationDispatcherWorker` читает события `notify.*` из `EventOutbox` и отправляет через существующие сервисы `EmailService`/`PushService`.
 
 ENV подсказки:
 
 - Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
-- Push: `FIREBASE_SERVICE_ACCOUNT` — JSON service account (строкой).
+- Push: через Telegram Mini App (подключается в портале; важно задать `API_BASE_URL`/`MINIAPP_BASE_URL`).
 - Воркер: `WORKERS_ENABLED=1`, опционально `NOTIFY_WORKER_INTERVAL_MS`, `NOTIFY_WORKER_BATCH`.
   - Троттлинг RPS: `NOTIFY_RPS_DEFAULT` (по умолчанию на мерчанта; `0` — без ограничений), `NOTIFY_RPS_BY_MERCHANT` (`M-1=5,M-2=3`).
 
@@ -303,6 +304,7 @@ ENV подсказки:
 
 - API: `DATABASE_URL`, `ADMIN_KEY`, `ADMIN_SESSION_SECRET`, `QR_JWT_SECRET` (не `dev_change_me`), `CORS_ORIGINS` обязательны; `WORKERS_ENABLED=1` в отдельном процессе.
 - Admin: `API_BASE` (абсолютный URL), `ADMIN_UI_PASSWORD`, `ADMIN_SESSION_SECRET`.
+- Merchant Portal: `NEXT_PUBLIC_API_BASE`.
 
 ## Дополнительно
 - (опц.) Redis для rate limiting: поднимите `redis:7` и задайте `REDIS_URL=redis://localhost:6379` в `api` — лимиты будут распределёнными.
@@ -321,17 +323,3 @@ ENV подсказки:
 - Клиент миниаппы подписывается один раз, долговисящий запрос держится ~25 секунд и при событии локально вызывает `loadBalance`/`loadTx({ fresh: true })`/`loadLevels`, так что история/баланс/уровень обновляются без перезагрузки экрана.
 - События хранятся до тех пор, пока не будут выданы конкретному `customerId`; повторная выдача исключена — по выдаче `deliveredAt` проставляется и запись игнорируется при следующем poll.
 - В-production используйте реальные API/секреты: никаких моков/Dev-путей, endpoint опирается на Postgres LISTEN/NOTIFY и общую БД (масштабирование в несколько инстансов поддерживается из коробки).
-
-## Уведомления (Notifications)
-
-Волна 3 добавляет заготовку рассылок:
-
-- Админка: `admin/app/notifications` — форма для широковещательной рассылки по каналу `ALL/EMAIL/PUSH`, есть `dry-run`.
-- API: `POST /notifications/broadcast` и `POST /notifications/test` (защищено `AdminGuard`/`AdminIpGuard`).
-- Воркер: `NotificationDispatcherWorker` читает события `notify.*` из `EventOutbox` и отправляет через существующие сервисы `EmailService`/`PushService`.
-
-ENV подсказки:
-
-- Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
-- Push: `FIREBASE_SERVICE_ACCOUNT` — JSON service account (строкой).
-- Воркер: `WORKERS_ENABLED=1`, опционально `NOTIFY_WORKER_INTERVAL_MS`, `NOTIFY_WORKER_BATCH`.

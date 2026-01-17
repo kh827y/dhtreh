@@ -312,7 +312,7 @@ const QRCodeOverlay: React.FC<QRCodeOverlayProps> = ({
                 style={{
                   width: `${
                     qrTimeLeft != null && qrTimeLeft > 0
-                      ? (qrTimeLeft / Math.max(1, qrTtlSec ?? 60)) * 100
+                      ? (qrTimeLeft / Math.max(1, qrTtlSec ?? 300)) * 100
                       : 0
                   }%`,
                 }}

@@ -1,6 +1,5 @@
 import type { PrismaService } from '../prisma.service';
 import { validateTelegramInitData } from './telegram.util';
-import { createHmac } from 'crypto';
 
 export type TelegramAuthContext = {
   merchantId: string;
@@ -47,31 +46,9 @@ export async function resolveTelegramAuthContext(
       const startParam =
         params.get('start_param') || params.get('startapp') || '';
       if (!startParam) return null;
-      const parts = startParam.split('.');
-      const looksLikeJwt =
-        parts.length === 3 &&
-        parts.every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
-      if (looksLikeJwt) {
-        const secret = process.env.TMA_LINK_SECRET || '';
-        if (!secret) return null;
-        const [h, pld, sig] = parts;
-        const data = `${h}.${pld}`;
-        const expected = createHmac('sha256', secret)
-          .update(data)
-          .digest('base64')
-          .replace(/=/g, '')
-          .replace(/\+/g, '-')
-          .replace(/\//g, '_');
-        if (expected !== sig) return null;
-        const json = JSON.parse(
-          Buffer.from(pld.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString(
-            'utf8',
-          ),
-        );
-        const claimedMerchant =
-          typeof json?.merchantId === 'string' ? json.merchantId : '';
-        if (claimedMerchant && claimedMerchant !== merchantId) return null;
-      } else if (startParam !== merchantId) {
+      const trimmed = startParam.trim();
+      const isReferral = /^ref[_-]/i.test(trimmed);
+      if (!isReferral && trimmed !== merchantId) {
         return null;
       }
     } catch {

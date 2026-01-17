@@ -27,6 +27,7 @@ const REVIEW_PLATFORM_LABELS: Record<string, string> = {
   twogis: "2ГИС",
   google: "Google",
 };
+const REVIEW_EVENT_WINDOW_MS = 2 * 60 * 1000;
 const dismissedStorageKey = (merchantId?: string | null, customerId?: string | null) =>
   merchantId && customerId ? `miniapp.dismissedTransactions.v1:${merchantId}:${customerId}` : null;
 
@@ -258,6 +259,7 @@ export function FeedbackManager() {
   const [dismissedReady, setDismissedReady] = useState(false);
   const feedbackPresence = useDelayedRender(feedbackOpen, 320);
   const [preferredTxId, setPreferredTxId] = useState<string | null>(null);
+  const [preferredTxAt, setPreferredTxAt] = useState<number | null>(null);
 
   const dismissedReviewKeySet = useMemo(() => new Set(dismissedReviewKeys), [dismissedReviewKeys]);
   const appendDismissedReviewKeys = useCallback((keys: Array<string | null | undefined>) => {
@@ -277,6 +279,7 @@ export function FeedbackManager() {
 
   const loadTransactions = useCallback(async (opts?: { fresh?: boolean }) => {
     if (!canLoadCustomerData) return;
+    if (!merchantId || !customerId) return;
     try {
       if (!opts?.fresh) {
         const cached = readTxCache(merchantId, customerId);
@@ -310,6 +313,7 @@ export function FeedbackManager() {
   const persistDismissedTransaction = useCallback(
     async (transactionId: string) => {
       if (!transactionId || !canLoadCustomerData) return;
+      if (!merchantId || !customerId) return;
       try {
         await dismissReviewPrompt(merchantId, customerId, transactionId);
       } catch {
@@ -416,28 +420,17 @@ export function FeedbackManager() {
     if (!dismissedReady) return;
     if (feedbackOpen) return;
     if (!reviewsEnabled) return;
-    let candidate: TransactionItem | null = null;
-    if (preferredTxId) {
-      const preferred = transactionsList.find((item) => item.id === preferredTxId) ?? null;
-      if (preferred && isEligiblePurchaseTx(preferred)) {
-        candidate = preferred;
-      }
-    }
-    if (!candidate) {
-      const latest = transactionsList.reduce<{ item: TransactionItem | null; ts: number }>(
-        (acc, item) => {
-          const ts = parseDateMs(item.createdAt) ?? 0;
-          return ts > acc.ts ? { item, ts } : acc;
-        },
-        { item: null, ts: 0 },
-      ).item;
-      if (latest && isEligiblePurchaseTx(latest)) {
-        candidate = latest;
-      }
-    }
-    if (candidate) {
+    if (!preferredTxId || preferredTxAt == null) return;
+    if (Date.now() - preferredTxAt > REVIEW_EVENT_WINDOW_MS) {
       setPreferredTxId(null);
-      setFeedbackTxId(candidate.id);
+      setPreferredTxAt(null);
+      return;
+    }
+    const preferred = transactionsList.find((item) => item.id === preferredTxId) ?? null;
+    if (preferred && isEligiblePurchaseTx(preferred)) {
+      setPreferredTxId(null);
+      setPreferredTxAt(null);
+      setFeedbackTxId(preferred.id);
       setFeedbackRating(0);
       setFeedbackComment("");
       setFeedbackStage("form");
@@ -446,7 +439,7 @@ export function FeedbackManager() {
     } else if (!transactionsList.length) {
       setFeedbackTxId(null);
     }
-  }, [transactionsList, dismissedReady, feedbackOpen, isEligiblePurchaseTx, preferredTxId, reviewsEnabled]);
+  }, [transactionsList, dismissedReady, feedbackOpen, isEligiblePurchaseTx, preferredTxId, preferredTxAt, reviewsEnabled]);
 
   const activeTransaction = useMemo(() => {
     if (!feedbackTxId) return null;
@@ -583,7 +576,6 @@ export function FeedbackManager() {
             ),
           );
         }
-        setToast({ msg: response.message || "Спасибо за отзыв!", type: "success" });
         void loadTransactions();
         let resolvedShare: SubmitResponseShare = null;
         const rawShare = response.share;
@@ -702,9 +694,15 @@ export function FeedbackManager() {
           : typeof data.id === "string"
             ? data.id
             : null;
-      setPreferredTxId(txId || null);
+      if (txId) {
+        setPreferredTxId(txId);
+        setPreferredTxAt(Date.now());
+      } else {
+        setPreferredTxId(null);
+        setPreferredTxAt(null);
+      }
       void loadTransactions({ fresh: true });
-    }, { merchantId, customerId });
+    }, { merchantId, customerId, emitCached: false });
     return () => {
       unsubscribe();
     };

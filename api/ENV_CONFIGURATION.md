@@ -1,193 +1,91 @@
-# 🔧 Конфигурация переменных окружения
+# Конфигурация переменных окружения (API)
 
-## Основные настройки
+Этот файл описывает переменные для сервиса `api`.
+Примеры:
+- `api/.env.example` — локальная разработка
+- `infra/env-examples/api.env.example` — база для продакшна
+- `.env.production.example` — общая конфигурация compose
 
-```env
-# База данных
-DATABASE_URL="postgresql://user:password@localhost:5432/loyalty"
+## Обязательные
 
-# JWT токены
-JWT_SECRET="your-super-secret-jwt-key-change-in-production"
-JWT_REFRESH_SECRET="your-refresh-secret-key"
-JWT_EXPIRATION="15m"
-JWT_REFRESH_EXPIRATION="7d"
+- `DATABASE_URL` — строка подключения Postgres.
+- `ADMIN_KEY` — ключ админских API.
+- `API_KEY` — ключ для интеграций/служебных эндпоинтов.
+- `QR_JWT_SECRET` — секрет для QR токенов (в проде обязателен).
+- `ADMIN_SESSION_SECRET` — секрет для сессии админки (в проде обязателен).
+- `PORTAL_JWT_SECRET` — секрет access токена портала.
+- `PORTAL_REFRESH_SECRET` — секрет refresh токена портала.
+- `CORS_ORIGINS` — список origin (в проде обязателен).
 
-# API ключи
-API_KEY="your-api-key-for-internal-services"
+## URL/домены
 
-# Порты
-PORT=3001
-```
+- `API_BASE_URL` — публичный URL API (нужен для Telegram webhooks/интеграций).
+- `MINIAPP_BASE_URL` — публичный URL Mini App.
+
+## Безопасность и прокси
+
+- `ADMIN_2FA_SECRET` — TOTP для админских операций (опционально).
+- `ADMIN_IP_WHITELIST` — список IP через запятую (опционально).
+- `COOKIE_SECURE` — принудительный режим secure cookies (`true/false`).
+- `TRUST_PROXY` — если API за reverse proxy (`true/false` или число).
+
+## Redis (опционально)
+
+- `REDIS_URL` — Redis для очередей/лимитов/кеша.
+
+## Workers и фичефлаги
+
+- `WORKERS_ENABLED` — включает фоновые воркеры.
+- `NO_HTTP` — запуск только воркеров без HTTP.
+- `EARN_LOTS_FEATURE`, `LEDGER_FEATURE`.
+- `POINTS_TTL_FEATURE`, `POINTS_TTL_BURN`, `POINTS_TTL_REMINDER`.
+
+Интервалы/батчи:
+- `EARN_ACTIVATION_INTERVAL_MS`, `EARN_ACTIVATION_BATCH`.
+- `HOLD_GC_INTERVAL_MS`.
+- `OUTBOX_WORKER_INTERVAL_MS`, `OUTBOX_WORKER_CONCURRENCY`, `OUTBOX_WORKER_BATCH`, `OUTBOX_MAX_RETRIES`, `OUTBOX_RPS_DEFAULT`, `OUTBOX_RPS_BY_MERCHANT`.
+- `NOTIFY_WORKER_INTERVAL_MS`, `NOTIFY_WORKER_BATCH`, `NOTIFY_MAX_RETRIES`, `NOTIFY_RPS_DEFAULT`, `NOTIFY_RPS_BY_MERCHANT`.
+- `AUTO_RETURN_WORKER_INTERVAL_MS`, `AUTO_RETURN_BATCH_SIZE`.
+- `BIRTHDAY_WORKER_INTERVAL_MS`, `BIRTHDAY_WORKER_BATCH_SIZE`.
+- `POINTS_TTL_BURN_INTERVAL_MS`, `POINTS_TTL_REMINDER_INTERVAL_MS`.
 
 ## Уведомления
 
-### Push-уведомления (Firebase)
-```env
-PUSH_PROVIDER="fcm"
-FIREBASE_SERVICE_ACCOUNT='{
-  "type": "service_account",
-  "project_id": "your-project",
-  "private_key_id": "key-id",
-  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
-  "client_email": "firebase-adminsdk@your-project.iam.gserviceaccount.com",
-  "client_id": "123456789",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/..."
-}'
-```
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` — email.
+- `TELEGRAM_NOTIFY_BOT_TOKEN`, `TELEGRAM_NOTIFY_WEBHOOK_SECRET` — бот для уведомлений сотрудников.
+- Push клиентам доставляется через Telegram Mini App (настраивается в портале).
 
-## Telegram
-```env
-TELEGRAM_BOT_TOKEN="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-TELEGRAM_BOT_USERNAME="YourLoyaltyBot"
-TELEGRAM_WEBHOOK_URL="https://yourdomain.com/api/telegram/webhook"
-TELEGRAM_MINIAPP_URL="https://yourdomain.com/miniapp"
-```
+## Алерты и мониторинг
 
-## Redis (опционально)
-```env
-REDIS_URL="redis://localhost:6379"
-REDIS_PASSWORD=""  # Если требуется
-```
+- `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID`.
+- `ALERTS_5XX_SAMPLE_RATE`, `ALERT_OUTBOX_PENDING_THRESHOLD`, `ALERT_OUTBOX_DEAD_THRESHOLD`, `ALERT_WORKER_STALE_MINUTES`, `ALERT_MONITOR_INTERVAL_MS`, `ALERT_REPEAT_MINUTES`.
+- `SENTRY_DSN`, `METRICS_TOKEN`.
+- OpenTelemetry (опционально): `OTEL_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`.
+- Версия приложения для логов/алертов: `APP_VERSION` (опционально).
 
-## Метрики и мониторинг
-```env
-METRICS_ENABLED="true"
-OPENTELEMETRY_ENABLED="false"
-OPENTELEMETRY_ENDPOINT="http://localhost:4317"
-```
+## Антифрод
 
-## Cron задачи
-```env
-CRON_ENABLED="true"  # Включить/выключить все cron задачи
-EXPIRATION_REMINDERS_ENABLED="true"
-CLEANUP_OLD_DATA_ENABLED="true"
-MONTHLY_REPORTS_ENABLED="true"
-```
+- `ANTIFRAUD_GUARD=on|off`.
+- `AF_LIMIT_*` / `AF_WINDOW_*` / `AF_DAILY_CAP_*` / `AF_WEEKLY_CAP_*` — лимиты по scope (merchant/outlet/device/staff/customer).
 
-## Rate Limiting
-```env
-THROTTLE_TTL="60"     # Время жизни окна в секундах
-THROTTLE_LIMIT="60"   # Максимум запросов за окно
-```
+## OAuth (опционально)
 
-## Настройки для разработки
-```env
-NODE_ENV="development"  # production | development | test
-LOG_LEVEL="debug"      # error | warn | info | debug
-SWAGGER_ENABLED="true"  # Включить Swagger UI на /api
-```
+- `OAUTH_GUARD=on|off`.
+- `OAUTH_JWKS_URL` или `OAUTH_HS_SECRET`.
+- `OAUTH_AUDIENCE`, `OAUTH_ISSUER`, `OAUTH_REQUIRED_SCOPE`.
 
-## Настройки для production
-```env
-NODE_ENV="production"
-LOG_LEVEL="info"
-SWAGGER_ENABLED="false"
-
-# SSL сертификаты (если не используется reverse proxy)
-SSL_KEY_PATH="/path/to/privkey.pem"
-SSL_CERT_PATH="/path/to/fullchain.pem"
-
-# CORS
-CORS_ORIGINS="https://yourdomain.com,https://app.yourdomain.com"
-CORS_CREDENTIALS="true"
-```
-
-## Дополнительные настройки
+## Минимальный пример (локально)
 
 ```env
-# Временная зона
-TZ="Europe/Moscow"
-
-# Локализация
-DEFAULT_LANGUAGE="ru"
-SUPPORTED_LANGUAGES="ru,en"
-
-# Лимиты
-MAX_UPLOAD_SIZE="10mb"
-MAX_TRANSACTION_AMOUNT="1000000"  # В копейках
-MAX_POINTS_PER_TRANSACTION="10000"
-
-# Безопасность
-BCRYPT_ROUNDS="10"
-SESSION_SECRET="your-session-secret"
-COOKIE_SECURE="true"  # Только для HTTPS
-
-# Email (для отчетов)
-SMTP_HOST="smtp.gmail.com"
-SMTP_PORT="587"
-SMTP_USER="your-email@gmail.com"
-SMTP_PASSWORD="your-app-password"
-SMTP_FROM="Loyalty System <noreply@yourdomain.com>"
-```
-
-## Пример .env файла для разработки
-
-```env
-# Минимальная конфигурация для запуска
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/loyalty_dev"
-JWT_SECRET="dev-secret-change-in-production"
-JWT_REFRESH_SECRET="dev-refresh-secret"
-API_KEY="dev-api-key"
-PORT=3001
-
-# Разработка
-NODE_ENV="development"
-LOG_LEVEL="debug"
-SWAGGER_ENABLED="true"
-CRON_ENABLED="false"  # Выключаем cron в разработке
-```
-
-## Пример .env.production
-
-```env
-# Production конфигурация
-DATABASE_URL="postgresql://prod_user:strong_password@db.internal:5432/loyalty_prod"
-JWT_SECRET="production-secret-generated-with-openssl"
-JWT_REFRESH_SECRET="production-refresh-secret-generated-with-openssl"
-API_KEY="production-api-key-generated-uuid"
-PORT=3001
-
-# Push уведомления
-PUSH_PROVIDER="fcm"
-FIREBASE_SERVICE_ACCOUNT='{"type":"service_account",...}'
-
-# Redis для кеширования
-REDIS_URL="redis://redis.internal:6379"
-
-# Production настройки
-NODE_ENV="production"
-LOG_LEVEL="info"
-SWAGGER_ENABLED="false"
-CRON_ENABLED="true"
-CORS_ORIGINS="https://loyalty.yourdomain.com"
-
-# SSL и безопасность
-COOKIE_SECURE="true"
-BCRYPT_ROUNDS="12"
-```
-
-## Валидация конфигурации
-
-При запуске система автоматически проверяет наличие обязательных переменных:
-- DATABASE_URL
-- JWT_SECRET
-- JWT_REFRESH_SECRET
-
-Для production также требуются:
-- CORS_ORIGINS для безопасности
-
-## Генерация секретных ключей
-
-```bash
-# Генерация JWT секретов
-openssl rand -base64 64
-
-# Генерация API ключа
-uuidgen
-
-# Генерация пароля для БД
-openssl rand -base64 32
+DATABASE_URL=postgresql://loyalty:loyalty@localhost:5432/loyalty
+ADMIN_KEY=admin123
+API_KEY=test-key
+QR_JWT_SECRET=dev_change_me
+ADMIN_SESSION_SECRET=dev_change_me_session
+PORTAL_JWT_SECRET=dev_change_me_portal
+PORTAL_REFRESH_SECRET=dev_change_me_portal_refresh
+CORS_ORIGINS=http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004
+API_BASE_URL=http://localhost:3000
+MINIAPP_BASE_URL=http://localhost:3003
+WORKERS_ENABLED=1
 ```

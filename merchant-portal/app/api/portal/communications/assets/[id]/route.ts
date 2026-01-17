@@ -22,7 +22,8 @@ async function refreshTokens(refreshToken: string) {
   return { token, refresh };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const access = req.cookies.get("portal_jwt")?.value || "";
   const refresh = req.cookies.get("portal_refresh")?.value || "";
   if (!access) return new Response("Unauthorized", { status: 401 });
@@ -30,12 +31,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return new Response("Server misconfiguration: NEXT_PUBLIC_API_BASE is not set", { status: 500 });
   }
 
-  let res = await doFetch(access, params.id);
+  let res = await doFetch(access, id);
   let nextTokens: { token: string; refresh: string } | null = null;
   if (res.status === 401 && refresh) {
     nextTokens = await refreshTokens(refresh);
     if (nextTokens?.token) {
-      res = await doFetch(nextTokens.token, params.id);
+      res = await doFetch(nextTokens.token, id);
     }
   }
 
@@ -49,7 +50,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const response = new NextResponse(buffer, { status: res.status, headers: outHeaders });
   if (nextTokens?.token) {
     const secure = process.env.NODE_ENV === "production";
-    const domain = (process.env.PORTAL_COOKIE_DOMAIN || "").trim() || undefined;
     response.cookies.set({
       name: "portal_jwt",
       value: nextTokens.token,
@@ -58,7 +58,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       secure,
       path: "/",
       maxAge: 24 * 60 * 60,
-      domain,
     });
     if (nextTokens.refresh) {
       response.cookies.set({
@@ -69,7 +68,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         secure,
         path: "/",
         maxAge: 30 * 24 * 60 * 60,
-        domain,
       });
     }
   }

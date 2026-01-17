@@ -5,13 +5,13 @@ import {
   Param,
   Post,
   BadRequestException,
-  HttpException,
-  HttpStatus,
   UseGuards,
   Query,
+  Req,
 } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import type { Request } from 'express';
 import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from './loyalty.service';
 import { TelegramMiniappGuard } from '../guards/telegram-miniapp.guard';
@@ -118,6 +118,7 @@ export class LoyaltyPublicController {
   async pollEvents(
     @Query('merchantId') merchantId?: string,
     @Query('customerId') customerId?: string,
+    @Req() req?: Request,
   ) {
     const sanitizedMerchantId = (merchantId || '').trim();
     const sanitizedCustomerId = (customerId || '').trim();
@@ -132,17 +133,22 @@ export class LoyaltyPublicController {
       sanitizedCustomerId,
     );
     if (!pollKey) {
-      throw new HttpException(
-        'Слишком много одновременных запросов',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+      return { event: null, retryAfterMs: 2500 };
     }
-    const event = await this.events.waitForCustomerEvent(
-      sanitizedMerchantId,
-      sanitizedCustomerId,
-    ).finally(() => {
-      this.events.releaseCustomerPoll(pollKey);
-    });
+    const controller = new AbortController();
+    const handleClose = () => controller.abort();
+    req?.on('close', handleClose);
+    const event = await this.events
+      .waitForCustomerEvent(
+        sanitizedMerchantId,
+        sanitizedCustomerId,
+        25000,
+        controller.signal,
+      )
+      .finally(() => {
+        req?.off('close', handleClose);
+        this.events.releaseCustomerPoll(pollKey);
+      });
     return { event };
   }
 }

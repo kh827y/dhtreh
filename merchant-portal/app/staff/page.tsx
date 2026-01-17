@@ -44,6 +44,7 @@ type Staff = {
   canAccessPortal: boolean;
   portalLoginEnabled?: boolean;
   isOwner: boolean;
+  avatarUrl?: string | null;
   accesses: StaffOutletAccess[];
   groups: StaffGroup[];
   lastActivityAt?: string | null;

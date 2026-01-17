@@ -17,7 +17,7 @@
 - **Сеть**: 100 Mbps
 - **Резервирование**: 2+ сервера для HA
 
-## 🚀 Быстрый старт (Development)
+## 🚀 Быстрый старт (локально)
 
 ### 1. Клонирование репозитория
 ```bash
@@ -27,37 +27,49 @@ cd loyalty
 
 ### 2. Настройка окружения
 ```bash
-# Копируем примеры конфигураций
-cp .env.example .env.development
+# API
 cp api/.env.example api/.env
-cp admin/.env.example admin/.env.local
-cp cashier/.env.example cashier/.env.local
-cp miniapp/.env.example miniapp/.env.local
 
-# Редактируем конфигурации
-nano .env.development
+# Фронты (примеры в infra/env-examples)
+cp infra/env-examples/admin.env.example admin/.env.local
+cp infra/env-examples/merchant-portal.env.example merchant-portal/.env.local
+cp infra/env-examples/cashier.env.example cashier/.env.local
+cp infra/env-examples/miniapp.env.example miniapp/.env.local
 ```
 
-### 3. Запуск через Docker Compose
+### 3. Запуск инфраструктуры (БД/Redis)
 ```bash
-# Запуск всех сервисов
-docker-compose -f docker-compose.dev.yml up -d
-
-# Проверка статуса
-docker-compose -f docker-compose.dev.yml ps
-
-# Применение миграций БД
-docker-compose -f docker-compose.dev.yml exec api pnpm prisma migrate dev
-
-# Заполнение тестовыми данными
-docker-compose -f docker-compose.dev.yml exec api pnpm seed
+docker compose -f infra/docker-compose.yml up -d
 ```
 
-### 4. Доступ к сервисам
+Опционально: полный локальный стек (API + фронты + мониторинг):
+```bash
+docker compose -f infra/docker-compose.full.yml up -d
+```
+
+### 4. Миграции и демо‑данные (если запускаете API локально)
+```bash
+cd api
+pnpm i
+pnpm prisma migrate dev
+pnpm seed
+pnpm start:dev
+```
+
+### 5. Запуск фронтов (если не используете full compose)
+```bash
+cd admin && pnpm i && pnpm dev
+cd merchant-portal && pnpm i && pnpm dev
+cd cashier && pnpm i && pnpm dev
+cd miniapp && pnpm i && pnpm dev
+```
+
+### 6. Доступ к сервисам
 - API: http://localhost:3000
 - Admin: http://localhost:3001
 - Cashier: http://localhost:3002
 - Miniapp: http://localhost:3003
+- Merchant Portal: http://localhost:3004
 
 ## 🏭 Развертывание в Production
 
@@ -71,10 +83,6 @@ sudo apt update && sudo apt upgrade -y
 # Установка Docker
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
-
-# Установка Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
 
 # Добавление пользователя в группу docker
 sudo usermod -aG docker $USER
@@ -122,8 +130,11 @@ cp .env.production.example .env.production
 
 # ВАЖНО: Генерируем безопасные ключи
 openssl rand -base64 32  # для ADMIN_KEY
+openssl rand -base64 32  # для API_KEY
 openssl rand -base64 32  # для QR_JWT_SECRET
 openssl rand -base64 32  # для ADMIN_SESSION_SECRET
+openssl rand -base64 32  # для PORTAL_JWT_SECRET
+openssl rand -base64 32  # для PORTAL_REFRESH_SECRET
 
 # Редактируем конфигурацию
 nano .env.production
@@ -133,16 +144,16 @@ nano .env.production
 
 ```bash
 # Сборка и запуск
-docker-compose --env-file .env.production -f docker-compose.production.yml up -d
+docker compose --env-file .env.production -f docker-compose.production.yml up -d
 
 # Применение миграций
-docker-compose --env-file .env.production -f docker-compose.production.yml exec api pnpm prisma migrate deploy
+docker compose --env-file .env.production -f docker-compose.production.yml exec -T api pnpm prisma migrate deploy
 
 # Проверка логов
-docker-compose --env-file .env.production -f docker-compose.production.yml logs -f
+docker compose --env-file .env.production -f docker-compose.production.yml logs -f
 
 # Проверка здоровья сервисов
-curl http://localhost:3000/health
+curl http://localhost:3000/healthz
 ```
 
 ## ✉️ Уведомления (Email/Push)
@@ -161,9 +172,9 @@ SMTP_PASSWORD=***
 SMTP_FROM="Loyalty <noreply@example.com>"
 
 
-# Push (FCM)
-# Вставьте JSON service account в одну строку (экранируйте кавычки)
-FIREBASE_SERVICE_ACCOUNT={"type":"service_account",...}
+# Push (Telegram Mini App)
+# Убедитесь, что задано API_BASE_URL и MINIAPP_BASE_URL.
+# Бот подключается через портал: /portal/integrations/telegram-mini-app
 
 # Воркер уведомлений
 WORKERS_ENABLED=1
@@ -178,11 +189,19 @@ NOTIFY_RPS_DEFAULT=0
 NOTIFY_RPS_BY_MERCHANT="M-1=5,M-2=3"
 ```
 
-В `docker-compose.production.yml` сервис `worker` уже запускается с `NO_HTTP=1` и `WORKERS_ENABLED=1`. При необходимости добавьте переменные `SMTP_*`, `FIREBASE_SERVICE_ACCOUNT`, `NOTIFY_*` в секцию `environment` сервиса `worker` (и `api`, если хотите отправку из API‑контекста).
+В `docker-compose.production.yml` сервис `worker` уже запускается с `NO_HTTP=1` и `WORKERS_ENABLED=1`. При необходимости добавьте переменные `SMTP_*` и `NOTIFY_*` в секцию `environment` сервиса `worker` (и `api`, если хотите отправку из API‑контекста).
+
+### Telegram уведомления для сотрудников (единый бот)
+
+Если используете уведомления для сотрудников (не для клиентов), задайте:
+
+```env
+TELEGRAM_NOTIFY_BOT_TOKEN=...
+TELEGRAM_NOTIFY_WEBHOOK_SECRET=...
+```
 
 ### Доступ из Admin UI
 
-- Страница: `admin/app/notifications` — рассылки по каналам `ALL/EMAIL/PUSH`, поддержан `dry‑run` (предварительная оценка получателей).
 - Для вызова API используется заголовок `X-Admin-Key` (см. `ADMIN_KEY`).
 - Рекомендуется ограничить доступ по IP для административных эндпоинтов (переменная `ADMIN_IP_WHITELIST`, если используется `AdminIpGuard`).
 
@@ -191,13 +210,6 @@ NOTIFY_RPS_BY_MERCHANT="M-1=5,M-2=3"
 - `notifications_enqueued_total{type}` — поставлено задач в outbox (`broadcast`/`test`).
 - `notifications_processed_total{type,result}` — обработка воркером (`sent`/`dry`/`retry`/`dead`/`throttled`).
 - `notifications_channel_attempts_total{channel}` / `..._sent_total{channel}` / `..._failed_total{channel}` — попытки/успехи/ошибки по каналам.
-
-### Миграция legacy push/telegram
-
-- До применения миграции `communication_tasks_unified` прогоните перенос исторических кампаний:
-  - `pnpm -C api ts-node ../scripts/migrate-communications.ts`
-- Скрипт копирует записи из `PushCampaign`/`TelegramCampaign` в `CommunicationTask` (поля текста, аудитории, статистики, изображения) и поддерживает повторный запуск.
-
 
 ## 🔄 CI/CD Pipeline
 
@@ -290,40 +302,38 @@ Password: (из GRAFANA_PASSWORD в .env)
 ```
 
 ### Настройка алертов
-```yaml
-# infra/alertmanager/alertmanager.yml
-global:
-  telegram_api_url: 'https://api.telegram.org'
+Встроенные алерты API отправляются в Telegram, если заданы переменные:
 
-receivers:
-  - name: 'telegram'
-    telegram_configs:
-      - bot_token: '${TELEGRAM_BOT_TOKEN}'
-        chat_id: ${TELEGRAM_CHAT_ID}
-        parse_mode: 'HTML'
+```env
+ALERT_TELEGRAM_BOT_TOKEN=...
+ALERT_TELEGRAM_CHAT_ID=...
+ALERTS_5XX_SAMPLE_RATE=0.05
+ALERT_OUTBOX_PENDING_THRESHOLD=200
+ALERT_OUTBOX_DEAD_THRESHOLD=5
+ALERT_WORKER_STALE_MINUTES=5
 ```
 
 ## 💾 Резервное копирование
 
 ### Автоматические бэкапы
 ```bash
-# Настройка cron для ежедневных бэкапов
-0 3 * * * /opt/loyalty/scripts/backup.sh
+# Ручной бэкап (сервис backup)
+docker compose --env-file .env.production -f docker-compose.production.yml run --rm backup
 
-# Ручной бэкап
+# Либо прямой pg_dump
 docker exec postgres pg_dump -U loyalty loyalty | gzip > backup_$(date +%Y%m%d).sql.gz
 ```
 
 ### Восстановление из бэкапа
 ```bash
 # Остановка приложения
-docker-compose --env-file .env.production -f docker-compose.production.yml stop api worker
+docker compose --env-file .env.production -f docker-compose.production.yml stop api worker
 
 # Восстановление БД
 gunzip < backup_20240101.sql.gz | docker exec -i postgres psql -U loyalty loyalty
 
 # Запуск приложения
-docker-compose --env-file .env.production -f docker-compose.production.yml start api worker
+docker compose --env-file .env.production -f docker-compose.production.yml start api worker
 ```
 
 ## 🔧 Обслуживание
@@ -334,10 +344,10 @@ docker-compose --env-file .env.production -f docker-compose.production.yml start
 git pull origin main
 
 # Пересборка и перезапуск
-docker-compose --env-file .env.production -f docker-compose.production.yml up -d --build
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
 
 # Применение новых миграций
-docker-compose --env-file .env.production -f docker-compose.production.yml exec api pnpm prisma migrate deploy
+docker compose --env-file .env.production -f docker-compose.production.yml exec api pnpm prisma migrate deploy
 ```
 
 ### Очистка Docker
@@ -346,7 +356,7 @@ docker-compose --env-file .env.production -f docker-compose.production.yml exec 
 docker image prune -a -f
 
 # Очистка логов
-docker-compose --env-file .env.production -f docker-compose.production.yml logs --tail=0 -f
+docker compose --env-file .env.production -f docker-compose.production.yml logs --tail=0 -f
 
 # Полная очистка (ОСТОРОЖНО!)
 docker system prune -a --volumes
@@ -357,13 +367,13 @@ docker system prune -a --volumes
 ### Проблема: Контейнеры не запускаются
 ```bash
 # Проверка логов
-docker-compose --env-file .env.production -f docker-compose.production.yml logs api
+docker compose --env-file .env.production -f docker-compose.production.yml logs api
 
 # Проверка конфигурации
-docker-compose --env-file .env.production -f docker-compose.production.yml config
+docker compose --env-file .env.production -f docker-compose.production.yml config
 
 # Перезапуск с пересборкой
-docker-compose --env-file .env.production -f docker-compose.production.yml up -d --force-recreate --build
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --force-recreate --build
 ```
 
 ### Проблема: База данных недоступна
@@ -395,52 +405,42 @@ services:
 ## 📝 Чеклист запуска
 
 ### Pre-Production
-- [ ] Все переменные окружения настроены
-- [ ] SSL сертификаты установлены
-- [ ] Бэкапы настроены
-- [ ] Мониторинг работает
-- [ ] Файрвол настроен
-- [ ] Логирование настроено
+- [ ] `.env.production` заполнен, секреты заменены на реальные
+- [ ] Домены и DNS настроены (api/admin/portal/cashier/app)
+- [ ] SSL включён через Traefik или собственные сертификаты
+- [ ] `WORKERS_ENABLED=1` у сервиса `worker`
+- [ ] Бэкап (backup сервис или pg_dump) проверен
 
 ### Production
-- [ ] Домены настроены (DNS)
-- [ ] Email для Let's Encrypt указан
-- [ ] Telegram бот создан и настроен
-- [ ] Платежная система подключена
-- [ ] Webhook URLs настроены
-- [ ] Rate limiting включен
-- [ ] Антифрод активирован
+- [ ] `API_BASE_URL`, `MINIAPP_BASE_URL`, `CORS_ORIGINS` указаны
+- [ ] Проверены логины Admin и Merchant Portal
+- [ ] Telegram Mini App подключена (если используется)
+- [ ] Метрики/алерты настроены при необходимости (`METRICS_TOKEN`, `ALERT_*`)
+- [ ] Smoke тесты пройдены (`/healthz`, admin, portal)
 
 ### Post-Production
-- [ ] Smoke тесты пройдены
-- [ ] Метрики собираются
-- [ ] Алерты работают
-- [ ] Документация обновлена
-- [ ] Команда обучена
+- [ ] Проверены операции: QR → quote → commit
+- [ ] Уведомления/рассылки отправляются корректно
+- [ ] Документация актуальна
 
 ## 📞 Поддержка
 
 ### Логи для диагностики
 ```bash
 # Сбор всех логов
-docker-compose --env-file .env.production -f docker-compose.production.yml logs > logs_$(date +%Y%m%d_%H%M%S).txt
+docker compose --env-file .env.production -f docker-compose.production.yml logs > logs_$(date +%Y%m%d_%H%M%S).txt
 
 # Логи конкретного сервиса
-docker-compose --env-file .env.production -f docker-compose.production.yml logs api --tail=1000
+docker compose --env-file .env.production -f docker-compose.production.yml logs api --tail=1000
 
 # Real-time логи
-docker-compose --env-file .env.production -f docker-compose.production.yml logs -f
+docker compose --env-file .env.production -f docker-compose.production.yml logs -f
 ```
-
-### Контакты
-- **Email**: devops@loyalty.com
-- **Telegram**: @loyalty_devops
-- **Emergency**: +7 (XXX) XXX-XX-XX
 
 ## 📚 Дополнительные ресурсы
 
+- [README](./README.md)
 - [API Documentation](./API_DOCUMENTATION.md)
-- [Development Plan](./DEVELOPMENT_PLAN.md)
-- [Architecture Overview](./docs/ARCHITECTURE.md)
-- [Security Guidelines](./docs/SECURITY.md)
-- [Performance Tuning](./docs/PERFORMANCE.md)
+- [REST API Docs](./REST-API-DOCS.md)
+- [ENV Configuration (API)](./api/ENV_CONFIGURATION.md)
+- [`infra/env-examples/`](./infra/env-examples)

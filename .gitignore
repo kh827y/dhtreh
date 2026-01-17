@@ -1,15 +1,16 @@
 # Monorepo ignores
 node_modules/
-pnpm-lock.yaml
 
 # Build artifacts
 api/dist/
 **/.next/
+**/*.tsbuildinfo
 
 # Remove accidentally committed nested app folders
 admin/admin/
 cashier/cashier/
 miniapp/miniapp/
+merchant-portal/merchant-portal/
 
 # Env files
 *.env

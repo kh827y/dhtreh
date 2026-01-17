@@ -1,118 +1,36 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# API (NestJS)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Основной backend сервиса лояльности. Отвечает за операции начисления/списания, уровни, портал и интеграции.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Быстрый старт
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Domain modules
-
-Сервисы, отвечающие за доменные разделы портала:
-
-- `AdminPanelModule` — CRUD мерчантов, управление настройками QR и Telegram-токенами.
-- `MerchantPanelModule` — сотрудники, группы доступа, торговые точки и кассовые PIN-ы, структурные логи (`portal.staff.*`) и метрики (`portal_staff_list_total`, `portal_staff_changed_total`, `portal_staff_pin_events_total`).
-- `LoyaltyProgramModule` — механики, акции, промокоды и журнал операций по лояльности со структурными логами (`portal.loyalty.*`) и метриками (`portal_loyalty_*`).
-- `CustomerAudiencesModule` — клиенты, фильтрация и сегменты/аудитории с пересчётом метрик, логами (`portal.customers.*`, `portal.audiences.*`) и счётчиками (`portal_customers_*`, `portal_audiences_*`).
-- `CommunicationsModule` — шаблоны и задачи рассылок (push/email/telegram) с логами (`portal.communications.*`) и метриками (`portal_communications_*`).
-
-## Observability updates
-
-- Метрики портала дополнились событиями списков сотрудников/групп и операциями с PIN (`portal_staff_*`, `portal_access_group_list_total`).
-
-- Для лояльности, аудиторий и коммуникаций добавлены структурные логи и счётчики (`portal_loyalty_*`, `portal_audiences_*`, `portal_communications_*`).
-
-- В юнит-тестах добавлено покрытие `MerchantPanelService.listStaff` для проверки пагинации, маппинга и инкремента счётчиков.
-
-## Project setup
+1) Запуск БД/Redis — см. `README.md` в корне.
+2) Проверьте `api/.env`.
+3) Миграции:
 
 ```bash
-$ pnpm install
+pnpm -C api prisma migrate dev
 ```
 
-## Compile and run the project
+4) Запуск API:
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+pnpm -C api start:dev
 ```
 
-## Run tests
+## Воркеры
+
+Фоновые задачи запускаются отдельным процессом:
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+pnpm -C api start:worker
 ```
 
-> Prisma Client генерируется автоматически перед запуском всех тестовых скриптов (`pretest`/`pretest:e2e`), дополнительных команд выполнять не нужно.
+Для воркера обычно устанавливают `WORKERS_ENABLED=1` и `NO_HTTP=1`.
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Тесты
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+pnpm -C api test
+pnpm -C api test:e2e
 ```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).

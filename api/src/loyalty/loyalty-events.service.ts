@@ -48,18 +48,31 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
   async waitForEvent(
     filter: (event: LoyaltyRealtimeEvent) => boolean,
     timeoutMs = 25000,
+    signal?: AbortSignal,
   ): Promise<LoyaltyRealtimeEvent | null> {
+    if (signal?.aborted) return null;
     return new Promise((resolve) => {
-      const listener: PendingListener = {
+      let finished = false;
+      let listener: PendingListener;
+      const finish = (event: LoyaltyRealtimeEvent | null) => {
+        if (finished) return;
+        finished = true;
+        if (listener?.timer) clearTimeout(listener.timer);
+        if (listener) this.listeners.delete(listener);
+        if (signal) signal.removeEventListener('abort', onAbort);
+        resolve(event);
+      };
+      const onAbort = () => finish(null);
+      listener = {
         id: this.nextListenerId++,
         filter,
-        resolve,
-        timer: setTimeout(() => {
-          this.listeners.delete(listener);
-          resolve(null);
-        }, timeoutMs),
+        resolve: (event) => finish(event),
+        timer: setTimeout(() => finish(null), timeoutMs),
       };
       this.listeners.add(listener);
+      if (signal) {
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
     });
   }
 
@@ -67,12 +80,14 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
     merchantId: string,
     customerId: string,
     timeoutMs = 25000,
+    signal?: AbortSignal,
   ): Promise<LoyaltyRealtimeEvent | null> {
     const sanitizedMerchantId = (merchantId || '').trim();
     const sanitizedCustomerId = (customerId || '').trim();
     if (!sanitizedMerchantId || !sanitizedCustomerId) {
       return null;
     }
+    if (signal?.aborted) return null;
 
     const immediate = await this.claimPersistedEvent(
       sanitizedMerchantId,
@@ -82,6 +97,7 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
 
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+      if (signal?.aborted) return null;
       const remaining = Math.max(100, deadline - Date.now());
       const window = Math.min(remaining, 5000);
       const event = await this.waitForEvent(
@@ -89,11 +105,14 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
           payload.merchantId === sanitizedMerchantId &&
           payload.customerId === sanitizedCustomerId,
         window,
+        signal,
       );
+      if (signal?.aborted) return null;
       if (event) {
         await this.markDelivered(event.id);
         return event;
       }
+      if (signal?.aborted) return null;
       const fallback = await this.claimPersistedEvent(
         sanitizedMerchantId,
         sanitizedCustomerId,

@@ -223,7 +223,7 @@ type DesktopView = 'main' | 'history' | 'return' | 'rating';
 type TxMode = 'accrue' | 'redeem';
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
-const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || '';
+const MERCHANT = '';
 const LOYALTY_EVENT_CHANNEL = 'loyalty:events';
 const LOYALTY_EVENT_STORAGE_KEY = 'loyalty:lastEvent';
 

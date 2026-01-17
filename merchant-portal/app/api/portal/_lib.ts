@@ -43,10 +43,9 @@ export async function portalFetch(req: NextRequest, path: string, init?: Request
           if (contentRange) outHeaders['Content-Range'] = contentRange;
           const final = new NextResponse(text, { status: res.status, headers: outHeaders });
           const secure = process.env.NODE_ENV === 'production';
-          const domain = (process.env.PORTAL_COOKIE_DOMAIN || '').trim() || undefined;
-          final.cookies.set({ name: 'portal_jwt', value: nextAccess, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60, domain });
+          final.cookies.set({ name: 'portal_jwt', value: nextAccess, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60 });
           if (nextRefresh) {
-            final.cookies.set({ name: 'portal_refresh', value: nextRefresh, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 30 * 24 * 60 * 60, domain });
+            final.cookies.set({ name: 'portal_refresh', value: nextRefresh, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 30 * 24 * 60 * 60 });
           }
           return final;
         }

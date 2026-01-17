@@ -12,17 +12,16 @@
 - [TTL/Сгорание баллов](#ttlsгорание-баллов)
 
 ## Базовый URL
-Production: https://api.loyalty.example.com
-Staging: https://api-staging.loyalty.example.com
-Local: http://localhost:3000
-```
+- Production: https://api.loyalty.example.com
+- Staging: https://api-staging.loyalty.example.com
+- Local: http://localhost:3000
 
 > Поддержка внешних платежных провайдеров и кассовых интеграций (YooKassa/CloudPayments/Тинькофф, АТОЛ/Эвотор/Poster/МодульКасса/1С) отключена. Подписки ведутся без сторонних платежей, кассовые вебхуки больше не принимаются.
 
 ## Аутентификация
 
 ### Cashier Session Authentication
-Фронтенд кассира проходит двухшаговую авторизацию:
+Фронтенд кассира использует cookie‑сессию и разделяет активацию устройства и вход сотрудника:
 
 1. **Активация устройства** — `POST /loyalty/cashier/activate`
    ```json
@@ -31,7 +30,7 @@ Local: http://localhost:3000
      "activationCode": "123456789"
    }
    ```
-   При успешной активации ставится HTTP-only кука `cashier_device`.
+   Устанавливает HTTP-only cookie `cashier_device` (≈180 дней) и возвращает `{ ok, merchantId, login, expiresAt }`.
 
 2. **Запуск сессии сотрудника** — `POST /loyalty/cashier/session`
    ```json
@@ -41,15 +40,21 @@ Local: http://localhost:3000
      "rememberPin": true
    }
    ```
-   Требует активную `cashier_device` cookie. При успешном запросе устанавливается HTTP-only кука `cashier_session`, а в ответе возвращаются данные сотрудника и торговой точки. Если пользователь выбрал `rememberPin=true`, фронт хранит PIN в своей cookie для автоподстановки.
+   Требует cookie `cashier_device`. При успехе устанавливается HTTP-only кука `cashier_session` (12 часов или ≈180 дней при `rememberPin=true`), в ответе — данные сотрудника и торговой точки.
 
-3. **Проверка активной сессии** — `GET /loyalty/cashier/session`
+3. **Проверка активного устройства** — `GET /loyalty/cashier/device`
+   Возвращает `{ active: true|false, merchantId, login, expiresAt, lastSeenAt }`.
+
+4. **Проверка активной сессии** — `GET /loyalty/cashier/session`
    Возвращает `{ "active": true, ... }` и сведения о текущем сотруднике; при отсутствии сессии — `{ "active": false }`.
 
-4. **Выход** — `DELETE /loyalty/cashier/session`
+5. **Выход** — `DELETE /loyalty/cashier/session`
    Завершает серверную сессию и очищает cookie.
 
-Все защищённые операции (`quote`, `commit`, `refund`, и т.д.) должны выполняться с `credentials: 'include'`, чтобы браузер отправлял `cashier_session`.
+6. **Деактивация устройства** — `DELETE /loyalty/cashier/device`
+   Очищает cookie `cashier_device`.
+
+Все защищённые операции (`quote`, `commit`, `refund`, `cashier/customer`) должны выполняться с `credentials: 'include'`, чтобы браузер отправлял `cashier_session`.
 
 #### GET /loyalty/cashier/leaderboard
 - Требует активную cookie-сессию кассира (`cashier_session`).
@@ -133,7 +138,7 @@ Merchant Portal использует отдельный JWT, выдаваемы�
   Успешный ответ: `{ "token": "<jwt>", "refreshToken": "<jwt>" }`.
   
   Хранение на фронтенде (Next.js Merchant Portal):
-  - `portal_jwt` — httpOnly cookie, `path=/`, `SameSite=Lax`, `Secure` в прод, `maxAge=24h`, опциональный `domain` из `PORTAL_COOKIE_DOMAIN`.
+  - `portal_jwt` — httpOnly cookie, `path=/`, `SameSite=Lax`, `Secure` в прод, `maxAge=24h`.
   - `portal_refresh` — httpOnly cookie, `path=/`, `SameSite=Lax`, `Secure` в прод, `maxAge=30d`, опциональный `domain`.
   - При получении `401` фронт вызывает `POST /portal/auth/refresh` и пересохраняет куки.
 
@@ -312,7 +317,7 @@ Response 200:
 
 ### Интеграции REST API
 
-Эндпоинты `/api/integrations/**` требуют заголовок `X-Api-Key` (интеграционный ключ); `merchantId` определяется по ключу. Throttling по `integrationId` с дефолтными лимитами: CODE — 60/мин, CALCULATE-ACTION/BONUS — 180/мин, BONUS — 60/мин, REFUND — 30/мин (настраиваются в интеграции).
+Эндпоинты `/api/integrations/**` требуют заголовок `X-Api-Key` (интеграционный ключ); `merchantId` определяется по ключу. Throttling по `integrationId` с дефолтными лимитами: CODE — 60/мин, CALCULATE-ACTION/BONUS — 180/мин, BONUS — 60/мин, REFUND — 30/мин, OUTLETS/DEVICES — 60/мин, OPERATIONS — 30/мин (настраиваются в интеграции).
 
 Идентификация клиента: во всех методах, требующих клиента, используется `id_client` (= customerId) или `user_token` (QR-код). Тип QR-кода задаётся в системных настройках мерчанта: цифровой 9-значный код или защищённый JWT-токен. В CALCULATE-BONUS/ACTION дополнительно поддерживается `phone`.
 
@@ -321,6 +326,9 @@ Response 200:
 - `POST /api/integrations/calculate/bonus` — расчёт начисления/списания без hold: `{ user_token? | id_client? | phone?, items[]?, total?, paid_bonus?, outlet_id? }` → `{ status, items?: [{ id_product, name, price, quantity, max_pay_bonus, earn_bonus }], max_pay_bonus, bonus_value, final_payable }`. Можно передать `total` вместо `items[]` для упрощённого расчёта (без per-item детализации). `paid_bonus` — желаемое списание, ограничивает `max_pay_bonus` этим значением. Акции применяются **только** если переданы `items[].actions`/`items[].action_names`; при отсутствии — промо не учитываются.
 - `POST /api/integrations/bonus` — фиксация операции по переданным значениям: `idempotency_key` (обязательный ключ идемпотентности), `invoice_num?` (кастомный номер чека), `paid_bonus?` (списывается с учётом лимитов), `bonus_value?` (если не передан — авторасчёт по правилам лояльности, `0` отключает начисление), `operation_date?` (ISO), `manager_id?`. Контекст `outlet_id`/`device_id`/`manager_id` обязателен (хотя бы один). Акции применяются **только** если переданы `items[].actions`/`items[].action_names`; при отсутствии — промо не учитываются. Идемпотентность по `merchantId+idempotency_key`. Ответ: `{ result, invoice_num, order_id (ID операции лояльности), redeem_applied, earn_applied, client }`.
 - `POST /api/integrations/refund` — только полная отмена по `invoice_num` или `order_id` (`operation_date?`, `device_id?`, `outlet_id?` для контекста). Возвращает `{ invoice_num, order_id, points_restored, points_revoked, balance_after }`, без partial-share и без transactionIds.
+- `GET /api/integrations/outlets` — справочник точек мерчанта (`id`, `name`, `address?`, `description?`) + `managers[]` (активные сотрудники с доступом к точке: `id`, `name`, `code?`), без чужих `merchantId`.
+- `GET /api/integrations/devices` — опциональный `outlet_id`, возвращает устройства мерчанта (`id`, `code`, `outlet_id`) с валидацией кода/ID по Device.
+- `GET /api/integrations/operations` — история покупок/возвратов: query `invoice_num?` (ищет и по `receipt_num`), `from?`/`to?` (ISO по `operation_date/createdAt`), `device_id?`, `outlet_id?`, `limit?` (<=500). Ответ `items[]`: `{ kind: purchase|refund, id_client, invoice_num, order_id, receipt_num?, total, redeem_applied?, earn_applied?, points_restored?, points_revoked?, operation_date, outlet_id?, device_id?, device_code?, canceled_at?, points_delta, balance_before?, balance_after? }`. История строится только из зафиксированных BONUS (hold→commit) и REFUND; CODE/CALCULATE не создают записей.
 
 Item-level формат позиций: `items[]` с полями `id_product`, `name?`, `qty` (или `quantity`), `price`. Поля `categoryId/category_id` не поддерживаются ни в одном интеграционном методе. Для `calculate/bonus` не поддерживаются `base_price`, `allow_earn_and_pay`, `earn_multiplier`. Акции по товарам учитываются через `actions`/`action_names`.
 
@@ -512,6 +520,8 @@ ALERT_TELEGRAM_CHAT_ID=
 POST /loyalty/quote
 Content-Type: application/json
 
+Требует активную cookie `cashier_session` (касса). Для серверных интеграций используйте `/api/integrations/bonus`.
+
 {
   "mode": "redeem" | "earn",
   "merchantId": "string",
@@ -687,6 +697,8 @@ POST /loyalty/commit
 Content-Type: application/json
 Idempotency-Key: unique_key
 
+Требует активную cookie `cashier_session`.
+
 {
   "merchantId": "string",
   "holdId": "uuid",
@@ -709,6 +721,8 @@ Response 200:
 POST /loyalty/refund
 Content-Type: application/json
 Idempotency-Key: unique_key
+
+Требует активную cookie `cashier_session`.
 
 {
   "merchantId": "string",
@@ -757,6 +771,8 @@ Response 200:
       "receiptNumber": "string | null",
       "createdAt": "2024-01-01T00:00:00Z",
       "outletId": "OUT-1",
+      "outletPosType": "SMART",
+      "outletLastSeenAt": "2024-01-01T12:34:56Z",
       "staffId": "STAFF-1",
       "pending": true,                 // для отложенных начислений (earnDelayDays>0)
       "maturesAt": "2024-01-03T10:00:00Z", // когда баллы будут зачислены
@@ -835,10 +851,9 @@ GET /loyalty/events/poll?merchantId={merchantId}&customerId={customerId}
 
 Промокоды управляются через портал мерчанта. Основные операции:
 
-> Legacy ваучеры больше не поддерживаются: таблицы `Voucher*` удалены, внешних интеграций и отчётов на них не осталось.
 
 - `GET /portal/promocodes?status=ACTIVE|ARCHIVE` — список с метриками.
-- `POST /portal/promocodes/issue` — создание промокода (см. `PortalPromoCodePayload`, поле `usageLimitValue` задаёт количество клиентов, которые смогут применить код при `usageLimit=once_total`, `levelExpireDays` — срок действия присвоенного уровня в днях, `0` — бессрочно).
+- `POST /portal/promocodes/issue` — создание промокода (см. `PortalPromoCodePayload`, поле `usageLimitValue` задаёт количество клиентов, которые смогут применить код при `usageLimit=once_total`, `levelExpireDays` — срок действия присвоенного уровня в днях, `0` — бессрочно; если не задан — используется дефолт 365 дней).
 - `PUT /portal/promocodes/:promoCodeId` — обновление.
 - `POST /portal/promocodes/deactivate` / `POST /portal/promocodes/activate` — смена статуса.
 - `POST /loyalty/promocodes/apply` — активация промокода клиентом (мини-аппа) с начислением баллов и TTL.
@@ -875,7 +890,7 @@ GET /loyalty/events/poll?merchantId={merchantId}&customerId={customerId}
 
 ### Настройки мерчанта
 ```http
-GET /admin/merchant/{merchantId}/settings
+GET /admin/merchants/{merchantId}/settings
 X-Admin-Key: required
 
 Response 200:
@@ -892,7 +907,7 @@ Response 200:
 
 ### Обновление настроек
 ```http
-PUT /admin/merchant/{merchantId}/settings
+PUT /admin/merchants/{merchantId}/settings
 X-Admin-Key: required
 Content-Type: application/json
 
@@ -901,25 +916,6 @@ Content-Type: application/json
   "redeemLimitBps": 5000,
   "webhookUrl": "https://merchant.com/webhook",
   "webhookSecret": "new_secret"
-}
-```
-
-### Управление сотрудниками
-```http
-POST /admin/merchant/{merchantId}/staff
-X-Admin-Key: required
-
-{
-  "login": "cashier01",
-  "email": "cashier@example.com",
-  "role": "CASHIER" | "MANAGER" | "ADMIN",
-  "allowedOutletId": "uuid" // optional
-}
-
-Response 200:
-{
-  "id": "uuid",
-  "apiKey": "sk_live_xxxxx" // показывается только один раз
 }
 ```
 
@@ -1004,7 +1000,7 @@ Response 200: { "ok": true }
 #### Товары
 
 ```http
-GET /portal/catalog/products?points=with_points&categoryId=cat_1&search=маргарита
+GET /portal/catalog/products?status=visible&points=with_points&categoryId=cat_1&search=маргарита
 Authorization: Bearer <portal_jwt>
 
 Response 200:
@@ -1246,24 +1242,9 @@ Authorization: Bearer <portal_jwt>
 Response 200: { "ok": true }
 ```
 
-## Telegram Bot Integration
+## Telegram Mini App Integration
 
-### Регистрация бота
-```http
-POST /admin/merchant/{merchantId}/telegram-bot
-X-Admin-Key: required
-
-{
-  "botToken": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-}
-
-Response 200:
-{
-  "success": true,
-  "username": "@merchant_loyalty_bot",
-  "webhookUrl": "https://api.loyalty.com/telegram/webhook/{merchantId}"
-}
-```
+Подключение и проверка бота выполняются через Merchant Portal (`/portal/integrations/telegram-mini-app/*`). После подключения Telegram шлёт апдейты на webhook:
 
 ### Обработка webhook
 ```http
@@ -1305,10 +1286,6 @@ X-Merchant-Id: M-1
   "timestamp": "2024-01-01T00:00:00Z"
 }
 ```
-
-### Доставка
-- Webhooks доставляются **как минимум один раз**. При таймаутах/5xx/429 возможны повторы — получатель должен дедуплицировать по `X-Event-Id` (хранить обработанные ID хотя бы N дней).
-- Если `webhookUrl`/`webhookSecret` не настроены, события считаются пропущенными и **не доставляются ретроспективно** (нет автоматического replay).
 
 ### Проверка подписи
 ```javascript
@@ -1383,8 +1360,13 @@ Response 200:
     "name": "Full"
   },
   "usage": {
-    "outlets": {
-      "used": 2,
+    "transactions": {
+      "used": 5432,
+      "limit": "unlimited",
+      "percentage": null
+    },
+    "customers": {
+      "used": 234,
       "limit": "unlimited",
       "percentage": null
     }
@@ -1488,24 +1470,22 @@ curl -X POST https://api.loyalty.com/loyalty/qr \
   -H "Content-Type: application/json" \
   -d '{"customerId":"user-1","merchantId":"M-1"}'
 
-# Quote
+# Quote (из кассы, требуется cookie cashier_session)
 curl -X POST https://api.loyalty.com/loyalty/quote \
   -H "Content-Type: application/json" \
+  -b "cashier_session=SESSION_TOKEN" \
   -d '{"mode":"earn","merchantId":"M-1","userToken":"jwt","orderId":"123","total":1000,"positions":[{"id_product":"SKU-1","qty":1,"price":1000}]}'
 ```
 
 ### JavaScript/TypeScript
 ```typescript
 // SDK пример
-import { LoyaltyClient } from '@loyalty/sdk';
+import { LoyaltyApi } from '@loyalty/sdk-ts';
 
-const client = new LoyaltyClient({
-  apiKey: 'sk_live_xxxxx',
-  baseUrl: 'https://api.loyalty.com'
-});
+const api = new LoyaltyApi({ baseUrl: 'https://api.loyalty.com' });
 
-// Quote
-const quote = await client.quote({
+// Quote (cookie cashier_session должен быть установлен в браузере кассира)
+const quote = await api.quote({
   mode: 'earn',
   merchantId: 'M-1',
   userToken: qrToken,
@@ -1514,7 +1494,7 @@ const quote = await client.quote({
 });
 
 // Commit
-const result = await client.commit({
+const result = await api.commit({
   merchantId: 'M-1',
   holdId: quote.holdId,
   orderId: 'ORDER-123'
@@ -1555,16 +1535,17 @@ Content-Type: application/json
   "comment": "Любит сезонные десерты",
   "accrualsBlocked": false,
   "redemptionsBlocked": false,
-  "levelId": "tier_vip"
+  "levelId": "tier_vip",
+  "levelExpireDays": 0
 }
 
 Response 200: объект клиента, как в GET /portal/customers/{id}
 ```
 
-Если указать `levelId`, клиент сразу получает выбранный уровень (`loyaltyTier.id` из `/portal/loyalty/tiers`). Флаги `accrualsBlocked` и `redemptionsBlocked` управляют ручными начислениями/списаниями (miniapp отображает статус, портал запрещает действия и помечает операции как заблокированные).
+Если указать `levelId`, клиент сразу получает выбранный уровень (`loyaltyTier.id` из `/portal/loyalty/tiers`). Поле `levelExpireDays` задаёт срок действия уровня в днях (0 — бессрочно); после истечения срока уровень пересчитывается по покупкам. Флаги `accrualsBlocked` и `redemptionsBlocked` управляют ручными начислениями/списаниями (miniapp отображает статус, портал запрещает действия и помечает операции как заблокированные).
 
 #### PUT /portal/customers/{customerId}
-Тот же payload, что и при создании. Поля, не переданные в теле — без изменений. Можно сменить уровень (`levelId`) или заблокировать начисления/списания, передав соответствующие флаги.
+Тот же payload, что и при создании. Поля, не переданные в теле — без изменений. Можно сменить уровень (`levelId`) и его срок (`levelExpireDays`), либо заблокировать начисления/списания, передав соответствующие флаги.
 
 #### DELETE /portal/customers/{customerId}
 Удаляет кошелёк мерчанта (если нет чеков/транзакций), возвращает `{ "ok": true }`.
@@ -1594,7 +1575,7 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
 | `/portal/staff-motivation` | PUT | Обновление мотивации (включение/отключение, баллы, период рейтинга). |
 | `/portal/loyalty/promotions?status=ALL\|ACTIVE\|PAUSED\|SCHEDULED\|COMPLETED\|ARCHIVED` | GET | Список `LoyaltyPromotion` с агрегатами и аудиторией. |
 
-> Push-рассылки используют Telegram push-уведомления. Регистрация мобильных устройств и FCM-токенов не требуется — достаточно активировать Telegram Mini App.
+> Push-рассылки используют Telegram push-уведомления. Регистрация устройств не требуется — достаточно активировать Telegram Mini App.
 | `/portal/loyalty/promotions` | POST | Создание новой акции (название, аудитория, награда, расписание, push-настройки). |
 | `/portal/loyalty/promotions/{id}` | GET | Детальная карточка акции с участниками и статистикой применения. |
 | `/portal/loyalty/promotions/{id}` | PUT | Редактирование акции и её метаданных. |
@@ -1659,7 +1640,6 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
 
 - ENV:
   - MINIAPP_BASE_URL — базовый URL Mini App (общий для всех мерчантов), например `https://miniapp.example.com`.
-  - TMA_LINK_SECRET — секрет подписи startapp-токенов (HS256 для диплинков). Должен быть длинной случайной строкой.
   - API_BASE_URL — публичный URL API (для установки webhook бота).
 
 - Portal API:
@@ -1669,14 +1649,14 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
   - POST `/portal/integrations/telegram-mini-app/link` → генерация диплинка Mini App: `{ deepLink, startParam }`.
   - POST `/portal/integrations/telegram-mini-app/setup-menu` → установка Chat Menu Button с web_app URL мини-приложения для мерчанта: `{ ok: true }`.
   - DELETE `/portal/integrations/telegram-mini-app` → отключение интеграции.
-- GET `/portal/integrations/rest-api` → состояние REST API интеграции: `{ enabled, status, integrationId, apiKeyMask, baseUrl, rateLimits, issuedAt, availableEndpoints }`.
+  - GET `/portal/integrations/rest-api` → состояние REST API интеграции: `{ enabled, status, integrationId, apiKeyMask, baseUrl, rateLimits, issuedAt, availableEndpoints }`.
   - POST `/portal/integrations/rest-api/issue` → выпуск или перевыпуск ключа, возвращает состояние + одноразовый `apiKey` для копирования.
   - DELETE `/portal/integrations/rest-api` → отзыв ключа и деактивация интеграции (ключ стирается).
 
 - Публичный API Mini App:
   - POST `/loyalty/teleauth` body: `{ merchantId, initData }`
     - Сервер валидирует `initData` по токену бота данного мерчанта (`MerchantSettings.telegramBotToken`).
-    - При наличии `start_param`/`startapp` валидирует подпись по `TMA_LINK_SECRET` и сверяет `merchantId` (при расхождении — 400).
+    - Если включена опция `telegramStartParamRequired`, то `start_param` обязателен и должен быть равен `merchantId` или иметь вид `ref_<CODE>`.
     - Для каждого мерчанта создаётся собственная связка `MerchantCustomer` → `Customer`, даже если Telegram аккаунт уже авторизован в другой сети.
     - Ответ: `{ ok: true, customerId, hasPhone: boolean, onboarded: boolean }`, где `hasPhone` и `onboarded` вычисляются **исключительно** по данным `MerchantCustomer` для текущего мерчанта. Даже если телефон/анкета уже заполнены у другого мерчанта, новый мерчант потребует пройти регистрацию заново (форма «Расскажите о себе» + привязка номера).
   - GET `/loyalty/bootstrap?merchantId=...&customerId=...&transactionsLimit=20`
@@ -1706,13 +1686,13 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
     - Первый вход (нет принадлежности клиента к мерчанту): сервер создаёт запись `Customer` (если отсутствует) и привязывает её к мерчанту через нулевой кошелёк `Wallet(POINTS)`, после чего сохраняет профиль.
 
 - Генерация ссылок:
-  - Диплинк: `https://t.me/<botUsername>?startapp=<SIGNED_TOKEN>`.
-  - `<SIGNED_TOKEN>` — HS256 над полезной нагрузкой `{ merchantId, outletId?, scope:'miniapp', iat, exp, jti }`.
+  - Диплинк для рефералок: `https://t.me/<botUsername>?startapp=ref_<CODE>`.
+  - Если включена проверка `telegramStartParamRequired`, для обычного диплинка используйте `?startapp=<merchantId>`.
   - Кнопка меню (web_app) — URL: `MINIAPP_BASE_URL` или сохранённый `MerchantSettings.miniappBaseUrl`.
 
 Замечания:
-- Верификация `initData` и подписи диплинка выполняется строго на сервере; фронтенд не должен доверять содержимому `initDataUnsafe`.
-- Для запуска через меню Telegram `startapp` может отсутствовать, поэтому Mini App также использует путь/контекст мерчанта в URL, а сервер определяет токен бота по `merchantId`.
+- Верификация `initData` выполняется строго на сервере; фронтенд не должен доверять содержимому `initDataUnsafe`.
+- Для запуска через меню Telegram `startapp` может отсутствовать, поэтому Mini App использует `merchant`/`merchantId` в URL.
 - Изоляция по мерчанту: один бот = один мерчант. Идентификация клиента в Mini App выполняется по `(merchantId, tgId)` с маппингом `CustomerTelegram`. Баланс, история, уровни, акции и профиль — все операции используют `(merchantId, customerId)`.
 
 ### Автовозврат клиентов (Auto-Return)

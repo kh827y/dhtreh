@@ -44,28 +44,6 @@ export async function waitForInitData(attempts = 8, delayMs = 150): Promise<stri
   return last;
 }
 
-export function decodeBase64UrlPayload(payload: string): string | null {
-  if (!payload) return null;
-  const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-  const padSize = normalized.length % 4 ? 4 - (normalized.length % 4) : 0;
-  const padded = normalized + (padSize ? '='.repeat(padSize) : '');
-  try {
-    const bin = (typeof atob === 'function') ? atob(padded) : '';
-    if (!bin) return null;
-    try {
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
-      return new TextDecoder().decode(bytes);
-    } catch {
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      return decodeURIComponent(escape(bin));
-    }
-  } catch {
-    return null;
-  }
-}
-
 export function getTelegramUserIdFromInitData(initData: string | null): string | null {
   if (!initData) return null;
   try {
@@ -81,37 +59,11 @@ export function getTelegramUserIdFromInitData(initData: string | null): string |
   }
 }
 
-export function getMerchantFromContext(initData: string | null): string | undefined {
+export function getMerchantFromContext(_initData: string | null): string | undefined {
   try {
     const q = new URLSearchParams(window.location.search);
     const fromQuery = q.get('merchantId') || q.get('merchant') || undefined;
     if (fromQuery) return fromQuery;
-    // Fallback: попытаться вытащить merchantId из initData → start_param/startapp
-    // Замечание: это только источник контекста для запроса к серверу; проверка/валидация выполняется на бэкенде
-    if (initData) {
-      try {
-        const u = new URLSearchParams(initData);
-        const sp = u.get('start_param') || u.get('startapp');
-        if (sp) {
-          const parts = sp.split('.');
-          const looksLikeJwt = parts.length === 3 && parts.every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
-          if (looksLikeJwt) {
-            try {
-              const payload = parts[1];
-              const jsonStr = decodeBase64UrlPayload(payload);
-              if (jsonStr) {
-                const obj = JSON.parse(jsonStr);
-                const mid = typeof obj?.merchantId === 'string' ? obj.merchantId : undefined;
-                if (mid) return mid;
-              }
-            } catch {}
-          } else {
-            // legacy strict mode: в start_param может лежать сам merchantId
-            if (sp.trim()) return sp.trim();
-          }
-        }
-      } catch {}
-    }
   } catch {}
   return undefined;
 }
@@ -187,17 +139,6 @@ export function useMiniappAuth(defaultMerchant: string) {
         tgId ? `miniapp.customerId.v2:${m}:${tgId}` : null;
       const profileKey = (m: string, tgId: string | null) =>
         tgId ? `miniapp.profile.v3:${m}:${tgId}` : null;
-      const cleanupLegacyKeys = (m: string) => {
-        try {
-          localStorage.removeItem('miniapp.customerId');
-          localStorage.removeItem('miniapp.merchantCustomerId');
-          localStorage.removeItem(`miniapp.customerId.v1:${m}`);
-          localStorage.removeItem(`miniapp.merchantCustomerId.v1:${m}`);
-          localStorage.removeItem(`miniapp.profile.v2:${m}`);
-          localStorage.removeItem(`miniapp.profile.pending.v1:${m}`);
-          localStorage.removeItem(`miniapp.onboarded.v1:${m}`);
-        } catch {}
-      };
       let previousScoped: string | null = null;
       try {
         if (resolvedTelegramUserId) {
@@ -290,7 +231,6 @@ export function useMiniappAuth(defaultMerchant: string) {
               } catch {}
             }
           }
-          cleanupLegacyKeys(fallbackMerchant);
           setCustomerId(null);
           setTeleOnboarded(false);
           setTeleHasPhone(false);
@@ -309,7 +249,6 @@ export function useMiniappAuth(defaultMerchant: string) {
               localStorage.setItem(key, resolvedCustomerId);
             }
           }
-          cleanupLegacyKeys(fallbackMerchant);
           if (previousScoped && previousScoped !== resolvedCustomerId) {
             const profileKeyValue = profileKey(fallbackMerchant, resolvedTelegramUserId ?? null);
             if (profileKeyValue) localStorage.removeItem(profileKeyValue);

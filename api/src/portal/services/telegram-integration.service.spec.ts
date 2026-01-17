@@ -112,19 +112,17 @@ describe('PortalTelegramIntegrationService', () => {
   });
 
   it('генерирует deep link для miniapp', async () => {
-    const { prisma, config, service } = createMocks();
+    const { prisma, service } = createMocks();
     prisma.merchantSettings.findUnique.mockResolvedValue({
       telegramBotUsername: '@demo_bot',
+      telegramStartParamRequired: true,
     });
-    config.get.mockImplementation((key: string) =>
-      key === 'TMA_LINK_SECRET' ? 'secret' : null,
-    );
 
     const { deepLink, startParam } = await service.generateLink('M-3');
 
     expect(deepLink).toContain(`startapp=${startParam}`);
     expect(deepLink).toMatch(/^https:\/\/t\.me\/demo_bot\?startapp=/);
-    expect(startParam.split('.').length).toBe(3);
+    expect(startParam).toBe('M-3');
   });
 
   it('не проходит check без токена', async () => {

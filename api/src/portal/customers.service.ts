@@ -2306,13 +2306,6 @@ export class PortalCustomersService {
         if (clash && clash.id !== customerId) {
           throw new BadRequestException('Телефон уже используется');
         }
-        const legacyClash = await prismaAny?.customer?.findUnique?.({
-          where: { merchantId_phone: { merchantId, phone: phoneDigits } },
-          select: { id: true },
-        });
-        if (legacyClash && legacyClash.id !== customerId) {
-          throw new BadRequestException('Телефон уже используется');
-        }
         updateCustomer.phone = phone;
       }
     }

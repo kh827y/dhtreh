@@ -173,7 +173,7 @@ jobs:
       - name: Run smoke tests
         run: |
           sleep 30
-          curl -f https://api.${{ secrets.PRODUCTION_DOMAIN }}/health || exit 1
+          curl -f https://api.${{ secrets.PRODUCTION_DOMAIN }}/healthz || exit 1
           curl -f https://app.${{ secrets.PRODUCTION_DOMAIN }} || exit 1
           curl -f https://admin.${{ secrets.PRODUCTION_DOMAIN }} || exit 1
           

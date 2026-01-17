@@ -110,6 +110,13 @@ function acquirePoller(key: string, merchantId: string, customerId: string) {
           dispatchEvent(normalizeEventPayload(event), true);
           continue;
         }
+        const retryAfterMs =
+          response && typeof response === "object" && typeof response.retryAfterMs === "number"
+            ? response.retryAfterMs
+            : 0;
+        if (retryAfterMs > 0) {
+          await delay(retryAfterMs);
+        }
       } catch {
         if (controller.signal.aborted || stopped) break;
         await delay(1200);

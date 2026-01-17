@@ -33,7 +33,7 @@ import {
   type CustomerProfile,
 } from "../lib/api";
 import { useMiniappAuthContext } from "../lib/MiniappAuthContext";
-import { decodeBase64UrlPayload, isValidInitData, waitForInitData } from "../lib/useMiniapp";
+import { isValidInitData, waitForInitData } from "../lib/useMiniapp";
 import { getProgressPercent, type LevelInfo } from "../lib/levels";
 import { getTransactionMeta } from "../lib/transactionMeta";
 import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
@@ -141,8 +141,6 @@ const profilePendingKey = (merchantId: string, tgId: string | null) =>
   tgId ? `miniapp.profile.pending.v2:${merchantId}:${tgId}` : null;
 const localCustomerKey = (merchantId: string, tgId: string | null) =>
   tgId ? `miniapp.customerId.v2:${merchantId}:${tgId}` : null;
-const legacyLocalCustomerKey = (merchantId: string) => `miniapp.customerId.v1:${merchantId}`;
-const legacyMerchantCustomerKey = (merchantId: string) => `miniapp.merchantCustomerId.v1:${merchantId}`;
 const onboardKey = (merchantId: string, tgId: string | null) =>
   tgId ? `miniapp.onboarded.v2:${merchantId}:${tgId}` : null;
 const cacheStorageKey = (merchantId: string, customerId: string) =>
@@ -1029,8 +1027,6 @@ function MiniappPage() {
           if (key) {
             localStorage.setItem(key, nextIdRaw);
           }
-          localStorage.removeItem(legacyLocalCustomerKey(merchantId));
-          localStorage.removeItem(legacyMerchantCustomerKey(merchantId));
         } catch {
           // ignore
         }
@@ -1044,11 +1040,14 @@ function MiniappPage() {
 
   useEffect(() => {
     if (!canLoadCustomerData) return;
+    if (!merchantId || !customerId) return;
     if (!bootstrapAttempted || bootstrapReady || bootstrapInFlightRef.current) return;
     let cancelled = false;
+    const mid = merchantId;
+    const cid = customerId;
     (async () => {
       try {
-        const p = await profileGet(merchantId, customerId);
+        const p = await profileGet(mid, cid);
         if (cancelled) return;
         applyServerProfile(p);
       } catch {
@@ -1133,19 +1132,7 @@ function MiniappPage() {
         setProfileForm((prev) => ({ ...prev, inviteCode: refMatch[1] }));
         return;
       }
-      const parts = sp.split(".");
-      const looksLikeJwt = parts.length === 3 && parts.every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
-      if (looksLikeJwt) {
-        const payload = parts[1];
-        const jsonStr = decodeBase64UrlPayload(payload);
-        if (jsonStr) {
-          const obj = JSON.parse(jsonStr);
-          const code = typeof obj?.referralCode === "string" ? obj.referralCode : "";
-          if (code) {
-            setProfileForm((prev) => ({ ...prev, inviteCode: code }));
-          }
-        }
-      } else if (/^[A-Z0-9]{5,}$/i.test(sp)) {
+      if (/^[A-Z0-9]{5,}$/i.test(sp)) {
         setProfileForm((prev) => ({ ...prev, inviteCode: sp }));
       }
     } catch {
@@ -1155,11 +1142,14 @@ function MiniappPage() {
 
   const syncConsent = useCallback(async () => {
     if (!canLoadCustomerData) return;
+    if (!merchantId || !customerId) return;
+    const mid = merchantId;
+    const cid = customerId;
     try {
-      const r = await consentGet(merchantId, customerId);
+      const r = await consentGet(mid, cid);
       if (!r.consentAt && !r.granted) {
         setConsent(true);
-        void consentSet(merchantId, customerId, true).catch(() => {});
+        void consentSet(mid, cid, true).catch(() => {});
       } else {
         setConsent(!!r.granted);
       }
@@ -1170,8 +1160,11 @@ function MiniappPage() {
 
   const loadBalance = useCallback(async () => {
     if (!canLoadCustomerData) return;
+    if (!merchantId || !customerId) return;
+    const mid = merchantId;
+    const cid = customerId;
     try {
-      const resp = await balance(merchantId, customerId);
+      const resp = await balance(mid, cid);
       setBal(resp.balance);
     } catch (error) {
       setToast({ msg: `Не удалось загрузить баланс: ${resolveErrorMessage(error)}`, type: "error" });
@@ -1180,14 +1173,17 @@ function MiniappPage() {
 
   const loadTx = useCallback(async (opts?: { fresh?: boolean }) => {
     if (!canLoadCustomerData) return;
+    if (!merchantId || !customerId) return;
+    const mid = merchantId;
+    const cid = customerId;
     const requestId = ++txLoadSeq.current;
     try {
-      const resp = await transactions(merchantId, customerId, TX_PAGE_LIMIT, undefined, { fresh: opts?.fresh });
+      const resp = await transactions(mid, cid, TX_PAGE_LIMIT, undefined, { fresh: opts?.fresh });
       if (txLoadSeq.current !== requestId) return;
       const items = resp.items as TransactionItem[];
       setTx(items);
       setTxNextBefore(resolveTxNextBefore(items, resp.nextBefore));
-      writeTxCache(merchantId, customerId, items);
+      writeTxCache(mid, cid, items);
     } catch (error) {
       setToast({ msg: `Не удалось загрузить историю: ${resolveErrorMessage(error)}`, type: "error" });
     }
@@ -1195,17 +1191,20 @@ function MiniappPage() {
 
   const loadMoreTx = useCallback(async () => {
     if (!canLoadCustomerData) return;
+    if (!merchantId || !customerId) return;
     if (!txNextBefore || txLoadingMoreRef.current) return;
     txLoadingMoreRef.current = true;
     setTxLoadingMore(true);
+    const mid = merchantId;
+    const cid = customerId;
     const requestId = txLoadSeq.current;
     try {
-      const resp = await transactions(merchantId, customerId, TX_PAGE_LIMIT, txNextBefore, { fresh: true });
+      const resp = await transactions(mid, cid, TX_PAGE_LIMIT, txNextBefore, { fresh: true });
       if (txLoadSeq.current !== requestId) return;
       const items = resp.items as TransactionItem[];
       setTx((prev) => {
         const merged = mergeTransactionItems(prev, items);
-        writeTxCache(merchantId, customerId, merged);
+        writeTxCache(mid, cid, merged);
         return merged;
       });
       setTxNextBefore(resolveTxNextBefore(items, resp.nextBefore));
@@ -1219,8 +1218,11 @@ function MiniappPage() {
 
   const loadLevels = useCallback(async () => {
     if (!canLoadCustomerData) return;
+    if (!merchantId || !customerId) return;
+    const mid = merchantId;
+    const cid = customerId;
     try {
-      const resp = await levels(merchantId, customerId);
+      const resp = await levels(mid, cid);
       setLevelInfo(resp);
     } catch (error) {
       setToast({ msg: `Не удалось загрузить уровни: ${resolveErrorMessage(error)}`, type: "error" });
@@ -1240,8 +1242,11 @@ function MiniappPage() {
 
   const loadPromotions = useCallback(async () => {
     if (!canLoadCustomerData) return;
+    if (!merchantId || !customerId) return;
+    const mid = merchantId;
+    const cid = customerId;
     try {
-      const resp = await promotionsList(merchantId, customerId);
+      const resp = await promotionsList(mid, cid);
       setPromotions(resp || []);
       setPromotionsResolved(true);
     } catch (error) {
@@ -1251,6 +1256,7 @@ function MiniappPage() {
 
   const loadBootstrap = useCallback(async () => {
     if (!canLoadCustomerData) return false;
+    if (!merchantId || !customerId) return false;
     if (bootstrapInFlightRef.current) return false;
     bootstrapInFlightRef.current = true;
     if (typeof window !== "undefined") {
@@ -1258,18 +1264,20 @@ function MiniappPage() {
       w.__miniappBootstrapPending = { merchantId, customerId };
     }
     try {
-      const resp = await bootstrap(merchantId, customerId, { transactionsLimit: TX_PAGE_LIMIT });
+      const mid = merchantId;
+      const cid = customerId;
+      const resp = await bootstrap(mid, cid, { transactionsLimit: TX_PAGE_LIMIT });
       if (resp.profile) applyServerProfile(resp.profile);
       if (resp.consent) {
         if (!resp.consent.consentAt && !resp.consent.granted) {
           setConsent(true);
-          void consentSet(merchantId, customerId, true).catch(() => {});
+          void consentSet(mid, cid, true).catch(() => {});
         } else {
           setConsent(Boolean(resp.consent.granted));
         }
       } else {
         setConsent(true);
-        void consentSet(merchantId, customerId, true).catch(() => {});
+        void consentSet(mid, cid, true).catch(() => {});
       }
       if (resp.balance) setBal(resp.balance.balance);
       if (resp.levels) setLevelInfo(resp.levels);
@@ -1277,7 +1285,7 @@ function MiniappPage() {
         const items = resp.transactions.items as TransactionItem[];
         setTx(items);
         setTxNextBefore(resolveTxNextBefore(items, resp.transactions.nextBefore));
-        writeTxCache(merchantId, customerId, items);
+        writeTxCache(mid, cid, items);
       }
       if (resp.promotions) {
         setPromotions(resp.promotions);
@@ -1510,8 +1518,7 @@ function MiniappPage() {
 
   const qrEffectiveTtl = useMemo(() => {
     if (typeof themeTtl === "number" && Number.isFinite(themeTtl)) return themeTtl;
-    const fallback = Number(process.env.NEXT_PUBLIC_QR_TTL || "60");
-    return Number.isFinite(fallback) ? fallback : 60;
+    return 300;
   }, [themeTtl]);
 
   const refreshQr = useCallback(async () => {

@@ -88,8 +88,7 @@ export async function GET(req: NextRequest) {
     return new NextResponse('Invalid token', { status: 400 });
   const res = NextResponse.redirect(new URL(redirectPath, url.origin));
   const secure = process.env.NODE_ENV === 'production';
-  const domain = (process.env.PORTAL_COOKIE_DOMAIN || '').trim() || undefined;
-  res.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60, domain });
+  res.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60 });
   return res;
 }
 
@@ -102,7 +101,6 @@ export async function POST(req: NextRequest) {
     return new NextResponse('Invalid token', { status: 400 });
   const res = NextResponse.json({ ok: true });
   const secure = process.env.NODE_ENV === 'production';
-  const domain = (process.env.PORTAL_COOKIE_DOMAIN || '').trim() || undefined;
-  res.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60, domain });
+  res.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60 });
   return res;
 }

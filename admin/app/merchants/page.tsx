@@ -1,6 +1,6 @@
 "use client";
 import React from 'react';
-import { listMerchants, createMerchant, updateMerchant as apiUpdateMerchant, setPortalLoginEnabled, initTotp, verifyTotp, disableTotp, impersonatePortal, getCashier, rotateCashier, setCashier, grantSubscription as apiGrantSubscription, resetSubscription as apiResetSubscription, updateMerchantSettings, type MerchantRow } from "../../lib/merchants";
+import { listMerchants, createMerchant, updateMerchant as apiUpdateMerchant, setPortalLoginEnabled, initTotp, verifyTotp, disableTotp, impersonatePortal, getCashier, rotateCashier, setCashier as apiSetCashier, grantSubscription as apiGrantSubscription, resetSubscription as apiResetSubscription, updateMerchantSettings, type MerchantRow } from "../../lib/merchants";
 
 const PORTAL_BASE = process.env.NEXT_PUBLIC_PORTAL_BASE || 'http://localhost:3004';
 
@@ -296,7 +296,7 @@ function RowEditor({ row, onSave, onGrantSubscription, onResetSubscription, onUp
       return;
     }
     try {
-      const r = await setCashier(row.id, nextLogin);
+      const r = await apiSetCashier(row.id, nextLogin);
       setCashier({ login: r.login });
       setCashierInput(r.login || '');
       setCashierMsg('Логин кассира обновлён');

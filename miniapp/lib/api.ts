@@ -468,7 +468,7 @@ export async function pollLoyaltyEvents(
   merchantId: string,
   customerId: string,
   signal?: AbortSignal,
-): Promise<{ event: LoyaltyRealtimeEvent | null }> {
+): Promise<{ event: LoyaltyRealtimeEvent | null; retryAfterMs?: number }> {
   const qs = new URLSearchParams({ merchantId, customerId });
   return http(`/loyalty/events/poll?${qs.toString()}`, { signal });
 }

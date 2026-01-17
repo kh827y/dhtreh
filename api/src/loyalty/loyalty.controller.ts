@@ -2039,41 +2039,9 @@ export class LoyaltyController {
         if (!sp) {
           throw new BadRequestException('start_param required');
         }
-        const parts = sp.split('.');
-        const looksLikeJwt =
-          parts.length === 3 &&
-          parts.every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
-        if (looksLikeJwt) {
-          const secret = process.env.TMA_LINK_SECRET || '';
-          if (!secret)
-            throw new BadRequestException(
-              'Server misconfigured: TMA_LINK_SECRET not set',
-            );
-          const [h, pld, sig] = parts;
-          const data = `${h}.${pld}`;
-          const expected = createHmac('sha256', secret)
-            .update(data)
-            .digest('base64')
-            .replace(/=/g, '')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_');
-          if (expected !== sig) {
-            throw new BadRequestException('Invalid start_param signature');
-          }
-          const json = JSON.parse(
-            Buffer.from(
-              pld.replace(/-/g, '+').replace(/_/g, '/'),
-              'base64',
-            ).toString('utf8'),
-          );
-          const claimedMerchant =
-            typeof json?.merchantId === 'string' ? json.merchantId : '';
-          if (claimedMerchant && claimedMerchant !== merchantId) {
-            throw new BadRequestException(
-              'merchantId mismatch with start_param',
-            );
-          }
-        } else if (sp !== merchantId) {
+        const trimmed = sp.trim();
+        const isReferral = /^ref[_-]/i.test(trimmed);
+        if (!isReferral && trimmed !== merchantId) {
           throw new BadRequestException('merchantId mismatch with start_param');
         }
       }
@@ -2761,43 +2729,13 @@ export class LoyaltyController {
     const startParamRequired = Boolean(settings?.telegramStartParamRequired);
     const params = new URLSearchParams(initData);
     const startParam = params.get('start_param') || params.get('startapp') || '';
-    const looksLikeJwt =
-      !!startParam &&
-      startParam.split('.').length === 3 &&
-      startParam.split('.').every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
     if (startParamRequired) {
       if (!startParam) {
         throw new BadRequestException('start_param is required');
       }
-      if (looksLikeJwt) {
-        const secret = process.env.TMA_LINK_SECRET || '';
-        if (!secret)
-          throw new BadRequestException(
-            'Server misconfigured: TMA_LINK_SECRET not set',
-          );
-        const [h, pld, sig] = startParam.split('.');
-        const data = `${h}.${pld}`;
-        const expected = createHmac('sha256', secret)
-          .update(data)
-          .digest('base64')
-          .replace(/=/g, '')
-          .replace(/\+/g, '-')
-          .replace(/\//g, '_');
-        if (expected !== sig)
-          throw new BadRequestException('Invalid start_param signature');
-        const json = JSON.parse(
-          Buffer.from(pld.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString(
-            'utf8',
-          ),
-        );
-        const claimedMerchant =
-          typeof json?.merchantId === 'string' ? json.merchantId : '';
-        if (claimedMerchant && claimedMerchant !== merchantId) {
-          throw new BadRequestException(
-            'merchantId mismatch with start_param',
-          );
-        }
-      } else if (startParam !== merchantId) {
+      const trimmed = startParam.trim();
+      const isReferral = /^ref[_-]/i.test(trimmed);
+      if (!isReferral && trimmed !== merchantId) {
         throw new BadRequestException('merchantId mismatch with start_param');
       }
     }

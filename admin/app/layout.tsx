@@ -1,7 +1,7 @@
 export const metadata = { title: 'Loyalty Admin', description: 'Админ‑панель' };
 
 import OutboxLink from '../components/OutboxLink';
-import '../src/app/globals.css';
+import './globals.css';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   // Fail-fast ENV validation for Admin
