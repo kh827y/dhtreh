@@ -57,7 +57,12 @@ describe('EarnActivationWorker (unit)', () => {
     expect(tx.earnLot.findUnique).toHaveBeenCalledWith({ where: { id: 'L1' } });
     expect(tx.earnLot.update).toHaveBeenCalledWith({
       where: { id: 'L1' },
-      data: { status: 'ACTIVE', earnedAt: maturedAt },
+      data: {
+        status: 'ACTIVE',
+        earnedAt: maturedAt,
+        activationAttempts: 0,
+        activationLastError: null,
+      },
     });
     expect(tx.wallet.upsert).toHaveBeenCalledWith(
       expect.objectContaining({

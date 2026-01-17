@@ -9,13 +9,13 @@
 3) Миграции:
 
 ```bash
-pnpm -C api prisma migrate dev
+pnpm --filter api prisma migrate dev
 ```
 
 4) Запуск API:
 
 ```bash
-pnpm -C api start:dev
+pnpm --filter api start:dev
 ```
 
 ## Воркеры
@@ -23,7 +23,7 @@ pnpm -C api start:dev
 Фоновые задачи запускаются отдельным процессом:
 
 ```bash
-pnpm -C api start:worker
+pnpm --filter api start:worker
 ```
 
 Для воркера обычно устанавливают `WORKERS_ENABLED=1` и `NO_HTTP=1`.
@@ -31,6 +31,6 @@ pnpm -C api start:worker
 ## Тесты
 
 ```bash
-pnpm -C api test
-pnpm -C api test:e2e
+pnpm --filter api test
+pnpm --filter api test:e2e
 ```

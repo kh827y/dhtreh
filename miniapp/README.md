@@ -5,7 +5,7 @@
 ## Локальный запуск
 
 ```bash
-pnpm -C miniapp dev
+pnpm --filter miniapp dev
 ```
 
 ## Переменные окружения

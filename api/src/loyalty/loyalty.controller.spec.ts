@@ -80,8 +80,12 @@ describe('LoyaltyController.saveProfile', () => {
 
     const prismaOverrides: PrismaMock = {
       customer: {
-        findUnique: jest.fn().mockResolvedValue(current),
-        findFirst: jest.fn().mockResolvedValue(existing),
+        findUnique: jest.fn().mockImplementation(({ where }) => {
+          if (where?.id === current.id) return current;
+          const phone = where?.merchantId_phone?.phone;
+          if (phone === existing.phone || phone === '79001234567') return existing;
+          return null;
+        }),
         update: jest.fn().mockImplementation(({ where, data }) => {
           if (where.id === existing.id) return { ...existing, ...data };
           if (where.id === current.id) return { ...current, ...data };
@@ -144,8 +148,12 @@ describe('LoyaltyController.saveProfile', () => {
 
     const { controller } = createController({
       customer: {
-        findUnique: jest.fn().mockResolvedValue(current),
-        findFirst: jest.fn().mockResolvedValue(existing),
+        findUnique: jest.fn().mockImplementation(({ where }) => {
+          if (where?.id === current.id) return current;
+          const phone = where?.merchantId_phone?.phone;
+          if (phone === existing.phone || phone === '79001234567') return existing;
+          return null;
+        }),
         update: jest.fn(),
       },
     });
@@ -177,8 +185,10 @@ describe('LoyaltyController.saveProfile', () => {
 
     const { controller, prisma } = createController({
       customer: {
-        findUnique: jest.fn().mockResolvedValue(current),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockImplementation(({ where }) => {
+          if (where?.id === current.id) return current;
+          return null;
+        }),
         update: jest.fn().mockImplementation(({ where, data }) => ({
           ...current,
           ...data,

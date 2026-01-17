@@ -2,13 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, master]
   pull_request:
-    branches: [main]
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+    branches: [main, develop, master]
 
 jobs:
   test:
@@ -66,96 +62,64 @@ jobs:
             
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        working-directory: api
+        run: pnpm prisma generate
+
+      - name: Typecheck
+        run: pnpm typecheck
         
       - name: Run API tests
-        working-directory: ./api
+        working-directory: api
         env:
           DATABASE_URL: postgresql://postgres:test_password@localhost:5432/loyalty_test
           REDIS_URL: redis://localhost:6379
           QR_JWT_SECRET: test_secret
           ADMIN_KEY: test_admin_key
         run: |
-          pnpm prisma generate
           pnpm prisma migrate deploy
           pnpm test
           
       - name: Run API E2E tests
-        working-directory: ./api
+        working-directory: api
         env:
           DATABASE_URL: postgresql://postgres:test_password@localhost:5432/loyalty_test
           REDIS_URL: redis://localhost:6379
         run: pnpm test:e2e
         
       - name: Build API
-        working-directory: ./api
-        run: |
-          pnpm prisma generate
-          pnpm build
+        working-directory: api
+        run: pnpm build
         
       - name: Build Admin
-        working-directory: ./admin
+        working-directory: admin
         run: pnpm build
         
       - name: Build Cashier
-        working-directory: ./cashier
+        working-directory: cashier
         run: pnpm build
         
       - name: Build Miniapp
-        working-directory: ./miniapp
+        working-directory: miniapp
         run: pnpm build
 
-  build-and-push:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    permissions:
-      contents: read
-      packages: write
-      
-    strategy:
-      matrix:
-        service: [api, admin, cashier, miniapp]
-        
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Log in to the Container registry
-        uses: docker/login-action@v2
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
-            
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: ./${{ matrix.service }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build Merchant Portal
+        working-directory: merchant-portal
+        run: pnpm build
+
+      - name: Build SDK
+        working-directory: clients/sdk-ts
+        run: pnpm build
 
   deploy-production:
-    needs: build-and-push
+    needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     environment: production
     
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Deploy to production
         uses: appleboy/ssh-action@v0.1.5
@@ -166,8 +130,7 @@ jobs:
           script: |
             cd /opt/loyalty
             git pull origin main
-            docker compose --env-file .env.production -f docker-compose.production.yml pull
-            docker compose --env-file .env.production -f docker-compose.production.yml up -d --remove-orphans --scale api=2 --scale miniapp=2
+            docker compose --env-file .env.production -f docker-compose.production.yml up -d --remove-orphans --build --scale api=2 --scale miniapp=2
             docker compose --env-file .env.production -f docker-compose.production.yml exec -T api pnpm prisma migrate deploy
             
       - name: Run smoke tests
@@ -176,6 +139,7 @@ jobs:
           curl -f https://api.${{ secrets.PRODUCTION_DOMAIN }}/healthz || exit 1
           curl -f https://app.${{ secrets.PRODUCTION_DOMAIN }} || exit 1
           curl -f https://admin.${{ secrets.PRODUCTION_DOMAIN }} || exit 1
+          curl -f https://portal.${{ secrets.PRODUCTION_DOMAIN }} || exit 1
           
       - name: Notify deployment
         if: success()

@@ -5,7 +5,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages
 COPY merchant-portal ./merchant-portal
 RUN pnpm i --frozen-lockfile=false
-RUN pnpm -C merchant-portal build
+RUN pnpm --filter merchant-portal build
 
 FROM node:20-slim
 WORKDIR /app/merchant-portal

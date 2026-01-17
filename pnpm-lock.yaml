@@ -326,6 +326,9 @@ importers:
       openapi-typescript:
         specifier: ^7.4.2
         version: 7.9.1(typescript@5.9.2)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.2
 
   merchant-portal:
     dependencies:

@@ -8,7 +8,6 @@
 - [ ] Admin (Next.js)
 - [ ] Cashier (Next.js)
 - [ ] Miniapp (Next.js)
-- [ ] Bridge (Node.js)
 - [ ] Infra / CI
 - [ ] Docs
 

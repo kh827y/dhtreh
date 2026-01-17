@@ -250,14 +250,17 @@ describe('IntegrationsLoyaltyController', () => {
   });
 
   it('возвращает invoice_num/order_id в ответе REFUND', async () => {
+    const receiptRow = {
+      id: 'RID-1',
+      orderId: 'INV-1',
+      outletId: null,
+      customerId: 'C-9',
+      merchantId: 'M-1',
+    };
     const { controller, loyalty, prisma } = createController({
       receipt: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'RID-1',
-          orderId: 'INV-1',
-          outletId: null,
-          customerId: 'C-9',
-        }),
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([receiptRow]),
         findUnique: jest.fn().mockResolvedValue(null),
       },
     });

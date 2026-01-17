@@ -5,7 +5,7 @@
 ## Локальный запуск
 
 ```bash
-pnpm -C cashier dev
+pnpm --filter cashier dev
 ```
 
 ## Переменные окружения
