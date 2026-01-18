@@ -34,7 +34,6 @@ function SettingsPageInner() {
   const [miniappBaseUrl, setMiniappBaseUrl] = useState<string>('');
   const [miniappThemePrimary, setMiniappThemePrimary] = useState<string>('');
   const [miniappThemeBg, setMiniappThemeBg] = useState<string>('');
-  const [miniappLogoUrl, setMiniappLogoUrl] = useState<string>('');
   const [telegramStartParamRequired, setTelegramStartParamRequired] = useState<boolean>(false);
 
   useEffect(() => {
@@ -50,7 +49,6 @@ function SettingsPageInner() {
       setMiniappBaseUrl((r as any).miniappBaseUrl || '');
       setMiniappThemePrimary(r.miniappThemePrimary || '');
       setMiniappThemeBg(r.miniappThemeBg || '');
-      setMiniappLogoUrl(r.miniappLogoUrl || '');
       setTelegramStartParamRequired(!!r.telegramStartParamRequired);
     }).catch((e:any)=>setMsg(String(e?.message||e))).finally(()=>setLoading(false));
   }, [merchantId]);
@@ -86,7 +84,6 @@ function SettingsPageInner() {
         miniappBaseUrl: miniappBaseUrl || undefined,
         miniappThemePrimary: miniappThemePrimary || undefined,
         miniappThemeBg: miniappThemeBg || undefined,
-        miniappLogoUrl: miniappLogoUrl || undefined,
         telegramStartParamRequired: telegramStartParamRequired,
       };
       const r = await updateSettings(merchantId, dto);
@@ -356,18 +353,6 @@ function SettingsPageInner() {
                 <div style={{ fontSize:12, opacity:.8 }}>Фон мини‑аппы (по умолчанию #f9fafb).</div>
               </div>
             </div>
-            <div>
-              <label>Логотип (URL):</label>
-              <input
-                value={miniappLogoUrl}
-                onChange={e=>setMiniappLogoUrl(e.target.value)}
-                style={{ marginLeft: 8, width: 520 }}
-                placeholder="https://.../logo.png"
-              />
-              <div style={{ fontSize:12, opacity:.8, marginTop:4 }}>
-                PNG/SVG логотип, который используется в мини‑аппе и в превью deep‑link.
-              </div>
-            </div>
             <div style={{ marginTop:8 }}>
               <div style={{ fontSize:12, opacity:.8, marginBottom:4 }}>Предпросмотр карточки мини‑аппы:</div>
               <div
@@ -394,9 +379,9 @@ function SettingsPageInner() {
                     overflow:'hidden',
                   }}
                 >
-                  {miniappLogoUrl ? (
+                  {s?.miniappLogoUrl && /^https?:\/\//i.test(s.miniappLogoUrl) ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={miniappLogoUrl} alt="logo" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                    <img src={s.miniappLogoUrl} alt="logo" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
                   ) : (
                     <span style={{ fontSize:18, color:'#e2e8f0' }}>∞</span>
                   )}

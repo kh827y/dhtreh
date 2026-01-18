@@ -9,6 +9,22 @@ import {
 } from "../../../components/TimezoneProvider";
 import { readApiError, readErrorMessage } from "lib/portal-errors";
 
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
+const MAX_LOGO_SIZE = 512 * 1024;
+const ALLOWED_LOGO_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/svg+xml",
+]);
+
+function resolveLogoUrl(value: string | null) {
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  if (!API_BASE) return value;
+  return value.startsWith("/") ? `${API_BASE}${value}` : `${API_BASE}/${value}`;
+}
+
 export default function SettingsSystemPage() {
   const timezone = useTimezone();
   const timezoneOptions = useTimezoneOptions();
@@ -22,12 +38,17 @@ export default function SettingsSystemPage() {
   const [savedQrMode, setSavedQrMode] = React.useState<"short" | "jwt">("short");
   const [saving, setSaving] = React.useState(false);
   const [success, setSuccess] = React.useState<string>("");
+  const [logoUrl, setLogoUrl] = React.useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = React.useState(false);
+  const [logoError, setLogoError] = React.useState<string>("");
+  const logoInputRef = React.useRef<HTMLInputElement | null>(null);
   const resolvedTimezones = React.useMemo(() => {
     const list = timezoneOptions.length ? timezoneOptions : [timezone];
     const hasCurrent = list.some((item) => item.code === timezone.code);
     if (hasCurrent) return list;
     return [timezone, ...list];
   }, [timezone, timezoneOptions]);
+  const resolvedLogoUrl = React.useMemo(() => resolveLogoUrl(logoUrl), [logoUrl]);
 
   React.useEffect(() => {
     setTimezoneCode(timezone.code);
@@ -71,6 +92,17 @@ export default function SettingsSystemPage() {
         const mode = requireJwtForQuote ? "jwt" : "short";
         setQrMode(mode);
         setSavedQrMode(mode);
+
+        const logoRes = await fetch("/api/portal/settings/logo", {
+          cache: "no-store",
+        });
+        if (logoRes.ok) {
+          const logoData = (await logoRes.json().catch(() => ({}))) as any;
+          if (cancelled) return;
+          const nextLogo =
+            typeof logoData?.miniappLogoUrl === "string" ? logoData.miniappLogoUrl : "";
+          setLogoUrl(nextLogo || null);
+        }
       } catch (e: any) {
         if (cancelled) return;
         alert(readApiError(String(e?.message || e || "")) || "Не удалось загрузить название компании");
@@ -81,6 +113,65 @@ export default function SettingsSystemPage() {
       cancelled = true;
     };
   }, []);
+
+  const handleLogoChange = React.useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      setLogoError("");
+      if (!ALLOWED_LOGO_TYPES.has(file.type)) {
+        setLogoError("Поддерживаются PNG, JPG, SVG или WEBP");
+        event.target.value = "";
+        return;
+      }
+      if (file.size > MAX_LOGO_SIZE) {
+        setLogoError("Размер файла не должен превышать 512KB");
+        event.target.value = "";
+        return;
+      }
+      setLogoUploading(true);
+      try {
+        const body = new FormData();
+        body.append("file", file, file.name);
+        const res = await fetch("/api/portal/settings/logo", {
+          method: "POST",
+          body,
+        });
+        if (!res.ok) {
+          throw new Error(await readErrorMessage(res, "Не удалось загрузить логотип"));
+        }
+        const data = (await res.json().catch(() => ({}))) as any;
+        const nextLogo =
+          typeof data?.miniappLogoUrl === "string" ? data.miniappLogoUrl : "";
+        setLogoUrl(nextLogo || null);
+      } catch (e: any) {
+        setLogoError(readApiError(String(e?.message || e || "")) || "Не удалось загрузить логотип");
+      } finally {
+        setLogoUploading(false);
+        event.target.value = "";
+      }
+    },
+    [],
+  );
+
+  const handleLogoDelete = React.useCallback(async () => {
+    if (logoUploading) return;
+    setLogoError("");
+    setLogoUploading(true);
+    try {
+      const res = await fetch("/api/portal/settings/logo", {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw new Error(await readErrorMessage(res, "Не удалось удалить логотип"));
+      }
+      setLogoUrl(null);
+    } catch (e: any) {
+      setLogoError(readApiError(String(e?.message || e || "")) || "Не удалось удалить логотип");
+    } finally {
+      setLogoUploading(false);
+    }
+  }, [logoUploading]);
 
   const handleSave = React.useCallback(async () => {
     if (saving) return;
@@ -276,6 +367,57 @@ export default function SettingsSystemPage() {
             <p className="text-xs text-gray-500 mt-2">
               Аккаунт поддержки в телеграм для приложения (username или @username).
             </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Логотип мини‑аппы</label>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="w-16 h-16 rounded-2xl bg-gray-100 border border-gray-200 flex items-center justify-center overflow-hidden">
+                {resolvedLogoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={resolvedLogoUrl}
+                    alt="logo"
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <span className="text-xs text-gray-400">Нет логотипа</span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => logoInputRef.current?.click()}
+                    disabled={logoUploading}
+                    className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-60"
+                  >
+                    {logoUploading ? "Загружаем…" : "Загрузить логотип"}
+                  </button>
+                  {resolvedLogoUrl ? (
+                    <button
+                      type="button"
+                      onClick={handleLogoDelete}
+                      disabled={logoUploading}
+                      className="px-4 py-2 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-60"
+                    >
+                      Удалить
+                    </button>
+                  ) : null}
+                </div>
+                <p className="text-xs text-gray-500">PNG/JPG/SVG/WEBP, до 512KB.</p>
+              </div>
+            </div>
+            {logoError ? (
+              <p className="text-xs text-red-600 mt-2">{logoError}</p>
+            ) : null}
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              onChange={handleLogoChange}
+              className="hidden"
+            />
           </div>
 
           {/* Timezone */}

@@ -3,6 +3,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Phone, Check, User as UserIcon, Calendar, Gift, AlertCircle } from "lucide-react";
 
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
+
+function resolveLogoUrl(value: string | null | undefined) {
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  if (!API_BASE) return value;
+  return value.startsWith("/") ? `${API_BASE}${value}` : `${API_BASE}/${value}`;
+}
+
 export type OnboardingForm = {
   name: string;
   gender: "male" | "female" | "";
@@ -13,6 +22,7 @@ export type OnboardingForm = {
 interface OnboardingProps {
   form: OnboardingForm;
   consent: boolean;
+  logoUrl?: string | null;
   onToggleConsent: () => void;
   onFieldChange: (field: keyof OnboardingForm, value: string) => void;
   onSubmit: () => void;
@@ -23,6 +33,7 @@ interface OnboardingProps {
 const Onboarding: React.FC<OnboardingProps> = ({
   form,
   consent,
+  logoUrl,
   onToggleConsent,
   onFieldChange,
   onSubmit,
@@ -30,6 +41,8 @@ const Onboarding: React.FC<OnboardingProps> = ({
   error,
 }) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
+  const resolvedLogoUrl = resolveLogoUrl(logoUrl);
   const [birthInput, setBirthInput] = useState(() => {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(form.birthDate);
     return match ? `${match[3]}.${match[2]}.${match[1]}` : form.birthDate;
@@ -100,11 +113,31 @@ const Onboarding: React.FC<OnboardingProps> = ({
     <div className="tg-viewport bg-ios-bg flex flex-col relative pb-safe overflow-hidden">
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pt-12 pb-40">
         <div className="mb-8 text-center animate-in slide-in-from-bottom-4 fade-in duration-500">
-          <div className="w-20 h-20 bg-blue-600 rounded-3xl mx-auto flex items-center justify-center shadow-xl shadow-blue-200 mb-6 rotate-3">
-            <Gift className="text-white w-10 h-10" />
+          <div
+            className={`w-20 h-20 rounded-3xl mx-auto flex items-center justify-center mb-6 ${
+              resolvedLogoUrl ? "" : "bg-blue-600 shadow-blue-200 shadow-xl rotate-3"
+            }`}
+          >
+            {resolvedLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={resolvedLogoUrl}
+                alt="logo"
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              <Gift className="text-white w-10 h-10" />
+            )}
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Добро пожаловать</h1>
           <p className="text-gray-500 leading-relaxed">Заполните анкету, чтобы продолжить.</p>
+          <button
+            type="button"
+            onClick={() => setShowInfo(true)}
+            className="mt-2 inline-flex items-center justify-center rounded-full border border-gray-200 bg-white/80 px-3 py-1 text-[11px] font-semibold text-gray-600 shadow-sm hover:bg-white transition-colors"
+          >
+            Зачем нам нужны эти данные? 👉
+          </button>
         </div>
 
         {error && (
@@ -188,6 +221,33 @@ const Onboarding: React.FC<OnboardingProps> = ({
           </div>
         </div>
       </div>
+
+      {showInfo && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity animate-in fade-in duration-200"
+            onClick={() => setShowInfo(false)}
+          />
+          <div className="relative z-10 w-[270px] bg-white/90 backdrop-blur-xl rounded-[14px] shadow-lg animate-in zoom-in-95 duration-200 overflow-hidden text-center">
+            <div className="p-4 pt-5">
+              <h3 className="text-[17px] font-semibold text-gray-900 mb-2">Зачем нам эти данные?</h3>
+              <p className="text-[13px] text-gray-800 leading-snug font-medium">
+                Мы собираем эти данные, чтобы подбирать акции и создавать бонусы лично для вас. Привязка телефона
+                необходима для защиты от злоупотребления программой лояльности.
+              </p>
+            </div>
+            <div className="border-t border-gray-300/60 backdrop-blur-xl">
+              <button
+                type="button"
+                onClick={() => setShowInfo(false)}
+                className="w-full py-3 text-[17px] text-[#007AFF] font-normal hover:bg-black/5 active:bg-black/10 transition-colors"
+              >
+                Понятно
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div
         className="fixed bottom-0 left-0 right-0 p-4 bg-ios-bg/80 backdrop-blur-xl border-t border-gray-200 z-20"

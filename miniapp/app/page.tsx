@@ -75,6 +75,14 @@ const REFERRAL_SHARE_FALLBACK =
   "Переходите по ссылке {link} и получите {bonusamount} бонусов на баланс в программе лояльности {businessname}.";
 const REFERRAL_PLACEHOLDER_REGEX = /\{businessname\}|\{bonusamount\}|\{code\}|\{link\}/gi;
 const TELEGRAM_SHARE_URL = "https://t.me/share/url";
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
+
+function resolveLogoUrl(value?: string | null) {
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  if (!API_BASE) return value;
+  return value.startsWith("/") ? `${API_BASE}${value}` : `${API_BASE}/${value}`;
+}
 
 const BONUS_GRADIENTS = [
   "from-violet-500 to-fuchsia-500",
@@ -838,6 +846,7 @@ function MiniappPage() {
   const [isAllBonusesOpen, setIsAllBonusesOpen] = useState(false);
   const [showNotificationAlert, setShowNotificationAlert] = useState(false);
   const [showCodeCopied, setShowCodeCopied] = useState(false);
+  const [loadedLogoUrl, setLoadedLogoUrl] = useState<string | null>(null);
 
   const pendingProfileSync = useRef(false);
   const bootstrapInFlightRef = useRef(false);
@@ -884,8 +893,19 @@ function MiniappPage() {
     setCachedBonusCount(typeof cached.bonusCount === "number" ? cached.bonusCount : null);
   }, [merchantId, cachedCustomerId]);
 
+  const mustOnboard = teleOnboarded === false && !localOnboarded;
+  const resolvedLogoUrl = useMemo(
+    () => resolveLogoUrl(auth.theme?.logo ?? null),
+    [auth.theme?.logo],
+  );
+  const logoPending =
+    mustOnboard &&
+    auth.status !== "failed" &&
+    Boolean(resolvedLogoUrl) &&
+    resolvedLogoUrl !== loadedLogoUrl;
+
   useEffect(() => {
-    setLoading(auth.loading);
+    setLoading(auth.loading || logoPending);
     setError(auth.error);
     if (!auth.loading) {
       if (auth.customerId) {
@@ -894,7 +914,38 @@ function MiniappPage() {
         setCustomerId(null);
       }
     }
-  }, [auth.loading, auth.error, auth.customerId, teleOnboarded]);
+  }, [
+    auth.loading,
+    auth.error,
+    auth.customerId,
+    teleOnboarded,
+    logoPending,
+  ]);
+
+  useEffect(() => {
+    if (!mustOnboard) {
+      if (loadedLogoUrl !== null) setLoadedLogoUrl(null);
+      return;
+    }
+    if (!resolvedLogoUrl) {
+      if (loadedLogoUrl !== null) setLoadedLogoUrl(null);
+      return;
+    }
+    if (!logoPending) return;
+    let cancelled = false;
+    const settle = () => {
+      if (!cancelled) setLoadedLogoUrl(resolvedLogoUrl);
+    };
+    const timeoutId = setTimeout(settle, 3000);
+    const img = new Image();
+    img.onload = settle;
+    img.onerror = settle;
+    img.src = resolvedLogoUrl;
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [logoPending, mustOnboard, resolvedLogoUrl, loadedLogoUrl]);
 
   useEffect(() => {
     if (typeof settingsReferralEnabled !== "boolean") return;
@@ -1411,6 +1462,7 @@ function MiniappPage() {
     {
       merchantId,
       customerId,
+      emitCached: false,
     });
     return () => {
       unsubscribe();
@@ -2219,6 +2271,8 @@ function MiniappPage() {
         ? "Неверный код"
         : "Ввести промокод";
 
+  const holdForLogo = logoPending;
+
   const splashView = (
     <div className="tg-viewport flex items-center justify-center text-gray-500">
       <div className="text-center">
@@ -2232,6 +2286,7 @@ function MiniappPage() {
     <Onboarding
       form={profileForm}
       consent={profileConsent}
+      logoUrl={auth.theme?.logo ?? null}
       onToggleConsent={() => {
         setProfileConsent((prev) => !prev);
         if (profileError) setProfileError(null);
@@ -2994,7 +3049,7 @@ function MiniappPage() {
         status={auth.status}
         teleOnboarded={teleOnboarded}
         localOnboarded={localOnboarded}
-        onboardingView={onboardingView}
+        onboardingView={holdForLogo ? splashView : onboardingView}
         dashboardView={dashboardView}
         splashView={splashView}
       />

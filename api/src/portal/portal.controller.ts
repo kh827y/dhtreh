@@ -105,6 +105,14 @@ import { AllowInactiveSubscription } from '../guards/subscription.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PrismaService } from '../prisma.service';
 
+const MAX_MINIAPP_LOGO_BYTES = 512 * 1024;
+const ALLOWED_MINIAPP_LOGO_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/svg+xml',
+]);
+
 @ApiTags('portal')
 @Controller('portal')
 @ApiExtraModels(TransactionItemDto)
@@ -137,6 +145,16 @@ export class PortalController {
     const raw = Number(req?.portalTimezoneOffsetMinutes ?? NaN);
     if (Number.isFinite(raw)) return raw;
     return 7 * 60; // default Барнаул (UTC+7)
+  }
+
+  private buildMiniappLogoPath(merchantId: string, assetId: string) {
+    return `/loyalty/miniapp-logo/${merchantId}/${assetId}`;
+  }
+
+  private extractMiniappLogoAssetId(value?: string | null): string | null {
+    if (!value) return null;
+    const match = value.match(/\/loyalty\/miniapp-logo\/[^/]+\/([^/?#]+)/);
+    return match ? match[1] : null;
   }
 
   private shiftToTimezone(date: Date, offsetMinutes: number) {
@@ -2437,6 +2455,114 @@ export class PortalController {
       create: { merchantId, rulesJson: nextRules },
     });
     return { supportTelegram };
+  }
+
+  @Get('settings/logo')
+  @PortalPermissionsHandled()
+  async getMiniappLogo(@Req() req: any) {
+    assertPortalPermissions(req, ['system_settings'], 'read');
+    const merchantId = this.getMerchantId(req);
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { miniappLogoUrl: true },
+    });
+    return { miniappLogoUrl: settings?.miniappLogoUrl ?? null };
+  }
+
+  @Post('settings/logo')
+  @PortalPermissionsHandled()
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: MAX_MINIAPP_LOGO_BYTES } }),
+  )
+  async uploadMiniappLogo(@Req() req: any, @UploadedFile() file: any) {
+    const merchantId = this.getMerchantId(req);
+    const current = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { miniappLogoUrl: true },
+    });
+    this.assertSettingsUpdateAccess(req, current, {
+      miniappLogoUrl: 'upload',
+    } as UpdateMerchantSettingsDto);
+    if (!file || !file.buffer) {
+      throw new BadRequestException('Файл не найден');
+    }
+    const size = Number(file.size ?? file.buffer.length ?? 0);
+    if (!Number.isFinite(size) || size <= 0) {
+      throw new BadRequestException('Пустой файл');
+    }
+    if (size > MAX_MINIAPP_LOGO_BYTES) {
+      throw new BadRequestException('Размер файла не должен превышать 512KB');
+    }
+    const mimeType = String(file.mimetype || '').toLowerCase();
+    if (!ALLOWED_MINIAPP_LOGO_MIME_TYPES.has(mimeType)) {
+      throw new BadRequestException('Поддерживаются PNG, JPG, SVG или WEBP');
+    }
+    const fileName =
+      typeof file.originalname === 'string' && file.originalname.trim()
+        ? file.originalname.trim()
+        : 'logo';
+    const asset = await this.prisma.communicationAsset.create({
+      data: {
+        merchantId,
+        channel: CommunicationChannel.INAPP,
+        kind: 'MINIAPP_LOGO',
+        fileName,
+        mimeType,
+        byteSize: size,
+        data: file.buffer,
+      },
+      select: { id: true },
+    });
+    const miniappLogoUrl = this.buildMiniappLogoPath(merchantId, asset.id);
+    await this.prisma.merchantSettings.upsert({
+      where: { merchantId },
+      update: { miniappLogoUrl, updatedAt: new Date() },
+      create: { merchantId, miniappLogoUrl },
+    });
+    const previousAssetId = this.extractMiniappLogoAssetId(
+      current?.miniappLogoUrl ?? null,
+    );
+    if (previousAssetId && previousAssetId !== asset.id) {
+      await this.prisma.communicationAsset.deleteMany({
+        where: {
+          id: previousAssetId,
+          merchantId,
+          kind: 'MINIAPP_LOGO',
+        },
+      });
+    }
+    return { miniappLogoUrl };
+  }
+
+  @Delete('settings/logo')
+  @PortalPermissionsHandled()
+  async deleteMiniappLogo(@Req() req: any) {
+    const merchantId = this.getMerchantId(req);
+    const current = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { miniappLogoUrl: true },
+    });
+    this.assertSettingsUpdateAccess(req, current, {
+      miniappLogoUrl: null,
+    } as unknown as UpdateMerchantSettingsDto);
+    const previousAssetId = this.extractMiniappLogoAssetId(
+      current?.miniappLogoUrl ?? null,
+    );
+    if (previousAssetId) {
+      await this.prisma.communicationAsset.deleteMany({
+        where: {
+          id: previousAssetId,
+          merchantId,
+          kind: 'MINIAPP_LOGO',
+        },
+      });
+    }
+    await this.prisma.merchantSettings.upsert({
+      where: { merchantId },
+      update: { miniappLogoUrl: null, updatedAt: new Date() },
+      create: { merchantId, miniappLogoUrl: null },
+    });
+    return { miniappLogoUrl: null };
   }
 
   // Catalog — Categories

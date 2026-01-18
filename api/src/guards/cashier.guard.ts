@@ -211,7 +211,9 @@ export class CashierGuard implements CanActivate {
     );
     // whitelist публичных GET маршрутов (всегда разрешены): balance, settings, transactions, публичные списки
     const isPublicGet =
-      method === 'GET' && normalizedPath.startsWith('/loyalty/settings/');
+      method === 'GET' &&
+      (normalizedPath.startsWith('/loyalty/settings/') ||
+        normalizedPath.startsWith('/loyalty/miniapp-logo/'));
     const isAlwaysPublic =
       normalizedPath === '/loyalty/teleauth' ||
       normalizedPath === '/loyalty/cashier/activate' ||

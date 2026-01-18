@@ -9,6 +9,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  NotFoundException,
   Res,
   Req,
   UnauthorizedException,
@@ -2414,6 +2415,33 @@ export class LoyaltyController {
       referralEnabled,
       reviewsShare: share,
     } as any;
+  }
+
+  @Get('miniapp-logo/:merchantId/:assetId')
+  async getMiniappLogo(
+    @Param('merchantId') merchantId: string,
+    @Param('assetId') assetId: string,
+    @Res() res: Response,
+  ) {
+    const asset = await this.prisma.communicationAsset.findUnique({
+      where: { id: assetId },
+    });
+    if (!asset || asset.merchantId !== merchantId) {
+      throw new NotFoundException('Logo not found');
+    }
+    if (asset.kind !== 'MINIAPP_LOGO') {
+      throw new NotFoundException('Logo not found');
+    }
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Content-Type', asset.mimeType ?? 'application/octet-stream');
+    res.setHeader(
+      'Content-Length',
+      String(asset.byteSize ?? asset.data?.length ?? 0),
+    );
+    if (asset.fileName) {
+      res.setHeader('X-Filename', encodeURIComponent(asset.fileName));
+    }
+    res.send(asset.data);
   }
 
   @Post('promocodes/apply')

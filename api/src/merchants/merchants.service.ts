@@ -926,6 +926,12 @@ export class MerchantsService {
       }
     }
 
+    const miniappLogoProvided =
+      extras && Object.prototype.hasOwnProperty.call(extras, 'miniappLogoUrl');
+    const miniappLogoValue = miniappLogoProvided
+      ? (extras?.miniappLogoUrl ?? null)
+      : undefined;
+
     const updateData: Prisma.MerchantSettingsUpdateInput = {
       qrTtlSec: qrTtlSec ?? undefined,
       webhookUrl: normalizedWebhookUrl,
@@ -953,7 +959,7 @@ export class MerchantsService {
       miniappBaseUrl: extras?.miniappBaseUrl ?? undefined,
       miniappThemePrimary: extras?.miniappThemePrimary ?? undefined,
       miniappThemeBg: extras?.miniappThemeBg ?? undefined,
-      miniappLogoUrl: extras?.miniappLogoUrl ?? undefined,
+      miniappLogoUrl: miniappLogoValue,
       timezone: extras?.timezone ?? undefined,
     };
     if (earnBps !== undefined) {
@@ -987,7 +993,7 @@ export class MerchantsService {
       miniappBaseUrl: extras?.miniappBaseUrl ?? null,
       miniappThemePrimary: extras?.miniappThemePrimary ?? null,
       miniappThemeBg: extras?.miniappThemeBg ?? null,
-      miniappLogoUrl: extras?.miniappLogoUrl ?? null,
+      miniappLogoUrl: miniappLogoValue ?? null,
       timezone: extras?.timezone ?? undefined,
     };
     if (earnBps !== undefined) {
