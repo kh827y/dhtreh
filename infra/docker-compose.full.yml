@@ -14,7 +14,9 @@ services:
     ports: ["6379:6379"]
 
   api:
-    build: ../api
+    build:
+      context: ..
+      dockerfile: api/Dockerfile
     depends_on: [postgres, redis]
     environment:
       DATABASE_URL: postgresql://loyalty:loyalty@postgres:5432/loyalty
@@ -27,7 +29,9 @@ services:
     ports: ["3000:3000"]
 
   api-workers:
-    build: ../api
+    build:
+      context: ..
+      dockerfile: api/Dockerfile
     depends_on: [postgres, redis]
     environment:
       DATABASE_URL: postgresql://loyalty:loyalty@postgres:5432/loyalty
@@ -39,7 +43,9 @@ services:
       NO_HTTP: "1"
 
   admin:
-    build: ../admin
+    build:
+      context: ..
+      dockerfile: admin/Dockerfile
     depends_on: [api]
     environment:
       API_BASE: http://api:3000
@@ -49,7 +55,9 @@ services:
     ports: ["3001:3001"]
 
   miniapp:
-    build: ../miniapp
+    build:
+      context: ..
+      dockerfile: miniapp/Dockerfile
     depends_on: [api]
     environment:
       NEXT_PUBLIC_API_BASE: http://api:3000

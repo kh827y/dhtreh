@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import TimezoneProvider from "../components/TimezoneProvider";
+import TimezoneProvider from "../src/components/TimezoneProvider";
 
 const originalFetch = global.fetch;
 
@@ -73,7 +73,7 @@ describe("system settings page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: SettingsSystemPage } = await import("../app/settings/system/page");
+    const { default: SettingsSystemPage } = await import("../src/app/settings/system/page");
     render(
       React.createElement(
         TimezoneProvider,

@@ -85,7 +85,7 @@ describe("referral program settings page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: ReferralProgramPage } = await import("../app/referrals/program/page");
+    const { default: ReferralProgramPage } = await import("../src/app/referrals/program/page");
     render(React.createElement(ReferralProgramPage));
 
     const rewardInput = (await screen.findByDisplayValue("777")) as HTMLInputElement;
@@ -146,7 +146,7 @@ describe("referral program settings page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: ReferralProgramPage } = await import("../app/referrals/program/page");
+    const { default: ReferralProgramPage } = await import("../src/app/referrals/program/page");
     render(React.createElement(ReferralProgramPage));
 
     await screen.findByText("У вас отключены баллы за регистрацию");
@@ -192,7 +192,7 @@ describe("referral program settings page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: ReferralProgramPage } = await import("../app/referrals/program/page");
+    const { default: ReferralProgramPage } = await import("../src/app/referrals/program/page");
     render(React.createElement(ReferralProgramPage));
 
     await screen.findByText("Прямое приглашение");

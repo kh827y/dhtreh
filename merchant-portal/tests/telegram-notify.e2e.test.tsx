@@ -61,7 +61,7 @@ describe("telegram notifications page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: TelegramSettingsPage } = await import("../app/settings/telegram/page");
+    const { default: TelegramSettingsPage } = await import("../src/app/settings/telegram/page");
     render(React.createElement(TelegramSettingsPage));
 
     await screen.findByText("Уведомления в Telegram");

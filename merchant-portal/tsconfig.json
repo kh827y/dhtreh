@@ -11,6 +11,14 @@
       "react-dom"
     ],
     "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ],
+      "lib/*": [
+        "./src/lib/*"
+      ]
+    },
     "lib": [
       "dom",
       "dom.iterable",
@@ -33,6 +41,7 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
+    ".next",
     "node_modules",
     "tests",
     "**/*.test.ts",

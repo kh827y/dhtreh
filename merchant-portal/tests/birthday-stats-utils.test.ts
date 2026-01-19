@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { formatBucketLabel, groupRevenue, groupTimeline } from "../app/loyalty/mechanics/birthday/stats-utils";
+import { formatBucketLabel, groupRevenue, groupTimeline } from "../src/app/loyalty/mechanics/birthday/stats-utils";
 
 describe("birthday stats utils", () => {
   it("aggregates timeline by weeks with sorting", () => {

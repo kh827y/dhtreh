@@ -121,13 +121,6 @@ type RawSessionPayload = {
   rememberPin?: unknown;
 };
 
-type CustomerOverview = {
-  customerId: string | null;
-  name: string | null;
-  levelName: string | null;
-  balance: number | null;
-};
-
 type LeaderboardEntry = {
   staffId: string;
   staffName: string;
@@ -309,21 +302,6 @@ const qrKeyFromToken = (token: string): string | null => {
   return null;
 };
 
-const formatDateTime = (value: string) => {
-  try {
-    const date = new Date(value);
-    return new Intl.DateTimeFormat('ru-RU', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(date);
-  } catch {
-    return value;
-  }
-};
-
 const formatDate = (value: Date) =>
   new Intl.DateTimeFormat('ru-RU', {
     day: 'numeric',
@@ -331,15 +309,6 @@ const formatDate = (value: Date) =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(value);
-
-const formatCurrency = (value: number | null | undefined) => {
-  if (value == null || Number.isNaN(value)) return '0 ₽';
-  return new Intl.NumberFormat('ru-RU', {
-    style: 'currency',
-    currency: 'RUB',
-    maximumFractionDigits: 0,
-  }).format(value);
-};
 
 const formatPoints = (value: number | null | undefined) => {
   if (value == null || Number.isNaN(value)) return '0';
@@ -600,16 +569,16 @@ export default function Page() {
   const [txType, setTxType] = useState<TxMode>('accrue');
 
   const [userToken, setUserToken] = useState('');
-  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [, setCustomerId] = useState<string | null>(null);
   const [orderId, setOrderId] = useState('');
   const [holdId, setHoldId] = useState<string | null>(null);
-  const [result, setResult] = useState<QuoteRedeemResp | QuoteEarnResp | null>(null);
+  const [, setResult] = useState<QuoteRedeemResp | QuoteEarnResp | null>(null);
   const [actionError, setActionError] = useState('');
   const [searchBusy, setSearchBusy] = useState(false);
 
   const [historyRaw, setHistoryRaw] = useState<Txn[]>([]);
-  const [histBusy, setHistBusy] = useState(false);
-  const [histNextBefore, setHistNextBefore] = useState<string | null>(null);
+  const histBusyRef = useRef(false);
+  const histNextBeforeRef = useRef<string | null>(null);
 
   const [historySearch, setHistorySearch] = useState('');
   const [filterDate, setFilterDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -623,8 +592,8 @@ export default function Page() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
-  const [leaderboardError, setLeaderboardError] = useState('');
+  const [, setLeaderboardLoading] = useState(false);
+  const [, setLeaderboardError] = useState('');
   const [motivationInfo, setMotivationInfo] = useState<{
     enabled: boolean;
     periodLabel: string;
@@ -1328,37 +1297,40 @@ export default function Page() {
     setMobileMode('success');
   };
 
-  const loadHistory = async (reset = false) => {
-    if (histBusy) return;
+  const loadHistory = useCallback(async (reset = false) => {
+    if (histBusyRef.current) return;
     const activeMerchantId = session?.merchantId || merchantId;
     const outletId = session?.outlet?.id || null;
     if (!activeMerchantId || !outletId) return;
-    setHistBusy(true);
+    histBusyRef.current = true;
     try {
       const url = buildApiUrl('/loyalty/cashier/outlet-transactions');
       url.searchParams.set('merchantId', activeMerchantId);
       url.searchParams.set('outletId', outletId);
       url.searchParams.set('limit', '50');
-      if (!reset && histNextBefore) url.searchParams.set('before', histNextBefore);
+      if (!reset && histNextBeforeRef.current) {
+        url.searchParams.set('before', histNextBeforeRef.current);
+      }
       const r = await fetch(url.toString(), { credentials: 'include' });
       if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось загрузить историю'));
       const data = await r.json();
       const items: Txn[] = Array.isArray(data.items) ? data.items : [];
       setHistoryRaw((old) => (reset ? items : [...old, ...items]));
-      setHistNextBefore(typeof data.nextBefore === 'string' ? data.nextBefore : null);
+      histNextBeforeRef.current =
+        typeof data.nextBefore === 'string' ? data.nextBefore : null;
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       setActionError(humanizeQuoteError(message));
     } finally {
-      setHistBusy(false);
+      histBusyRef.current = false;
     }
-  };
+  }, [merchantId, session?.merchantId, session?.outlet?.id]);
 
   useEffect(() => {
     setHistoryRaw([]);
-    setHistNextBefore(null);
-    if (session?.outlet?.id) void loadHistory(true);
-  }, [session?.outlet?.id, session?.merchantId]);
+    histNextBeforeRef.current = null;
+    void loadHistory(true);
+  }, [loadHistory]);
 
   const loadLeaderboard = useCallback(async () => {
     if (!session) {
@@ -3274,7 +3246,21 @@ export default function Page() {
     </div>
   );
 
-  const DialerNumpad = ({ onInput, onConfirm, confirmLabel, disabled = false, showConfirm = true }: any) => {
+  type DialerNumpadProps = {
+    onInput: (value: string) => void;
+    onConfirm: () => void;
+    confirmLabel: string;
+    disabled?: boolean;
+    showConfirm?: boolean;
+  };
+
+  const DialerNumpad = ({
+    onInput,
+    onConfirm,
+    confirmLabel,
+    disabled = false,
+    showConfirm = true,
+  }: DialerNumpadProps) => {
     const handlePress = (key: string) => (event: React.PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
       onInput(key);

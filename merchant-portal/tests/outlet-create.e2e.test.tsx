@@ -49,7 +49,7 @@ describe("outlet create page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: CreateOutletPage } = await import("../app/outlets/new/page");
+    const { default: CreateOutletPage } = await import("../src/app/outlets/new/page");
     renderWithRouter(React.createElement(CreateOutletPage));
 
     fireEvent.change(screen.getByPlaceholderText("Например: Магазин на Ленина"), { target: { value: "Флагман" } });
@@ -69,7 +69,7 @@ describe("outlet create page (new design)", () => {
       throw new Error("Unexpected fetch");
     });
 
-    const { default: CreateOutletPage } = await import("../app/outlets/new/page");
+    const { default: CreateOutletPage } = await import("../src/app/outlets/new/page");
     renderWithRouter(React.createElement(CreateOutletPage));
 
     fireEvent.change(screen.getByPlaceholderText("Например: Магазин на Ленина"), { target: { value: "Флагман" } });

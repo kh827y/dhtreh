@@ -9,7 +9,7 @@ import {
   hasTimelineData,
   normalizeTimeline,
   type ReferralTimelinePoint,
-} from "../app/analytics/referrals/utils";
+} from "../src/app/analytics/referrals/utils";
 
 describe("referral analytics utils", () => {
   it("normalizes and sorts timeline points", () => {

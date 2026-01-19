@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import TimezoneProvider from "../components/TimezoneProvider";
+import TimezoneProvider from "../src/components/TimezoneProvider";
 
 const originalFetch = global.fetch;
 const originalFileReader = (global as any).FileReader;
@@ -103,7 +103,7 @@ describe("telegram newsletters page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: TelegramPage } = await import("../app/loyalty/telegram/page");
+    const { default: TelegramPage } = await import("../src/app/loyalty/telegram/page");
     render(
       React.createElement(TimezoneProvider, { timezone, options: [timezone] }, React.createElement(TelegramPage)),
     );
@@ -178,7 +178,7 @@ describe("telegram newsletters page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: TelegramPage } = await import("../app/loyalty/telegram/page");
+    const { default: TelegramPage } = await import("../src/app/loyalty/telegram/page");
     render(
       React.createElement(TimezoneProvider, { timezone, options: [timezone] }, React.createElement(TelegramPage)),
     );
@@ -280,7 +280,7 @@ describe("telegram newsletters page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: TelegramPage } = await import("../app/loyalty/telegram/page");
+    const { default: TelegramPage } = await import("../src/app/loyalty/telegram/page");
     render(
       React.createElement(TimezoneProvider, { timezone, options: [timezone] }, React.createElement(TelegramPage)),
     );

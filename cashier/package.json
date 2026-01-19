@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3002 --turbopack",
-    "build": "next build --turbopack",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "node --test --test-concurrency=1 --import tsx --import ./tests/test-setup.ts \"tests/**/*.{test.ts,test.tsx}\""

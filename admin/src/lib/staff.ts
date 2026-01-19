@@ -1,0 +1,39 @@
+const BASE = '/api/admin';
+
+async function http<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = String(init?.method || 'GET').toUpperCase();
+  const extraHeaders = init?.headers
+    ? Object.fromEntries(new Headers(init.headers).entries())
+    : {};
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...extraHeaders,
+  };
+  if (method !== 'GET' && method !== 'HEAD' && !('x-admin-action' in headers)) {
+    headers['x-admin-action'] = 'ui';
+  }
+  const res = await fetch(BASE + path, { ...init, headers });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json() as T;
+}
+
+export type Staff = { id: string; merchantId: string; login?: string | null; email?: string | null; role: string; status: string; allowedOutletId?: string | null; apiKeyHash?: string | null; createdAt: string };
+
+export async function listStaff(merchantId: string): Promise<Staff[]> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/staff`);
+}
+export async function createStaff(merchantId: string, dto: { login?: string; email?: string; role?: string }): Promise<Staff> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/staff`, { method: 'POST', body: JSON.stringify(dto) });
+}
+export async function updateStaff(merchantId: string, staffId: string, dto: { login?: string; email?: string; role?: string; status?: string; allowedOutletId?: string }): Promise<Staff> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/staff/${encodeURIComponent(staffId)}`, { method: 'PUT', body: JSON.stringify(dto) });
+}
+export async function deleteStaff(merchantId: string, staffId: string): Promise<{ ok: boolean }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/staff/${encodeURIComponent(staffId)}`, { method: 'DELETE' });
+}
+export async function issueStaffToken(merchantId: string, staffId: string): Promise<{ token: string }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/staff/${encodeURIComponent(staffId)}/token`, { method: 'POST' });
+}
+export async function revokeStaffToken(merchantId: string, staffId: string): Promise<{ ok: boolean }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/staff/${encodeURIComponent(staffId)}/token`, { method: 'DELETE' });
+}

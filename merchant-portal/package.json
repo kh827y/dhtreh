@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3004 --turbopack",
-    "build": "next build --turbopack",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "node --test --test-concurrency=1 --import tsx --import ./tests/test-setup.ts \"tests/**/*.{test.ts,test.tsx}\""
@@ -20,6 +20,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@testing-library/react": "^16.2.0",
+    "@eslint/eslintrc": "^3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

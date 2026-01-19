@@ -42,7 +42,7 @@ describe("expiration reminder page (new design)", () => {
   });
 
   it("вставляет плейсхолдеры и сохраняет", async () => {
-    const { default: ExpirationReminderPage } = await import("../app/loyalty/mechanics/ttl/page");
+    const { default: ExpirationReminderPage } = await import("../src/app/loyalty/mechanics/ttl/page");
     render(React.createElement(ExpirationReminderPage));
 
     await screen.findByText("Напоминание о сгорании");

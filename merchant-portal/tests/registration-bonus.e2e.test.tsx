@@ -47,7 +47,7 @@ describe("registration bonus page (new design)", () => {
   });
 
   it("загружает и сохраняет настройки регистрации", async () => {
-    const { default: RegistrationBonusPage } = await import("../app/loyalty/mechanics/registration-bonus/page");
+    const { default: RegistrationBonusPage } = await import("../src/app/loyalty/mechanics/registration-bonus/page");
     render(React.createElement(RegistrationBonusPage));
 
     await screen.findByText("Баллы за регистрацию");
@@ -66,7 +66,7 @@ describe("registration bonus page (new design)", () => {
   });
 
   it("валидирует пустой текст push", async () => {
-    const { default: RegistrationBonusPage } = await import("../app/loyalty/mechanics/registration-bonus/page");
+    const { default: RegistrationBonusPage } = await import("../src/app/loyalty/mechanics/registration-bonus/page");
     render(React.createElement(RegistrationBonusPage));
 
     await screen.findByText("Баллы за регистрацию");

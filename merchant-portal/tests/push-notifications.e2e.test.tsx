@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import TimezoneProvider from "../components/TimezoneProvider";
+import TimezoneProvider from "../src/components/TimezoneProvider";
 
 const originalFetch = global.fetch;
 
@@ -114,7 +114,7 @@ describe("push newsletters page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PushPage } = await import("../app/loyalty/push/page");
+    const { default: PushPage } = await import("../src/app/loyalty/push/page");
     render(
       React.createElement(TimezoneProvider, { timezone, options: [timezone] }, React.createElement(PushPage)),
     );
@@ -173,7 +173,7 @@ describe("push newsletters page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PushPage } = await import("../app/loyalty/push/page");
+    const { default: PushPage } = await import("../src/app/loyalty/push/page");
     render(
       React.createElement(TimezoneProvider, { timezone, options: [timezone] }, React.createElement(PushPage)),
     );
@@ -272,7 +272,7 @@ describe("push newsletters page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PushPage } = await import("../app/loyalty/push/page");
+    const { default: PushPage } = await import("../src/app/loyalty/push/page");
     render(
       React.createElement(TimezoneProvider, { timezone, options: [timezone] }, React.createElement(PushPage)),
     );

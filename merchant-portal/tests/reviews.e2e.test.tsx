@@ -93,7 +93,7 @@ describe("reviews page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: ReviewsPage } = await import("../app/reviews/page");
+    const { default: ReviewsPage } = await import("../src/app/reviews/page");
     render(React.createElement(ReviewsPage));
 
     await screen.findByText("Отзывы");
@@ -149,7 +149,7 @@ describe("reviews page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: ReviewsPage } = await import("../app/reviews/page");
+    const { default: ReviewsPage } = await import("../src/app/reviews/page");
     render(React.createElement(ReviewsPage));
 
     await screen.findByText("Отзывы");

@@ -3,6 +3,14 @@ import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
+type RecordedCall = { url: string; method: string; body: unknown };
+
+const toBodyRecord = (call: RecordedCall | undefined): Record<string, unknown> | null => {
+  if (!call || call.body == null) return null;
+  if (typeof call.body !== "object") return null;
+  return call.body as Record<string, unknown>;
+};
+
 const originalFetch = global.fetch;
 const restoreFetch = () => {
   (globalThis as unknown as { fetch: typeof fetch }).fetch = originalFetch;
@@ -23,7 +31,7 @@ describe("cashier checkout flow", () => {
   });
 
   it("оформляет начисление баллов и проводит операцию", async () => {
-    const calls: Array<{ url: string; method: string; body: any }> = [];
+    const calls: RecordedCall[] = [];
 
     fetchMock = mock.method(global, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -109,22 +117,24 @@ describe("cashier checkout flow", () => {
     await screen.findByText("Оплата прошла");
 
     const quoteCall = calls.find((call) => call.url.endsWith("/loyalty/quote"));
-    assert.ok(quoteCall);
-    assert.equal(quoteCall.body.mode, "earn");
-    assert.equal(quoteCall.body.total, 1000);
-    assert.equal(quoteCall.body.userToken, "token-123");
-    assert.equal(quoteCall.body.staffId, "S-1");
-    assert.equal(quoteCall.body.outletId, "O-1");
+    const quoteBody = toBodyRecord(quoteCall);
+    assert.ok(quoteBody);
+    assert.equal(quoteBody.mode, "earn");
+    assert.equal(quoteBody.total, 1000);
+    assert.equal(quoteBody.userToken, "token-123");
+    assert.equal(quoteBody.staffId, "S-1");
+    assert.equal(quoteBody.outletId, "O-1");
 
     const commitCall = calls.find((call) => call.url.endsWith("/loyalty/commit"));
-    assert.ok(commitCall);
-    assert.equal(commitCall.body.holdId, "H-1");
-    assert.equal(commitCall.body.staffId, "S-1");
-    assert.equal(commitCall.body.outletId, "O-1");
+    const commitBody = toBodyRecord(commitCall);
+    assert.ok(commitBody);
+    assert.equal(commitBody.holdId, "H-1");
+    assert.equal(commitBody.staffId, "S-1");
+    assert.equal(commitBody.outletId, "O-1");
   });
 
   it("передает сумму списания при расчете", async () => {
-    const calls: Array<{ url: string; method: string; body: any }> = [];
+    const calls: RecordedCall[] = [];
 
     fetchMock = mock.method(global, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -210,9 +220,10 @@ describe("cashier checkout flow", () => {
     await screen.findByText("Подтвердите операцию");
 
     const quoteCall = calls.find((call) => call.url.endsWith("/loyalty/quote"));
-    assert.ok(quoteCall);
-    assert.equal(quoteCall.body.mode, "redeem");
-    assert.equal(quoteCall.body.redeemAmount, 150);
+    const quoteBody = toBodyRecord(quoteCall);
+    assert.ok(quoteBody);
+    assert.equal(quoteBody.mode, "redeem");
+    assert.equal(quoteBody.redeemAmount, 150);
   });
 
   it("ограничивает списание по уровню клиента", async () => {
@@ -356,7 +367,7 @@ describe("cashier checkout flow", () => {
   });
 
   it("отменяет расчет при возврате с подтверждения", async () => {
-    const calls: Array<{ url: string; method: string; body: any }> = [];
+    const calls: RecordedCall[] = [];
 
     fetchMock = mock.method(global, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -440,8 +451,9 @@ describe("cashier checkout flow", () => {
 
     await waitFor(() => {
       const cancelCall = calls.find((call) => call.url.endsWith("/loyalty/cancel"));
-      assert.ok(cancelCall);
-      assert.equal(cancelCall?.body?.holdId, "H-1");
+      const cancelBody = toBodyRecord(cancelCall);
+      assert.ok(cancelBody);
+      assert.equal(cancelBody.holdId, "H-1");
     });
   });
 });

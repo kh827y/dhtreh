@@ -15,7 +15,10 @@
 - Установите Docker Desktop
 - Запустите PostgreSQL: `docker compose -f infra/docker-compose.yml up -d`
 
-2) API (сервер)
+2) Установка зависимостей
+- В корне репозитория: `pnpm i`
+
+3) API (сервер)
 - Перейдите в `api`
 - Скопируйте `.env` (пример):
   - `DATABASE_URL=postgresql://loyalty:loyalty@localhost:5432/loyalty`
@@ -25,12 +28,11 @@
   - `PORTAL_REFRESH_SECRET=change_me_portal_refresh`
   - `API_KEY=test-api-key`
   - `CORS_ORIGINS=http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004`
-- Установите зависимости: `pnpm i`
 - Примените миграции: `pnpm prisma migrate dev`
 - Заполните демо-данные: `pnpm seed` (создаст базовый план подписки)
 - Запустите: `pnpm start:dev` (http://localhost:3000)
 
-3) Admin (панель)
+4) Admin (панель)
 - Перейдите в `admin`
 - Создайте `.env.local` (пример):
   - `API_BASE=http://localhost:3000` (серверная переменная для прокси)
@@ -38,25 +40,25 @@
   - `ADMIN_SESSION_SECRET=change_me_admin_ui_cookie_secret`
   - `ADMIN_UI_PASSWORD=admin_password`
   - (опц.) `ADMIN_UI_TOTP_SECRET=base32secret`
-- `pnpm i` → `pnpm dev` (http://localhost:3001)
+- `pnpm dev` (http://localhost:3001)
 
-4) Merchant Portal
+5) Merchant Portal
 - Перейдите в `merchant-portal`
 - Создайте `.env.local` (пример):
   - `NEXT_PUBLIC_API_BASE=http://localhost:3000`
-- `pnpm i` → `pnpm dev` (http://localhost:3004)
+- `pnpm dev` (http://localhost:3004)
 
-5) Cashier (виртуальный терминал)
+6) Cashier (виртуальный терминал)
 - Перейдите в `cashier`
 - Создайте `.env.local` (пример):
   - `NEXT_PUBLIC_API_BASE=http://localhost:3000`
-- `pnpm i` → `pnpm dev` (http://localhost:3002)
+- `pnpm dev` (http://localhost:3002)
 
-6) Miniapp (Telegram мини‑аппа)
+7) Miniapp (Telegram мини‑аппа)
 - Перейдите в `miniapp`
 - `.env.local` (пример):
   - `NEXT_PUBLIC_API_BASE=http://localhost:3000`
-- `pnpm i` → `pnpm dev` (http://localhost:3003)
+- `pnpm dev` (http://localhost:3003)
 - TTL QR берётся из настроек мерчанта (`qrTtlSec`), по умолчанию 300 секунд.
 
 ## Проверка E2E (понятно и по шагам)

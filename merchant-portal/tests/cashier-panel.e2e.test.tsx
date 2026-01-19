@@ -128,7 +128,7 @@ describe("cashier panel page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: CashierPanelPage } = await import("../app/loyalty/cashier/page");
+    const { default: CashierPanelPage } = await import("../src/app/loyalty/cashier/page");
     render(React.createElement(CashierPanelPage));
 
     await screen.findByText("Панель кассира");

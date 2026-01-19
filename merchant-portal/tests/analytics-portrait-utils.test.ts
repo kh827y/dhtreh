@@ -8,7 +8,7 @@ import {
   GenderItem,
   AgeItem,
   SexAgeItem,
-} from "../app/analytics/portrait/utils";
+} from "../src/app/analytics/portrait/utils";
 
 const genderSample: GenderItem[] = [
   { sex: "M", customers: 10, transactions: 20, revenue: 2000, averageCheck: 0 },

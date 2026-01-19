@@ -52,7 +52,7 @@ describe("staff motivation page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: StaffMotivationPage } = await import("../app/loyalty/staff-motivation/page");
+    const { default: StaffMotivationPage } = await import("../src/app/loyalty/staff-motivation/page");
     render(React.createElement(StaffMotivationPage));
 
     await screen.findByText("Мотивация персонала");

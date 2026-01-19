@@ -5,7 +5,7 @@ import {
   getCombinationBadgeClass,
   parseRfmClass,
   sumCombinations,
-} from "../app/analytics/rfm/utils";
+} from "../src/app/analytics/rfm/utils";
 
 describe("rfm utils", () => {
   it("parses valid rfm classes", () => {

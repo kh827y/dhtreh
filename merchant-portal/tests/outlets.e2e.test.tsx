@@ -84,7 +84,7 @@ describe("outlets page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: OutletsPage } = await import("../app/outlets/page");
+    const { default: OutletsPage } = await import("../src/app/outlets/page");
     renderWithRouter(React.createElement(OutletsPage));
 
     await screen.findByText("Торговые точки");

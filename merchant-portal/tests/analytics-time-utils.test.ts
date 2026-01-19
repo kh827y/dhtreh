@@ -8,7 +8,7 @@ import {
   toHeatmapData,
   toHourOfDayData,
   toRecencyChartData,
-} from "../app/analytics/time/utils";
+} from "../src/app/analytics/time/utils";
 
 const sampleRecency: RecencyResponse = {
   group: "week",

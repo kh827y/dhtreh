@@ -23,7 +23,7 @@ describe("import customers page (new design)", () => {
   });
 
   it("рендерит инструкции и структуру файла", async () => {
-    const { default: ImportPage } = await import("../app/customers/import/page");
+    const { default: ImportPage } = await import("../src/app/customers/import/page");
     render(React.createElement(ImportPage));
 
     await screen.findByText("Импорт данных");
@@ -67,7 +67,7 @@ describe("import customers page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: ImportPage } = await import("../app/customers/import/page");
+    const { default: ImportPage } = await import("../src/app/customers/import/page");
     render(React.createElement(ImportPage));
 
     const fileInput = document.querySelector("input[type='file']") as HTMLInputElement | null;

@@ -13,7 +13,8 @@ const globalObject = globalThis as unknown as {
 globalObject.window = dom.window as unknown as Window;
 globalObject.self = dom.window as unknown as Window;
 globalObject.document = dom.window.document as unknown as Document;
-(globalThis as any).alert = () => {};
+const globalWithAlert = globalThis as typeof globalThis & { alert?: () => void };
+globalWithAlert.alert = () => {};
 Object.defineProperty(globalThis, "navigator", {
   value: dom.window.navigator,
   configurable: true,

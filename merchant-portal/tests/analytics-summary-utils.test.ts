@@ -9,7 +9,7 @@ import {
   formatNumber,
   formatPeriodLabel,
   hasTimelineData,
-} from "../app/analytics/summary-utils";
+} from "../src/app/analytics/summary-utils";
 
 describe("analytics summary utils", () => {
   it("форматирует числа и валюту", () => {

@@ -79,7 +79,7 @@ describe("products page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: ProductsPage } = await import("../app/products/page");
+    const { default: ProductsPage } = await import("../src/app/products/page");
     renderWithRouter(React.createElement(ProductsPage));
 
     await screen.findByText("Товары");
@@ -132,7 +132,7 @@ describe("products page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: ProductsPage } = await import("../app/products/page");
+    const { default: ProductsPage } = await import("../src/app/products/page");
     renderWithRouter(React.createElement(ProductsPage));
 
     await screen.findByText("Товары");

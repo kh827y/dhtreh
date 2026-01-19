@@ -73,7 +73,7 @@ describe("audiences page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: AudiencesPage } = await import("../app/audiences/page");
+    const { default: AudiencesPage } = await import("../src/app/audiences/page");
     renderWithRouter(React.createElement(AudiencesPage));
 
     await screen.findByText("Все клиенты");
@@ -141,7 +141,7 @@ describe("audiences page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: AudiencesPage } = await import("../app/audiences/page");
+    const { default: AudiencesPage } = await import("../src/app/audiences/page");
     renderWithRouter(React.createElement(AudiencesPage));
 
     await screen.findByText("Аудитории");
@@ -226,7 +226,7 @@ describe("audiences page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: AudiencesPage } = await import("../app/audiences/page");
+    const { default: AudiencesPage } = await import("../src/app/audiences/page");
     renderWithRouter(React.createElement(AudiencesPage));
 
     await screen.findByText("Аудитории");
@@ -304,7 +304,7 @@ describe("audiences page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: AudiencesPage } = await import("../app/audiences/page");
+    const { default: AudiencesPage } = await import("../src/app/audiences/page");
     renderWithRouter(React.createElement(AudiencesPage));
 
     await screen.findByText("VIP");
@@ -358,7 +358,7 @@ describe("audiences page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: AudiencesPage } = await import("../app/audiences/page");
+    const { default: AudiencesPage } = await import("../src/app/audiences/page");
     renderWithRouter(React.createElement(AudiencesPage));
 
     await screen.findByText("Любители кофе");

@@ -17,12 +17,14 @@ const eslintConfig = [
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
       "react-hooks/rules-of-hooks": "off",
       "@next/next/no-html-link-for-pages": "off",
       "@next/next/no-assign-module-variable": "off",
+      "prefer-const": "warn",
+      "react/no-unescaped-entities": "warn",
     },
   },
 ];
 
 export default eslintConfig;
-

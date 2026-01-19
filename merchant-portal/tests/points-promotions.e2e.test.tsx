@@ -53,7 +53,7 @@ describe("points promotions page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PointsPromotionsPage } = await import("../app/loyalty/actions-earn/page");
+    const { default: PointsPromotionsPage } = await import("../src/app/loyalty/actions-earn/page");
     render(React.createElement(PointsPromotionsPage));
 
     await screen.findByText("Акции с начислением баллов");
@@ -97,7 +97,7 @@ describe("points promotions page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PointsPromotionsPage } = await import("../app/loyalty/actions-earn/page");
+    const { default: PointsPromotionsPage } = await import("../src/app/loyalty/actions-earn/page");
     render(React.createElement(PointsPromotionsPage));
 
     await screen.findByText("Акции с начислением баллов");
@@ -145,7 +145,7 @@ describe("points promotions page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PointsPromotionsPage } = await import("../app/loyalty/actions-earn/page");
+    const { default: PointsPromotionsPage } = await import("../src/app/loyalty/actions-earn/page");
     render(React.createElement(PointsPromotionsPage));
 
     await screen.findByText("Акции с начислением баллов");
@@ -203,7 +203,7 @@ describe("points promotions page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PointsPromotionsPage } = await import("../app/loyalty/actions-earn/page");
+    const { default: PointsPromotionsPage } = await import("../src/app/loyalty/actions-earn/page");
     render(React.createElement(PointsPromotionsPage));
 
     await screen.findByText("Приветственные 500 бонусов");

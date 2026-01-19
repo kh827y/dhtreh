@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../src/app.module';
-import { AnalyticsAggregatorWorker } from '../src/analytics/analytics-aggregator.worker';
+import { AppModule } from '../src/app/app.module';
+import { AnalyticsAggregatorWorker } from '../src/modules/analytics/analytics-aggregator.worker';
 
 async function main() {
   const app = await NestFactory.createApplicationContext(AppModule);

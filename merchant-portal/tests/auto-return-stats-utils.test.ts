@@ -5,7 +5,7 @@ import {
   groupAttemptsTimeline,
   groupRevenueTimeline,
   groupRfmReturnsTimeline,
-} from "../app/loyalty/mechanics/auto-return/stats-utils";
+} from "../src/app/loyalty/mechanics/auto-return/stats-utils";
 
 describe("auto-return stats utils", () => {
   it("groups attempts by weeks", () => {

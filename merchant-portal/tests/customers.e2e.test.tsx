@@ -89,7 +89,7 @@ describe("customers page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: CustomersPage } = await import("../app/customers/page");
+    const { default: CustomersPage } = await import("../src/app/customers/page");
     renderWithRouter(React.createElement(CustomersPage));
 
     await screen.findByText("Клиенты");

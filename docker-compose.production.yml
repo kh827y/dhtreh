@@ -38,8 +38,8 @@ services:
   # API сервер
   api:
     build:
-      context: ./api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api/Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -84,6 +84,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const req=require('http').get('http://localhost:3000/healthz',res=>process.exit(res.statusCode===200?0:1));req.on('error',()=>process.exit(1));\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - loyalty_network
     labels:
@@ -105,8 +111,8 @@ services:
   # Worker для фоновых задач
   worker:
     build:
-      context: ./api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api/Dockerfile
     restart: unless-stopped
     command: npm run start:worker
     environment:
@@ -165,8 +171,8 @@ services:
   # Admin панель
   admin:
     build:
-      context: ./admin
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: admin/Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -176,6 +182,12 @@ services:
       ADMIN_UI_PASSWORD: ${ADMIN_UI_PASSWORD}
     depends_on:
       - api
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const req=require('http').get('http://localhost:3001/',res=>process.exit(res.statusCode<500?0:1));req.on('error',()=>process.exit(1));\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - loyalty_network
     labels:
@@ -198,6 +210,12 @@ services:
       NEXT_PUBLIC_API_BASE: https://api.${DOMAIN}
     depends_on:
       - api
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const req=require('http').get('http://localhost:3000/',res=>process.exit(res.statusCode<500?0:1));req.on('error',()=>process.exit(1));\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - loyalty_network
     labels:
@@ -210,14 +228,20 @@ services:
   # Cashier виртуальный терминал
   cashier:
     build:
-      context: ./cashier
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: cashier/Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE: https://api.${DOMAIN}
     networks:
       - loyalty_network
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const req=require('http').get('http://localhost:3000/',res=>process.exit(res.statusCode<500?0:1));req.on('error',()=>process.exit(1));\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.cashier.rule=Host(`cashier.${DOMAIN}`)"
@@ -228,14 +252,20 @@ services:
   # Miniapp для Telegram
   miniapp:
     build:
-      context: ./miniapp
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: miniapp/Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE: https://api.${DOMAIN}
     networks:
       - loyalty_network
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const req=require('http').get('http://localhost:3003/',res=>process.exit(res.statusCode<500?0:1));req.on('error',()=>process.exit(1));\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.miniapp.rule=Host(`app.${DOMAIN}`)"

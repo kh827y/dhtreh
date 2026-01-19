@@ -83,7 +83,7 @@ describe("categories page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: CategoriesPage } = await import("../app/categories/page");
+    const { default: CategoriesPage } = await import("../src/app/categories/page");
     renderWithRouter(React.createElement(CategoriesPage));
 
     await screen.findByText("Категории товаров");

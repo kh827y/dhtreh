@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import React from "react";
 import { render, screen, cleanup } from "@testing-library/react";
-import type { DashboardResponse } from "../app/analytics/summary-utils";
+import type { DashboardResponse } from "../src/app/analytics/summary-utils";
 
 const originalFetch = global.fetch;
 
@@ -80,7 +80,7 @@ describe("analytics dashboard e2e", () => {
   });
 
   it("отображает ключевые KPI и retention", async () => {
-    const { default: AnalyticsDashboardPage } = await import("../app/analytics/page");
+    const { default: AnalyticsDashboardPage } = await import("../src/app/analytics/page");
     render(React.createElement(AnalyticsDashboardPage));
 
     await screen.findByText("Сводный отчет");

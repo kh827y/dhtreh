@@ -4,7 +4,7 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages
 COPY merchant-portal ./merchant-portal
-RUN pnpm i --frozen-lockfile=false
+RUN pnpm i --frozen-lockfile=false --filter merchant-portal...
 RUN pnpm --filter merchant-portal build
 
 FROM node:20-slim

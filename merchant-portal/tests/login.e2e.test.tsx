@@ -28,7 +28,7 @@ describe("login page", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PortalLoginPage } = await import("../app/login/page");
+    const { default: PortalLoginPage } = await import("../src/app/login/page");
     render(
       React.createElement(
         SearchParamsContext.Provider,
@@ -61,7 +61,7 @@ describe("login page", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PortalLoginPage } = await import("../app/login/page");
+    const { default: PortalLoginPage } = await import("../src/app/login/page");
     render(
       React.createElement(
         SearchParamsContext.Provider,

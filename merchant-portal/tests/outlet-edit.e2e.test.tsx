@@ -69,7 +69,7 @@ describe("outlet edit page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: EditOutletPage } = await import("../app/outlets/[id]/page");
+    const { default: EditOutletPage } = await import("../src/app/outlets/[id]/page");
     renderWithRouter(React.createElement(EditOutletPage), { id: "o1" });
 
     await screen.findByText("Редактирование точки");
@@ -113,7 +113,7 @@ describe("outlet edit page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: EditOutletPage } = await import("../app/outlets/[id]/page");
+    const { default: EditOutletPage } = await import("../src/app/outlets/[id]/page");
     renderWithRouter(React.createElement(EditOutletPage), { id: "o1" });
 
     await screen.findByText("Редактирование точки");

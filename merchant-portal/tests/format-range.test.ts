@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { formatRangeLabel } from "../lib/format-range";
+import { formatRangeLabel } from "../src/lib/format-range";
 
 describe("formatRangeLabel", () => {
   it("formats day buckets without неразрывные пробелы", () => {

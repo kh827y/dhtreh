@@ -44,7 +44,7 @@ describe("antifraud page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: AntifraudPage } = await import("../app/loyalty/antifraud/page");
+    const { default: AntifraudPage } = await import("../src/app/loyalty/antifraud/page");
     render(React.createElement(AntifraudPage));
 
     await screen.findByText("Защита от мошенничества");

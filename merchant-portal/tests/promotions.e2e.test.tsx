@@ -56,7 +56,7 @@ describe("product promotions page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PromotionsPage } = await import("../app/loyalty/actions/page");
+    const { default: PromotionsPage } = await import("../src/app/loyalty/actions/page");
     render(React.createElement(PromotionsPage));
 
     await screen.findByText("Акции с товарами");
@@ -114,7 +114,7 @@ describe("product promotions page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PromotionsPage } = await import("../app/loyalty/actions/page");
+    const { default: PromotionsPage } = await import("../src/app/loyalty/actions/page");
     render(React.createElement(PromotionsPage));
 
     await screen.findByText("Акции с товарами");
@@ -181,7 +181,7 @@ describe("product promotions page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PromotionsPage } = await import("../app/loyalty/actions/page");
+    const { default: PromotionsPage } = await import("../src/app/loyalty/actions/page");
     render(React.createElement(PromotionsPage));
 
     await screen.findByText("Акции с товарами");
@@ -248,7 +248,7 @@ describe("product promotions page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PromotionsPage } = await import("../app/loyalty/actions/page");
+    const { default: PromotionsPage } = await import("../src/app/loyalty/actions/page");
     render(React.createElement(PromotionsPage));
 
     await screen.findByText("2+1 на кофе");

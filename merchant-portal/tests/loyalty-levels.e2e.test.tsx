@@ -59,7 +59,7 @@ describe("loyalty levels page (new design)", () => {
       });
     });
 
-    const { default: LevelsPage } = await import("../app/loyalty/mechanics/levels/page");
+    const { default: LevelsPage } = await import("../src/app/loyalty/mechanics/levels/page");
     render(React.createElement(LevelsPage));
 
     await screen.findByText("Base");
@@ -126,7 +126,7 @@ describe("loyalty levels page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: LevelsPage } = await import("../app/loyalty/mechanics/levels/page");
+    const { default: LevelsPage } = await import("../src/app/loyalty/mechanics/levels/page");
     render(React.createElement(LevelsPage));
 
     await screen.findByText("Base");
@@ -238,7 +238,7 @@ describe("loyalty levels page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: LevelsPage } = await import("../app/loyalty/mechanics/levels/page");
+    const { default: LevelsPage } = await import("../src/app/loyalty/mechanics/levels/page");
     render(React.createElement(LevelsPage));
 
     const membersButton = await screen.findByRole("button", { name: "2" });

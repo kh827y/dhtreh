@@ -84,7 +84,7 @@ describe("promocodes page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PromocodesPage } = await import("../app/promocodes/page");
+    const { default: PromocodesPage } = await import("../src/app/promocodes/page");
     render(React.createElement(PromocodesPage));
 
     await screen.findByText("Промокоды");
@@ -120,7 +120,7 @@ describe("promocodes page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PromocodesPage } = await import("../app/promocodes/page");
+    const { default: PromocodesPage } = await import("../src/app/promocodes/page");
     render(React.createElement(PromocodesPage));
 
     await screen.findByText("WELCOME2024");
@@ -182,7 +182,7 @@ describe("promocodes page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PromocodesPage } = await import("../app/promocodes/page");
+    const { default: PromocodesPage } = await import("../src/app/promocodes/page");
     render(React.createElement(PromocodesPage));
 
     await screen.findByText("Промокоды");
@@ -285,7 +285,7 @@ describe("promocodes page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PromocodesPage } = await import("../app/promocodes/page");
+    const { default: PromocodesPage } = await import("../src/app/promocodes/page");
     render(React.createElement(PromocodesPage));
 
     await screen.findByText("WELCOME2024");
@@ -352,7 +352,7 @@ describe("promocodes page (new design)", () => {
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
-    const { default: PromocodesPage } = await import("../app/promocodes/page");
+    const { default: PromocodesPage } = await import("../src/app/promocodes/page");
     render(React.createElement(PromocodesPage));
 
     await screen.findByText("WELCOME2024");
@@ -424,7 +424,7 @@ describe("promocodes page (new design)", () => {
 
     (globalThis as any).confirm = () => true;
 
-    const { default: PromocodesPage } = await import("../app/promocodes/page");
+    const { default: PromocodesPage } = await import("../src/app/promocodes/page");
     render(React.createElement(PromocodesPage));
 
     await screen.findByText("Промокоды");

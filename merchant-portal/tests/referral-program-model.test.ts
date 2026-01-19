@@ -7,7 +7,7 @@ import {
   mapReferralProgramApiToForm,
   validateReferralProgramForm,
   type ReferralProgramFormState,
-} from "../app/referrals/program/referral-program-model";
+} from "../src/app/referrals/program/referral-program-model";
 
 describe("referral program model", () => {
   it("маппит API → форму и нормализует значения", () => {

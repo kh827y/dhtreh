@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { AppModule } from './app.module';
+import { AppModule } from './app/app.module';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -8,14 +8,42 @@ import pinoHttp from 'pino-http';
 import Ajv from 'ajv';
 import * as Sentry from '@sentry/node';
 import { HttpAdapterHost } from '@nestjs/core';
-import { SentryFilter } from './sentry.filter';
-import { HttpMetricsInterceptor } from './http-metrics.interceptor';
-import { MetricsService } from './metrics.service';
-import { AlertsService } from './alerts/alerts.service';
+import { SentryFilter } from './core/filters/sentry.filter';
+import { HttpMetricsInterceptor } from './core/interceptors/http-metrics.interceptor';
+import { MetricsService } from './core/metrics/metrics.service';
+import { AlertsService } from './modules/alerts/alerts.service';
 // OpenTelemetry (инициализация по флагу)
-import './otel';
+import './core/observability/otel';
 import { context as otelContext, trace as otelTrace } from '@opentelemetry/api';
-import { HttpErrorFilter } from './http-error.filter';
+import { HttpErrorFilter } from './core/filters/http-error.filter';
+
+type RequestLike = {
+  headers?: Record<string, string | string[] | undefined>;
+  body?: unknown;
+  requestId?: string;
+};
+
+type ExpressMiddleware = (req: unknown, res: unknown, next: () => void) => void;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function readString(
+  source: Record<string, unknown> | null,
+  key: string,
+): string | undefined {
+  const value = source?.[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getHeader(req: RequestLike, name: string): string | undefined {
+  const value = req.headers?.[name];
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value[0];
+  return undefined;
+}
 
 async function bootstrap() {
   // Fail-fast ENV validation (Ajv schema)
@@ -73,12 +101,11 @@ async function bootstrap() {
   const trustProxyRaw = String(process.env.TRUST_PROXY || '').trim();
   if (trustProxyRaw) {
     const normalized = trustProxyRaw.toLowerCase();
-    const trustProxy =
-      ['1', 'true', 'yes'].includes(normalized)
-        ? true
-        : ['0', 'false', 'no'].includes(normalized)
-          ? false
-          : trustProxyRaw;
+    const trustProxy = ['1', 'true', 'yes'].includes(normalized)
+      ? true
+      : ['0', 'false', 'no'].includes(normalized)
+        ? false
+        : trustProxyRaw;
     app.set('trust proxy', trustProxy);
   }
 
@@ -131,7 +158,9 @@ async function bootstrap() {
 
   // Безопасность и производительность
   app.use(helmet());
-  app.use(compression());
+  const compressionMiddleware =
+    compression as unknown as () => ExpressMiddleware;
+  app.use(compressionMiddleware());
 
   // JSON-логирование запросов
   app.use(
@@ -155,21 +184,19 @@ async function bootstrap() {
         censor: '[REDACTED]',
       },
       autoLogging: true,
-      customProps: (req) => {
+      customProps: (req: RequestLike) => {
+        const body = asRecord(req.body);
         const mId =
-          (req as any).body?.merchantId ||
-          req.headers['x-merchant-id'] ||
-          undefined;
-        const reqId =
-          (req as any).requestId || req.headers['x-request-id'] || undefined;
+          readString(body, 'merchantId') || getHeader(req, 'x-merchant-id');
+        const reqId = req.requestId || getHeader(req, 'x-request-id');
         try {
           const span = otelTrace.getSpan(otelContext.active());
           const sc = span?.spanContext();
           const traceId = sc?.traceId;
           const spanId = sc?.spanId;
-          return { requestId: reqId, merchantId: mId, traceId, spanId } as any;
+          return { requestId: reqId, merchantId: mId, traceId, spanId };
         } catch {
-          return { requestId: reqId, merchantId: mId } as any;
+          return { requestId: reqId, merchantId: mId };
         }
       },
     }),
@@ -224,4 +251,4 @@ async function bootstrap() {
   await app.listen(3000);
   console.log(`API on http://localhost:3000`);
 }
-bootstrap();
+void bootstrap();
