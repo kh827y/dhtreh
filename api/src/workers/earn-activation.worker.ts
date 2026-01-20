@@ -9,6 +9,7 @@ import { MetricsService } from '../core/metrics/metrics.service';
 import { LedgerAccount, TxnType, WalletType } from '@prisma/client';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../shared/pg-lock.util';
 import { AppConfigService } from '../core/config/app-config.service';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
 
 @Injectable()
 export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
@@ -30,11 +31,24 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
     const intervalMs =
       this.config.getNumber('EARN_ACTIVATION_INTERVAL_MS', 15 * 60 * 1000) ??
       15 * 60 * 1000; // каждые 15 минут
-    this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    this.timer = setInterval(
+      () =>
+        this.tick().catch((err) =>
+          logIgnoredError(err, 'EarnActivationWorker tick', this.logger),
+        ),
+      intervalMs,
+    );
     try {
       if (this.timer && typeof this.timer.unref === 'function')
         this.timer.unref();
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'EarnActivationWorker timer unref',
+        this.logger,
+        'debug',
+      );
+    }
     this.logger.log(`EarnActivationWorker started, interval=${intervalMs}ms`);
   }
 
@@ -204,7 +218,9 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
           });
           try {
             this.metrics.inc('loyalty_delayed_earn_activated_total');
-          } catch {}
+          } catch (err) {
+            logIgnoredError(err, 'EarnActivationWorker metrics', this.logger, 'debug');
+          }
         } catch (error: unknown) {
           const message =
             error && typeof error === 'object' && 'message' in error
@@ -244,7 +260,9 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
                 });
               }
             }
-          } catch {}
+          } catch (err) {
+            logIgnoredError(err, 'EarnActivationWorker mark failed', this.logger);
+          }
         }
       }
     } finally {

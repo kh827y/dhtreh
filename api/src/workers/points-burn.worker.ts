@@ -9,6 +9,7 @@ import { MetricsService } from '../core/metrics/metrics.service';
 import { TxnType, LedgerAccount, Prisma, WalletType } from '@prisma/client';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../shared/pg-lock.util';
 import { AppConfigService } from '../core/config/app-config.service';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
 
 @Injectable()
 export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
@@ -36,11 +37,24 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
     const intervalMs =
       this.config.getNumber('POINTS_TTL_BURN_INTERVAL_MS', 6 * 60 * 60 * 1000) ??
       6 * 60 * 60 * 1000;
-    this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    this.timer = setInterval(
+      () =>
+        this.tick().catch((err) =>
+          logIgnoredError(err, 'PointsBurnWorker tick', this.logger),
+        ),
+      intervalMs,
+    );
     try {
       if (this.timer && typeof this.timer.unref === 'function')
         this.timer.unref();
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'PointsBurnWorker timer unref',
+        this.logger,
+        'debug',
+      );
+    }
     this.logger.log(`PointsBurnWorker started, interval=${intervalMs}ms`);
     this.startedAt = new Date();
   }

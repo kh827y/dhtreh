@@ -1,6 +1,9 @@
 import { PromotionRewardType, PromotionStatus } from '@prisma/client';
 import { LoyaltyProgramService } from './loyalty-program.service';
 import { PromotionRulesService } from './services/promotion-rules.service';
+import { LoyaltyProgramPromotionsService } from './services/loyalty-program-promotions.service';
+import { LoyaltyProgramTiersService } from './services/loyalty-program-tiers.service';
+import { LoyaltyProgramOperationsService } from './services/loyalty-program-operations.service';
 import type { CommunicationsService } from '../communications/communications.service';
 import type { MetricsService } from '../../core/metrics/metrics.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
@@ -114,12 +117,23 @@ describe('LoyaltyProgramService — updatePromotion', () => {
       },
     };
 
-    const service = new LoyaltyProgramService(
+    const promotionRules = makePromotionRules(prisma);
+    const promotions = new LoyaltyProgramPromotionsService(
       asPrismaService(prisma),
       asMetricsService(metrics),
       asCommunicationsService({} as CommunicationsService),
-      makePromotionRules(prisma),
+      promotionRules,
     );
+    const tiers = new LoyaltyProgramTiersService(
+      asPrismaService(prisma),
+      asMetricsService(metrics),
+      promotionRules,
+    );
+    const operations = new LoyaltyProgramOperationsService(
+      asPrismaService(prisma),
+      asMetricsService(metrics),
+    );
+    const service = new LoyaltyProgramService(tiers, promotions, operations);
     await service.updatePromotion('m-1', 'promo-1', {
       name: 'Обновленная акция',
       segmentId: null,

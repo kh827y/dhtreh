@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { MetricsService } from '../../core/metrics/metrics.service';
 import { DEFAULT_LEVELS_PERIOD_DAYS } from '../loyalty/utils/levels.util';
+import { logEvent, safeMetric } from '../../shared/logging/event-log.util';
 
 export type PortalPromoCodePayload = {
   code: string;
@@ -53,9 +54,7 @@ export class PromoCodesService {
   ) {}
 
   private logEvent(event: string, payload: Record<string, unknown>) {
-    try {
-      this.logger.log(JSON.stringify({ event, ...payload }));
-    } catch {}
+    logEvent(this.logger, event, payload);
   }
 
   private incMetric(
@@ -63,9 +62,7 @@ export class PromoCodesService {
     labels?: Record<string, string>,
     value?: number,
   ) {
-    try {
-      this.metrics.inc(name, labels, value);
-    } catch {}
+    safeMetric(this.metrics, name, labels, value, this.logger);
   }
 
   private logListEvent(merchantId: string, status: string, total: number) {

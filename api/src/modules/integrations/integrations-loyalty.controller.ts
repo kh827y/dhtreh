@@ -16,6 +16,7 @@ import {
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../core/cache/lookup-cache.service';
 import { LoyaltyService } from '../loyalty/services/loyalty.service';
+import { AppConfigService } from '../../core/config/app-config.service';
 import { IntegrationApiKeyGuard } from './integration-api-key.guard';
 import { ApiTags } from '@nestjs/swagger';
 import {
@@ -31,6 +32,7 @@ import {
   type VerifiedQr,
 } from '../loyalty/utils/token.util';
 import { normalizeDeviceCode } from '../../shared/devices/device.util';
+import { normalizePhoneE164 } from '../../shared/common/phone.util';
 
 type IntegrationRequest = Request & {
   integrationMerchantId?: string;
@@ -83,6 +85,8 @@ const readErrorMessage = (error: unknown): string => {
 @UseGuards(IntegrationApiKeyGuard)
 @ApiTags('integrations')
 export class IntegrationsLoyaltyController {
+  private readonly config = new AppConfigService();
+
   constructor(
     private readonly loyalty: LoyaltyService,
     private readonly prisma: PrismaService,
@@ -208,10 +212,10 @@ export class IntegrationsLoyaltyController {
 
   private async resolveFromToken(userToken: string) {
     if (looksLikeJwt(userToken)) {
-      const envSecret = process.env.QR_JWT_SECRET || '';
+      const envSecret = this.config.getQrJwtSecret() || '';
       if (
         !envSecret ||
-        (process.env.NODE_ENV === 'production' && envSecret === 'dev_change_me')
+        (this.config.isProduction() && envSecret === 'dev_change_me')
       ) {
         throw new BadRequestException('QR_JWT_SECRET not configured');
       }
@@ -275,13 +279,9 @@ export class IntegrationsLoyaltyController {
 
   private normalizePhoneStrict(phone?: string | null): string {
     if (!phone) throw new BadRequestException('phone required');
-    let cleaned = String(phone).replace(/\D/g, '');
-    if (cleaned.startsWith('8')) cleaned = '7' + cleaned.substring(1);
-    if (cleaned.length === 10 && !cleaned.startsWith('7')) {
-      cleaned = '7' + cleaned;
-    }
-    if (cleaned.length !== 11) throw new BadRequestException('invalid phone');
-    return '+' + cleaned;
+    const normalized = normalizePhoneE164(phone);
+    if (!normalized) throw new BadRequestException('invalid phone');
+    return normalized;
   }
 
   private async ensureCustomer(merchantId: string, customerId: string) {

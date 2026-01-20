@@ -127,10 +127,10 @@ export class LoyaltyTransactionsController extends LoyaltyControllerBase {
       throw new BadRequestException('customerId required');
     }
 
-    const envSecret = process.env.QR_JWT_SECRET || '';
+    const envSecret = this.config.getQrJwtSecret() || '';
     if (
       !envSecret ||
-      (process.env.NODE_ENV === 'production' && envSecret === 'dev_change_me')
+      (this.config.isProduction() && envSecret === 'dev_change_me')
     ) {
       throw new BadRequestException('QR_JWT_SECRET not configured');
     }
@@ -290,7 +290,7 @@ export class LoyaltyTransactionsController extends LoyaltyControllerBase {
             })
           : null;
       if (idemKey && merchantForIdem) {
-        const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
+        const ttlH = this.config.getIdempotencyTtlHours();
         const exp = new Date(Date.now() + ttlH * 3600 * 1000);
         const keyWhere = {
           merchantId: merchantForIdem,
@@ -596,7 +596,7 @@ export class LoyaltyTransactionsController extends LoyaltyControllerBase {
           })
         : null;
       if (idemKey) {
-        const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
+        const ttlH = this.config.getIdempotencyTtlHours();
         const exp = new Date(Date.now() + ttlH * 3600 * 1000);
         const keyWhere = { merchantId, scope, key: idemKey };
         const saved = await this.prisma.idempotencyKey.findUnique({

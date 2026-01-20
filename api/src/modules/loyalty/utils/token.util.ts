@@ -1,5 +1,7 @@
 import { createHmac, randomUUID } from 'crypto';
+import { AppConfigService } from '../../../core/config/app-config.service';
 const ENC = new TextEncoder();
+const config = new AppConfigService();
 
 type JwtPayload = {
   sub?: string;
@@ -38,7 +40,7 @@ type JoseModule = {
 
 export async function getJose(): Promise<JoseModule> {
   // В среде тестов используем лёгкий stub, чтобы не требовать ESM из jest
-  if (process.env.JEST_WORKER_ID) {
+  if (config.getString('JEST_WORKER_ID')) {
     const b64url = (buf: Buffer | string) => {
       const s = Buffer.isBuffer(buf)
         ? buf.toString('base64')
@@ -126,7 +128,7 @@ export async function signQrToken(
   const now = Math.floor(Date.now() / 1000);
   // Ensure JTI uniqueness to prevent accidental reuse within the same second
   const jti = `${customerId}:${now}:${randomUUID()}`;
-  const kid = process.env.QR_JWT_KID || undefined;
+  const kid = config.getQrJwtKid();
   return await new SignJWT({ sub: customerId, t: 'qr' })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT', ...(kid ? { kid } : {}) })
     .setIssuedAt(now)
@@ -159,7 +161,7 @@ export async function verifyQrToken(
   try {
     ({ payload } = await verifyWith(secret));
   } catch (e) {
-    const next = process.env.QR_JWT_SECRET_NEXT;
+    const next = config.getQrJwtSecretNext();
     if (!next) throw e;
     ({ payload } = await verifyWith(next));
   }

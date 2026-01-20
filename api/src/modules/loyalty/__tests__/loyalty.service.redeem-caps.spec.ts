@@ -96,8 +96,10 @@ const asStaffNotificationsService = (stub: TelegramStaffNotificationsService) =>
   stub as unknown as TelegramStaffNotificationsService;
 const asStaffMotivationEngine = (stub: StaffMotivationEngine) =>
   stub as unknown as StaffMotivationEngine;
+const getIntegrationService = (service: LoyaltyService) =>
+  (service as unknown as { integrationService: any }).integrationService;
 const asPrivateService = (service: LoyaltyService) =>
-  service as unknown as LoyaltyServicePrivate;
+  getIntegrationService(service) as LoyaltyServicePrivate;
 const getContext = (service: LoyaltyService) =>
   (service as unknown as { context: { ensureCustomerContext: MockFn } })
     .context;
@@ -185,12 +187,12 @@ describe('LoyaltyService redeem caps', () => {
         redeemPercent: 100,
       },
     ]);
-    jest.spyOn(service, 'balance').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'balance').mockResolvedValue({
       merchantId: 'm-1',
       customerId: 'c-1',
       balance: 1000,
     });
-    jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 0,
       redeemLimitBps: 10000,
       earnPercent: 0,
@@ -235,12 +237,12 @@ describe('LoyaltyService redeem caps', () => {
         redeemPercent: 50,
       },
     ]);
-    jest.spyOn(service, 'balance').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'balance').mockResolvedValue({
       merchantId: 'm-2',
       customerId: 'c-2',
       balance: 1000,
     });
-    jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 0,
       redeemLimitBps: 10000,
       earnPercent: 0,
@@ -285,12 +287,12 @@ describe('LoyaltyService redeem caps', () => {
         redeemPercent: 50,
       },
     ]);
-    jest.spyOn(service, 'balance').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'balance').mockResolvedValue({
       merchantId: 'm-3',
       customerId: 'c-3',
       balance: 1000,
     });
-    jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 0,
       redeemLimitBps: 2500,
       earnPercent: 0,
@@ -335,12 +337,12 @@ describe('LoyaltyService redeem caps', () => {
         redeemPercent: 50,
       },
     ]);
-    jest.spyOn(service, 'balance').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'balance').mockResolvedValue({
       merchantId: 'm-4',
       customerId: 'c-4',
       balance: 1000,
     });
-    jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 0,
       redeemLimitBps: 5000,
       earnPercent: 0,
@@ -401,12 +403,12 @@ describe('LoyaltyService redeem caps', () => {
         pointPromotions: [promoRule],
       },
     ]);
-    jest.spyOn(service, 'balance').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'balance').mockResolvedValue({
       merchantId: 'm-5',
       customerId: 'c-5',
       balance: 0,
     });
-    jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 1000,
       redeemLimitBps: 0,
       earnPercent: 10,
@@ -449,12 +451,12 @@ describe('LoyaltyService redeem caps', () => {
         pointPromotions: [promoRule],
       },
     ]);
-    jest.spyOn(service, 'balance').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'balance').mockResolvedValue({
       merchantId: 'm-7',
       customerId: 'c-7',
       balance: 0,
     });
-    jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 1000,
       redeemLimitBps: 0,
       earnPercent: 10,
@@ -517,12 +519,12 @@ describe('LoyaltyService redeem caps', () => {
     jest
       .spyOn(servicePrivate, 'filterPromotionsForCustomer')
       .mockResolvedValue([promo]);
-    jest.spyOn(service, 'balance').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'balance').mockResolvedValue({
       merchantId: 'm-8',
       customerId: 'c-8',
       balance: 0,
     });
-    jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 300,
       redeemLimitBps: 0,
       earnPercent: 3,
@@ -582,12 +584,12 @@ describe('LoyaltyService redeem caps', () => {
         redeemPercent: 100,
       },
     ]);
-    jest.spyOn(service, 'balance').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'balance').mockResolvedValue({
       merchantId: 'm-6',
       customerId: 'c-6',
       balance: 1000,
     });
-    jest.spyOn(service, 'getBaseRatesForCustomer').mockResolvedValue({
+    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
       earnBps: 500,
       redeemLimitBps: 10000,
       earnPercent: 5,

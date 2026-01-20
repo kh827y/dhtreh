@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../core/prisma/prisma.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../shared/pg-lock.util';
 import { AppConfigService } from '../core/config/app-config.service';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
 
 @Injectable()
 export class EventOutboxGcWorker implements OnModuleInit, OnModuleDestroy {
@@ -34,7 +35,14 @@ export class EventOutboxGcWorker implements OnModuleInit, OnModuleDestroy {
     try {
       if (this.timer && typeof this.timer.unref === 'function')
         this.timer.unref();
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'EventOutboxGcWorker timer unref',
+        this.logger,
+        'debug',
+      );
+    }
     this.logger.log(`EventOutboxGcWorker started, interval=${intervalMs}ms`);
   }
 

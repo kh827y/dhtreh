@@ -10,6 +10,9 @@ import { CommunicationsModule } from '../communications/communications.module';
 import { PortalGuard } from '../portal-auth/portal.guard';
 import { SubscriptionModule } from '../subscription/subscription.module';
 import { PromotionRulesService } from './services/promotion-rules.service';
+import { LoyaltyProgramPromotionsService } from './services/loyalty-program-promotions.service';
+import { LoyaltyProgramTiersService } from './services/loyalty-program-tiers.service';
+import { LoyaltyProgramOperationsService } from './services/loyalty-program-operations.service';
 
 @Module({
   imports: [
@@ -18,7 +21,14 @@ import { PromotionRulesService } from './services/promotion-rules.service';
     CommunicationsModule,
     SubscriptionModule,
   ],
-  providers: [LoyaltyProgramService, PromotionRulesService, PortalGuard],
+  providers: [
+    LoyaltyProgramService,
+    LoyaltyProgramPromotionsService,
+    LoyaltyProgramTiersService,
+    LoyaltyProgramOperationsService,
+    PromotionRulesService,
+    PortalGuard,
+  ],
   controllers: [
     PromotionsController,
     OperationsLogController,

@@ -11,6 +11,7 @@ import {
   WalletType,
 } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 import { LoyaltyService } from '../../loyalty/services/loyalty.service';
 import { planRevoke, planUnconsume } from '../../loyalty/utils/lots.util';
 
@@ -75,6 +76,8 @@ export interface OperationDetailsDto {
 
 @Injectable()
 export class OperationsLogService {
+  private readonly config = new AppConfigService();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly loyalty: LoyaltyService,
@@ -1127,7 +1130,7 @@ export class OperationsLogService {
         });
       }
 
-      if (process.env.EARN_LOTS_FEATURE === '1') {
+      if (this.config.isEarnLotsEnabled()) {
         if (delta > 0) {
           await this.unconsumeLots(
             tx,

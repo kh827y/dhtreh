@@ -15,6 +15,7 @@ import {
   type PortalPermissionState,
 } from '../../portal-auth/portal-permissions.util';
 import { PrismaService } from '../../../core/prisma/prisma.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 import { ensureRulesRoot } from '../../../shared/rules-json.util';
 
 type PortalRequest = {
@@ -28,6 +29,8 @@ const MAX_DELAY_DAYS = 3650;
 @UseGuards(PortalGuard)
 @Controller('portal/loyalty/redeem-limits')
 export class RedeemLimitsController {
+  private readonly config = new AppConfigService();
+
   constructor(private readonly prisma: PrismaService) {}
 
   private merchantId(req: PortalRequest) {
@@ -133,13 +136,13 @@ export class RedeemLimitsController {
     if (
       delayRequested &&
       earnDelayDays > 0 &&
-      process.env.EARN_LOTS_FEATURE !== '1'
+      !this.config.isEarnLotsEnabled()
     ) {
       throw new BadRequestException(
         'Отложенное начисление недоступно без поддержки лотов',
       );
     }
-    if (pointsTtlDays > 0 && process.env.EARN_LOTS_FEATURE !== '1') {
+    if (pointsTtlDays > 0 && !this.config.isEarnLotsEnabled()) {
       throw new BadRequestException(
         'Сгорание баллов недоступно без поддержки лотов',
       );

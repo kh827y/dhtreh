@@ -9,6 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubscriptionService } from '../../modules/subscription/subscription.service';
 import type { Plan } from '@prisma/client';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 type SubscriptionRequest = {
   portalMerchantId?: string;
@@ -66,7 +67,14 @@ export class SubscriptionGuard implements CanActivate {
             })
           : null;
         merchantId = hold?.merchantId;
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'SubscriptionGuard hold lookup',
+          undefined,
+          'debug',
+        );
+      }
     }
     if (!merchantId && this.readRequestField(req, 'merchantLogin')) {
       const merchantLogin = String(
@@ -81,7 +89,14 @@ export class SubscriptionGuard implements CanActivate {
             select: { id: true },
           });
           merchantId = merchant?.id;
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'SubscriptionGuard merchant lookup',
+            undefined,
+            'debug',
+          );
+        }
       }
     }
 

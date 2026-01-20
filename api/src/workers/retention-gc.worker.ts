@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../core/prisma/prisma.service';
 import { AppConfigService } from '../core/config/app-config.service';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../shared/pg-lock.util';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
 
 @Injectable()
 export class RetentionGcWorker implements OnModuleInit, OnModuleDestroy {
@@ -34,7 +35,14 @@ export class RetentionGcWorker implements OnModuleInit, OnModuleDestroy {
     try {
       if (this.timer && typeof this.timer.unref === 'function')
         this.timer.unref();
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'RetentionGcWorker timer unref',
+        this.logger,
+        'debug',
+      );
+    }
     this.logger.log(`RetentionGcWorker started, interval=${intervalMs}ms`);
   }
 

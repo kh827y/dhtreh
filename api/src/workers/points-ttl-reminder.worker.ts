@@ -11,6 +11,7 @@ import { PushService } from '../modules/notifications/push/push.service';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../shared/pg-lock.util';
 import { getRulesSection } from '../shared/rules-json.util';
 import { AppConfigService } from '../core/config/app-config.service';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
 
 type ReminderConfig = {
   merchantId: string;
@@ -89,7 +90,13 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
       rawInterval > 0
         ? Math.max(60_000, Math.floor(rawInterval))
         : 6 * 60 * 60 * 1000; // default 6h
-    this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    this.timer = setInterval(
+      () =>
+        this.tick().catch((err) =>
+          logIgnoredError(err, 'PointsTtlReminderWorker tick', this.logger),
+        ),
+      intervalMs,
+    );
     if (typeof this.timer.unref === 'function') this.timer.unref();
     this.startedAt = new Date();
     this.logger.log(
@@ -113,7 +120,14 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
           Math.floor(Date.now() / 1000),
           { worker: 'points_ttl_reminder' },
         );
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'PointsTtlReminderWorker metrics',
+          this.logger,
+          'debug',
+        );
+      }
       lock = await pgTryAdvisoryLock(this.prisma, 'worker:points_ttl_reminder');
       if (!lock.ok) return;
       const configs = await this.loadConfigs();
@@ -273,7 +287,14 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
           this.metrics.inc('loyalty_points_ttl_reminder_sent_total', {
             merchantId: config.merchantId,
           });
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'PointsTtlReminderWorker metrics',
+            this.logger,
+            'debug',
+          );
+        }
       } catch (error: unknown) {
         const message = this.formatErrorMessage(error);
         this.logger.error(
@@ -283,7 +304,14 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
           this.metrics.inc('loyalty_points_ttl_reminder_failed_total', {
             merchantId: config.merchantId,
           });
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'PointsTtlReminderWorker metrics',
+            this.logger,
+            'debug',
+          );
+        }
       }
     }
   }

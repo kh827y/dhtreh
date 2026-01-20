@@ -9,6 +9,8 @@ import { tap, catchError } from 'rxjs/operators';
 import { MetricsService } from '../metrics/metrics.service';
 import { AlertsService } from '../../modules/alerts/alerts.service';
 import { context as otelContext, trace as otelTrace } from '@opentelemetry/api';
+import { AppConfigService } from '../config/app-config.service';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 type HttpRequest = {
   method?: string;
@@ -29,6 +31,7 @@ export class HttpMetricsInterceptor implements NestInterceptor {
   constructor(
     private metrics: MetricsService,
     private alerts: AlertsService,
+    private readonly config: AppConfigService,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -47,20 +50,24 @@ export class HttpMetricsInterceptor implements NestInterceptor {
       const sc = span?.spanContext();
       if (sc?.traceId) res.setHeader('X-Trace-Id', sc.traceId);
       if (sc?.spanId) res.setHeader('X-Span-Id', sc.spanId);
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'HttpMetricsInterceptor trace headers', undefined, 'debug');
+    }
 
     const record = (status: number) => {
       try {
         const ended = process.hrtime.bigint();
         const seconds = Number(ended - started) / 1e9;
         this.metrics.recordHttp(method, route, status, seconds);
-      } catch {}
+      } catch (err) {
+        logIgnoredError(err, 'HttpMetricsInterceptor record', undefined, 'debug');
+      }
     };
 
     const maybeAlert = (status: number, err?: unknown) => {
       try {
         if (status >= 500) {
-          const rate = Number(process.env.ALERTS_5XX_SAMPLE_RATE || '0');
+          const rate = this.config.getAlerts5xxSampleRate();
           if (rate > 0 && Math.random() < rate) {
             const rid =
               req.requestId || this.getHeader(req, 'x-request-id') || '';
@@ -68,7 +75,14 @@ export class HttpMetricsInterceptor implements NestInterceptor {
             try {
               const span = otelTrace.getSpan(otelContext.active());
               traceId = span?.spanContext()?.traceId;
-            } catch {}
+            } catch (err) {
+              logIgnoredError(
+                err,
+                'HttpMetricsInterceptor trace id',
+                undefined,
+                'debug',
+              );
+            }
             const errorMessage = this.formatErrorMessage(err);
             const msg = [
               `status: ${status}`,
@@ -86,10 +100,19 @@ export class HttpMetricsInterceptor implements NestInterceptor {
                 throttleKey: `http5xx:${route}`,
                 throttleMinutes: 5,
               })
-              .catch(() => {});
+              .catch((err) =>
+                logIgnoredError(
+                  err,
+                  'HttpMetricsInterceptor alert',
+                  undefined,
+                  'debug',
+                ),
+              );
           }
         }
-      } catch {}
+      } catch (err) {
+        logIgnoredError(err, 'HttpMetricsInterceptor alert flow', undefined, 'debug');
+      }
     };
 
     return next.handle().pipe(
@@ -109,7 +132,9 @@ export class HttpMetricsInterceptor implements NestInterceptor {
           ) {
             status = (err as { getStatus: () => number }).getStatus();
           }
-        } catch {}
+        } catch (err) {
+          logIgnoredError(err, 'HttpMetricsInterceptor status', undefined, 'debug');
+        }
         record(status);
         maybeAlert(status, err);
         return throwError(() => err);

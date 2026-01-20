@@ -16,6 +16,8 @@ import { AlertsService } from './modules/alerts/alerts.service';
 import './core/observability/otel';
 import { context as otelContext, trace as otelTrace } from '@opentelemetry/api';
 import { HttpErrorFilter } from './core/filters/http-error.filter';
+import { AppConfigService } from './core/config/app-config.service';
+import { logIgnoredError } from './shared/logging/ignore-error.util';
 
 type RequestLike = {
   headers?: Record<string, string | string[] | undefined>;
@@ -49,6 +51,7 @@ function getHeader(req: RequestLike, name: string): string | undefined {
 
 async function bootstrap() {
   const logger = new Logger('bootstrap');
+  const config = new AppConfigService();
   // Fail-fast ENV validation (Ajv schema)
   (function validateEnv() {
     const ajv = new Ajv({
@@ -79,22 +82,16 @@ async function bootstrap() {
         .join('; ');
       throw new Error(`[ENV] Validation failed: ${errs}`);
     }
-    if (process.env.NODE_ENV === 'production') {
-      if (
-        !process.env.ADMIN_SESSION_SECRET ||
-        !String(process.env.ADMIN_SESSION_SECRET).trim()
-      ) {
+    if (config.isProduction()) {
+      if (!config.getAdminSessionSecret()) {
         throw new Error('[ENV] ADMIN_SESSION_SECRET not configured');
       }
-      const qr = process.env.QR_JWT_SECRET || '';
+      const qr = config.getQrJwtSecret();
       if (!qr || qr === 'dev_change_me')
         throw new Error(
           '[ENV] QR_JWT_SECRET must be set and not use dev default in production',
         );
-      const cors = (process.env.CORS_ORIGINS || '')
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
+      const cors = config.getCorsOrigins();
       if (cors.length === 0)
         throw new Error('[ENV] CORS_ORIGINS must be configured in production');
     }
@@ -102,7 +99,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.enableShutdownHooks();
 
-  const trustProxyRaw = String(process.env.TRUST_PROXY || '').trim();
+  const trustProxyRaw = String(config.getTrustProxy() || '').trim();
   if (trustProxyRaw) {
     const normalized = trustProxyRaw.toLowerCase();
     const trustProxy = ['1', 'true', 'yes'].includes(normalized)
@@ -114,13 +111,10 @@ async function bootstrap() {
   }
 
   // CORS из ENV (запятая-разделённый список); если не задан — дефолты для локалки
-  const corsOrigins = (process.env.CORS_ORIGINS || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const corsOrigins = config.getCorsOrigins();
 
   // In production, require explicit CORS_ORIGINS configuration
-  if (process.env.NODE_ENV === 'production' && corsOrigins.length === 0) {
+  if (config.isProduction() && corsOrigins.length === 0) {
     throw new Error('[ENV] CORS_ORIGINS must be configured in production');
   }
 
@@ -138,7 +132,7 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigins.length
       ? corsOrigins
-      : process.env.NODE_ENV === 'production'
+      : config.isProduction()
         ? []
         : defaultOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -167,13 +161,8 @@ async function bootstrap() {
   app.use(compressionMiddleware());
   app.disable('x-powered-by');
 
-  const logLevel =
-    process.env.LOG_LEVEL ||
-    (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
-  const logIgnorePaths = (process.env.LOG_HTTP_IGNORE_PATHS || '')
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  const logLevel = config.getLogLevel();
+  const logIgnorePaths = config.getLogHttpIgnorePaths();
   const autoLogging =
     logIgnorePaths.length > 0
       ? {
@@ -237,30 +226,39 @@ async function bootstrap() {
 
   // HTTP metrics interceptor (prom-client с лейблами) + 5xx alerts sampling
   app.useGlobalInterceptors(
-    new HttpMetricsInterceptor(app.get(MetricsService), app.get(AlertsService)),
+    new HttpMetricsInterceptor(
+      app.get(MetricsService),
+      app.get(AlertsService),
+      config,
+    ),
   );
 
   // Единый JSON-формат ошибок
   app.useGlobalFilters(new HttpErrorFilter());
 
   // Sentry (опц.)
-  if (process.env.SENTRY_DSN) {
+  const sentryDsn = config.getSentryDsn();
+  if (sentryDsn) {
     Sentry.init({
-      dsn: process.env.SENTRY_DSN,
-      tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE || '0.0'),
-      environment: process.env.NODE_ENV || 'development',
+      dsn: sentryDsn,
+      tracesSampleRate: config.getSentryTracesSampleRate(),
+      environment: config.getNodeEnv(),
     });
     const adapterHost = app.get(HttpAdapterHost);
-    app.useGlobalFilters(new SentryFilter(adapterHost));
+    app.useGlobalFilters(new SentryFilter(adapterHost, config));
     process.on('unhandledRejection', (reason) => {
       try {
         Sentry.captureException(reason);
-      } catch {}
+      } catch (err) {
+        logIgnoredError(err, 'main sentry rejection', logger, 'debug');
+      }
     });
     process.on('uncaughtException', (err) => {
       try {
         Sentry.captureException(err);
-      } catch {}
+      } catch (error) {
+        logIgnoredError(error, 'main sentry exception', logger, 'debug');
+      }
     });
   }
 
@@ -270,10 +268,12 @@ async function bootstrap() {
     try {
       const orig = req.originalUrl || req.url || '';
       req.url = String(orig).replace(/^\/api\/v1/, '') || '/';
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'main api alias', logger, 'debug');
+    }
     next();
   });
-  if (process.env.NO_HTTP === '1') {
+  if (config.getNoHttp()) {
     await app.init();
     logger.log('Workers-only mode: NO_HTTP=1 (HTTP server disabled)');
     return;

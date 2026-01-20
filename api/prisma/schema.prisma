@@ -1605,6 +1605,7 @@ model CommunicationTask {
   recipients CommunicationTaskRecipient[]
 
   @@index([merchantId, status])
+  @@index([merchantId, createdAt])
   @@index([channel])
   @@index([status, scheduledAt])
   @@index([status, createdAt])
@@ -1628,6 +1629,7 @@ model CommunicationTaskRecipient {
   customer Customer?         @relation(fields: [customerId], references: [id])
 
   @@index([taskId, status])
+  @@index([taskId, createdAt])
   @@index([merchantId, channel])
 }
 
@@ -1884,6 +1886,7 @@ model LoyaltyPromotion {
   transactionItems     TransactionItem[]
 
   @@index([merchantId, status])
+  @@index([merchantId, status, createdAt])
   @@index([segmentId])
   @@index([merchantId, archivedAt])
   @@map("loyalty_promotions")
@@ -1914,6 +1917,7 @@ model PromotionParticipant {
 
   @@unique([promotionId, customerId])
   @@index([merchantId, status])
+  @@index([merchantId, customerId, joinedAt])
 }
 
 model LoyaltyPromotionMetric {

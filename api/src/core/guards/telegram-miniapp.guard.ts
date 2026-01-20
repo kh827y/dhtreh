@@ -9,6 +9,7 @@ import {
   readTelegramInitDataFromHeader,
   resolveTelegramAuthContext,
 } from '../../modules/loyalty/utils/telegram-auth.helper';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 type TelegramMiniappRequest = {
   headers?: Record<string, string | string[] | undefined>;
@@ -83,7 +84,14 @@ export class TelegramMiniappGuard implements CanActivate {
           select: { merchantId: true },
         });
         if (record?.merchantId) return record.merchantId;
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'TelegramMiniappGuard merchant lookup',
+          undefined,
+          'debug',
+        );
+      }
     }
     return null;
   }

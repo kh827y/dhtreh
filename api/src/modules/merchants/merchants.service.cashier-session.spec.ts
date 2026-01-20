@@ -2,6 +2,11 @@ import { MerchantsService } from './merchants.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
 import type { MerchantsSettingsService } from './services/merchants-settings.service';
 import type { LookupCacheService } from '../../core/cache/lookup-cache.service';
+import { AppConfigService } from '../../core/config/app-config.service';
+import { MerchantsAccessService } from './services/merchants-access.service';
+import type { MerchantsStaffService } from './services/merchants-staff.service';
+import type { MerchantsOutletsService } from './services/merchants-outlets.service';
+import type { MerchantsOutboxService } from './services/merchants-outbox.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -67,6 +72,15 @@ const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
 const asPrismaService = (stub: PrismaStub) => stub as unknown as PrismaService;
 const asCacheService = (stub: CacheStub) =>
   stub as unknown as LookupCacheService;
+const asStaffService = (stub: object) => stub as MerchantsStaffService;
+const asOutletsService = (stub: object) => stub as MerchantsOutletsService;
+const asOutboxService = (stub: object) => stub as MerchantsOutboxService;
+const makeAccessService = (prisma: PrismaStub, cache: CacheStub) =>
+  new MerchantsAccessService(
+    asPrismaService(prisma),
+    asCacheService(cache),
+    new AppConfigService(),
+  );
 const makeSettingsStub = () =>
   ({
     getSettings: jest.fn(),
@@ -147,6 +161,10 @@ describe('MerchantsService cashier sessions', () => {
       asPrismaService(prisma),
       makeSettingsStub(),
       asCacheService(makeCacheStub()),
+      makeAccessService(prisma, makeCacheStub()),
+      asStaffService({}),
+      asOutletsService({}),
+      asOutboxService({}),
     );
 
     await svc.startCashierSessionByMerchantId('M-123', '1234', false);
@@ -170,6 +188,10 @@ describe('MerchantsService cashier sessions', () => {
       asPrismaService(prisma),
       makeSettingsStub(),
       asCacheService(makeCacheStub()),
+      makeAccessService(prisma, makeCacheStub()),
+      asStaffService({}),
+      asOutletsService({}),
+      asOutboxService({}),
     );
 
     await svc.startCashierSessionByMerchantId('M-123', '1234', true);

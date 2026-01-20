@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../core/prisma/prisma.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../shared/pg-lock.util';
 import { AppConfigService } from '../core/config/app-config.service';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
 
 @Injectable()
 export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
@@ -39,7 +40,14 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
       ) {
         this.timer.unref();
       }
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'IdempotencyGcWorker timer unref',
+        this.logger,
+        'debug',
+      );
+    }
     this.logger.log(`IdempotencyGcWorker started, interval=${intervalMs}ms`);
   }
 

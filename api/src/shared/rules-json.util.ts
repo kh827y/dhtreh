@@ -1,7 +1,14 @@
+import {
+  DEFAULT_JSON_SCHEMA_VERSION,
+  getJsonSchemaVersion,
+  withJsonSchemaVersion,
+} from './json-version.util';
+
 export type RulesJson = Record<string, unknown>;
 
 // Minimal schema map for documentation and safe access patterns.
 export const RULES_JSON_SCHEMA = {
+  schemaVersion: 'number',
   rules: [
     {
       if: { channelIn: ['string'], minEligible: 'number' },
@@ -70,15 +77,21 @@ export const RULES_JSON_SCHEMA = {
   },
 } as const;
 
+export const RULES_JSON_SCHEMA_VERSION = DEFAULT_JSON_SCHEMA_VERSION;
+
 const isPlainObject = (value: unknown): value is RulesJson =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const getRulesRoot = (rulesJson: unknown): RulesJson | null =>
   isPlainObject(rulesJson) ? (rulesJson as RulesJson) : null;
 
-export const ensureRulesRoot = (rulesJson: unknown): RulesJson => ({
-  ...(getRulesRoot(rulesJson) ?? {}),
-});
+export const ensureRulesRoot = (rulesJson: unknown): RulesJson => {
+  const root = { ...(getRulesRoot(rulesJson) ?? {}) };
+  return withJsonSchemaVersion(root, RULES_JSON_SCHEMA_VERSION) as RulesJson;
+};
+
+export const getRulesSchemaVersion = (rulesJson: unknown): number | null =>
+  getJsonSchemaVersion(getRulesRoot(rulesJson));
 
 export const getRulesSection = (
   rulesJson: unknown,

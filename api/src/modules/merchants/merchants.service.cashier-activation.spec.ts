@@ -3,6 +3,11 @@ import { MerchantsService } from './merchants.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
 import type { MerchantsSettingsService } from './services/merchants-settings.service';
 import type { LookupCacheService } from '../../core/cache/lookup-cache.service';
+import { AppConfigService } from '../../core/config/app-config.service';
+import { MerchantsAccessService } from './services/merchants-access.service';
+import type { MerchantsStaffService } from './services/merchants-staff.service';
+import type { MerchantsOutletsService } from './services/merchants-outlets.service';
+import type { MerchantsOutboxService } from './services/merchants-outbox.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -81,6 +86,18 @@ const asPrismaService = (stub: PrismaTransactionStub | PrismaSessionStub) =>
   stub as unknown as PrismaService;
 const asCacheService = (stub: CacheStub) =>
   stub as unknown as LookupCacheService;
+const asStaffService = (stub: object) => stub as MerchantsStaffService;
+const asOutletsService = (stub: object) => stub as MerchantsOutletsService;
+const asOutboxService = (stub: object) => stub as MerchantsOutboxService;
+const makeAccessService = (
+  prisma: PrismaTransactionStub | PrismaSessionStub,
+  cache: CacheStub,
+) =>
+  new MerchantsAccessService(
+    asPrismaService(prisma),
+    asCacheService(cache),
+    new AppConfigService(),
+  );
 const objectContaining = <T extends object>(value: T) =>
   expect.objectContaining(value) as unknown as T;
 const makeSettingsStub = () =>
@@ -135,6 +152,10 @@ describe('MerchantsService cashier activation codes', () => {
       asPrismaService(prisma),
       makeSettingsStub(),
       asCacheService(makeCacheStub()),
+      makeAccessService(prisma, makeCacheStub()),
+      asStaffService({}),
+      asOutletsService({}),
+      asOutboxService({}),
     );
 
     const result = await svc.issueCashierActivationCodes('M-123', 2);
@@ -203,6 +224,10 @@ describe('MerchantsService cashier activation codes', () => {
       asPrismaService(prisma),
       makeSettingsStub(),
       asCacheService(makeCacheStub()),
+      makeAccessService(prisma, makeCacheStub()),
+      asStaffService({}),
+      asOutletsService({}),
+      asOutboxService({}),
     );
 
     const result = await svc.activateCashierDeviceByCode(
@@ -287,6 +312,10 @@ describe('MerchantsService cashier activation codes', () => {
       asPrismaService(prisma),
       makeSettingsStub(),
       asCacheService(makeCacheStub()),
+      makeAccessService(prisma, makeCacheStub()),
+      asStaffService({}),
+      asOutletsService({}),
+      asOutboxService({}),
     );
 
     await expect(
@@ -322,6 +351,10 @@ describe('MerchantsService cashier activation codes', () => {
       asPrismaService(prisma),
       makeSettingsStub(),
       asCacheService(makeCacheStub()),
+      makeAccessService(prisma, makeCacheStub()),
+      asStaffService({}),
+      asOutletsService({}),
+      asOutboxService({}),
     );
     const session = await svc.getCashierDeviceSessionByToken('device-token');
 

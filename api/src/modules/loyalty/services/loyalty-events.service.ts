@@ -7,6 +7,7 @@ import {
 import { Client as PgClientCtor } from 'pg';
 import type { LoyaltyRealtimeEvent as PrismaLoyaltyRealtimeEvent } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 
 export type LoyaltyRealtimeEvent = {
   id: string;
@@ -63,6 +64,7 @@ const readNumber = (record: JsonRecord, key: string): number | null => {
 @Injectable()
 export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LoyaltyEventsService.name);
+  private readonly config = new AppConfigService();
   private readonly listeners = new Set<PendingListener>();
   private readonly activeCustomerPolls = new Map<string, number>();
   private nextListenerId = 1;
@@ -296,7 +298,7 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
 
   private async ensurePgSubscriber() {
     if (this.pgClient || this.pgConnecting) return;
-    const connectionString = process.env.DATABASE_URL || '';
+    const connectionString = this.config.getString('DATABASE_URL') || '';
     if (!connectionString) {
       this.logger.warn(
         'DATABASE_URL is not set, realtime poll will fall back to periodic DB checks',

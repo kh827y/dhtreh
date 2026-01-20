@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { toLevelRule } from '../loyalty/utils/tier-defaults.util';
 import { getRulesRoot, getRulesSection } from '../../shared/rules-json.util';
+import { AppConfigService } from '../../core/config/app-config.service';
+import { normalizePhoneE164 } from '../../shared/common/phone.util';
 
 interface BotConfig {
   token: string;
@@ -36,6 +38,7 @@ export class TelegramBotService {
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
+    private appConfig: AppConfigService,
   ) {
     void this.loadBots();
   }
@@ -65,9 +68,7 @@ export class TelegramBotService {
   }
 
   private getTelegramTimeoutMs(): number {
-    const raw = Number(process.env.TELEGRAM_HTTP_TIMEOUT_MS || '15000');
-    if (!Number.isFinite(raw) || raw <= 0) return 15000;
-    return Math.floor(raw);
+    return this.appConfig.getTelegramHttpTimeoutMs();
   }
 
   private async fetchTelegram(url: string, init?: RequestInit) {
@@ -90,7 +91,7 @@ export class TelegramBotService {
 
   async loadBots() {
     // В тестовой среде и при стабе Prisma (без моделей) — пропускаем
-    if (process.env.NODE_ENV === 'test') return;
+    if (this.appConfig.isTest()) return;
     const prisma = this.prisma as Partial<PrismaService>;
     if (!prisma.merchantSettings?.findMany) return;
     try {
@@ -133,7 +134,7 @@ export class TelegramBotService {
       this.logger.log(`Загружено ${this.bots.size} ботов`);
     } catch (error: unknown) {
       // В тестах не шумим логами
-      if (process.env.NODE_ENV !== 'test') {
+      if (!this.appConfig.isTest()) {
         this.logger.error('Ошибка загрузки ботов:', formatErrorMessage(error));
       }
     }
@@ -1357,12 +1358,9 @@ ${supportLine}
 
   private normalizePhoneStrict(phone?: string): string {
     if (!phone) throw new Error('phone required');
-    let cleaned = String(phone).replace(/\D/g, '');
-    if (cleaned.startsWith('8')) cleaned = '7' + cleaned.substring(1);
-    if (cleaned.length === 10 && !cleaned.startsWith('7'))
-      cleaned = '7' + cleaned;
-    if (cleaned.length !== 11) throw new Error('invalid phone');
-    return '+' + cleaned;
+    const normalized = normalizePhoneE164(phone);
+    if (!normalized) throw new Error('invalid phone');
+    return normalized;
   }
 }
 

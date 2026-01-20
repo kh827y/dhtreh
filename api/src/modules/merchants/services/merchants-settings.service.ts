@@ -13,6 +13,7 @@ import {
   isNonEmptyString,
 } from '../merchants.utils';
 import { DEFAULT_TIMEZONE_CODE } from '../../../shared/timezone/russia-timezones';
+import { withJsonSchemaVersion } from '../../../shared/json-version.util';
 
 type AjvInstance = {
   validate: (schema: unknown, data: unknown) => boolean;
@@ -164,7 +165,7 @@ export class MerchantsSettingsService {
       }
       clone.af = af;
     }
-    return clone;
+    return withJsonSchemaVersion(clone) as Record<string, unknown>;
   }
 
   validateRules(rulesJson: unknown) {

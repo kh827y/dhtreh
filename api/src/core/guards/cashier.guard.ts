@@ -6,6 +6,7 @@ import {
   resolveTelegramAuthContext,
   type TelegramAuthContext,
 } from '../../modules/loyalty/utils/telegram-auth.helper';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 type RequestLike = {
   method?: string;
@@ -214,7 +215,9 @@ export class CashierGuard implements CanActivate {
             where: { id: device.id },
             data: { revokedAt: now },
           });
-        } catch {}
+        } catch (err) {
+          logIgnoredError(err, 'CashierGuard revoke device', undefined, 'debug');
+        }
         return null;
       }
     }
@@ -227,7 +230,9 @@ export class CashierGuard implements CanActivate {
           where: { id: session.id },
           data: { lastSeenAt: now },
         });
-      } catch {}
+      } catch (err) {
+        logIgnoredError(err, 'CashierGuard lastSeen', undefined, 'debug');
+      }
     }
     return {
       id: session.id,
@@ -286,7 +291,13 @@ export class CashierGuard implements CanActivate {
         req,
         merchantIdFromRequest,
       );
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'CashierGuard resolve session',
+        undefined,
+        'debug',
+      );
       sessionContext = null;
     }
     if (!merchantIdFromRequest && sessionContext) {
@@ -299,7 +310,14 @@ export class CashierGuard implements CanActivate {
         merchantSettings = await this.prisma.merchantSettings.findUnique({
           where: { merchantId: merchantIdFromRequest },
         });
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'CashierGuard merchant settings',
+          undefined,
+          'debug',
+        );
+      }
     }
 
     const teleauthContext = await this.ensureTelegramContextForRequest(

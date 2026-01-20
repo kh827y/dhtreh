@@ -7,6 +7,7 @@ import {
   RussiaTimezone,
   findTimezone,
 } from '../../shared/timezone/russia-timezones';
+import { withJsonSchemaVersion } from '../../shared/json-version.util';
 import { UpdateRfmSettingsDto } from './dto/update-rfm-settings.dto';
 import {
   fetchReceiptAggregates,
@@ -1318,7 +1319,7 @@ export class AnalyticsService {
           : {}),
       },
     } as Prisma.JsonObject;
-    return next;
+    return withJsonSchemaVersion(next) as Prisma.JsonObject;
   }
 
   private normalizeScore(value?: number | null): number | null {

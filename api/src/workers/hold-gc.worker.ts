@@ -9,6 +9,7 @@ import { HoldStatus } from '@prisma/client';
 import { MetricsService } from '../core/metrics/metrics.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../shared/pg-lock.util';
 import { AppConfigService } from '../core/config/app-config.service';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
 
 @Injectable()
 export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
@@ -34,7 +35,9 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
         this.logger.error('HoldGcWorker tick failed', error as Error);
         try {
           this.metrics.inc('loyalty_hold_gc_errors_total');
-        } catch {}
+        } catch (err) {
+          logIgnoredError(err, 'HoldGcWorker metrics', this.logger, 'debug');
+        }
       });
     }, intervalMs);
     try {
@@ -45,7 +48,9 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
       ) {
         this.timer.unref();
       }
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'HoldGcWorker timer unref', this.logger, 'debug');
+    }
     this.logger.log(`HoldGcWorker started, interval=${intervalMs}ms`);
   }
 
@@ -68,7 +73,9 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
           Math.floor(Date.now() / 1000),
           { worker: 'hold_gc' },
         );
-      } catch {}
+      } catch (err) {
+        logIgnoredError(err, 'HoldGcWorker metrics', this.logger, 'debug');
+      }
       const now = new Date();
       const expired = await this.prisma.hold.findMany({
         where: { status: HoldStatus.PENDING, expiresAt: { lt: now } },
@@ -88,14 +95,18 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
           );
           try {
             this.metrics.inc('loyalty_hold_gc_errors_total');
-          } catch {}
+          } catch (err) {
+            logIgnoredError(err, 'HoldGcWorker metrics', this.logger, 'debug');
+          }
         }
       }
     } catch (error) {
       this.logger.error('HoldGcWorker tick error', error as Error);
       try {
         this.metrics.inc('loyalty_hold_gc_errors_total');
-      } catch {}
+      } catch (err) {
+        logIgnoredError(err, 'HoldGcWorker metrics', this.logger, 'debug');
+      }
     } finally {
       this.running = false;
       await pgAdvisoryUnlock(this.prisma, lock.key);

@@ -7,13 +7,18 @@ import {
 } from '@nestjs/common';
 import { BaseExceptionFilter, HttpAdapterHost } from '@nestjs/core';
 import * as Sentry from '@sentry/node';
+import { AppConfigService } from '../config/app-config.service';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 @Catch()
 export class SentryFilter
   extends BaseExceptionFilter
   implements ExceptionFilter
 {
-  constructor(adapterHost: HttpAdapterHost) {
+  constructor(
+    adapterHost: HttpAdapterHost,
+    private readonly config: AppConfigService,
+  ) {
     super(adapterHost.httpAdapter);
   }
 
@@ -24,10 +29,12 @@ export class SentryFilter
           ? exception.getStatus()
           : HttpStatus.INTERNAL_SERVER_ERROR;
       // репортим только 5xx
-      if (status >= 500 && process.env.SENTRY_DSN) {
+      if (status >= 500 && this.config.getSentryDsn()) {
         Sentry.captureException(exception);
       }
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'SentryFilter capture', undefined, 'debug');
+    }
     super.catch(exception, host);
   }
 }

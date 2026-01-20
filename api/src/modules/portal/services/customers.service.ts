@@ -19,6 +19,7 @@ import { CustomerAudiencesService } from '../../customer-audiences/customer-audi
 import { isSystemAllAudience } from '../../customer-audiences/audience.utils';
 import { fetchReceiptAggregates } from '../../../shared/common/receipt-aggregates.util';
 import { getRulesRoot } from '../../../shared/rules-json.util';
+import { AppConfigService } from '../../../core/config/app-config.service';
 import {
   normalizePhoneDigits,
   normalizePhoneE164,
@@ -214,6 +215,7 @@ export class PortalCustomersService {
   ]);
 
   private readonly logger = new Logger(PortalCustomersService.name);
+  private readonly config = new AppConfigService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -566,10 +568,7 @@ export class PortalCustomersService {
         startParam,
       )}`;
     }
-    const base =
-      process.env.WEBSITE_URL ||
-      process.env.PORTAL_PUBLIC_URL ||
-      'https://loyalty.com';
+    const base = this.config.getWebsiteUrl() || 'https://loyalty.com';
     return `${base.replace(/\/$/, '')}/referral/${merchantId}/${code}`;
   }
 
@@ -1152,7 +1151,7 @@ export class PortalCustomersService {
     amount: number,
     orderId: string | null,
   ) {
-    if (process.env.EARN_LOTS_FEATURE !== '1') return;
+    if (!this.config.isEarnLotsEnabled()) return;
     if (amount <= 0) return;
 
     const lots = await tx.earnLot.findMany({
@@ -1899,7 +1898,7 @@ export class PortalCustomersService {
         select: { balance: true },
       });
 
-      if (process.env.EARN_LOTS_FEATURE === '1' && appliedPoints > 0) {
+      if (this.config.isEarnLotsEnabled() && appliedPoints > 0) {
         await tx.earnLot.create({
           data: {
             merchantId,
@@ -2097,7 +2096,7 @@ export class PortalCustomersService {
         select: { balance: true },
       });
 
-      if (process.env.EARN_LOTS_FEATURE === '1' && bonusPoints > 0) {
+      if (this.config.isEarnLotsEnabled() && bonusPoints > 0) {
         await tx.earnLot.create({
           data: {
             merchantId,

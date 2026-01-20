@@ -1,4 +1,5 @@
 import { getJose } from '../loyalty/utils/token.util';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 export type PortalActor = 'MERCHANT' | 'STAFF';
 
@@ -15,6 +16,7 @@ export interface PortalJwtClaims {
 }
 
 const PORTAL_JWT_VERSION = 1;
+const config = new AppConfigService();
 
 type SignPortalJwtOptions = {
   merchantId: string;
@@ -31,7 +33,7 @@ export async function signPortalJwt(options: SignPortalJwtOptions) {
   if (!merchantId) throw new Error('merchantId is required');
   if (!subject) throw new Error('subject is required');
   const { SignJWT } = await getJose();
-  const secret = process.env.PORTAL_JWT_SECRET || '';
+  const secret = config.getPortalJwtSecret();
   if (!secret) throw new Error('PORTAL_JWT_SECRET not configured');
   const payload: Record<string, unknown> = {
     merchantId,
@@ -55,7 +57,7 @@ export async function signPortalJwt(options: SignPortalJwtOptions) {
 
 export async function verifyPortalJwt(token: string): Promise<PortalJwtClaims> {
   const { jwtVerify } = await getJose();
-  const secret = process.env.PORTAL_JWT_SECRET || '';
+  const secret = config.getPortalJwtSecret();
   if (!secret) throw new Error('PORTAL_JWT_SECRET not configured');
   const result = await jwtVerify(token, new TextEncoder().encode(secret));
   const payload = result.payload as Record<string, unknown>;
@@ -107,7 +109,7 @@ export async function signPortalRefreshJwt(
   if (!merchantId) throw new Error('merchantId is required');
   if (!subject) throw new Error('subject is required');
   const { SignJWT } = await getJose();
-  const secret = process.env.PORTAL_REFRESH_SECRET || '';
+  const secret = config.getPortalRefreshSecret();
   if (!secret) throw new Error('PORTAL_REFRESH_SECRET not configured');
   const payload: Record<string, unknown> = {
     merchantId,
@@ -134,7 +136,7 @@ export async function verifyPortalRefreshJwt(
   token: string,
 ): Promise<PortalJwtClaims> {
   const { jwtVerify } = await getJose();
-  const secret = process.env.PORTAL_REFRESH_SECRET || '';
+  const secret = config.getPortalRefreshSecret();
   if (!secret) throw new Error('PORTAL_REFRESH_SECRET not configured');
   const result = await jwtVerify(token, new TextEncoder().encode(secret));
   const payload = result.payload as Record<string, unknown>;

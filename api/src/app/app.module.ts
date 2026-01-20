@@ -47,10 +47,13 @@ import { OpsAlertMonitor } from '../modules/alerts/ops-alert-monitor.service';
 import { AdminObservabilityController } from '../modules/admin/admin-observability.controller';
 import { AdminAuditInterceptor } from '../modules/admin/admin-audit.interceptor';
 import { CacheModule } from '../core/cache/cache.module';
+import { AppConfigService } from '../core/config/app-config.service';
 // Optional Redis storage for Throttler
 let throttlerStorage: object | undefined = undefined;
 try {
-  if (process.env.REDIS_URL) {
+  const config = new AppConfigService();
+  const redisUrl = config.getRedisUrl();
+  if (redisUrl) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Redis = require('ioredis') as { new (url: string): unknown };
 
@@ -60,9 +63,7 @@ try {
     } = require('nestjs-throttler-storage-redis') as {
       ThrottlerStorageRedisService: new (client: unknown) => object;
     };
-    throttlerStorage = new ThrottlerStorageRedisService(
-      new Redis(process.env.REDIS_URL),
-    );
+    throttlerStorage = new ThrottlerStorageRedisService(new Redis(redisUrl));
   }
 } catch {
   // keep in-memory storage if deps not installed

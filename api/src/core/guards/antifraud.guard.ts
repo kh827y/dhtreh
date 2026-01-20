@@ -13,6 +13,7 @@ import { TelegramStaffNotificationsService } from '../../modules/telegram/staff-
 import { normalizeDeviceCode } from '../../shared/devices/device.util';
 import { getRulesSection } from '../../shared/rules-json.util';
 import { AppConfigService } from '../config/app-config.service';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 function envNum(config: AppConfigService, name: string, def: number) {
   const n = config.getNumber(name);
@@ -152,7 +153,9 @@ export class AntiFraudGuard implements CanActivate {
             deviceId = hold.deviceId || deviceId;
             resolvedDeviceId = hold.deviceId || resolvedDeviceId;
           }
-        } catch {}
+        } catch (err) {
+          logIgnoredError(err, 'AntiFraudGuard hold lookup', undefined, 'debug');
+        }
       }
     }
 
@@ -172,8 +175,14 @@ export class AntiFraudGuard implements CanActivate {
             select: { id: true },
           });
           resolvedDeviceId = dev?.id ?? resolvedDeviceId;
-        } catch {
+        } catch (err) {
           // валидацию кода проведёт основной обработчик, тут не блокируем
+          logIgnoredError(
+            err,
+            'AntiFraudGuard device lookup',
+            undefined,
+            'debug',
+          );
         }
         if (!resolvedDeviceId) {
           try {
@@ -184,7 +193,14 @@ export class AntiFraudGuard implements CanActivate {
             if (dev && !dev.archivedAt && dev.merchantId === merchantId) {
               resolvedDeviceId = dev.id;
             }
-          } catch {}
+          } catch (err) {
+            logIgnoredError(
+              err,
+              'AntiFraudGuard device id lookup',
+              undefined,
+              'debug',
+            );
+          }
         }
       }
     }
@@ -306,7 +322,14 @@ export class AntiFraudGuard implements CanActivate {
           },
         } as const;
       }
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'AntiFraudGuard rules config',
+        undefined,
+        'debug',
+      );
+    }
 
     const now = Date.now();
     const reset: Record<string, unknown> = resetCfg ?? {};
@@ -363,8 +386,17 @@ export class AntiFraudGuard implements CanActivate {
                 limit,
               },
             })
-            .catch(() => {});
-        } catch {}
+            .catch((err) =>
+              logIgnoredError(
+                err,
+                'AntiFraudGuard alert notify',
+                undefined,
+                'debug',
+              ),
+            );
+        } catch (err) {
+          logIgnoredError(err, 'AntiFraudGuard alert', undefined, 'debug');
+        }
       }
       try {
         this.staffNotify
@@ -381,8 +413,17 @@ export class AntiFraudGuard implements CanActivate {
             count,
             limit,
           })
-          .catch(() => {});
-      } catch {}
+          .catch((err) =>
+            logIgnoredError(
+              err,
+              'AntiFraudGuard staff notify',
+              undefined,
+              'debug',
+            ),
+          );
+      } catch (err) {
+        logIgnoredError(err, 'AntiFraudGuard staff notify', undefined, 'debug');
+      }
     };
 
     const block = (
@@ -712,8 +753,22 @@ export class AntiFraudGuard implements CanActivate {
                       at: new Date().toISOString(),
                       limit: limits.customer.pointsCap,
                     })
-                    .catch(() => {});
-                } catch {}
+                    .catch((err) =>
+                      logIgnoredError(
+                        err,
+                        'AntiFraudGuard staff notify',
+                        undefined,
+                        'debug',
+                      ),
+                    );
+                } catch (err) {
+                  logIgnoredError(
+                    err,
+                    'AntiFraudGuard staff notify',
+                    undefined,
+                    'debug',
+                  );
+                }
               }
             }
             // Быстрая проверка факторной блокировки: no_outlet_id
@@ -745,8 +800,22 @@ export class AntiFraudGuard implements CanActivate {
                       deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
                       at: new Date().toISOString(),
                     })
-                    .catch(() => {});
-                } catch {}
+                    .catch((err) =>
+                      logIgnoredError(
+                        err,
+                        'AntiFraudGuard staff notify',
+                        undefined,
+                        'debug',
+                      ),
+                    );
+                } catch (err) {
+                  logIgnoredError(
+                    err,
+                    'AntiFraudGuard staff notify',
+                    undefined,
+                    'debug',
+                  );
+                }
               }
               if (shouldApplyNoDevice) {
                 const factor = 'no_device_id';
@@ -764,8 +833,22 @@ export class AntiFraudGuard implements CanActivate {
                       deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
                       at: new Date().toISOString(),
                     })
-                    .catch(() => {});
-                } catch {}
+                    .catch((err) =>
+                      logIgnoredError(
+                        err,
+                        'AntiFraudGuard staff notify',
+                        undefined,
+                        'debug',
+                      ),
+                    );
+                } catch (err) {
+                  logIgnoredError(
+                    err,
+                    'AntiFraudGuard staff notify',
+                    undefined,
+                    'debug',
+                  );
+                }
               }
               if (shouldApplyNoStaff) {
                 const factor = 'no_staff_id';
@@ -783,8 +866,22 @@ export class AntiFraudGuard implements CanActivate {
                       deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
                       at: new Date().toISOString(),
                     })
-                    .catch(() => {});
-                } catch {}
+                    .catch((err) =>
+                      logIgnoredError(
+                        err,
+                        'AntiFraudGuard staff notify',
+                        undefined,
+                        'debug',
+                      ),
+                    );
+                } catch (err) {
+                  logIgnoredError(
+                    err,
+                    'AntiFraudGuard staff notify',
+                    undefined,
+                    'debug',
+                  );
+                }
               }
             } catch (e) {
               if (e instanceof HttpException) throw e;
@@ -799,7 +896,14 @@ export class AntiFraudGuard implements CanActivate {
             // Сохраним запись о проверке (для истории/аналитики)
             try {
               await this.antifraud.recordFraudCheck(ctx, score, undefined);
-            } catch {}
+            } catch (err) {
+              logIgnoredError(
+                err,
+                'AntiFraudGuard record check',
+                undefined,
+                'debug',
+              );
+            }
             if (score.shouldBlock) {
               this.metrics.inc('antifraud_blocked_total', {
                 level: score.level,
@@ -818,8 +922,22 @@ export class AntiFraudGuard implements CanActivate {
                     operation: isCommit ? 'commit' : 'refund',
                     at: new Date().toISOString(),
                   })
-                  .catch(() => {});
-              } catch {}
+                  .catch((err) =>
+                    logIgnoredError(
+                      err,
+                      'AntiFraudGuard staff notify',
+                      undefined,
+                      'debug',
+                    ),
+                  );
+              } catch (err) {
+                logIgnoredError(
+                  err,
+                  'AntiFraudGuard staff notify',
+                  undefined,
+                  'debug',
+                );
+              }
             }
             // Правила блокировки по факторам (rulesJson.af.blockFactors: string[])
             let blockFactors: string[] = [];
@@ -828,7 +946,14 @@ export class AntiFraudGuard implements CanActivate {
                 where: { merchantId: hold.merchantId },
               });
               blockFactors = readBlockFactors(s?.rulesJson);
-            } catch {}
+            } catch (err) {
+              logIgnoredError(
+                err,
+                'AntiFraudGuard block factors',
+                undefined,
+                'debug',
+              );
+            }
             if (blockFactors.length && Array.isArray(score.factors)) {
               const factorKeys = score.factors.map((factor) => {
                 const key = String(factor || '').split(':')[0];
@@ -854,8 +979,22 @@ export class AntiFraudGuard implements CanActivate {
                       operation: isCommit ? 'commit' : 'refund',
                       at: new Date().toISOString(),
                     })
-                    .catch(() => {});
-                } catch {}
+                    .catch((err) =>
+                      logIgnoredError(
+                        err,
+                        'AntiFraudGuard staff notify',
+                        undefined,
+                        'debug',
+                      ),
+                    );
+                } catch (err) {
+                  logIgnoredError(
+                    err,
+                    'AntiFraudGuard staff notify',
+                    undefined,
+                    'debug',
+                  );
+                }
               }
             }
             // HIGH риск: не требуем дополнительных подтверждений (по требованию заказчика)

@@ -4,6 +4,10 @@ import type { PrismaService } from '../../core/prisma/prisma.service';
 import { MerchantsSettingsService } from './services/merchants-settings.service';
 import { AppConfigService } from '../../core/config/app-config.service';
 import type { LookupCacheService } from '../../core/cache/lookup-cache.service';
+import type { MerchantsAccessService } from './services/merchants-access.service';
+import type { MerchantsStaffService } from './services/merchants-staff.service';
+import { MerchantsOutletsService } from './services/merchants-outlets.service';
+import type { MerchantsOutboxService } from './services/merchants-outbox.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -55,6 +59,12 @@ const asPrismaService = (stub: PrismaStub | PrismaOutletStub) =>
   stub as unknown as PrismaService;
 const asCacheService = (stub: CacheStub) =>
   stub as unknown as LookupCacheService;
+const asAccessService = (stub: object) => stub as MerchantsAccessService;
+const asStaffService = (stub: object) => stub as MerchantsStaffService;
+const asOutletsService = (stub: object) => stub as MerchantsOutletsService;
+const asOutboxService = (stub: object) => stub as MerchantsOutboxService;
+const makeOutletsService = (prisma: PrismaOutletStub, cache: CacheStub) =>
+  new MerchantsOutletsService(asPrismaService(prisma), asCacheService(cache));
 const makeSettingsService = (prisma: PrismaStub) =>
   new MerchantsSettingsService(
     asPrismaService(prisma),
@@ -112,6 +122,10 @@ describe('MerchantsService rulesJson validation', () => {
       asPrismaService(prisma),
       makeSettingsService(prisma),
       asCacheService({ invalidateSettings: mockFn() }),
+      asAccessService({}),
+      asStaffService({}),
+      asOutletsService({}),
+      asOutboxService({}),
     );
   }
 
@@ -160,7 +174,10 @@ describe('MerchantsService rulesJson validation', () => {
       okRules, // rulesJson
     );
     expect(r.earnBps).toBe(500);
-    expect(r.rulesJson).toEqual(okRules);
+    expect(r.rulesJson).toEqual({
+      ...okRules,
+      schemaVersion: 1,
+    });
   });
 
   it('keeps antifraud device limits and preserves block factors', async () => {
@@ -192,6 +209,7 @@ describe('MerchantsService rulesJson validation', () => {
     );
 
     expect(result.rulesJson).toEqual({
+      schemaVersion: 1,
       af: {
         merchant: { limit: 10, windowSec: 60 },
         device: { limit: 5, windowSec: 120 },
@@ -219,6 +237,14 @@ describe('MerchantsService outlet limits', () => {
       asPrismaService(prisma),
       makeSettingsStub(),
       asCacheService({ invalidateSettings: mockFn() }),
+      asAccessService({}),
+      asStaffService({}),
+      makeOutletsService(prisma, {
+        invalidateSettings: mockFn(),
+        invalidateOutlet: mockFn(),
+        invalidateStaff: mockFn(),
+      }),
+      asOutboxService({}),
     );
     await expect(svc.createOutlet('M-1', 'Main')).rejects.toBeInstanceOf(
       BadRequestException,

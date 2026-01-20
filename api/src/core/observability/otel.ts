@@ -5,16 +5,15 @@ import { Resource } from '@opentelemetry/resources';
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
 import { Logger } from '@nestjs/common';
+import { AppConfigService } from '../config/app-config.service';
 
-const enabled =
-  process.env.OTEL_ENABLED === '1' || !!process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+const config = new AppConfigService();
+const enabled = config.getOtelEnabled();
 if (enabled) {
   const logger = new Logger('otel');
-  const serviceName = process.env.OTEL_SERVICE_NAME || 'loyalty-api';
-  const serviceVersion = process.env.APP_VERSION || 'dev';
-  const endpoint =
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
-    'http://localhost:4318/v1/traces';
+  const serviceName = config.getOtelServiceName();
+  const serviceVersion = config.getAppVersion();
+  const endpoint = config.getOtelExporterEndpoint();
 
   const sdk = new NodeSDK({
     traceExporter: new OTLPTraceExporter({ url: endpoint }),
@@ -22,7 +21,7 @@ if (enabled) {
       [SemanticResourceAttributes.SERVICE_NAME]: serviceName,
       [SemanticResourceAttributes.SERVICE_VERSION]: serviceVersion,
       [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]:
-        process.env.NODE_ENV || 'development',
+        config.getNodeEnv(),
     }),
     instrumentations: [
       getNodeAutoInstrumentations({

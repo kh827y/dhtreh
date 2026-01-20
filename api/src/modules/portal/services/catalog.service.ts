@@ -45,6 +45,7 @@ import {
   ensureUniqueDeviceCodes,
   type NormalizedDeviceCode,
 } from '../../../shared/devices/device.util';
+import { logEvent } from '../../../shared/logging/event-log.util';
 
 const BULK_ACTION_MAP: Record<
   ProductBulkAction,
@@ -671,13 +672,10 @@ export class PortalCatalogService {
             data: { categoryId: created.id },
           });
         }
-        this.logger.log(
-          JSON.stringify({
-            event: 'portal.catalog.category.create',
-            merchantId,
-            categoryId: created.id,
-          }),
-        );
+        logEvent(this.logger, 'portal.catalog.category.create', {
+          merchantId,
+          categoryId: created.id,
+        });
         this.metrics.inc('portal_catalog_categories_changed_total', {
           action: 'create',
         });
@@ -799,13 +797,10 @@ export class PortalCatalogService {
             data: { categoryId: null },
           });
         }
-        this.logger.log(
-          JSON.stringify({
-            event: 'portal.catalog.category.update',
-            merchantId,
-            categoryId,
-          }),
-        );
+        logEvent(this.logger, 'portal.catalog.category.update', {
+          merchantId,
+          categoryId,
+        });
         this.metrics.inc('portal_catalog_categories_changed_total', {
           action: 'update',
         });
@@ -836,13 +831,10 @@ export class PortalCatalogService {
         ),
       );
     });
-    this.logger.log(
-      JSON.stringify({
-        event: 'portal.catalog.category.reorder',
-        merchantId,
-        count: dto.items.length,
-      }),
-    );
+    logEvent(this.logger, 'portal.catalog.category.reorder', {
+      merchantId,
+      count: dto.items.length,
+    });
     this.metrics.inc('portal_catalog_categories_changed_total', {
       action: 'reorder',
     });
@@ -867,13 +859,10 @@ export class PortalCatalogService {
         data: { categoryId: null },
       });
     });
-    this.logger.log(
-      JSON.stringify({
-        event: 'portal.catalog.category.delete',
-        merchantId,
-        categoryId,
-      }),
-    );
+    logEvent(this.logger, 'portal.catalog.category.delete', {
+      merchantId,
+      categoryId,
+    });
     this.metrics.inc('portal_catalog_categories_changed_total', {
       action: 'delete',
     });
@@ -1151,13 +1140,10 @@ export class PortalCatalogService {
           externalMappings: true,
         },
       });
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.catalog.product.create',
-          merchantId,
-          productId: created.id,
-        }),
-      );
+      logEvent(this.logger, 'portal.catalog.product.create', {
+        merchantId,
+        productId: created.id,
+      });
       this.metrics.inc('portal_catalog_products_changed_total', {
         action: 'create',
       });
@@ -1333,13 +1319,10 @@ export class PortalCatalogService {
         },
       });
       if (!updated) throw new NotFoundException('Product not found');
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.catalog.product.update',
-          merchantId,
-          productId,
-        }),
-      );
+      logEvent(this.logger, 'portal.catalog.product.update', {
+        merchantId,
+        productId,
+      });
       this.metrics.inc('portal_catalog_products_changed_total', {
         action: 'update',
       });
@@ -1368,13 +1351,10 @@ export class PortalCatalogService {
     await this.prisma.productExternalId.deleteMany({
       where: { merchantId, productId },
     });
-    this.logger.log(
-      JSON.stringify({
-        event: 'portal.catalog.product.delete',
-        merchantId,
-        productId,
-      }),
-    );
+    logEvent(this.logger, 'portal.catalog.product.delete', {
+      merchantId,
+      productId,
+    });
     this.metrics.inc('portal_catalog_products_changed_total', {
       action: 'delete',
     });
@@ -1396,14 +1376,11 @@ export class PortalCatalogService {
       await this.prisma.productExternalId.deleteMany({
         where: { merchantId, productId: { in: ids } },
       });
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.catalog.product.bulk',
-          merchantId,
-          action: dto.action,
-          updated: result.count,
-        }),
-      );
+      logEvent(this.logger, 'portal.catalog.product.bulk', {
+        merchantId,
+        action: dto.action,
+        updated: result.count,
+      });
       this.metrics.inc('portal_catalog_products_changed_total', {
         action: 'bulk_delete',
       });
@@ -1414,14 +1391,11 @@ export class PortalCatalogService {
       where: { id: { in: ids }, merchantId, deletedAt: null },
       data: patch,
     });
-    this.logger.log(
-      JSON.stringify({
-        event: 'portal.catalog.product.bulk',
-        merchantId,
-        action: dto.action,
-        updated: result.count,
-      }),
-    );
+    logEvent(this.logger, 'portal.catalog.product.bulk', {
+      merchantId,
+      action: dto.action,
+      updated: result.count,
+    });
     this.metrics.inc('portal_catalog_products_changed_total', {
       action: dto.action,
     });
@@ -1693,13 +1667,10 @@ export class PortalCatalogService {
         });
       });
       if (!created) throw new NotFoundException('Outlet not found');
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.outlet.create',
-          merchantId,
-          outletId: created.id,
-        }),
-      );
+      logEvent(this.logger, 'portal.outlet.create', {
+        merchantId,
+        outletId: created.id,
+      });
       this.metrics.inc('portal_outlets_changed_total', { action: 'create' });
       this.cache.invalidateOutlet(merchantId, created.id);
       return this.mapOutlet(created);
@@ -1769,9 +1740,10 @@ export class PortalCatalogService {
           },
         });
       });
-      this.logger.log(
-        JSON.stringify({ event: 'portal.outlet.update', merchantId, outletId }),
-      );
+      logEvent(this.logger, 'portal.outlet.update', {
+        merchantId,
+        outletId,
+      });
       this.metrics.inc('portal_outlets_changed_total', { action: 'update' });
       if (!updated) throw new NotFoundException('Outlet not found');
       this.cache.invalidateOutlet(merchantId, outletId);

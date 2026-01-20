@@ -14,6 +14,8 @@ import {
   PromotionStatus,
   PromotionRewardType,
 } from '@prisma/client';
+import { AppConfigService } from '../../../core/config/app-config.service';
+import { normalizePhoneE164 } from '../../../shared/common/phone.util';
 
 // После рефакторинга Customer = per-merchant (бывший Customer)
 export type CustomerRecord = Customer & {
@@ -66,6 +68,8 @@ export const readErrorMessage = (err: unknown): string => {
 };
 
 export class LoyaltyControllerBase {
+  protected readonly config = new AppConfigService();
+
   constructor(
     protected readonly prisma: PrismaService,
     protected readonly cache: LookupCacheService,
@@ -100,10 +104,9 @@ export class LoyaltyControllerBase {
   }
 
   protected shouldUseSecureCookies(): boolean {
-    const raw = (process.env.COOKIE_SECURE || '').trim().toLowerCase();
-    if (raw === '1' || raw === 'true') return true;
-    if (raw === '0' || raw === 'false') return false;
-    return process.env.NODE_ENV === 'production';
+    const configured = this.config.getCookieSecure();
+    if (configured !== undefined) return configured;
+    return this.config.isProduction();
   }
 
   protected writeCashierSessionCookie(
@@ -185,12 +188,9 @@ export class LoyaltyControllerBase {
   }
 
   protected resolveCashierAllowedOrigins(): string[] {
-    const raw = (process.env.CORS_ORIGINS || '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const raw = this.config.getCorsOrigins();
     if (raw.length) return raw;
-    if (process.env.NODE_ENV === 'production') return [];
+    if (this.config.isProduction()) return [];
     return [
       'http://localhost:3001',
       'http://127.0.0.1:3001',
@@ -242,12 +242,9 @@ export class LoyaltyControllerBase {
 
   protected normalizePhoneStrict(phone?: string): string {
     if (!phone) throw new BadRequestException('phone required');
-    let cleaned = String(phone).replace(/\D/g, '');
-    if (cleaned.startsWith('8')) cleaned = '7' + cleaned.substring(1);
-    if (cleaned.length === 10 && !cleaned.startsWith('7'))
-      cleaned = '7' + cleaned;
-    if (cleaned.length !== 11) throw new BadRequestException('invalid phone');
-    return '+' + cleaned;
+    const normalized = normalizePhoneE164(phone);
+    if (!normalized) throw new BadRequestException('invalid phone');
+    return normalized;
   }
 
   protected resolvePromotionExpireDays(promo: {
@@ -889,10 +886,10 @@ export class LoyaltyControllerBase {
   // Plain ID, 9-digit short code, or JWT
   protected async resolveFromToken(userToken: string) {
     if (looksLikeJwt(userToken)) {
-      const envSecret = process.env.QR_JWT_SECRET || '';
+      const envSecret = this.config.getQrJwtSecret() || '';
       if (
         !envSecret ||
-        (process.env.NODE_ENV === 'production' && envSecret === 'dev_change_me')
+        (this.config.isProduction() && envSecret === 'dev_change_me')
       ) {
         throw new BadRequestException('QR_JWT_SECRET not configured');
       }

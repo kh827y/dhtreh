@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { AccessScope, Prisma } from '@prisma/client';
 import { PrismaService } from '../core/prisma/prisma.service';
+import { AppConfigService } from '../core/config/app-config.service';
 
 export type AccessGroupPresetPermission = {
   resource: string;
@@ -19,8 +20,9 @@ export type AccessGroupPreset = {
 };
 
 const PRESET_FILE = 'access-groups.json';
+const config = new AppConfigService();
 const PRESET_PATHS = [
-  process.env.ACCESS_GROUP_PRESETS_PATH,
+  config.getAccessGroupPresetsPath(),
   path.resolve(process.cwd(), 'fixtures', PRESET_FILE),
   path.resolve(process.cwd(), 'api', 'fixtures', PRESET_FILE),
   path.resolve(__dirname, '..', 'fixtures', PRESET_FILE),

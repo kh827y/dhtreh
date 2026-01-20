@@ -16,6 +16,7 @@ import {
 import { getRulesSection } from '../shared/rules-json.util';
 import type { EventOutbox } from '@prisma/client';
 import { AppConfigService } from '../core/config/app-config.service';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
 
 type OutboxRow = EventOutbox;
 
@@ -76,11 +77,24 @@ export class NotificationDispatcherWorker
     this.loadRpsConfig();
     const intervalMs =
       this.config.getNumber('NOTIFY_WORKER_INTERVAL_MS', 3000) ?? 3000;
-    this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    this.timer = setInterval(
+      () =>
+        this.tick().catch((err) =>
+          logIgnoredError(err, 'NotificationDispatcherWorker tick', this.logger),
+        ),
+      intervalMs,
+    );
     try {
       if (this.timer && typeof this.timer.unref === 'function')
         this.timer.unref();
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'NotificationDispatcherWorker timer unref',
+        this.logger,
+        'debug',
+      );
+    }
     this.logger.log(
       `NotificationDispatcherWorker started, interval=${intervalMs}ms`,
     );
@@ -98,7 +112,13 @@ export class NotificationDispatcherWorker
         data: { status: 'SENDING', updatedAt: new Date() },
       });
       return r.count === 1;
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'NotificationDispatcherWorker claim',
+        this.logger,
+        'debug',
+      );
       return false;
     }
   }
@@ -166,7 +186,14 @@ export class NotificationDispatcherWorker
               type: 'broadcast',
               result: 'dry',
             });
-          } catch {}
+          } catch (err) {
+            logIgnoredError(
+              err,
+              'NotificationDispatcherWorker metrics',
+              this.logger,
+              'debug',
+            );
+          }
           return;
         }
         const ch = (this.asString(payload.channel) ?? 'ALL').toUpperCase();
@@ -188,7 +215,14 @@ export class NotificationDispatcherWorker
               type: 'broadcast',
               result: 'throttled',
             });
-          } catch {}
+          } catch (err) {
+            logIgnoredError(
+              err,
+              'NotificationDispatcherWorker metrics',
+              this.logger,
+              'debug',
+            );
+          }
           return;
         }
         const segmentId = this.asString(payload.segmentId) ?? undefined;
@@ -220,7 +254,14 @@ export class NotificationDispatcherWorker
               });
               customerIds = rows.map((r) => r.customerId);
             }
-          } catch {}
+          } catch (err) {
+            logIgnoredError(
+              err,
+              'NotificationDispatcherWorker segment',
+              this.logger,
+              'debug',
+            );
+          }
         }
 
         // Accumulators for per-channel metrics
@@ -287,7 +328,14 @@ export class NotificationDispatcherWorker
                     });
                   emailCustomerIds = consentRows.map((row) => row.customerId);
                 }
-              } catch {}
+              } catch (err) {
+                logIgnoredError(
+                  err,
+                  'NotificationDispatcherWorker email consent',
+                  this.logger,
+                  'debug',
+                );
+              }
               if (emailCustomerIds.length) {
                 // Send basic campaign email one-by-one to avoid template mismatch
                 const customers = await this.prisma.customer.findMany({
@@ -370,7 +418,14 @@ export class NotificationDispatcherWorker
               { channel: 'EMAIL', merchantId },
               emailFailed,
             );
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'NotificationDispatcherWorker metrics',
+            this.logger,
+            'debug',
+          );
+        }
 
         if (dispatchErrors.length) {
           throw new Error(dispatchErrors.join('; '));
@@ -405,13 +460,27 @@ export class NotificationDispatcherWorker
               },
             },
           });
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'NotificationDispatcherWorker admin audit',
+            this.logger,
+            'debug',
+          );
+        }
         try {
           this.metrics.inc('notifications_processed_total', {
             type: 'broadcast',
             result: 'sent',
           });
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'NotificationDispatcherWorker metrics',
+            this.logger,
+            'debug',
+          );
+        }
         return;
       }
       if (type === 'notify.registration_bonus') {
@@ -440,7 +509,14 @@ export class NotificationDispatcherWorker
               type: 'registration_bonus',
               result: 'throttled',
             });
-          } catch {}
+          } catch (err) {
+            logIgnoredError(
+              err,
+              'NotificationDispatcherWorker metrics',
+              this.logger,
+              'debug',
+            );
+          }
           return;
         }
 
@@ -468,7 +544,14 @@ export class NotificationDispatcherWorker
               type: 'registration_bonus',
               result: 'skipped',
             });
-          } catch {}
+          } catch (err) {
+            logIgnoredError(
+              err,
+              'NotificationDispatcherWorker metrics',
+              this.logger,
+              'debug',
+            );
+          }
           return;
         }
 
@@ -521,7 +604,14 @@ export class NotificationDispatcherWorker
             type: 'registration_bonus',
             result: 'sent',
           });
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'NotificationDispatcherWorker metrics',
+            this.logger,
+            'debug',
+          );
+        }
         return;
       }
       if (type === 'notify.test') {
@@ -567,7 +657,14 @@ export class NotificationDispatcherWorker
               type: 'test',
               result: 'failed',
             });
-          } catch {}
+          } catch (err) {
+            logIgnoredError(
+              err,
+              'NotificationDispatcherWorker metrics',
+              this.logger,
+              'debug',
+            );
+          }
           return;
         }
         await this.prisma.eventOutbox.update({
@@ -579,7 +676,14 @@ export class NotificationDispatcherWorker
             type: 'test',
             result: 'sent',
           });
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'NotificationDispatcherWorker metrics',
+            this.logger,
+            'debug',
+          );
+        }
         return;
       }
       if (type === 'notify.staff.telegram') {
@@ -606,7 +710,14 @@ export class NotificationDispatcherWorker
             type: 'staff',
             result: result.delivered > 0 ? 'sent' : 'skipped',
           });
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'NotificationDispatcherWorker metrics',
+            this.logger,
+            'debug',
+          );
+        }
         return;
       }
       // Unknown type -> acknowledge to avoid stuck
@@ -633,7 +744,14 @@ export class NotificationDispatcherWorker
             type: 'error',
             result: 'dead',
           });
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'NotificationDispatcherWorker metrics',
+            this.logger,
+            'debug',
+          );
+        }
       } else {
         const next = new Date(Date.now() + this.backoffMs(row.retries));
         await this.prisma.eventOutbox.update({
@@ -650,7 +768,14 @@ export class NotificationDispatcherWorker
             type: 'error',
             result: 'retry',
           });
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'NotificationDispatcherWorker metrics',
+            this.logger,
+            'debug',
+          );
+        }
       }
     }
   }
@@ -666,7 +791,14 @@ export class NotificationDispatcherWorker
           Math.floor(Date.now() / 1000),
           { worker: 'notify' },
         );
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'NotificationDispatcherWorker metrics',
+          this.logger,
+          'debug',
+        );
+      }
       const now = new Date();
       const staleMs =
         this.config.getNumber('NOTIFY_SENDING_STALE_MS', 300000) ?? 300000;

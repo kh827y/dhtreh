@@ -10,6 +10,7 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { LoyaltyService } from '../loyalty/services/loyalty.service';
 import { EmailService } from '../notifications/email/email.service';
 import * as crypto from 'crypto';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 export interface CreateReferralProgramDto {
   merchantId: string;
@@ -88,6 +89,7 @@ type CustomerReferralRow = {
 @Injectable()
 export class ReferralService {
   private readonly logger = new Logger(ReferralService.name);
+  private readonly config = new AppConfigService();
 
   constructor(
     private prisma: PrismaService,
@@ -276,7 +278,7 @@ export class ReferralService {
             staffId: null,
           },
         });
-        if (process.env.LEDGER_FEATURE === '1') {
+        if (this.config.isLedgerEnabled()) {
           await tx.ledgerEntry.create({
             data: {
               merchantId: program.merchantId,
@@ -387,7 +389,7 @@ export class ReferralService {
             staffId: null,
           },
         });
-        if (process.env.LEDGER_FEATURE === '1') {
+        if (this.config.isLedgerEnabled()) {
           await tx.ledgerEntry.create({
             data: {
               merchantId,
@@ -681,8 +683,7 @@ export class ReferralService {
       return `https://t.me/${uname}/?startapp=${encodeURIComponent(startParam)}`;
     }
     // Fallback to website link if Telegram Mini App is not configured
-    const baseUrl =
-      this.configService.get('WEBSITE_URL') || 'https://loyalty.com';
+    const baseUrl = this.config.getWebsiteUrl() || 'https://loyalty.com';
     return `${baseUrl.replace(/\/$/, '')}/referral/${merchantId}/${code}`;
   }
 
@@ -741,10 +742,6 @@ export class ReferralService {
         });
     }
   }
-
-  private configService = {
-    get: (key: string) => process.env[key],
-  };
 
   private roundTwo(value: number | null | undefined) {
     if (typeof value !== 'number' || !Number.isFinite(value)) return 0;

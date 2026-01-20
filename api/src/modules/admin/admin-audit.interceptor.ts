@@ -3,14 +3,18 @@ import {
   ExecutionContext,
   Injectable,
   NestInterceptor,
+  Logger,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Observable, throwError } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { safeExecAsync } from '../../shared/safe-exec';
 
 @Injectable()
 export class AdminAuditInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(AdminAuditInterceptor.name);
+
   constructor(private prisma: PrismaService) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
@@ -69,18 +73,22 @@ export class AdminAuditInterceptor implements NestInterceptor {
     action: string;
     payload: Prisma.InputJsonValue | null;
   }) {
-    try {
-      await this.prisma.adminAudit.create({
-        data: {
-          actor: entry.actor,
-          method: entry.method,
-          path: entry.path,
-          merchantId: entry.merchantId ?? null,
-          action: entry.action,
-          payload: entry.payload === null ? Prisma.DbNull : entry.payload,
-        },
-      });
-    } catch {}
+    await safeExecAsync(
+      () =>
+        this.prisma.adminAudit.create({
+          data: {
+            actor: entry.actor,
+            method: entry.method,
+            path: entry.path,
+            merchantId: entry.merchantId ?? null,
+            action: entry.action,
+            payload: entry.payload === null ? Prisma.DbNull : entry.payload,
+          },
+        }),
+      async () => undefined,
+      this.logger,
+      'admin audit write failed',
+    );
   }
 }
 

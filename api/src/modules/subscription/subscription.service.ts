@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import type { Plan } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { withJsonSchemaVersion } from '../../shared/json-version.util';
 // import { Cron, CronExpression } from '@nestjs/schedule';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -603,7 +604,7 @@ export class SubscriptionService {
   ): Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue | undefined {
     if (value === undefined) return undefined;
     if (value === null) return Prisma.DbNull;
-    return value;
+    return withJsonSchemaVersion(value) as Prisma.InputJsonValue;
   }
 
   private toJsonValue(

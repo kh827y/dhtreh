@@ -7,6 +7,7 @@ import {
   collectDefaultMetrics,
 } from 'prom-client';
 import { AppConfigService } from '../config/app-config.service';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 type CMap = Record<string, number>;
 
@@ -54,7 +55,9 @@ export class MetricsService implements OnModuleDestroy {
           this.stopDefaultMetrics = stop as () => void;
         }
       }
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'MetricsService defaults', undefined, 'debug');
+    }
     // Known metrics via prom-client (без динамических лейблов)
     this.outboxSent = new Counter({
       name: 'loyalty_outbox_sent_total',
@@ -167,13 +170,17 @@ export class MetricsService implements OnModuleDestroy {
   increment(name: string, value = 1) {
     try {
       this.inc(name, {}, value);
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'MetricsService increment', undefined, 'debug');
+    }
   }
 
   onModuleDestroy() {
     try {
       this.stopDefaultMetrics?.();
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'MetricsService stop defaults', undefined, 'debug');
+    }
   }
 
   inc(name: string, labels: Record<string, string> = {}, value = 1) {
@@ -299,7 +306,9 @@ export class MetricsService implements OnModuleDestroy {
     try {
       const prom = await this.registry.metrics();
       lines.push(prom);
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'MetricsService export', undefined, 'debug');
+    }
     return lines.join('\n') + (lines.length ? '\n' : '');
   }
 
@@ -313,7 +322,9 @@ export class MetricsService implements OnModuleDestroy {
         { method: m, route: r, status: s },
         seconds,
       );
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'MetricsService recordHttp', undefined, 'debug');
+    }
   }
 
   private key(name: string, labels: Record<string, string>): string {

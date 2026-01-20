@@ -234,7 +234,7 @@ export class LoyaltyPromotionsController extends LoyaltyControllerBase {
       });
 
       // Ledger (optional)
-      if (process.env.LEDGER_FEATURE === '1') {
+      if (this.config.isLedgerEnabled()) {
         await tx.ledgerEntry.create({
           data: {
             merchantId,
@@ -259,7 +259,7 @@ export class LoyaltyPromotionsController extends LoyaltyControllerBase {
 
       // Earn lot (optional)
       const expireDays = this.resolvePromotionExpireDays(promo);
-      if (process.env.EARN_LOTS_FEATURE === '1') {
+      if (this.config.isEarnLotsEnabled()) {
         const earnLot =
           this.getEarnLotDelegate(tx) ?? this.getEarnLotDelegate(this.prisma);
         if (earnLot) {

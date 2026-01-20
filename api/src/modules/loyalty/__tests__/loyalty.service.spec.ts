@@ -79,6 +79,10 @@ const asPromoCodesService = (stub: PromoCodesStub) =>
   stub as unknown as PromoCodesService;
 const asNotificationsService = (stub: NotificationsStub) =>
   stub as unknown as TelegramStaffNotificationsService;
+const getIntegrationService = (service: LoyaltyService) =>
+  (service as unknown as { integrationService: any }).integrationService;
+const getCommitService = (service: LoyaltyService) =>
+  (service as unknown as { commitService: any }).commitService;
 
 const buildContext = (
   overrides: Partial<{
@@ -715,12 +719,12 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       buildContext(),
       buildTiers(),
     );
-    jest.spyOn(svc, 'balance').mockResolvedValue({
+    jest.spyOn(getIntegrationService(svc), 'balance').mockResolvedValue({
       merchantId: 'M-1',
       customerId: 'C-1',
       balance: 250,
     });
-    const commitSpy = jest.spyOn(svc, 'commit');
+    const commitSpy = jest.spyOn(getCommitService(svc), 'commit');
 
     const res = await svc.processIntegrationBonus({
       merchantId: 'M-1',
@@ -760,19 +764,23 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       buildContext(),
       buildTiers(),
     );
-    jest.spyOn(svc, 'getBaseRatesForCustomer').mockResolvedValue({
+    jest
+      .spyOn(getIntegrationService(svc), 'getBaseRatesForCustomer')
+      .mockResolvedValue({
       earnBps: 0,
       redeemLimitBps: 10000,
       earnPercent: 0,
       redeemLimitPercent: 100,
       tierMinPayment: null,
     });
-    const commitSpy = jest.spyOn(svc, 'commit').mockResolvedValue({
+    const commitSpy = jest
+      .spyOn(getCommitService(svc), 'commit')
+      .mockResolvedValue({
       receiptId: 'RCPT-M',
       redeemApplied: 50,
       earnApplied: 0,
     } as Awaited<ReturnType<LoyaltyService['commit']>>);
-    jest.spyOn(svc, 'balance').mockResolvedValue({
+    jest.spyOn(getIntegrationService(svc), 'balance').mockResolvedValue({
       merchantId: 'M-2',
       customerId: 'C-2',
       balance: 70,
@@ -903,12 +911,14 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       buildContext(),
       buildTiers(),
     );
-    const commitSpy = jest.spyOn(svc, 'commit').mockResolvedValue({
+    const commitSpy = jest
+      .spyOn(getCommitService(svc), 'commit')
+      .mockResolvedValue({
       receiptId: 'RCPT-5',
       redeemApplied: 20,
       earnApplied: 0,
     } as Awaited<ReturnType<LoyaltyService['commit']>>);
-    jest.spyOn(svc, 'balance').mockResolvedValue({
+    jest.spyOn(getIntegrationService(svc), 'balance').mockResolvedValue({
       merchantId: 'M-5',
       customerId: 'C-5',
       balance: 60,
@@ -959,12 +969,13 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       buildContext(),
       buildTiers(),
     );
-    const svcPrivate = svc as unknown as LoyaltyServicePrivate;
-    jest.spyOn(svcPrivate, 'ensurePointsWallet').mockResolvedValue({
+    jest
+      .spyOn(getIntegrationService(svc), 'ensurePointsWallet')
+      .mockResolvedValue({
       balance: 0,
     });
     const calcSpy = jest
-      .spyOn(svcPrivate, 'computeIntegrationCalc')
+      .spyOn(getIntegrationService(svc), 'computeIntegrationCalc')
       .mockResolvedValue({
         itemsForCalc: [],
         perItemMaxRedeem: [],
@@ -985,13 +996,15 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       redeemApplied: 0,
       earnApplied: 0,
     };
-    jest.spyOn(svc, 'commit').mockResolvedValue(commitResult);
+    jest.spyOn(getCommitService(svc), 'commit').mockResolvedValue(commitResult);
     const balanceResult: BalanceResult = {
       merchantId: 'M-7',
       customerId: 'C-7',
       balance: 0,
     };
-    jest.spyOn(svc, 'balance').mockResolvedValue(balanceResult);
+    jest.spyOn(getIntegrationService(svc), 'balance').mockResolvedValue(
+      balanceResult,
+    );
 
     await svc.processIntegrationBonus({
       merchantId: 'M-7',
@@ -1130,9 +1143,8 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       buildContext(),
       buildTiers(),
     );
-    const svcPrivate = svc as unknown as LoyaltyServicePrivate;
     const applyReferralRewardsSpy = jest
-      .spyOn(svcPrivate, 'applyReferralRewards')
+      .spyOn(getCommitService(svc) as LoyaltyServicePrivate, 'applyReferralRewards')
       .mockResolvedValue(undefined);
     jest
       .spyOn(getTiers(svc), 'recomputeTierProgress')

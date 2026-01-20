@@ -3,6 +3,7 @@ import { ApiTags, ApiOkResponse } from '@nestjs/swagger';
 import { AppService } from './app.service';
 import { PrismaService } from '../core/prisma/prisma.service';
 import type { Response } from 'express';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
 
 @Controller()
 @ApiTags('health')
@@ -25,7 +26,8 @@ export class AppController {
       await this.prisma.$queryRaw`SELECT 1`;
       res.status(200);
       return { status: 'ok', timestamp, checks: { database: 'ok' } };
-    } catch {
+    } catch (err) {
+      logIgnoredError(err, 'AppController health', undefined, 'debug');
       res.status(503);
       return { status: 'error', timestamp, checks: { database: 'failed' } };
     }
@@ -40,7 +42,9 @@ export class AppController {
       // Check database connectivity
       await this.prisma.$queryRaw`SELECT 1`;
       dbOk = true;
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'AppController ready', undefined, 'debug');
+    }
     const status = dbOk ? 'ready' : 'not_ready';
     res.status(dbOk ? 200 : 503);
     return {

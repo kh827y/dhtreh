@@ -9,6 +9,7 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { MetricsService } from '../core/metrics/metrics.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../shared/pg-lock.util';
 import { AppConfigService } from '../core/config/app-config.service';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
 
 @Injectable()
 export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
@@ -36,11 +37,24 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
     const intervalMs =
       this.config.getNumber('POINTS_TTL_INTERVAL_MS', 6 * 60 * 60 * 1000) ??
       6 * 60 * 60 * 1000; // каждые 6 часов
-    this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    this.timer = setInterval(
+      () =>
+        this.tick().catch((err) =>
+          logIgnoredError(err, 'PointsTtlWorker tick', this.logger),
+        ),
+      intervalMs,
+    );
     try {
       if (this.timer && typeof this.timer.unref === 'function')
         this.timer.unref();
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'PointsTtlWorker timer unref',
+        this.logger,
+        'debug',
+      );
+    }
     this.logger.log(`PointsTtlWorker started, interval=${intervalMs}ms`);
     this.startedAt = new Date();
   }
@@ -61,7 +75,9 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
           Math.floor(Date.now() / 1000),
           { worker: 'points_ttl' },
         );
-      } catch {}
+      } catch (err) {
+        logIgnoredError(err, 'PointsTtlWorker metrics', this.logger, 'debug');
+      }
       lock = await pgTryAdvisoryLock(this.prisma, 'worker:points_ttl_preview');
       if (!lock.ok) return;
       const merchants = await this.prisma.merchantSettings.findMany({
@@ -118,7 +134,14 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
               );
             }
           }
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'PointsTtlWorker existing preview',
+            this.logger,
+            'debug',
+          );
+        }
         const cutoff = new Date(now - ttlDays * 24 * 60 * 60 * 1000);
         const purchaseOnly = {
           orderId: { not: null },
@@ -249,7 +272,14 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
                   await flushOutbox();
                 }
               }
-            } catch {}
+            } catch (err) {
+              logIgnoredError(
+                err,
+                'PointsTtlWorker preview row',
+                this.logger,
+                'debug',
+              );
+            }
           }
           await flushOutbox();
         }
