@@ -4,6 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { AppConfigService } from '../config/app-config.service';
 
 function normalizeIp(ip?: string): string {
   if (!ip) return '';
@@ -52,23 +53,22 @@ function ipMatches(ip: string, rule: string): boolean {
 
 @Injectable()
 export class AdminIpGuard implements CanActivate {
+  constructor(private readonly config: AppConfigService) {}
+
   canActivate(ctx: ExecutionContext): boolean {
     const req = ctx.switchToHttp().getRequest<RequestLike>();
     // In tests, do not enforce IP whitelist
-    if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID)
+    const nodeEnv = this.config.getString('NODE_ENV') || 'development';
+    if (nodeEnv === 'test' || this.config.getString('JEST_WORKER_ID'))
       return true;
-    const allowAll = ['1', 'true', 'yes'].includes(
-      String(process.env.ADMIN_IP_ALLOW_ALL || '')
-        .trim()
-        .toLowerCase(),
-    );
+    const allowAll = this.config.getBoolean('ADMIN_IP_ALLOW_ALL', false);
     const wl = (
-      process.env.ADMIN_IP_WHITELIST ||
-      process.env.ADMIN_ALLOWED_IPS ||
+      this.config.getString('ADMIN_IP_WHITELIST') ||
+      this.config.getString('ADMIN_ALLOWED_IPS') ||
       ''
     ).trim();
     if (!wl) {
-      if (process.env.NODE_ENV === 'production' && !allowAll) {
+      if (nodeEnv === 'production' && !allowAll) {
         throw new UnauthorizedException('Admin IP whitelist not configured');
       }
       return true;

@@ -14,6 +14,8 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { MetricsService } from '../core/metrics/metrics.service';
 import { PushService } from '../modules/notifications/push/push.service';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../shared/pg-lock.util';
+import { getRulesSection } from '../shared/rules-json.util';
+import { AppConfigService } from '../core/config/app-config.service';
 
 type AutoReturnConfig = {
   enabled: boolean;
@@ -40,25 +42,26 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
   private running = false;
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
-  private readonly batchLimit = Math.max(
-    1,
-    Number(process.env.AUTO_RETURN_BATCH_SIZE || '200'),
-  );
+  private readonly batchLimit: number;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
     private readonly push: PushService,
-  ) {}
+    private readonly config: AppConfigService,
+  ) {
+    const batchRaw = this.config.getNumber('AUTO_RETURN_BATCH_SIZE', 200) ?? 200;
+    this.batchLimit = Math.max(1, Math.floor(batchRaw));
+  }
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('AutoReturnWorker disabled (WORKERS_ENABLED!=1)');
       return;
     }
-    const rawInterval = Number(process.env.AUTO_RETURN_WORKER_INTERVAL_MS);
+    const rawInterval = this.config.getNumber('AUTO_RETURN_WORKER_INTERVAL_MS');
     const intervalMs =
-      Number.isFinite(rawInterval) && rawInterval > 0
+      typeof rawInterval === 'number' && rawInterval > 0
         ? Math.max(60_000, rawInterval)
         : DAY_MS;
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
@@ -126,9 +129,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private parseConfig(raw: unknown): AutoReturnConfig | null {
-    const root = this.toRecord(raw);
-    if (!root) return null;
-    const autoReturn = this.toRecord(root.autoReturn);
+    const autoReturn = getRulesSection(raw, 'autoReturn');
     if (!autoReturn) return null;
     const enabled = this.asBoolean(autoReturn.enabled) ?? false;
     if (!enabled) return null;
@@ -158,7 +159,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
     } else if (!giftBurnEnabled) {
       giftTtlDays = 0;
     }
-    const repeatRaw = this.toRecord(autoReturn.repeat);
+    const repeatRaw = getRulesSection(autoReturn, 'repeat');
     const repeatValue =
       this.asNumber(
         repeatRaw?.days ?? autoReturn.repeatDays ?? autoReturn.repeatAfterDays,
@@ -659,7 +660,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
               },
             });
 
-            if (process.env.LEDGER_FEATURE === '1') {
+            if (this.config.getBoolean('LEDGER_FEATURE', false)) {
               await tx.ledgerEntry.create({
                 data: {
                   merchantId: fresh.merchantId,
@@ -682,7 +683,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
               );
             }
 
-            if (process.env.EARN_LOTS_FEATURE === '1') {
+            if (this.config.getBoolean('EARN_LOTS_FEATURE', false)) {
               await tx.earnLot.create({
                 data: {
                   merchantId: fresh.merchantId,

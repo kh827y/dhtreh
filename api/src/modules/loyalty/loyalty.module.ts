@@ -1,7 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
-import { LoyaltyService } from './loyalty.service';
-import { LoyaltyController } from './loyalty.controller';
-import { LoyaltyPublicController } from './loyalty.public.controller';
+import { LoyaltyService } from './services/loyalty.service';
+import { LoyaltyController } from './controllers/loyalty.controller';
+import { LoyaltyPublicController } from './controllers/loyalty.public.controller';
 import { PrismaModule } from '../../core/prisma/prisma.module';
 import { MetricsModule } from '../../core/metrics/metrics.module';
 import { CashierGuard } from '../../core/guards/cashier.guard';
@@ -16,7 +16,9 @@ import { ReviewModule } from '../reviews/review.module';
 import { TelegramModule } from '../telegram/telegram.module';
 import { StaffMotivationEngine } from '../staff-motivation/staff-motivation.engine';
 import { LevelsModule } from '../levels/levels.module';
-import { LoyaltyEventsService } from './loyalty-events.service';
+import { LoyaltyEventsService } from './services/loyalty-events.service';
+import { LoyaltyContextService } from './services/loyalty-context.service';
+import { LoyaltyTierService } from './services/loyalty-tier.service';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { LoyaltyEventsService } from './loyalty-events.service';
     AntiFraudGuard,
     StaffMotivationEngine,
     LoyaltyEventsService,
+    LoyaltyContextService,
+    LoyaltyTierService,
   ],
   controllers: [LoyaltyController, LoyaltyPublicController],
   exports: [LoyaltyService, LoyaltyEventsService],

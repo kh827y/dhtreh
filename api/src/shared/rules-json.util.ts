@@ -1,0 +1,118 @@
+export type RulesJson = Record<string, unknown>;
+
+// Minimal schema map for documentation and safe access patterns.
+export const RULES_JSON_SCHEMA = {
+  rules: [
+    {
+      if: { channelIn: ['string'], minEligible: 'number' },
+      then: { earnBps: 'number', redeemLimitBps: 'number' },
+    },
+  ],
+  af: {
+    customer: {
+      limit: 'number',
+      windowSec: 'number',
+      dailyCap: 'number',
+      weeklyCap: 'number',
+      monthlyCap: 'number',
+      pointsCap: 'number',
+      blockDaily: 'boolean',
+    },
+    outlet: { limit: 'number', windowSec: 'number', dailyCap: 'number', weeklyCap: 'number' },
+    device: { limit: 'number', windowSec: 'number', dailyCap: 'number', weeklyCap: 'number' },
+    staff: { limit: 'number', windowSec: 'number', dailyCap: 'number', weeklyCap: 'number' },
+    merchant: { limit: 'number', windowSec: 'number', dailyCap: 'number', weeklyCap: 'number' },
+    blockFactors: ['string'],
+    reset: { merchant: 'iso', outlet: { id: 'iso' }, device: { id: 'iso' }, staff: { id: 'iso' }, customer: { id: 'iso' } },
+  },
+  registration: {
+    enabled: 'boolean',
+    points: 'number',
+    ttlDays: 'number',
+    delayDays: 'number',
+    delayHours: 'number',
+    enabledAt: 'iso',
+    pushEnabled: 'boolean',
+    text: 'string',
+  },
+  birthday: {
+    enabled: 'boolean',
+    daysBefore: 'number',
+    onlyBuyers: 'boolean',
+    text: 'string',
+    giftPoints: 'number',
+    giftTtlDays: 'number',
+  },
+  autoReturn: {
+    enabled: 'boolean',
+    days: 'number',
+    text: 'string',
+    giftPoints: 'number',
+    giftTtlDays: 'number',
+    giftEnabled: 'boolean',
+    giftBurnEnabled: 'boolean',
+    repeat: { enabled: 'boolean', days: 'number' },
+  },
+  burnReminder: { enabled: 'boolean', daysBefore: 'number', text: 'string' },
+  reviews: { enabled: 'boolean' },
+  reviewsShare: { enabled: 'boolean', threshold: 'number', platforms: 'object' },
+  levelsPeriodDays: 'number',
+  allowEarnRedeemSameReceipt: 'boolean',
+  disallowEarnRedeemSameReceipt: 'boolean',
+  miniapp: { supportTelegram: 'string' },
+  staffNotify: 'object',
+  staffNotifyMeta: 'object',
+  staffNotifyDigest: { lastSentLocalDate: 'string', lastSentAt: 'string' },
+  rfm: {
+    recency: { mode: 'auto|manual', recencyDays: 'number' },
+    frequency: { mode: 'auto|manual', threshold: 'number' },
+    monetary: { mode: 'auto|manual', threshold: 'number' },
+  },
+} as const;
+
+const isPlainObject = (value: unknown): value is RulesJson =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const getRulesRoot = (rulesJson: unknown): RulesJson | null =>
+  isPlainObject(rulesJson) ? (rulesJson as RulesJson) : null;
+
+export const ensureRulesRoot = (rulesJson: unknown): RulesJson => ({
+  ...(getRulesRoot(rulesJson) ?? {}),
+});
+
+export const getRulesSection = (
+  rulesJson: unknown,
+  key: string,
+): RulesJson | null => {
+  const root = getRulesRoot(rulesJson);
+  const section = root ? root[key] : undefined;
+  return isPlainObject(section) ? (section as RulesJson) : null;
+};
+
+export const setRulesSection = (
+  rulesJson: unknown,
+  key: string,
+  section: RulesJson | null,
+): RulesJson => {
+  const root = ensureRulesRoot(rulesJson);
+  if (section === null) {
+    delete root[key];
+  } else {
+    root[key] = section;
+  }
+  return root;
+};
+
+export const setRulesValue = (
+  rulesJson: unknown,
+  key: string,
+  value: unknown,
+): RulesJson => {
+  const root = ensureRulesRoot(rulesJson);
+  if (value === undefined || value === null) {
+    delete root[key];
+    return root;
+  }
+  root[key] = value;
+  return root;
+};

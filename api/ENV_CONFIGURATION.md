@@ -17,6 +17,16 @@
 - `PORTAL_REFRESH_SECRET` — секрет refresh токена портала.
 - `CORS_ORIGINS` — список origin (в проде обязателен).
 
+## Мягкая проверка при старте
+
+При запуске API выполняется мягкая проверка конфигурации и выводятся предупреждения, если:
+
+- отсутствуют `DATABASE_URL` или `ADMIN_KEY`;
+- в production не заданы `QR_JWT_SECRET`, `ADMIN_SESSION_SECRET`, `PORTAL_JWT_SECRET`, `PORTAL_REFRESH_SECRET`, `CORS_ORIGINS`;
+- используются placeholder-значения (`change_me_*`, `generate_strong_*`, `dev_change_me`).
+
+Проверка не валит запуск, только пишет warning в лог.
+
 ## URL/домены
 
 - `API_BASE_URL` — публичный URL API (нужен для Telegram webhooks/интеграций).
@@ -26,12 +36,25 @@
 
 - `ADMIN_2FA_SECRET` — TOTP для админских операций (опционально).
 - `ADMIN_IP_WHITELIST` — список IP через запятую (опционально).
+- `ADMIN_IP_ALLOW_ALL` — отключает проверку IP (опасно, используйте только для отладки).
 - `COOKIE_SECURE` — принудительный режим secure cookies (`true/false`).
 - `TRUST_PROXY` — если API за reverse proxy (`true/false` или число).
+
+## Режимы обслуживания
+
+- `MAINTENANCE_MODE` — блокирует все запросы, кроме health/metrics.
+- `READ_ONLY_MODE` — разрешает только безопасные методы (GET/HEAD/OPTIONS).
 
 ## Redis (опционально)
 
 - `REDIS_URL` — Redis для очередей/лимитов/кеша.
+
+## Локальный кеш справочников (опционально)
+
+- `CACHE_MAX_ENTRIES` — верхний предел записей в памяти (по умолчанию 5000).
+- `CACHE_TTL_SETTINGS_MS` — TTL кеша настроек мерчанта (по умолчанию 30000).
+- `CACHE_TTL_OUTLET_MS` — TTL кеша торговых точек (по умолчанию 30000).
+- `CACHE_TTL_STAFF_MS` — TTL кеша сотрудников (по умолчанию 15000).
 
 ## Workers и фичефлаги
 

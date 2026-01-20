@@ -7,7 +7,7 @@ import {
   LedgerAccount,
 } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
-import { LoyaltyService } from '../loyalty/loyalty.service';
+import { LoyaltyService } from '../loyalty/services/loyalty.service';
 import { EmailService } from '../notifications/email/email.service';
 import * as crypto from 'crypto';
 

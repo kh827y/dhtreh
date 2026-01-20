@@ -1,8 +1,16 @@
 version: '3.8'
 
+x-logging: &default-logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "5"
+
 services:
   # PostgreSQL основная БД
   postgres:
+    <<: *default-logging
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
@@ -22,6 +30,7 @@ services:
 
   # Redis для кеширования и rate limiting
   redis:
+    <<: *default-logging
     image: redis:7-alpine
     restart: unless-stopped
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
@@ -37,6 +46,7 @@ services:
 
   # API сервер
   api:
+    <<: *default-logging
     build:
       context: .
       dockerfile: api/Dockerfile
@@ -110,6 +120,7 @@ services:
 
   # Worker для фоновых задач
   worker:
+    <<: *default-logging
     build:
       context: .
       dockerfile: api/Dockerfile
@@ -159,6 +170,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const { Client } = require('pg');const url=process.env.DATABASE_URL;if(!url)process.exit(1);const c=new Client({connectionString:url});c.connect().then(()=>c.query('SELECT 1')).then(()=>c.end()).then(()=>process.exit(0)).catch(()=>process.exit(1));\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - loyalty_network
     deploy:
@@ -170,6 +187,7 @@ services:
 
   # Admin панель
   admin:
+    <<: *default-logging
     build:
       context: .
       dockerfile: admin/Dockerfile
@@ -201,6 +219,7 @@ services:
 
   # Merchant portal
   merchant-portal:
+    <<: *default-logging
     build:
       context: .
       dockerfile: merchant-portal/Dockerfile
@@ -227,6 +246,7 @@ services:
 
   # Cashier виртуальный терминал
   cashier:
+    <<: *default-logging
     build:
       context: .
       dockerfile: cashier/Dockerfile
@@ -251,6 +271,7 @@ services:
 
   # Miniapp для Telegram
   miniapp:
+    <<: *default-logging
     build:
       context: .
       dockerfile: miniapp/Dockerfile
@@ -281,6 +302,7 @@ services:
 
   # Traefik reverse proxy
   traefik:
+    <<: *default-logging
     image: traefik:v3.0
     restart: unless-stopped
     command:
@@ -317,6 +339,7 @@ services:
 
   # Prometheus для метрик
   prometheus:
+    <<: *default-logging
     image: prom/prometheus:latest
     restart: unless-stopped
     environment:
@@ -343,6 +366,7 @@ services:
 
   # Grafana для визуализации
   grafana:
+    <<: *default-logging
     image: grafana/grafana:latest
     restart: unless-stopped
     environment:
@@ -362,6 +386,7 @@ services:
 
   # Backup сервис
   backup:
+    <<: *default-logging
     image: postgres:15-alpine
     restart: "no"
     environment:

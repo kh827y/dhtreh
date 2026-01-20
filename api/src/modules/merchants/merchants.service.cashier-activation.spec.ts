@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { MerchantsService } from './merchants.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
+import type { MerchantsSettingsService } from './services/merchants-settings.service';
+import type { LookupCacheService } from '../../core/cache/lookup-cache.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -67,13 +69,32 @@ type PrismaSessionStub = {
     update: MockFn<unknown, [CashierDeviceSessionUpdateArgs]>;
   };
 };
+type CacheStub = {
+  invalidateSettings: MockFn;
+  invalidateOutlet: MockFn;
+  invalidateStaff: MockFn;
+};
 
 const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
   jest.fn<Return, Args>();
 const asPrismaService = (stub: PrismaTransactionStub | PrismaSessionStub) =>
   stub as unknown as PrismaService;
+const asCacheService = (stub: CacheStub) =>
+  stub as unknown as LookupCacheService;
 const objectContaining = <T extends object>(value: T) =>
   expect.objectContaining(value) as unknown as T;
+const makeSettingsStub = () =>
+  ({
+    getSettings: jest.fn(),
+    updateSettings: jest.fn(),
+    normalizeRulesJson: jest.fn((value: unknown) => value),
+  }) as unknown as MerchantsSettingsService;
+const makeCacheStub = () =>
+  ({
+    invalidateSettings: jest.fn(),
+    invalidateOutlet: jest.fn(),
+    invalidateStaff: jest.fn(),
+  }) as CacheStub;
 
 describe('MerchantsService cashier activation codes', () => {
   const fixedNow = new Date('2025-01-01T00:00:00.000Z');
@@ -110,7 +131,11 @@ describe('MerchantsService cashier activation codes', () => {
         [(tx: CashierActivationTx) => Promise<unknown>]
       >().mockImplementation((cb) => cb(tx)),
     };
-    const svc = new MerchantsService(asPrismaService(prisma));
+    const svc = new MerchantsService(
+      asPrismaService(prisma),
+      makeSettingsStub(),
+      asCacheService(makeCacheStub()),
+    );
 
     const result = await svc.issueCashierActivationCodes('M-123', 2);
 
@@ -174,7 +199,11 @@ describe('MerchantsService cashier activation codes', () => {
       >().mockImplementation((cb) => cb(tx)),
     };
 
-    const svc = new MerchantsService(asPrismaService(prisma));
+    const svc = new MerchantsService(
+      asPrismaService(prisma),
+      makeSettingsStub(),
+      asCacheService(makeCacheStub()),
+    );
 
     const result = await svc.activateCashierDeviceByCode(
       'GreenMarket-01',
@@ -254,7 +283,11 @@ describe('MerchantsService cashier activation codes', () => {
         [(tx: CashierActivationTx) => Promise<unknown>]
       >().mockImplementation((cb) => cb(tx)),
     };
-    const svc = new MerchantsService(asPrismaService(prisma));
+    const svc = new MerchantsService(
+      asPrismaService(prisma),
+      makeSettingsStub(),
+      asCacheService(makeCacheStub()),
+    );
 
     await expect(
       svc.activateCashierDeviceByCode('greenmarket-01', '123456789'),
@@ -285,7 +318,11 @@ describe('MerchantsService cashier activation codes', () => {
       },
     };
 
-    const svc = new MerchantsService(asPrismaService(prisma));
+    const svc = new MerchantsService(
+      asPrismaService(prisma),
+      makeSettingsStub(),
+      asCacheService(makeCacheStub()),
+    );
     const session = await svc.getCashierDeviceSessionByToken('device-token');
 
     expect(session).toBeNull();

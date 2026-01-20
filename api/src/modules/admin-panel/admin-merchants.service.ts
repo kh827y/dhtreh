@@ -6,6 +6,7 @@ import {
 import { Prisma, StaffRole, StaffStatus } from '@prisma/client';
 import { hashPassword } from '../../shared/password.util';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { LookupCacheService } from '../../core/cache/lookup-cache.service';
 import {
   SubscriptionService,
   type SubscriptionState,
@@ -70,6 +71,7 @@ export class AdminMerchantsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly subscriptions: SubscriptionService,
+    private readonly cache: LookupCacheService,
   ) {}
 
   async listMerchants(
@@ -279,7 +281,7 @@ export class AdminMerchantsService {
         );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const portalEmail = normalizedEmail ?? null;
       const portalPasswordHash = payload.portalPassword
         ? hashPassword(payload.portalPassword)
@@ -323,6 +325,8 @@ export class AdminMerchantsService {
 
       return this.getMerchant(merchant.id);
     });
+    this.cache.invalidateSettings(result.id);
+    return result;
   }
 
   async updateMerchant(id: string, payload: UpsertMerchantPayload) {
@@ -331,6 +335,7 @@ export class AdminMerchantsService {
       include: { staff: { where: { isOwner: true }, take: 1 } },
     });
     if (!merchant) throw new NotFoundException('Merchant not found');
+    const ownerId = merchant.staff[0]?.id ?? null;
 
     const normalizedEmail =
       payload.portalEmail === undefined
@@ -394,6 +399,9 @@ export class AdminMerchantsService {
         });
       }
     });
+    if (ownerId && payload.ownerName) {
+      this.cache.invalidateStaff(id, ownerId);
+    }
 
     return this.getMerchant(id);
   }
@@ -420,6 +428,7 @@ export class AdminMerchantsService {
           : {}),
       },
     });
+    this.cache.invalidateSettings(merchantId);
 
     return {
       qrTtlSec: settings.qrTtlSec,

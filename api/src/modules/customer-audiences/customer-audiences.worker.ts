@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { CustomerAudiencesService } from './customer-audiences.service';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../../shared/pg-lock.util';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 @Injectable()
 export class CustomerAudiencesWorker {
@@ -11,11 +12,12 @@ export class CustomerAudiencesWorker {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audiences: CustomerAudiencesService,
+    private readonly config: AppConfigService,
   ) {}
 
   @Cron('0 3 * * *')
   async nightlyRecalculate() {
-    if (process.env.WORKERS_ENABLED !== '1') return;
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) return;
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:customer_audiences_nightly',

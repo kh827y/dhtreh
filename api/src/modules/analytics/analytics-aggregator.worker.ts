@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { fetchReceiptAggregates } from '../../shared/common/receipt-aggregates.util';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../../shared/pg-lock.util';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 type ParsedRfmSettings = {
   recencyMode: 'auto' | 'manual';
@@ -34,7 +35,10 @@ function endOfDay(d: Date) {
 @Injectable()
 export class AnalyticsAggregatorWorker {
   private readonly logger = new Logger(AnalyticsAggregatorWorker.name);
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly config: AppConfigService,
+  ) {}
 
   private toJsonObject(
     value: Prisma.JsonValue | null | undefined,
@@ -234,7 +238,7 @@ export class AnalyticsAggregatorWorker {
   // Ежедневная агрегация KPI за вчерашний день
   @Cron('0 2 * * *')
   async aggregateDailyKpis() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('WORKERS_ENABLED!=1, skip analytics aggregation');
       return;
     }

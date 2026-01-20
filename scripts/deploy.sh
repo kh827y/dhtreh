@@ -15,6 +15,9 @@ PROJECT_DIR="/opt/loyalty"
 BACKUP_DIR="/opt/backups/loyalty"
 COMPOSE_FILE="docker-compose.production.yml"
 ENV_FILE=".env.production"
+SMOKE_CHECK_RETRIES=${SMOKE_CHECK_RETRIES:-6}
+SMOKE_CHECK_INTERVAL_SEC=${SMOKE_CHECK_INTERVAL_SEC:-5}
+SMOKE_CHECK_TIMEOUT=${SMOKE_CHECK_TIMEOUT:-5}
 
 # Colors for output
 RED='\033[0;31m'
@@ -34,6 +37,12 @@ error() {
 
 warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+# Preflight checks
+preflight() {
+    log "Running preflight checks..."
+    ENV_FILE="$ENV_FILE" COMPOSE_FILE="$COMPOSE_FILE" ./scripts/preflight.sh
 }
 
 # Check environment
@@ -100,6 +109,24 @@ deploy() {
     # Start services with zero-downtime deployment
     log "Starting services..."
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+
+    # Smoke-check services
+    log "Running smoke checks..."
+    local attempt=1
+    while [ "$attempt" -le "$SMOKE_CHECK_RETRIES" ]; do
+        if BASE_URL="${API_BASE_URL:-http://localhost:3000}" TIMEOUT="$SMOKE_CHECK_TIMEOUT" ./scripts/smoke-check.sh; then
+            log "Smoke checks passed"
+            break
+        fi
+        warning "Smoke checks failed (attempt $attempt/$SMOKE_CHECK_RETRIES)"
+        attempt=$((attempt + 1))
+        sleep "$SMOKE_CHECK_INTERVAL_SEC"
+    done
+    if [ "$attempt" -gt "$SMOKE_CHECK_RETRIES" ]; then
+        warning "Smoke checks failed after deployment, rolling back..."
+        rollback
+        error "Deployment failed after smoke checks"
+    fi
     
     # Clean up old images
     log "Cleaning up old Docker images..."
@@ -212,6 +239,7 @@ main() {
     
     case $ACTION in
         deploy)
+            preflight
             backup
             if [ "$ENVIRONMENT" = "production" ]; then
                 run_tests

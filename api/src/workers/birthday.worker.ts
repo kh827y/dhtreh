@@ -15,6 +15,8 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { MetricsService } from '../core/metrics/metrics.service';
 import { PushService } from '../modules/notifications/push/push.service';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../shared/pg-lock.util';
+import { getRulesSection } from '../shared/rules-json.util';
+import { AppConfigService } from '../core/config/app-config.service';
 import {
   DEFAULT_TIMEZONE_CODE,
   findTimezone,
@@ -72,25 +74,29 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BirthdayWorker.name);
   private timer: NodeJS.Timeout | null = null;
   private running = false;
-  private readonly batchLimit = Math.max(
-    1,
-    Number(process.env.BIRTHDAY_WORKER_BATCH_SIZE || '200'),
-  );
+  private readonly batchLimit: number;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
     private readonly push: PushService,
-  ) {}
+    private readonly config: AppConfigService,
+  ) {
+    const batchRaw =
+      this.config.getNumber('BIRTHDAY_WORKER_BATCH_SIZE', 200) ?? 200;
+    this.batchLimit = Math.max(1, Math.floor(batchRaw));
+  }
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('BirthdayWorker disabled (WORKERS_ENABLED!=1)');
       return;
     }
-    const rawInterval = Number(process.env.BIRTHDAY_WORKER_INTERVAL_MS);
+    const rawInterval = this.config.getNumber('BIRTHDAY_WORKER_INTERVAL_MS');
     const intervalMs =
-      Number.isFinite(rawInterval) && rawInterval > 0
+      typeof rawInterval === 'number' &&
+      Number.isFinite(rawInterval) &&
+      rawInterval > 0
         ? Math.max(60_000, rawInterval)
         : 6 * 60 * 60 * 1000; // 6 часов по умолчанию
 
@@ -173,9 +179,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private parseConfig(raw: unknown): BirthdayConfig | null {
-    if (!isRecord(raw)) return null;
-    const birthday =
-      raw.birthday && isRecord(raw.birthday) ? raw.birthday : null;
+    const birthday = getRulesSection(raw, 'birthday');
     if (!birthday) return null;
 
     const enabled = Boolean(birthday.enabled ?? false);
@@ -510,7 +514,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
             },
           });
 
-          if (process.env.LEDGER_FEATURE === '1') {
+          if (this.config.getBoolean('LEDGER_FEATURE', false)) {
             await tx.ledgerEntry.create({
               data: {
                 merchantId: merchant.id,
@@ -534,7 +538,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
             );
           }
 
-          if (process.env.EARN_LOTS_FEATURE === '1') {
+          if (this.config.getBoolean('EARN_LOTS_FEATURE', false)) {
             type EarnLotDelegate = {
               create: (args: Prisma.EarnLotCreateArgs) => Promise<unknown>;
             };

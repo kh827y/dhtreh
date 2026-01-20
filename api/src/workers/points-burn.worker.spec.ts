@@ -2,6 +2,7 @@ import { PointsBurnWorker } from './points-burn.worker';
 import * as lockUtil from '../shared/pg-lock.util';
 import type { MetricsService } from '../core/metrics/metrics.service';
 import type { PrismaService } from '../core/prisma/prisma.service';
+import { AppConfigService } from '../core/config/app-config.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -143,6 +144,7 @@ describe('PointsBurnWorker (unit)', () => {
     const w = new PointsBurnWorker(
       asPrismaService(prisma),
       asMetricsService(metrics),
+      new AppConfigService(),
     );
     const workerPrivate = asPrivateWorker(w);
     await workerPrivate.tick();
@@ -225,6 +227,7 @@ describe('PointsBurnWorker (unit)', () => {
     const w = new PointsBurnWorker(
       asPrismaService(prisma),
       asMetricsService(metrics),
+      new AppConfigService(),
     );
     const workerPrivate = asPrivateWorker(w);
     await workerPrivate.tick();

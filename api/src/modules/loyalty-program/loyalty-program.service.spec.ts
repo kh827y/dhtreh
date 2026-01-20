@@ -1,5 +1,6 @@
 import { PromotionRewardType, PromotionStatus } from '@prisma/client';
 import { LoyaltyProgramService } from './loyalty-program.service';
+import { PromotionRulesService } from './services/promotion-rules.service';
 import type { CommunicationsService } from '../communications/communications.service';
 import type { MetricsService } from '../../core/metrics/metrics.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
@@ -56,6 +57,8 @@ const asMetricsService = (stub: MetricsStub) =>
   stub as unknown as MetricsService;
 const asCommunicationsService = (stub: CommunicationsService) =>
   stub as unknown as CommunicationsService;
+const makePromotionRules = (prisma: PrismaStub) =>
+  new PromotionRulesService(asPrismaService(prisma));
 
 describe('LoyaltyProgramService — updatePromotion', () => {
   const metrics: MetricsStub = {
@@ -115,6 +118,7 @@ describe('LoyaltyProgramService — updatePromotion', () => {
       asPrismaService(prisma),
       asMetricsService(metrics),
       asCommunicationsService({} as CommunicationsService),
+      makePromotionRules(prisma),
     );
     await service.updatePromotion('m-1', 'promo-1', {
       name: 'Обновленная акция',

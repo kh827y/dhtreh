@@ -234,6 +234,9 @@ TELEGRAM_CHAT_ID=-1001234567890
 
 ### Ручной деплой
 ```bash
+# Проверка окружения перед деплоем
+./scripts/preflight.sh
+
 # Использование скрипта деплоя
 ./scripts/deploy.sh production deploy
 
@@ -320,8 +323,26 @@ ALERT_WORKER_STALE_MINUTES=5
 # Ручной бэкап (сервис backup)
 docker compose --env-file .env.production -f docker-compose.production.yml run --rm backup
 
+# Или через скрипт
+./scripts/backup.sh .env.production docker-compose.production.yml
+
 # Либо прямой pg_dump
 docker exec postgres pg_dump -U loyalty loyalty | gzip > backup_$(date +%Y%m%d).sql.gz
+```
+
+### Планировщик (cron/systemd)
+
+Cron (пример, ежедневный бэкап в 03:00):
+```bash
+0 3 * * * /opt/loyalty/scripts/backup.sh /opt/loyalty/.env.production /opt/loyalty/docker-compose.production.yml >> /var/log/loyalty-backup.log 2>&1
+```
+
+Systemd (пример):
+```bash
+sudo cp /opt/loyalty/infra/backup/backup.service /etc/systemd/system/
+sudo cp /opt/loyalty/infra/backup/backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now backup.timer
 ```
 
 ### Восстановление из бэкапа
@@ -332,11 +353,20 @@ docker compose --env-file .env.production -f docker-compose.production.yml stop 
 # Восстановление БД
 gunzip < backup_20240101.sql.gz | docker exec -i postgres psql -U loyalty loyalty
 
+# Или через скрипт
+./scripts/restore.sh backup_20240101.sql.gz
+
 # Запуск приложения
 docker compose --env-file .env.production -f docker-compose.production.yml start api worker
 ```
 
 ## 🔧 Обслуживание
+
+### Smoke-check после деплоя
+```bash
+# Проверка /healthz, /readyz, /live и /metrics (если задан METRICS_TOKEN)
+BASE_URL=https://api.example.com METRICS_TOKEN=... ./scripts/smoke-check.sh
+```
 
 ### Обновление приложения
 ```bash

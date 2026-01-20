@@ -20,7 +20,7 @@ import { ReferralService } from './referral.service';
 import type { CreateReferralProgramDto } from './referral.service';
 import { ApiKeyGuard } from '../../core/guards/api-key.guard';
 import { TelegramMiniappGuard } from '../../core/guards/telegram-miniapp.guard';
-import type { TelegramAuthContext } from '../loyalty/telegram-auth.helper';
+import type { TelegramAuthContext } from '../loyalty/utils/telegram-auth.helper';
 
 @ApiTags('Referral Program')
 @Controller('referral')

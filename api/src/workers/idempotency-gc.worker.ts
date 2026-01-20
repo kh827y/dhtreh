@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../shared/pg-lock.util';
+import { AppConfigService } from '../core/config/app-config.service';
 
 @Injectable()
 export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
@@ -13,16 +14,18 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly config: AppConfigService,
+  ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
-    const intervalMs = Number(
-      process.env.IDEMPOTENCY_GC_INTERVAL_MS || '60000',
-    );
+    const intervalMs =
+      this.config.getNumber('IDEMPOTENCY_GC_INTERVAL_MS', 60000) ?? 60000;
     this.timer = setInterval(() => {
       this.tick().catch((error) => {
         this.logger.error('IdempotencyGcWorker tick failed', error as Error);
@@ -54,7 +57,7 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
     }
     try {
       const now = new Date();
-      const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
+      const ttlH = this.config.getNumber('IDEMPOTENCY_TTL_HOURS', 72) ?? 72;
       const olderThan = new Date(Date.now() - ttlH * 3600 * 1000);
       await this.prisma.idempotencyKey.deleteMany({
         where: {

@@ -2,7 +2,9 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { CustomThrottlerGuard } from '../core/guards/custom-throttler.guard';
+import { MaintenanceGuard } from '../core/guards/maintenance.guard';
 import { ConfigModule } from '@nestjs/config';
+import { AppConfigModule } from '../core/config/config.module';
 import { PrismaModule } from '../core/prisma/prisma.module';
 import { LoyaltyModule } from '../modules/loyalty/loyalty.module';
 import { MerchantsModule } from '../modules/merchants/merchants.module';
@@ -43,6 +45,7 @@ import { TelegramStaffDigestWorker } from '../modules/telegram/staff-digest.work
 import { OpsAlertMonitor } from '../modules/alerts/ops-alert-monitor.service';
 import { AdminObservabilityController } from '../modules/admin/admin-observability.controller';
 import { AdminAuditInterceptor } from '../modules/admin/admin-audit.interceptor';
+import { CacheModule } from '../core/cache/cache.module';
 // Optional Redis storage for Throttler
 let throttlerStorage: object | undefined = undefined;
 try {
@@ -67,6 +70,8 @@ try {
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    AppConfigModule,
+    CacheModule,
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
@@ -118,6 +123,7 @@ try {
     TelegramStaffDigestWorker,
     OpsAlertMonitor,
     AdminAuditInterceptor,
+    { provide: APP_GUARD, useClass: MaintenanceGuard },
     { provide: APP_GUARD, useClass: CustomThrottlerGuard },
   ],
 })

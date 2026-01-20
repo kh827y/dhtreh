@@ -8,6 +8,32 @@
 - `cashier` — виртуальный терминал кассира (Next.js)
 - `miniapp` — Telegram мини‑аппа клиента (Next.js)
 - `infra` — Docker Compose для БД
+- `packages/ui` — общий UI‑кит для фронтендов
+- `clients/sdk-ts` — TypeScript SDK для интеграций
+- `scripts` — вспомогательные скрипты репозитория
+
+## Обзор структуры (обновлённая)
+
+### API (`api/src`)
+- `app/` — точка входа NestJS: сборка модулей и общие настройки
+- `core/` — инфраструктура (guards, filters, middleware, metrics, prisma, observability, health)
+- `modules/` — доменные модули (analytics, loyalty, portal, merchants, telegram и др.)
+- Внутри крупных модулей: `controllers/`, `services/`, `dto/`, `utils/`, `__tests__/`
+- `workers/` — фоновые воркеры и их тесты
+- `shared/` — общие утилиты, константы и вспомогательные функции
+- `main.ts` — bootstrap приложения
+
+### Фронтенды (`admin`, `merchant-portal`, `cashier`, `miniapp`)
+- `src/app/` — маршруты и страницы (Next App Router)
+- `src/components/` — UI‑компоненты
+- `src/lib/` — клиентская логика, API‑хелперы, утилиты
+- `src/types/` — локальные типы/decls (где используются)
+- `src/middleware.ts` — middleware (есть в `admin` и `merchant-portal`)
+- `tests/` — e2e/юнит‑тесты (где используются)
+
+### Shared‑пакеты
+- `packages/ui/src` — общий UI‑кит, экспорт из `packages/ui/src/index.ts`
+- `clients/sdk-ts/src` — SDK для внешних интеграций
 
 ## Быстрый старт (локально)
 
@@ -98,6 +124,16 @@ D. Проверка результатов
 ## Полезные ссылки
 - Документация по подписи: admin → Docs → Signature
 - Варианты интеграции: admin → Docs → Integration
+
+## Продакшн-минимум (50-300 мерчантов)
+
+- Один VPS/VDS с Docker Compose (Postgres и Redis на старте можно держать на том же хосте).
+- Домен и TLS (Traefik/NGINX), базовый DNS для `api/admin/portal/app`.
+- Бэкапы БД: сервис `backup` в `docker-compose.production.yml` + S3-совместимое хранилище (опционально).
+- Health endpoints: `/healthz` (DB), `/readyz` (DB + миграции), `/health`, `/ready`, `/live`.
+- Preflight: `scripts/preflight.sh` (проверка окружения/секретов перед деплоем).
+- Smoke-check: `scripts/smoke-check.sh` (проверка health/ready/metrics).
+- При старте API есть мягкая проверка env (логирует пропуски/placeholder секреты); см. `api/ENV_CONFIGURATION.md` и `api/.env.example`.
 
 ## PortalAuth (Merchant Portal)
 
@@ -207,6 +243,23 @@ POINTS_TTL_REMINDER=1
 
 Проверка статуса: `GET /healthz` возвращает `flags` и `workers` (alive/lastTickAt для некоторых воркеров).
 
+## rulesJson (настройки правил)
+
+В `merchant_settings.rulesJson` хранится гибкая конфигурация механик. Минимальная схема и ключи описаны в `api/src/shared/rules-json.util.ts` (`RULES_JSON_SCHEMA`). Основные секции:
+
+- `rules` — условия для earn/redeem (channelIn/minEligible/earnBps/redeemLimitBps)
+- `af` — антифрод лимиты и блок‑факторы
+- `registration` — бонус за регистрацию (points/ttl/delay/push)
+- `birthday` — поздравления с ДР
+- `autoReturn` — возвращение клиентов
+- `burnReminder` — напоминания о сгорании
+- `reviews`, `reviewsShare` — отзывы и правила распределения
+- `levelsPeriodDays` — окно пересчёта уровней
+- `allowEarnRedeemSameReceipt` / `disallowEarnRedeemSameReceipt` — ограничения списания/начисления на одном чеке
+- `miniapp.supportTelegram` — контакт поддержки
+- `staffNotify`, `staffNotifyMeta`, `staffNotifyDigest` — уведомления персонала
+- `rfm` — настройки RFM‑аналитики
+
 ## Уровни (Levels)
 
 Уровни управляются только через портал (модель `LoyaltyTier`).
@@ -286,6 +339,7 @@ POINTS_TTL_REMINDER=1
 
 - API: `POST /notifications/broadcast` и `POST /notifications/test` (защищено `AdminGuard`/`AdminIpGuard`).
 - Воркер: `NotificationDispatcherWorker` читает события `notify.*` из `EventOutbox` и отправляет через существующие сервисы `EmailService`/`PushService`.
+- Сейчас фактически используется только Telegram‑push через Mini App; email интеграция опциональна (SMTP), SMS не поддерживается.
 
 ENV подсказки:
 
@@ -304,7 +358,7 @@ ENV подсказки:
 
 ## Продакшн конфигурация
 
-- API: `DATABASE_URL`, `ADMIN_KEY`, `ADMIN_SESSION_SECRET`, `QR_JWT_SECRET` (не `dev_change_me`), `CORS_ORIGINS` обязательны; `WORKERS_ENABLED=1` в отдельном процессе.
+- API: обязательны `DATABASE_URL`, `ADMIN_KEY`, `ADMIN_SESSION_SECRET`, `QR_JWT_SECRET` (не `dev_change_me`), `CORS_ORIGINS`; для портала — `PORTAL_JWT_SECRET`, `PORTAL_REFRESH_SECRET`; для API‑key доступа — `API_KEY`; воркеры лучше запускать отдельным процессом (`WORKERS_ENABLED=1`).
 - Admin: `API_BASE` (абсолютный URL), `ADMIN_UI_PASSWORD`, `ADMIN_SESSION_SECRET`.
 - Merchant Portal: `NEXT_PUBLIC_API_BASE`.
 

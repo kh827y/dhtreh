@@ -2,7 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
-import { toLevelRule } from '../loyalty/tier-defaults.util';
+import { toLevelRule } from '../loyalty/utils/tier-defaults.util';
+import { getRulesRoot, getRulesSection } from '../../shared/rules-json.util';
 
 interface BotConfig {
   token: string;
@@ -694,8 +695,8 @@ export class TelegramBotService {
       : ['• Уровни не настроены'];
     levelLines.push('• 1 балл = 1 рубль при списании');
 
-    const rules = toRecord(settings?.rulesJson) ?? {};
-    const miniappRules = toRecord(rules.miniapp);
+    const rules = getRulesRoot(settings?.rulesJson) ?? {};
+    const miniappRules = getRulesSection(rules, 'miniapp');
     const supportTelegramRaw = miniappRules?.supportTelegram;
     const supportTelegram =
       typeof supportTelegramRaw === 'string' && supportTelegramRaw.trim()

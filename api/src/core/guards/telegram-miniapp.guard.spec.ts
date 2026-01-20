@@ -1,10 +1,10 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { TelegramMiniappGuard } from './telegram-miniapp.guard';
-import * as telegramHelper from '../../modules/loyalty/telegram-auth.helper';
+import * as telegramHelper from '../../modules/loyalty/utils/telegram-auth.helper';
 import type { PrismaService } from '../prisma/prisma.service';
-import type { TelegramAuthContext } from '../../modules/loyalty/telegram-auth.helper';
+import type { TelegramAuthContext } from '../../modules/loyalty/utils/telegram-auth.helper';
 
-jest.mock('../../modules/loyalty/telegram-auth.helper', () => ({
+jest.mock('../../modules/loyalty/utils/telegram-auth.helper', () => ({
   readTelegramInitDataFromHeader: jest.fn(),
   resolveTelegramAuthContext: jest.fn(),
 }));

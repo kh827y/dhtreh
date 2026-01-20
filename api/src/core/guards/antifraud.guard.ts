@@ -11,19 +11,17 @@ import { AntiFraudService } from '../../modules/antifraud/antifraud.service';
 import { AlertsService } from '../../modules/alerts/alerts.service';
 import { TelegramStaffNotificationsService } from '../../modules/telegram/staff-notifications.service';
 import { normalizeDeviceCode } from '../../shared/devices/device.util';
+import { getRulesSection } from '../../shared/rules-json.util';
+import { AppConfigService } from '../config/app-config.service';
 
-function envNum(name: string, def: number) {
-  const v = (process.env[name] || '').trim();
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : def;
+function envNum(config: AppConfigService, name: string, def: number) {
+  const n = config.getNumber(name);
+  if (typeof n === 'number' && Number.isFinite(n) && n > 0) return n;
+  return def;
 }
 
-function envBool(name: string, def: boolean) {
-  const v = (process.env[name] || '').trim().toLowerCase();
-  if (!v) return def;
-  if (['1', 'true', 'yes', 'on'].includes(v)) return true;
-  if (['0', 'false', 'no', 'off'].includes(v)) return false;
-  return def;
+function envBool(config: AppConfigService, name: string, def: boolean) {
+  return config.getBoolean(name, def);
 }
 
 type RequestLike = {
@@ -69,8 +67,7 @@ function getHeader(req: RequestLike, name: string): string | undefined {
 }
 
 function readBlockFactors(rulesJson: unknown): string[] {
-  const rules = toRecord(rulesJson);
-  const af = toRecord(rules?.af);
+  const af = getRulesSection(rulesJson, 'af');
   const raw = af?.blockFactors;
   if (!Array.isArray(raw)) return [];
   return raw
@@ -86,17 +83,20 @@ export class AntiFraudGuard implements CanActivate {
     private antifraud: AntiFraudService,
     private alerts: AlertsService,
     private staffNotify: TelegramStaffNotificationsService,
+    private readonly config: AppConfigService,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     // tests/dev bypass (can be forced on via ANTIFRAUD_GUARD_FORCE=on)
-    if (process.env.NODE_ENV === 'test') {
-      const force = (process.env.ANTIFRAUD_GUARD_FORCE || '')
+    if (this.config.getString('NODE_ENV') === 'test') {
+      const force = (this.config.getString('ANTIFRAUD_GUARD_FORCE') || '')
         .trim()
         .toLowerCase();
       if (force !== 'on') return true;
     }
-    const sw = (process.env.ANTIFRAUD_GUARD || '').trim().toLowerCase();
+    const sw = (this.config.getString('ANTIFRAUD_GUARD') || '')
+      .trim()
+      .toLowerCase();
     if (sw === 'off' || sw === '0' || sw === 'false' || sw === 'no')
       return true;
 
@@ -192,10 +192,10 @@ export class AntiFraudGuard implements CanActivate {
     // Limits (defaults)
     // Defaults from ENV
     const platformCustomer = {
-      limit: envNum('AF_LIMIT_CUSTOMER', 5),
-      windowSec: envNum('AF_WINDOW_CUSTOMER_SEC', 120),
-      dailyCap: envNum('AF_DAILY_CAP_CUSTOMER', 5),
-      weeklyCap: envNum('AF_WEEKLY_CAP_CUSTOMER', 0),
+      limit: envNum(this.config, 'AF_LIMIT_CUSTOMER', 5),
+      windowSec: envNum(this.config, 'AF_WINDOW_CUSTOMER_SEC', 120),
+      dailyCap: envNum(this.config, 'AF_DAILY_CAP_CUSTOMER', 5),
+      weeklyCap: envNum(this.config, 'AF_WEEKLY_CAP_CUSTOMER', 0),
     } as const;
     let limits = {
       customer: {
@@ -203,33 +203,33 @@ export class AntiFraudGuard implements CanActivate {
         windowSec: platformCustomer.windowSec,
         dailyCap: platformCustomer.dailyCap,
         weeklyCap: platformCustomer.weeklyCap,
-        monthlyCap: envNum('AF_MONTHLY_CAP_CUSTOMER', 40),
-        pointsCap: envNum('AF_POINTS_CAP_CUSTOMER', 3000),
-        blockDaily: envBool('AF_BLOCK_DAILY_CUSTOMER', false),
+        monthlyCap: envNum(this.config, 'AF_MONTHLY_CAP_CUSTOMER', 40),
+        pointsCap: envNum(this.config, 'AF_POINTS_CAP_CUSTOMER', 3000),
+        blockDaily: envBool(this.config, 'AF_BLOCK_DAILY_CUSTOMER', false),
       },
       outlet: {
-        limit: envNum('AF_LIMIT_OUTLET', 20),
-        windowSec: envNum('AF_WINDOW_OUTLET_SEC', 600),
-        dailyCap: envNum('AF_DAILY_CAP_OUTLET', 0),
-        weeklyCap: envNum('AF_WEEKLY_CAP_OUTLET', 0),
+        limit: envNum(this.config, 'AF_LIMIT_OUTLET', 20),
+        windowSec: envNum(this.config, 'AF_WINDOW_OUTLET_SEC', 600),
+        dailyCap: envNum(this.config, 'AF_DAILY_CAP_OUTLET', 0),
+        weeklyCap: envNum(this.config, 'AF_WEEKLY_CAP_OUTLET', 0),
       },
       device: {
-        limit: envNum('AF_LIMIT_DEVICE', 20),
-        windowSec: envNum('AF_WINDOW_DEVICE_SEC', 600),
-        dailyCap: envNum('AF_DAILY_CAP_DEVICE', 0),
-        weeklyCap: envNum('AF_WEEKLY_CAP_DEVICE', 0),
+        limit: envNum(this.config, 'AF_LIMIT_DEVICE', 20),
+        windowSec: envNum(this.config, 'AF_WINDOW_DEVICE_SEC', 600),
+        dailyCap: envNum(this.config, 'AF_DAILY_CAP_DEVICE', 0),
+        weeklyCap: envNum(this.config, 'AF_WEEKLY_CAP_DEVICE', 0),
       },
       staff: {
-        limit: envNum('AF_LIMIT_STAFF', 60),
-        windowSec: envNum('AF_WINDOW_STAFF_SEC', 600),
-        dailyCap: envNum('AF_DAILY_CAP_STAFF', 0),
-        weeklyCap: envNum('AF_WEEKLY_CAP_STAFF', 0),
+        limit: envNum(this.config, 'AF_LIMIT_STAFF', 60),
+        windowSec: envNum(this.config, 'AF_WINDOW_STAFF_SEC', 600),
+        dailyCap: envNum(this.config, 'AF_DAILY_CAP_STAFF', 0),
+        weeklyCap: envNum(this.config, 'AF_WEEKLY_CAP_STAFF', 0),
       },
       merchant: {
-        limit: envNum('AF_LIMIT_MERCHANT', 200),
-        windowSec: envNum('AF_WINDOW_MERCHANT_SEC', 3600),
-        dailyCap: envNum('AF_DAILY_CAP_MERCHANT', 0),
-        weeklyCap: envNum('AF_WEEKLY_CAP_MERCHANT', 0),
+        limit: envNum(this.config, 'AF_LIMIT_MERCHANT', 200),
+        windowSec: envNum(this.config, 'AF_WINDOW_MERCHANT_SEC', 3600),
+        dailyCap: envNum(this.config, 'AF_DAILY_CAP_MERCHANT', 0),
+        weeklyCap: envNum(this.config, 'AF_WEEKLY_CAP_MERCHANT', 0),
       },
     } as const;
 
@@ -241,15 +241,14 @@ export class AntiFraudGuard implements CanActivate {
             where: { merchantId },
           })
         : null;
-      const rules = toRecord(s?.rulesJson);
-      const af = toRecord(rules?.af);
+      const af = getRulesSection(s?.rulesJson, 'af');
       if (af) {
-        resetCfg = toRecord(af.reset);
-        const outletCfg = toRecord(af.outlet) ?? {};
-        const deviceCfg = toRecord(af.device) ?? {};
-        const customerCfg = toRecord(af.customer) ?? {};
-        const staffCfg = toRecord(af.staff) ?? {};
-        const merchantCfg = toRecord(af.merchant) ?? {};
+        resetCfg = getRulesSection(af, 'reset');
+        const outletCfg = getRulesSection(af, 'outlet') ?? {};
+        const deviceCfg = getRulesSection(af, 'device') ?? {};
+        const customerCfg = getRulesSection(af, 'customer') ?? {};
+        const staffCfg = getRulesSection(af, 'staff') ?? {};
+        const merchantCfg = getRulesSection(af, 'merchant') ?? {};
         limits = {
           customer: {
             limit: toNumber(customerCfg.limit, limits.customer.limit),

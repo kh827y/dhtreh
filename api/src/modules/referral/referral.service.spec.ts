@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { ReferralService } from './referral.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
-import type { LoyaltyService } from '../loyalty/loyalty.service';
+import type { LoyaltyService } from '../loyalty/services/loyalty.service';
 import type { EmailService } from '../notifications/email/email.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<

@@ -1,6 +1,7 @@
 import { AnalyticsAggregatorWorker } from './analytics-aggregator.worker';
 import type { PrismaService } from '../../core/prisma/prisma.service';
 import { fetchReceiptAggregates } from '../../shared/common/receipt-aggregates.util';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 jest.mock('../../shared/common/receipt-aggregates.util', () => ({
   fetchReceiptAggregates: jest.fn(),
@@ -78,6 +79,7 @@ describe('AnalyticsAggregatorWorker — RFM helpers', () => {
   it('maps recency into buckets 1–5 and clamps values to the horizon', () => {
     const worker = new AnalyticsAggregatorWorker(
       asPrismaService(createPrismaMock()),
+      new AppConfigService(),
     );
     const workerPrivate = asWorkerPrivate(worker);
     const { scoreRecency, computeRecencyDaysBounded, computeRecencyDaysRaw } =
@@ -102,6 +104,7 @@ describe('AnalyticsAggregatorWorker — RFM helpers', () => {
   it('segments descending metrics by threshold or quantiles', () => {
     const worker = new AnalyticsAggregatorWorker(
       asPrismaService(createPrismaMock()),
+      new AppConfigService(),
     );
     const workerPrivate = asWorkerPrivate(worker);
     const { scoreDescending, computeQuantiles } = workerPrivate;
@@ -133,6 +136,7 @@ describe('AnalyticsAggregatorWorker — RFM helpers', () => {
   it('picks upper quantiles for auto-thresholds and respects minimums', () => {
     const worker = new AnalyticsAggregatorWorker(
       asPrismaService(createPrismaMock()),
+      new AppConfigService(),
     );
     const workerPrivate = asWorkerPrivate(worker);
     const { computeQuantiles } = workerPrivate;
@@ -229,7 +233,10 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
     ];
     fetchAggregatesMock.mockResolvedValue(receipts);
 
-    const worker = new AnalyticsAggregatorWorker(asPrismaService(prisma));
+    const worker = new AnalyticsAggregatorWorker(
+      asPrismaService(prisma),
+      new AppConfigService(),
+    );
     await worker.recalculateCustomerStatsForMerchant('m-1');
 
     expect(fetchAggregatesMock).toHaveBeenCalledWith(prisma, {
@@ -367,7 +374,10 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
     ];
     fetchAggregatesMock.mockResolvedValue(receipts);
 
-    const worker = new AnalyticsAggregatorWorker(asPrismaService(prisma));
+    const worker = new AnalyticsAggregatorWorker(
+      asPrismaService(prisma),
+      new AppConfigService(),
+    );
     await worker.recalculateCustomerStatsForMerchant('m-2');
 
     const upserts = prisma.customerStats.upsert.mock.calls.map(

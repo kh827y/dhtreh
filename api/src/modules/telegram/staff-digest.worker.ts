@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { TelegramStaffNotificationsService } from './staff-notifications.service';
 import {
   DEFAULT_TIMEZONE_CODE,
@@ -8,13 +9,8 @@ import {
 } from '../../shared/timezone/russia-timezones';
 import { STAFF_DIGEST_LOCAL_HOUR } from './staff-digest.constants';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../../shared/pg-lock.util';
-
-const normalizeRulesJson = (raw: unknown): Record<string, any> => {
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    return { ...(raw as Record<string, any>) };
-  }
-  return {};
-};
+import { ensureRulesRoot, getRulesSection } from '../../shared/rules-json.util';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 const toDateString = (value: Date) => {
   const y = value.getUTCFullYear();
@@ -50,11 +46,12 @@ export class TelegramStaffDigestWorker {
   constructor(
     private readonly prisma: PrismaService,
     private readonly staffNotify: TelegramStaffNotificationsService,
+    private readonly config: AppConfigService,
   ) {}
 
   @Cron('*/15 * * * *')
   async handleDailyDigest() {
-    if (process.env.WORKERS_ENABLED !== '1') return;
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) return;
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:telegram_staff_digest',
@@ -93,12 +90,8 @@ export class TelegramStaffDigestWorker {
           const localDate = `${localParts.year}-${String(
             localParts.month,
           ).padStart(2, '0')}-${String(localParts.day).padStart(2, '0')}`;
-          const rules = normalizeRulesJson(settings?.rulesJson);
-          const digestMeta =
-            rules.staffNotifyDigest &&
-            typeof rules.staffNotifyDigest === 'object'
-              ? (rules.staffNotifyDigest as Record<string, any>)
-              : {};
+          const rules = ensureRulesRoot(settings?.rulesJson);
+          const digestMeta = getRulesSection(rules, 'staffNotifyDigest') ?? {};
           const lastSentLocalDate =
             typeof digestMeta.lastSentLocalDate === 'string'
               ? digestMeta.lastSentLocalDate
@@ -116,10 +109,11 @@ export class TelegramStaffDigestWorker {
           digestMeta.lastSentLocalDate = localDate;
           digestMeta.lastSentAt = new Date().toISOString();
           rules.staffNotifyDigest = digestMeta;
+          const rulesJson = rules as Prisma.InputJsonValue;
           await this.prisma.merchantSettings.upsert({
             where: { merchantId },
-            create: { merchantId, rulesJson: rules },
-            update: { rulesJson: rules },
+            create: { merchantId, rulesJson },
+            update: { rulesJson },
           });
         } catch (error) {
           this.logger.debug(

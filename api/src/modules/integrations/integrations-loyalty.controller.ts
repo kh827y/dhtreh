@@ -11,12 +11,11 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import {
   Prisma,
-  StaffStatus,
-  StaffOutletAccessStatus,
   type Customer,
 } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
-import { LoyaltyService } from '../loyalty/loyalty.service';
+import { LookupCacheService } from '../../core/cache/lookup-cache.service';
+import { LoyaltyService } from '../loyalty/services/loyalty.service';
 import { IntegrationApiKeyGuard } from './integration-api-key.guard';
 import { ApiTags } from '@nestjs/swagger';
 import {
@@ -30,7 +29,7 @@ import {
   looksLikeJwt,
   verifyQrToken,
   type VerifiedQr,
-} from '../loyalty/token.util';
+} from '../loyalty/utils/token.util';
 import { normalizeDeviceCode } from '../../shared/devices/device.util';
 
 type IntegrationRequest = Request & {
@@ -87,6 +86,7 @@ export class IntegrationsLoyaltyController {
   constructor(
     private readonly loyalty: LoyaltyService,
     private readonly prisma: PrismaService,
+    private readonly cache: LookupCacheService,
   ) {}
 
   private parseOperationDate(raw?: string | null): Date | null {
@@ -299,10 +299,7 @@ export class IntegrationsLoyaltyController {
     outletId?: string | null,
   ) {
     if (!outletId) return null;
-    const outlet = await this.prisma.outlet.findFirst({
-      where: { id: outletId, merchantId },
-      select: { id: true },
-    });
+    const outlet = await this.cache.getOutlet(merchantId, outletId);
     if (!outlet) {
       throw new BadRequestException('Торговая точка не найдена');
     }
@@ -341,10 +338,7 @@ export class IntegrationsLoyaltyController {
       );
     }
 
-    const settings = await this.prisma.merchantSettings.findUnique({
-      where: { merchantId },
-      select: { requireJwtForQuote: true },
-    });
+    const settings = await this.cache.getMerchantSettings(merchantId);
     const requireJwtForQuote = Boolean(settings?.requireJwtForQuote);
 
     if (!userToken && requireJwtForQuote) {
@@ -479,33 +473,15 @@ export class IntegrationsLoyaltyController {
     outletId?: string | null,
   ) {
     if (!staffId) return null;
-    const staff = await this.prisma.staff.findFirst({
-      where: {
-        id: staffId,
-        merchantId,
-        status: StaffStatus.ACTIVE,
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        login: true,
-        email: true,
-        allowedOutletId: true,
-        accesses: {
-          where: { status: StaffOutletAccessStatus.ACTIVE },
-          select: { outletId: true },
-        },
-      },
-    });
+    const staff = await this.cache.getStaff(merchantId, staffId);
     if (!staff) {
       throw new BadRequestException('Сотрудник не найден или отключён');
     }
     const outletFromStaff =
       staff.allowedOutletId ??
-      (Array.isArray(staff.accesses) ? staff.accesses : []).find(
-        (a) => a?.outletId,
-      )?.outletId ??
+      (Array.isArray(staff.accessOutletIds) ? staff.accessOutletIds : []).find(
+        (id) => id,
+      ) ??
       null;
     if (outletId && outletFromStaff && outletFromStaff !== outletId) {
       throw new BadRequestException(
@@ -588,10 +564,7 @@ export class IntegrationsLoyaltyController {
     if (!userToken) throw new BadRequestException('user_token required');
 
     const resolved = await this.resolveFromToken(userToken);
-    const settings = await this.prisma.merchantSettings.findUnique({
-      where: { merchantId },
-      select: { requireJwtForQuote: true },
-    });
+    const settings = await this.cache.getMerchantSettings(merchantId);
     const requireJwtForQuote = Boolean(settings?.requireJwtForQuote);
     if (requireJwtForQuote && resolved.kind !== 'jwt') {
       throw new BadRequestException('JWT required for quote');

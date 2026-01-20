@@ -1,4 +1,8 @@
+import { Logger } from '@nestjs/common';
 import { PrismaService } from '../core/prisma/prisma.service';
+import { safeExecAsync } from './safe-exec';
+
+const logger = new Logger('pg-lock');
 
 function hashPair(name: string): [number, number] {
   // simple 32-bit rolling hashes for pair
@@ -18,22 +22,30 @@ export async function pgTryAdvisoryLock(
   name: string,
 ): Promise<{ ok: boolean; key: [number, number] }> {
   const key = hashPair(name);
-  try {
-    const rows = await prisma.$queryRaw<
-      { ok: boolean }[]
-    >`SELECT pg_try_advisory_lock(${key[0]}::int, ${key[1]}::int) as ok`;
-    const ok = !!rows?.[0]?.ok;
-    return { ok, key };
-  } catch {
-    return { ok: false, key };
-  }
+  return safeExecAsync(
+    async () => {
+      const rows = await prisma.$queryRaw<
+        { ok: boolean }[]
+      >`SELECT pg_try_advisory_lock(${key[0]}::int, ${key[1]}::int) as ok`;
+      const ok = !!rows?.[0]?.ok;
+      return { ok, key };
+    },
+    async () => ({ ok: false, key }),
+    logger,
+    'pg_try_advisory_lock failed',
+  );
 }
 
 export async function pgAdvisoryUnlock(
   prisma: PrismaService,
   key: [number, number],
 ): Promise<void> {
-  try {
-    await prisma.$queryRaw`SELECT pg_advisory_unlock(${key[0]}::int, ${key[1]}::int)`;
-  } catch {}
+  await safeExecAsync(
+    async () => {
+      await prisma.$queryRaw`SELECT pg_advisory_unlock(${key[0]}::int, ${key[1]}::int)`;
+    },
+    async () => undefined,
+    logger,
+    'pg_advisory_unlock failed',
+  );
 }

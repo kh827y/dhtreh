@@ -1,4 +1,4 @@
-import { getJose } from '../loyalty/token.util';
+import { getJose } from '../loyalty/utils/token.util';
 
 export type PortalActor = 'MERCHANT' | 'STAFF';
 

@@ -5,18 +5,22 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
+import { AppConfigService } from '../config/app-config.service';
 
 @Injectable()
 export class AdminGuard implements CanActivate {
+  constructor(private readonly config: AppConfigService) {}
+
   canActivate(ctx: ExecutionContext): boolean {
     const req = ctx.switchToHttp().getRequest<RequestLike>();
     const key = getHeader(req, 'x-admin-key');
-    const want = process.env.ADMIN_KEY || '';
+    const want = this.config.getString('ADMIN_KEY') || '';
+    const nodeEnv = this.config.getString('NODE_ENV') || 'development';
     const isTest =
-      process.env.NODE_ENV === 'test' || !!process.env.JEST_WORKER_ID;
+      nodeEnv === 'test' || !!this.config.getString('JEST_WORKER_ID');
 
     // In production, admin key must be configured and not use dev defaults
-    if (process.env.NODE_ENV === 'production') {
+    if (nodeEnv === 'production') {
       if (!want || want === 'dev_change_me' || want === 'admin') {
         throw new UnauthorizedException(
           'Admin key not properly configured for production',
@@ -25,15 +29,15 @@ export class AdminGuard implements CanActivate {
     }
 
     // In tests/dev, allow fallback keys if ADMIN_KEY is not set
-    if (!want && (isTest || process.env.NODE_ENV !== 'production')) {
+    if (!want && (isTest || nodeEnv !== 'production')) {
       if (key === 'test-admin-key' || key === 'test_admin_key') return true;
     }
     if (!want) throw new UnauthorizedException('Admin key not configured');
 
     // Optional 2FA (TOTP) check if ADMIN_2FA_SECRET is set
-    const totpSecret = (process.env.ADMIN_2FA_SECRET || '').trim();
+    const totpSecret = (this.config.getString('ADMIN_2FA_SECRET') || '').trim();
     // Enforce OTP only in production
-    if (totpSecret && process.env.NODE_ENV === 'production') {
+    if (totpSecret && nodeEnv === 'production') {
       const otp = getHeader(req, 'x-admin-otp');
       const okOtp = verifyTotp(totpSecret, otp);
       if (!okOtp)

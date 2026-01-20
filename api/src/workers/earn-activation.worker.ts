@@ -8,6 +8,7 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { MetricsService } from '../core/metrics/metrics.service';
 import { LedgerAccount, TxnType, WalletType } from '@prisma/client';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../shared/pg-lock.util';
+import { AppConfigService } from '../core/config/app-config.service';
 
 @Injectable()
 export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
@@ -18,16 +19,17 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     private prisma: PrismaService,
     private metrics: MetricsService,
+    private readonly config: AppConfigService,
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
-    const intervalMs = Number(
-      process.env.EARN_ACTIVATION_INTERVAL_MS || 15 * 60 * 1000,
-    ); // каждые 15 минут
+    const intervalMs =
+      this.config.getNumber('EARN_ACTIVATION_INTERVAL_MS', 15 * 60 * 1000) ??
+      15 * 60 * 1000; // каждые 15 минут
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     try {
       if (this.timer && typeof this.timer.unref === 'function')
@@ -49,10 +51,11 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
     try {
-      const batchSize = Number(process.env.EARN_ACTIVATION_BATCH || 500);
+      const batchSize =
+        this.config.getNumber('EARN_ACTIVATION_BATCH', 500) ?? 500;
       const maxAttempts = Math.max(
         1,
-        Number(process.env.EARN_ACTIVATION_MAX_RETRIES || '5'),
+        this.config.getNumber('EARN_ACTIVATION_MAX_RETRIES', 5) ?? 5,
       );
       const now = new Date();
       // Выбираем порцию PENDING лотов, срок которых наступил
@@ -155,7 +158,7 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
               },
             });
 
-            if (process.env.LEDGER_FEATURE === '1') {
+            if (this.config.getBoolean('LEDGER_FEATURE', false)) {
               await tx.ledgerEntry.create({
                 data: {
                   merchantId: fresh.merchantId,

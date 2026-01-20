@@ -5,7 +5,7 @@ import {
   readTelegramInitDataFromHeader,
   resolveTelegramAuthContext,
   type TelegramAuthContext,
-} from '../../modules/loyalty/telegram-auth.helper';
+} from '../../modules/loyalty/utils/telegram-auth.helper';
 
 type RequestLike = {
   method?: string;

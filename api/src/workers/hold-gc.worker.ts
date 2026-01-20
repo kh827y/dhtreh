@@ -8,6 +8,7 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { HoldStatus } from '@prisma/client';
 import { MetricsService } from '../core/metrics/metrics.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../shared/pg-lock.util';
+import { AppConfigService } from '../core/config/app-config.service';
 
 @Injectable()
 export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
@@ -18,14 +19,16 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     private prisma: PrismaService,
     private metrics: MetricsService,
+    private readonly config: AppConfigService,
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
-    const intervalMs = Number(process.env.HOLD_GC_INTERVAL_MS || '30000');
+    const intervalMs =
+      this.config.getNumber('HOLD_GC_INTERVAL_MS', 30000) ?? 30000;
     this.timer = setInterval(() => {
       this.tick().catch((error) => {
         this.logger.error('HoldGcWorker tick failed', error as Error);

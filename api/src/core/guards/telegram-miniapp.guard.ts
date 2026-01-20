@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   readTelegramInitDataFromHeader,
   resolveTelegramAuthContext,
-} from '../../modules/loyalty/telegram-auth.helper';
+} from '../../modules/loyalty/utils/telegram-auth.helper';
 
 type TelegramMiniappRequest = {
   headers?: Record<string, string | string[] | undefined>;

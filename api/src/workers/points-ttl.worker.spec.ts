@@ -2,6 +2,7 @@ import { PointsTtlWorker } from './points-ttl.worker';
 import * as lockUtil from '../shared/pg-lock.util';
 import type { MetricsService } from '../core/metrics/metrics.service';
 import type { PrismaService } from '../core/prisma/prisma.service';
+import { AppConfigService } from '../core/config/app-config.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -140,6 +141,7 @@ describe('PointsTtlWorker (unit)', () => {
     const w = new PointsTtlWorker(
       asPrismaService(prisma),
       asMetricsService(metrics),
+      new AppConfigService(),
     );
     // Вручную вызовем приватный tick
     const workerPrivate = asPrivateWorker(w);
@@ -209,6 +211,7 @@ describe('PointsTtlWorker (unit)', () => {
     const w = new PointsTtlWorker(
       asPrismaService(prisma),
       asMetricsService(metrics),
+      new AppConfigService(),
     );
     const workerPrivate = asPrivateWorker(w);
     await workerPrivate.tick();

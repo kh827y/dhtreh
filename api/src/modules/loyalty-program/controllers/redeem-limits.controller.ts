@@ -15,17 +15,12 @@ import {
   type PortalPermissionState,
 } from '../../portal-auth/portal-permissions.util';
 import { PrismaService } from '../../../core/prisma/prisma.service';
+import { ensureRulesRoot } from '../../../shared/rules-json.util';
 
 type PortalRequest = {
   portalMerchantId?: string;
   portalPermissions?: PortalPermissionState | null;
 };
-
-function ensureObject(input: unknown): Record<string, unknown> {
-  return input && typeof input === 'object' && !Array.isArray(input)
-    ? { ...(input as Record<string, unknown>) }
-    : {};
-}
 
 const MAX_TTL_DAYS = 3650;
 const MAX_DELAY_DAYS = 3650;
@@ -52,7 +47,7 @@ export class RedeemLimitsController {
     const s = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
     });
-    const rules = ensureObject(s?.rulesJson ?? null);
+    const rules = ensureRulesRoot(s?.rulesJson);
     const allowSame = Boolean(rules.allowEarnRedeemSameReceipt);
     const ttlDays = Number(s?.pointsTtlDays ?? 0) || 0;
     const delayDays = Number(s?.earnDelayDays ?? 0) || 0;
@@ -82,7 +77,7 @@ export class RedeemLimitsController {
     const s = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
     });
-    const rules = ensureObject(s?.rulesJson ?? null);
+    const rules = ensureRulesRoot(s?.rulesJson);
     const currentAllowSame = Boolean(rules.allowEarnRedeemSameReceipt);
     const currentTtlDays = Number(s?.pointsTtlDays ?? 0) || 0;
     const currentDelayDays = Number(s?.earnDelayDays ?? 0) || 0;

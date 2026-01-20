@@ -45,8 +45,8 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { AdminAuditInterceptor } from '../admin/admin-audit.interceptor';
-import { ErrorDto } from '../loyalty/dto';
-import { TransactionItemDto } from '../loyalty/dto';
+import { ErrorDto } from '../loyalty/dto/dto';
+import { TransactionItemDto } from '../loyalty/dto/dto';
 import { SubscriptionService } from '../subscription/subscription.service';
 
 type MerchantListItem = Awaited<

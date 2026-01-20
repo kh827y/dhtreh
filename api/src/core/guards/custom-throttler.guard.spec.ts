@@ -4,6 +4,7 @@ import type {
   ThrottlerStorage,
 } from '@nestjs/throttler';
 import { CustomThrottlerGuard } from './custom-throttler.guard';
+import { AppConfigService } from '../config/app-config.service';
 
 type ThrottlerStorageRecord = {
   totalHits: number;
@@ -38,7 +39,12 @@ const buildGuard = () => {
       timeToBlockExpire: 0,
     }),
   };
-  return new CustomThrottlerGuard(options, storage, new Reflector());
+  return new CustomThrottlerGuard(
+    options,
+    storage,
+    new Reflector(),
+    new AppConfigService(),
+  );
 };
 
 describe('CustomThrottlerGuard.getTracker', () => {

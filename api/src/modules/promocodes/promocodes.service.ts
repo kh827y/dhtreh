@@ -7,7 +7,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { MetricsService } from '../../core/metrics/metrics.service';
-import { DEFAULT_LEVELS_PERIOD_DAYS } from '../loyalty/levels.util';
+import { DEFAULT_LEVELS_PERIOD_DAYS } from '../loyalty/utils/levels.util';
 
 export type PortalPromoCodePayload = {
   code: string;

@@ -2,6 +2,7 @@ import { EarnActivationWorker } from './earn-activation.worker';
 import type { MetricsService } from '../core/metrics/metrics.service';
 import type { PrismaService } from '../core/prisma/prisma.service';
 import * as lockUtil from '../shared/pg-lock.util';
+import { AppConfigService } from '../core/config/app-config.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -109,6 +110,7 @@ describe('EarnActivationWorker (unit)', () => {
     const w = new EarnActivationWorker(
       asPrismaService(prisma),
       asMetricsService(metrics),
+      new AppConfigService(),
     );
     // @ts-expect-error private
     await w.tick();
@@ -195,6 +197,7 @@ describe('EarnActivationWorker (unit)', () => {
     const w = new EarnActivationWorker(
       asPrismaService(prisma),
       asMetricsService(metrics),
+      new AppConfigService(),
     );
     // @ts-expect-error private
     await w.tick();

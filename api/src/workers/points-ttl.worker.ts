@@ -8,6 +8,7 @@ import { Prisma, TxnType, WalletType } from '@prisma/client';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { MetricsService } from '../core/metrics/metrics.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../shared/pg-lock.util';
+import { AppConfigService } from '../core/config/app-config.service';
 
 @Injectable()
 export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
@@ -20,20 +21,21 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     private prisma: PrismaService,
     private metrics: MetricsService,
+    private readonly config: AppConfigService,
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
-    if (process.env.POINTS_TTL_FEATURE !== '1') {
+    if (!this.config.getBoolean('POINTS_TTL_FEATURE', false)) {
       this.logger.log('POINTS_TTL_FEATURE disabled');
       return;
     }
-    const intervalMs = Number(
-      process.env.POINTS_TTL_INTERVAL_MS || 6 * 60 * 60 * 1000,
-    ); // каждые 6 часов
+    const intervalMs =
+      this.config.getNumber('POINTS_TTL_INTERVAL_MS', 6 * 60 * 60 * 1000) ??
+      6 * 60 * 60 * 1000; // каждые 6 часов
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     try {
       if (this.timer && typeof this.timer.unref === 'function')
@@ -68,11 +70,11 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
       const now = Date.now();
       const lotBatchSize = Math.max(
         100,
-        Number(process.env.POINTS_TTL_BATCH || '2000'),
+        this.config.getNumber('POINTS_TTL_BATCH', 2000) ?? 2000,
       );
       const outboxBatchSize = Math.max(
         50,
-        Number(process.env.POINTS_TTL_OUTBOX_BATCH || '500'),
+        this.config.getNumber('POINTS_TTL_OUTBOX_BATCH', 500) ?? 500,
       );
       for (const s of merchants) {
         const ttlDays = s.pointsTtlDays;
@@ -127,7 +129,7 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
             { orderId: { startsWith: 'complimentary:' } },
           ],
         };
-        const useLots = process.env.EARN_LOTS_FEATURE === '1';
+        const useLots = this.config.getBoolean('EARN_LOTS_FEATURE', false);
         if (useLots) {
           type EarnLotRow = {
             id: string;

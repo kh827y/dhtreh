@@ -13,7 +13,9 @@ import {
   TelegramStaffNotificationsService,
   type StaffNotificationPayload,
 } from '../modules/telegram/staff-notifications.service';
+import { getRulesSection } from '../shared/rules-json.util';
 import type { EventOutbox } from '@prisma/client';
+import { AppConfigService } from '../core/config/app-config.service';
 
 type OutboxRow = EventOutbox;
 
@@ -36,6 +38,7 @@ export class NotificationDispatcherWorker
     private push: PushService,
     private email: EmailService,
     private staffNotify: TelegramStaffNotificationsService,
+    private readonly config: AppConfigService,
   ) {}
 
   private applyVars(tpl: string, vars: Record<string, unknown>): string {
@@ -66,12 +69,13 @@ export class NotificationDispatcherWorker
   }
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
     this.loadRpsConfig();
-    const intervalMs = Number(process.env.NOTIFY_WORKER_INTERVAL_MS || '3000');
+    const intervalMs =
+      this.config.getNumber('NOTIFY_WORKER_INTERVAL_MS', 3000) ?? 3000;
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     try {
       if (this.timer && typeof this.timer.unref === 'function')
@@ -100,18 +104,18 @@ export class NotificationDispatcherWorker
   }
 
   private backoffMs(retries: number): number {
-    const base = Number(process.env.NOTIFY_BACKOFF_BASE_MS || '60000');
-    const cap = Number(process.env.NOTIFY_BACKOFF_CAP_MS || '3600000');
+    const base = this.config.getNumber('NOTIFY_BACKOFF_BASE_MS', 60000) ?? 60000;
+    const cap = this.config.getNumber('NOTIFY_BACKOFF_CAP_MS', 3600000) ?? 3600000;
     const exp = Math.min(cap, base * Math.pow(2, Math.max(0, retries)));
     const jitter = exp * (0.9 + Math.random() * 0.2);
     return Math.floor(jitter);
   }
 
   private loadRpsConfig() {
-    const d = Number(process.env.NOTIFY_RPS_DEFAULT || '0');
+    const d = this.config.getNumber('NOTIFY_RPS_DEFAULT', 0) ?? 0;
     this.rpsDefault = Number.isFinite(d) && d >= 0 ? d : 0;
     this.rpsByMerchant.clear();
-    const raw = process.env.NOTIFY_RPS_BY_MERCHANT || '';
+    const raw = this.config.getString('NOTIFY_RPS_BY_MERCHANT', '') ?? '';
     for (const part of raw
       .split(',')
       .map((s) => s.trim())
@@ -147,7 +151,8 @@ export class NotificationDispatcherWorker
     const payload = this.toRecord(row.payload) ?? {};
     const type = row.eventType || '';
     const isTestEnv =
-      process.env.NODE_ENV === 'test' || !!process.env.JEST_WORKER_ID;
+      this.config.getString('NODE_ENV') === 'test' ||
+      !!this.config.getString('JEST_WORKER_ID');
     try {
       if (type === 'notify.broadcast') {
         const dry = this.asBoolean(payload.dryRun) ?? false;
@@ -443,8 +448,10 @@ export class NotificationDispatcherWorker
           where: { merchantId },
           select: { rulesJson: true },
         });
-        const rules = this.toRecord(settings?.rulesJson);
-        const registration = this.toRecord(rules?.registration);
+        const registration = getRulesSection(
+          settings?.rulesJson,
+          'registration',
+        );
         const pushEnabled = registration
           ? Object.prototype.hasOwnProperty.call(registration, 'pushEnabled')
             ? (this.asBoolean(registration.pushEnabled) ?? true)
@@ -609,7 +616,8 @@ export class NotificationDispatcherWorker
       });
     } catch (error: unknown) {
       const retries = row.retries + 1;
-      const maxRetries = Number(process.env.NOTIFY_MAX_RETRIES || '8');
+      const maxRetries =
+        this.config.getNumber('NOTIFY_MAX_RETRIES', 8) ?? 8;
       if (retries >= maxRetries) {
         await this.prisma.eventOutbox.update({
           where: { id: row.id },
@@ -660,7 +668,8 @@ export class NotificationDispatcherWorker
         );
       } catch {}
       const now = new Date();
-      const staleMs = Number(process.env.NOTIFY_SENDING_STALE_MS || '300000');
+      const staleMs =
+        this.config.getNumber('NOTIFY_SENDING_STALE_MS', 300000) ?? 300000;
       if (Number.isFinite(staleMs) && staleMs > 0) {
         const staleBefore = new Date(Date.now() - staleMs);
         await this.prisma.eventOutbox.updateMany({
@@ -676,7 +685,8 @@ export class NotificationDispatcherWorker
           },
         });
       }
-      const batch = Number(process.env.NOTIFY_WORKER_BATCH || '10');
+      const batch =
+        this.config.getNumber('NOTIFY_WORKER_BATCH', 10) ?? 10;
       const items = await this.prisma.eventOutbox.findMany({
         where: {
           status: 'PENDING',

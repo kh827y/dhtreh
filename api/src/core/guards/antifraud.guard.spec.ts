@@ -6,6 +6,7 @@ import type { AntiFraudService } from '../../modules/antifraud/antifraud.service
 import type { MetricsService } from '../metrics/metrics.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { TelegramStaffNotificationsService } from '../../modules/telegram/staff-notifications.service';
+import { AppConfigService } from '../config/app-config.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -85,6 +86,7 @@ describe('AntiFraudGuard', () => {
       asAntiFraudService(antifraud),
       asAlertsService(alerts),
       asStaffNotifyService(staffNotify),
+      new AppConfigService(),
     );
   });
 

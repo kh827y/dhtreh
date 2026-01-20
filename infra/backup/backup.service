@@ -1,0 +1,12 @@
+[Unit]
+Description=Loyalty database backup
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/loyalty
+Environment=ENV_FILE=/opt/loyalty/.env.production
+Environment=COMPOSE_FILE=/opt/loyalty/docker-compose.production.yml
+ExecStart=/opt/loyalty/scripts/backup.sh

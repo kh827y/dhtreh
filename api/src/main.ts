@@ -97,6 +97,7 @@ async function bootstrap() {
     }
   })();
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.enableShutdownHooks();
 
   const trustProxyRaw = String(process.env.TRUST_PROXY || '').trim();
   if (trustProxyRaw) {

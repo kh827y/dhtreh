@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../shared/pg-lock.util';
+import { AppConfigService } from '../core/config/app-config.service';
 
 @Injectable()
 export class EventOutboxGcWorker implements OnModuleInit, OnModuleDestroy {
@@ -13,14 +14,18 @@ export class EventOutboxGcWorker implements OnModuleInit, OnModuleDestroy {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly config: AppConfigService,
+  ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
-    const intervalMs = Number(process.env.OUTBOX_GC_INTERVAL_MS || '3600000');
+    const intervalMs =
+      this.config.getNumber('OUTBOX_GC_INTERVAL_MS', 3600000) ?? 3600000;
     this.timer = setInterval(() => {
       this.tick().catch((error) => {
         this.logger.error('EventOutboxGcWorker tick failed', error as Error);
@@ -48,7 +53,7 @@ export class EventOutboxGcWorker implements OnModuleInit, OnModuleDestroy {
     try {
       const days = Math.max(
         1,
-        Number(process.env.OUTBOX_RETENTION_DAYS || '30'),
+        this.config.getNumber('OUTBOX_RETENTION_DAYS', 30) ?? 30,
       );
       const olderThan = new Date(Date.now() - days * 24 * 3600 * 1000);
       await this.prisma.eventOutbox.deleteMany({

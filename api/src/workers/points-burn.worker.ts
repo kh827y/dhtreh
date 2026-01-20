@@ -8,6 +8,7 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { MetricsService } from '../core/metrics/metrics.service';
 import { TxnType, LedgerAccount, Prisma, WalletType } from '@prisma/client';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../shared/pg-lock.util';
+import { AppConfigService } from '../core/config/app-config.service';
 
 @Injectable()
 export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
@@ -20,20 +21,21 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     private prisma: PrismaService,
     private metrics: MetricsService,
+    private readonly config: AppConfigService,
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
-    if (process.env.POINTS_TTL_BURN !== '1') {
+    if (!this.config.getBoolean('POINTS_TTL_BURN', false)) {
       this.logger.log('POINTS_TTL_BURN disabled');
       return;
     }
-    const intervalMs = Number(
-      process.env.POINTS_TTL_BURN_INTERVAL_MS || 6 * 60 * 60 * 1000,
-    );
+    const intervalMs =
+      this.config.getNumber('POINTS_TTL_BURN_INTERVAL_MS', 6 * 60 * 60 * 1000) ??
+      6 * 60 * 60 * 1000;
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     try {
       if (this.timer && typeof this.timer.unref === 'function')
@@ -55,7 +57,7 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
       this.lastTickAt = new Date();
       lock = await pgTryAdvisoryLock(this.prisma, 'worker:points_ttl_burn');
       if (!lock.ok) return;
-      if (process.env.EARN_LOTS_FEATURE !== '1') {
+      if (!this.config.getBoolean('EARN_LOTS_FEATURE', false)) {
         this.logger.log('EARN_LOTS_FEATURE not enabled, skip TTL burn');
         return;
       }
@@ -164,7 +166,7 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
                 orderId: undefined,
               },
             });
-            if (process.env.LEDGER_FEATURE === '1') {
+            if (this.config.getBoolean('LEDGER_FEATURE', false)) {
               await tx.ledgerEntry.create({
                 data: {
                   merchantId: s.merchantId,

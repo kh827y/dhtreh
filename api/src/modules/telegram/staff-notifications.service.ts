@@ -10,6 +10,7 @@ import {
   DEFAULT_TIMEZONE_CODE,
   findTimezone,
 } from '../../shared/timezone/russia-timezones';
+import { ensureRulesRoot, getRulesSection } from '../../shared/rules-json.util';
 
 export type StaffNotifySettings = {
   notifyOrders: boolean;
@@ -181,10 +182,6 @@ export class TelegramStaffNotificationsService {
     return value as Record<string, unknown>;
   }
 
-  private normalizeRulesJson(raw: unknown): Record<string, unknown> {
-    return this.asRecord(raw) ?? {};
-  }
-
   private async loadNotifyData(
     merchantId: string,
   ): Promise<{ prefs: PreferencesMap; meta: NotifyMetaMap }> {
@@ -192,15 +189,15 @@ export class TelegramStaffNotificationsService {
       where: { merchantId },
       select: { rulesJson: true },
     });
-    const rules = this.normalizeRulesJson(settings?.rulesJson);
-    const notify = this.asRecord(rules.staffNotify);
+    const rules = ensureRulesRoot(settings?.rulesJson);
+    const notify = getRulesSection(rules, 'staffNotify');
     const prefs: PreferencesMap = {};
     if (notify) {
       for (const [key, value] of Object.entries(notify)) {
         prefs[key] = this.normalizeSettings(value);
       }
     }
-    const metaRaw = this.asRecord(rules.staffNotifyMeta);
+    const metaRaw = getRulesSection(rules, 'staffNotifyMeta');
     const meta: NotifyMetaMap = {};
     if (metaRaw) {
       for (const [key, value] of Object.entries(metaRaw)) {
@@ -222,7 +219,7 @@ export class TelegramStaffNotificationsService {
       where: { merchantId },
       select: { rulesJson: true },
     });
-    const rules = this.normalizeRulesJson(settings?.rulesJson);
+    const rules = ensureRulesRoot(settings?.rulesJson);
     const nextNotify: Record<string, StaffNotifySettings> = {};
     for (const key of Object.keys(prefs)) {
       nextNotify[key] = prefs[key];

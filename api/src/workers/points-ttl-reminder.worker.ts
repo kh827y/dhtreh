@@ -9,6 +9,8 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { MetricsService } from '../core/metrics/metrics.service';
 import { PushService } from '../modules/notifications/push/push.service';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../shared/pg-lock.util';
+import { getRulesSection } from '../shared/rules-json.util';
+import { AppConfigService } from '../core/config/app-config.service';
 
 type ReminderConfig = {
   merchantId: string;
@@ -39,6 +41,7 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
     private readonly push: PushService,
+    private readonly config: AppConfigService,
   ) {}
 
   private asRecord(value: unknown): Record<string, unknown> | null {
@@ -69,17 +72,21 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('PointsTtlReminderWorker disabled (WORKERS_ENABLED!=1)');
       return;
     }
-    if (process.env.POINTS_TTL_REMINDER !== '1') {
+    if (!this.config.getBoolean('POINTS_TTL_REMINDER', false)) {
       this.logger.log('POINTS_TTL_REMINDER flag disabled');
       return;
     }
-    const rawInterval = Number(process.env.POINTS_TTL_REMINDER_INTERVAL_MS);
+    const rawInterval = this.config.getNumber(
+      'POINTS_TTL_REMINDER_INTERVAL_MS',
+    );
     const intervalMs =
-      Number.isFinite(rawInterval) && rawInterval > 0
+      typeof rawInterval === 'number' &&
+      Number.isFinite(rawInterval) &&
+      rawInterval > 0
         ? Math.max(60_000, Math.floor(rawInterval))
         : 6 * 60 * 60 * 1000; // default 6h
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
@@ -146,8 +153,7 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
         Number.isFinite(ttlDaysRaw) && ttlDaysRaw > 0
           ? Math.floor(ttlDaysRaw)
           : 0;
-      const rules = this.asRecord(settings.rulesJson);
-      const reminder = this.asRecord(rules?.burnReminder);
+      const reminder = getRulesSection(settings.rulesJson, 'burnReminder');
       if (!reminder || !this.toBool(reminder.enabled, false)) continue;
       const daysBeforeRaw =
         reminder.daysBefore ?? reminder.days ?? reminder.daysBeforeBurn;

@@ -11,12 +11,13 @@ import {
   WalletType,
 } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
-import { LoyaltyService } from '../../loyalty/loyalty.service';
-import { planRevoke, planUnconsume } from '../../loyalty/lots.util';
+import { LoyaltyService } from '../../loyalty/services/loyalty.service';
+import { planRevoke, planUnconsume } from '../../loyalty/utils/lots.util';
 
 export interface OperationsLogFilters {
   from?: string | Date;
   to?: string | Date;
+  before?: string | Date;
   staffId?: string;
   staffStatus?: 'all' | 'current' | 'former';
   outletId?: string;
@@ -334,6 +335,11 @@ export class OperationsLogService {
         filters.to ? { lte: this.toDate(filters.to) } : {},
       );
     }
+    if (filters.before) {
+      where.createdAt = Object.assign({}, where.createdAt ?? {}, {
+        lt: this.toDate(filters.before),
+      });
+    }
 
     if (filters.staffId) {
       where.staffId = filters.staffId;
@@ -398,6 +404,11 @@ export class OperationsLogService {
         filters.from ? { gte: this.toDate(filters.from) } : {},
         filters.to ? { lte: this.toDate(filters.to) } : {},
       );
+    }
+    if (filters.before) {
+      where.createdAt = Object.assign({}, where.createdAt ?? {}, {
+        lt: this.toDate(filters.before),
+      });
     }
 
     if (filters.staffId) {
@@ -1292,20 +1303,23 @@ export class OperationsLogService {
     merchantId: string,
     orderIds: string[],
   ): Promise<Map<string, number>> {
-    if (!orderIds.length) {
-      return new Map();
-    }
-
-    const reviews = await this.prisma.review.findMany({
-      where: { merchantId, orderId: { in: orderIds } },
-      orderBy: { createdAt: 'desc' },
-      select: { orderId: true, rating: true },
-    });
-
     const map = new Map<string, number>();
-    for (const review of reviews) {
-      if (!map.has(review.orderId ?? '')) {
-        map.set(review.orderId ?? '', review.rating);
+    const uniqueIds = Array.from(new Set(orderIds)).filter(Boolean);
+    if (!uniqueIds.length) {
+      return map;
+    }
+    const chunkSize = 500;
+    for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+      const batch = uniqueIds.slice(i, i + chunkSize);
+      const reviews = await this.prisma.review.findMany({
+        where: { merchantId, orderId: { in: batch } },
+        orderBy: { createdAt: 'desc' },
+        select: { orderId: true, rating: true },
+      });
+      for (const review of reviews) {
+        if (!map.has(review.orderId ?? '')) {
+          map.set(review.orderId ?? '', review.rating);
+        }
       }
     }
     return map;

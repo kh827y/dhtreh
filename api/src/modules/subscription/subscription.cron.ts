@@ -5,6 +5,7 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { PushService } from '../notifications/push/push.service';
 import { MetricsService } from '../../core/metrics/metrics.service';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../../shared/pg-lock.util';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 type SubscriptionWithPlan = Prisma.SubscriptionGetPayload<{
   include: { merchant: true; plan: true };
@@ -20,6 +21,7 @@ export class SubscriptionCronService {
     private prisma: PrismaService,
     private pushService: PushService,
     private metrics: MetricsService,
+    private readonly config: AppConfigService,
   ) {}
 
   /**
@@ -28,7 +30,7 @@ export class SubscriptionCronService {
    */
   @Cron('0 10 * * *')
   async sendExpirationReminders() {
-    if (process.env.WORKERS_ENABLED !== '1') return;
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) return;
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:subscription_reminders',
@@ -116,7 +118,7 @@ export class SubscriptionCronService {
    */
   @Cron('5 0 * * *')
   async deactivateExpiredSubscriptions() {
-    if (process.env.WORKERS_ENABLED !== '1') return;
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) return;
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:subscription_deactivate',
@@ -187,7 +189,7 @@ export class SubscriptionCronService {
    */
   @Cron('0 8 1 * *')
   async generateMonthlyReports() {
-    if (process.env.WORKERS_ENABLED !== '1') return;
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) return;
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:subscription_reports',
@@ -267,7 +269,7 @@ export class SubscriptionCronService {
    */
   @Cron('0 4 * * 0')
   async cleanupOldData() {
-    if (process.env.WORKERS_ENABLED !== '1') return;
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) return;
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:subscription_cleanup',

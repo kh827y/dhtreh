@@ -15,6 +15,46 @@ export class HttpErrorFilter implements ExceptionFilter {
     return value as Record<string, unknown>;
   }
 
+  private statusToCode(status: number): string {
+    switch (status) {
+      case HttpStatus.BAD_REQUEST:
+        return 'BadRequest';
+      case HttpStatus.UNAUTHORIZED:
+        return 'Unauthorized';
+      case HttpStatus.FORBIDDEN:
+        return 'Forbidden';
+      case HttpStatus.NOT_FOUND:
+        return 'NotFound';
+      case HttpStatus.CONFLICT:
+        return 'Conflict';
+      case HttpStatus.UNPROCESSABLE_ENTITY:
+        return 'ValidationFailed';
+      case HttpStatus.TOO_MANY_REQUESTS:
+        return 'RateLimited';
+      case HttpStatus.SERVICE_UNAVAILABLE:
+        return 'ServiceUnavailable';
+      default:
+        return 'InternalError';
+    }
+  }
+
+  private normalizeErrorCode(raw: string, status: number): string {
+    const trimmed = raw.trim();
+    if (!trimmed) return this.statusToCode(status);
+    const normalized = trimmed.replace(/[^a-z0-9]+/gi, '');
+    const map: Record<string, string> = {
+      BadRequest: 'BadRequest',
+      Unauthorized: 'Unauthorized',
+      Forbidden: 'Forbidden',
+      NotFound: 'NotFound',
+      Conflict: 'Conflict',
+      UnprocessableEntity: 'ValidationFailed',
+      TooManyRequests: 'RateLimited',
+      ServiceUnavailable: 'ServiceUnavailable',
+    };
+    return map[normalized] || trimmed;
+  }
+
   private formatMessage(message: unknown): string {
     if (Array.isArray(message)) {
       if (message.every((item) => typeof item === 'string')) {
@@ -64,14 +104,15 @@ export class HttpErrorFilter implements ExceptionFilter {
         const responseObj = this.asRecord(response);
         message =
           responseObj?.message ?? responseObj?.error ?? response ?? message;
-        if (
-          typeof responseObj?.error === 'string' &&
-          responseObj.error.trim()
-        ) {
-          code = responseObj.error;
+        const responseError = responseObj?.error;
+        if (typeof responseError === 'string') {
+          code = this.normalizeErrorCode(responseError, status);
+        } else {
+          code = this.statusToCode(status);
         }
       } else {
         message = exception.message || message;
+        code = this.statusToCode(status);
       }
     } else if (
       exception &&
@@ -82,6 +123,7 @@ export class HttpErrorFilter implements ExceptionFilter {
       if (typeof exceptionMessage === 'string') {
         message = exceptionMessage;
       }
+      code = this.statusToCode(status);
     }
 
     const body = {

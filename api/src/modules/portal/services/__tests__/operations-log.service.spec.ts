@@ -1,5 +1,5 @@
 import { OperationsLogService } from '../operations-log.service';
-import type { LoyaltyService } from '../../../loyalty/loyalty.service';
+import type { LoyaltyService } from '../../../loyalty/services/loyalty.service';
 import type { PrismaService } from '../../../../core/prisma/prisma.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<

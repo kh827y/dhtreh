@@ -17,6 +17,7 @@ import { MerchantsService } from '../merchants/merchants.service';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { MetricsService } from '../../core/metrics/metrics.service';
 import { hashPassword, verifyPassword } from '../../shared/password.util';
+import { LookupCacheService } from '../../core/cache/lookup-cache.service';
 import {
   normalizeDeviceCode,
   ensureUniqueDeviceCodes,
@@ -134,6 +135,7 @@ export class MerchantPanelService {
     private readonly prisma: PrismaService,
     private readonly merchants: MerchantsService,
     private readonly metrics: MetricsService,
+    private readonly cache: LookupCacheService,
   ) {}
 
   private normalizePagination(
@@ -891,6 +893,7 @@ export class MerchantPanelService {
       } catch {}
       return staff.id;
     });
+    this.cache.invalidateStaff(merchantId, staffId);
     return this.getStaff(merchantId, staffId);
   }
 
@@ -1123,6 +1126,7 @@ export class MerchantPanelService {
         this.metrics.inc('portal_staff_changed_total', { action: 'update' });
       } catch {}
     });
+    this.cache.invalidateStaff(merchantId, staffId);
     return this.getStaff(merchantId, staffId);
   }
 
@@ -1237,7 +1241,7 @@ export class MerchantPanelService {
   }
 
   async addStaffAccess(merchantId: string, staffId: string, outletId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const view = await this.prisma.$transaction(async (tx) => {
       const [staff, outlet] = await Promise.all([
         tx.staff.findFirst({ where: { merchantId, id: staffId } }),
         tx.outlet.findFirst({ where: { merchantId, id: outletId } }),
@@ -1288,6 +1292,8 @@ export class MerchantPanelService {
       const [view] = await this.buildAccessViews(merchantId, staffId, [record]);
       return view;
     });
+    this.cache.invalidateStaff(merchantId, staffId);
+    return view;
   }
 
   async removeStaffAccess(
@@ -1314,6 +1320,7 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_staff_pin_events_total', { action: 'revoke' });
     } catch {}
+    this.cache.invalidateStaff(merchantId, staffId);
     return { ok: true };
   }
 
@@ -1322,7 +1329,7 @@ export class MerchantPanelService {
     staffId: string,
     outletId: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const view = await this.prisma.$transaction(async (tx) => {
       const access = await tx.staffOutletAccess.findUnique({
         where: {
           merchantId_staffId_outletId: { merchantId, staffId, outletId },
@@ -1357,10 +1364,12 @@ export class MerchantPanelService {
       ]);
       return view;
     });
+    this.cache.invalidateStaff(merchantId, staffId);
+    return view;
   }
 
   async rotateStaffPin(merchantId: string, accessId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const access = await tx.staffOutletAccess.findFirst({
         where: { merchantId, id: accessId },
       });
@@ -1391,11 +1400,18 @@ export class MerchantPanelService {
       const [view] = await this.buildAccessViews(merchantId, updated.staffId, [
         updated,
       ]);
-      return view;
+      return { view, staffId: updated.staffId };
     });
+    this.cache.invalidateStaff(merchantId, result.staffId);
+    return result.view;
   }
 
   async revokeStaffPin(merchantId: string, accessId: string) {
+    const access = await this.prisma.staffOutletAccess.findFirst({
+      where: { merchantId, id: accessId },
+      select: { staffId: true },
+    });
+    if (!access) throw new NotFoundException('PIN не найден или уже отозван');
     const updated = await this.prisma.staffOutletAccess.updateMany({
       where: {
         merchantId,
@@ -1416,6 +1432,7 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_staff_pin_events_total', { action: 'revoke' });
     } catch {}
+    this.cache.invalidateStaff(merchantId, access.staffId);
     return { ok: true };
   }
 

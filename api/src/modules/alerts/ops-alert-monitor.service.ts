@@ -15,6 +15,7 @@ import { NotificationDispatcherWorker } from '../../workers/notification-dispatc
 import { PointsTtlWorker } from '../../workers/points-ttl.worker';
 import { PointsTtlReminderWorker } from '../../workers/points-ttl-reminder.worker';
 import { PointsBurnWorker } from '../../workers/points-burn.worker';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 export type WorkerState = {
   name: string;
@@ -41,27 +42,12 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OpsAlertMonitor.name);
   private timer: NodeJS.Timeout | null = null;
   private running = false;
-  private readonly monitorIntervalMs = Math.max(
-    30_000,
-    Number(process.env.ALERT_MONITOR_INTERVAL_MS || '60000'),
-  );
-  private readonly pendingThreshold = Math.max(
-    0,
-    Number(process.env.ALERT_OUTBOX_PENDING_THRESHOLD || '100'),
-  );
-  private readonly deadThreshold = Math.max(
-    0,
-    Number(process.env.ALERT_OUTBOX_DEAD_THRESHOLD || '5'),
-  );
-  private readonly workerStaleMs = Math.max(
-    60_000,
-    Number(process.env.ALERT_WORKER_STALE_MINUTES || '5') * 60_000,
-  );
-  private readonly repeatMinutes = Math.max(
-    5,
-    Number(process.env.ALERT_REPEAT_MINUTES || '30'),
-  );
-  private readonly warmupMs = Math.max(this.monitorIntervalMs * 2, 60_000);
+  private readonly monitorIntervalMs: number;
+  private readonly pendingThreshold: number;
+  private readonly deadThreshold: number;
+  private readonly workerStaleMs: number;
+  private readonly repeatMinutes: number;
+  private readonly warmupMs: number;
   private readonly bootAt = Date.now();
 
   constructor(
@@ -72,7 +58,30 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
     private readonly ttl: PointsTtlWorker,
     private readonly ttlReminder: PointsTtlReminderWorker,
     private readonly ttlBurn: PointsBurnWorker,
-  ) {}
+    private readonly config: AppConfigService,
+  ) {
+    this.monitorIntervalMs = Math.max(
+      30_000,
+      this.config.getNumber('ALERT_MONITOR_INTERVAL_MS', 60000) ?? 60000,
+    );
+    this.pendingThreshold = Math.max(
+      0,
+      this.config.getNumber('ALERT_OUTBOX_PENDING_THRESHOLD', 100) ?? 100,
+    );
+    this.deadThreshold = Math.max(
+      0,
+      this.config.getNumber('ALERT_OUTBOX_DEAD_THRESHOLD', 5) ?? 5,
+    );
+    this.workerStaleMs = Math.max(
+      60_000,
+      (this.config.getNumber('ALERT_WORKER_STALE_MINUTES', 5) ?? 5) * 60_000,
+    );
+    this.repeatMinutes = Math.max(
+      5,
+      this.config.getNumber('ALERT_REPEAT_MINUTES', 30) ?? 30,
+    );
+    this.warmupMs = Math.max(this.monitorIntervalMs * 2, 60_000);
+  }
 
   onModuleInit() {
     this.timer = setInterval(
@@ -96,8 +105,8 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
     const metrics = parsePromMetrics(metricsText);
     const workers = this.collectWorkers();
     const env = {
-      nodeEnv: process.env.NODE_ENV || 'development',
-      appVersion: process.env.APP_VERSION || 'dev',
+      nodeEnv: this.config.getString('NODE_ENV', 'development') ?? 'development',
+      appVersion: this.config.getString('APP_VERSION', 'dev') ?? 'dev',
     };
     return {
       version: env.appVersion,
@@ -110,7 +119,7 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
   }
 
   private collectWorkers(): WorkerState[] {
-    const workersEnabled = process.env.WORKERS_ENABLED === '1';
+    const workersEnabled = this.config.getBoolean('WORKERS_ENABLED', false);
     const workerStates: WorkerState[] = [];
     const warmupPassed = Date.now() - this.bootAt > this.warmupMs;
     const entries: Array<{
@@ -125,7 +134,7 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
       worker: this.outbox,
       intervalMs: Math.max(
         5_000,
-        Number(process.env.OUTBOX_WORKER_INTERVAL_MS || '15000'),
+        this.config.getNumber('OUTBOX_WORKER_INTERVAL_MS', 15000) ?? 15000,
       ),
       expected: workersEnabled,
       reason: workersEnabled ? undefined : 'WORKERS_ENABLED!=1',
@@ -135,42 +144,45 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
       worker: this.notifications,
       intervalMs: Math.max(
         5_000,
-        Number(process.env.NOTIFY_WORKER_INTERVAL_MS || '15000'),
+        this.config.getNumber('NOTIFY_WORKER_INTERVAL_MS', 15000) ?? 15000,
       ),
       expected: workersEnabled,
       reason: workersEnabled ? undefined : 'WORKERS_ENABLED!=1',
     });
-    const ttlEnabled = workersEnabled && process.env.POINTS_TTL_FEATURE === '1';
+    const ttlEnabled =
+      workersEnabled && this.config.getBoolean('POINTS_TTL_FEATURE', false);
     entries.push({
       name: 'points_ttl_preview',
       worker: this.ttl,
-      intervalMs: Number(
-        process.env.POINTS_TTL_INTERVAL_MS || 6 * 60 * 60 * 1000,
-      ),
+      intervalMs:
+        this.config.getNumber('POINTS_TTL_INTERVAL_MS', 6 * 60 * 60 * 1000) ??
+        6 * 60 * 60 * 1000,
       expected: ttlEnabled,
       reason: ttlEnabled ? undefined : 'POINTS_TTL_FEATURE=0',
     });
     const ttlReminderEnabled =
-      workersEnabled && process.env.POINTS_TTL_REMINDER === '1';
+      workersEnabled && this.config.getBoolean('POINTS_TTL_REMINDER', false);
     entries.push({
       name: 'points_ttl_reminder',
       worker: this.ttlReminder,
-      intervalMs: Number(
-        process.env.POINTS_TTL_REMINDER_INTERVAL_MS || 6 * 60 * 60 * 1000,
-      ),
+      intervalMs:
+        this.config.getNumber(
+          'POINTS_TTL_REMINDER_INTERVAL_MS',
+          6 * 60 * 60 * 1000,
+        ) ?? 6 * 60 * 60 * 1000,
       expected: ttlReminderEnabled,
       reason: ttlReminderEnabled ? undefined : 'POINTS_TTL_REMINDER=0',
     });
     const ttlBurnEnabled =
       workersEnabled &&
-      process.env.POINTS_TTL_BURN === '1' &&
-      process.env.EARN_LOTS_FEATURE === '1';
+      this.config.getBoolean('POINTS_TTL_BURN', false) &&
+      this.config.getBoolean('EARN_LOTS_FEATURE', false);
     entries.push({
       name: 'points_ttl_burn',
       worker: this.ttlBurn,
-      intervalMs: Number(
-        process.env.POINTS_TTL_BURN_INTERVAL_MS || 6 * 60 * 60 * 1000,
-      ),
+      intervalMs:
+        this.config.getNumber('POINTS_TTL_BURN_INTERVAL_MS', 6 * 60 * 60 * 1000) ??
+        6 * 60 * 60 * 1000,
       expected: ttlBurnEnabled,
       reason: ttlBurnEnabled ? undefined : 'POINTS_TTL_BURN=0',
     });

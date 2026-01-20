@@ -7,9 +7,13 @@ import {
   DEFAULT_LEVELS_PERIOD_DAYS,
   normalizeLevelsPeriodDays,
   type LevelRule,
-} from '../loyalty/levels.util';
-import { ensureBaseTier, toLevelRule } from '../loyalty/tier-defaults.util';
+} from '../loyalty/utils/levels.util';
+import {
+  ensureBaseTier,
+  toLevelRule,
+} from '../loyalty/utils/tier-defaults.util';
 import { Prisma, type LoyaltyTier } from '@prisma/client';
+import { getRulesRoot } from '../../shared/rules-json.util';
 
 type TierAssignmentWithTier = Prisma.LoyaltyTierAssignmentGetPayload<{
   include: { tier: true };
@@ -21,13 +25,6 @@ export class LevelsService {
     private prisma: PrismaService,
     private metrics: MetricsService,
   ) {}
-
-  private asRecord(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-    return value as Record<string, unknown>;
-  }
 
   async getLevel(
     merchantId: string,
@@ -63,7 +60,7 @@ export class LevelsService {
         where: { merchantId },
         select: { rulesJson: true },
       });
-      const rules = this.asRecord(settings?.rulesJson);
+      const rules = getRulesRoot(settings?.rulesJson);
       periodDays = normalizeLevelsPeriodDays(
         rules?.levelsPeriodDays,
         DEFAULT_LEVELS_PERIOD_DAYS,

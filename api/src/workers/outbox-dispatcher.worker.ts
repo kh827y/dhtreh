@@ -9,6 +9,7 @@ import { MetricsService } from '../core/metrics/metrics.service';
 import { isIP } from 'net';
 import { createHmac } from 'crypto';
 import type { EventOutbox } from '@prisma/client';
+import { AppConfigService } from '../core/config/app-config.service';
 
 type OutboxRow = EventOutbox;
 
@@ -31,14 +32,16 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     private prisma: PrismaService,
     private metrics: MetricsService,
+    private readonly config: AppConfigService,
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
       return;
     }
-    const intervalMs = Number(process.env.OUTBOX_WORKER_INTERVAL_MS || '15000');
+    const intervalMs =
+      this.config.getNumber('OUTBOX_WORKER_INTERVAL_MS', 15000) ?? 15000;
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     try {
       if (this.timer && typeof this.timer.unref === 'function')
@@ -53,8 +56,10 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private backoffMs(retries: number): number {
-    const base = Number(process.env.OUTBOX_BACKOFF_BASE_MS || '60000'); // 60s
-    const cap = Number(process.env.OUTBOX_BACKOFF_CAP_MS || '3600000'); // 1h
+    const base =
+      this.config.getNumber('OUTBOX_BACKOFF_BASE_MS', 60000) ?? 60000; // 60s
+    const cap =
+      this.config.getNumber('OUTBOX_BACKOFF_CAP_MS', 3600000) ?? 3600000; // 1h
     const exp = Math.min(cap, base * Math.pow(2, Math.max(0, retries)));
     // немного джиттера ±10%
     const jitter = exp * (0.9 + Math.random() * 0.2);
@@ -69,15 +74,15 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private noteFailure(merchantId: string) {
     const threshold = Math.max(
       1,
-      Number(process.env.OUTBOX_CB_THRESHOLD || '5'),
+      this.config.getNumber('OUTBOX_CB_THRESHOLD', 5) ?? 5,
     );
     const windowMs = Math.max(
       1000,
-      Number(process.env.OUTBOX_CB_WINDOW_MS || '60000'),
+      this.config.getNumber('OUTBOX_CB_WINDOW_MS', 60000) ?? 60000,
     );
     const cooldownMs = Math.max(
       1000,
-      Number(process.env.OUTBOX_CB_COOLDOWN_MS || '120000'),
+      this.config.getNumber('OUTBOX_CB_COOLDOWN_MS', 120000) ?? 120000,
     );
     const now = Date.now();
     const s = this.cb.get(merchantId) || {
@@ -176,7 +181,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private parseTypeConcurrency(): Map<string, number> {
     if (this.parsedTypeConcurrency) return this.parsedTypeConcurrency;
     const m = new Map<string, number>();
-    const raw = process.env.OUTBOX_EVENT_CONCURRENCY || '';
+    const raw = this.config.getString('OUTBOX_EVENT_CONCURRENCY', '') ?? '';
     for (const part of raw
       .split(',')
       .map((s) => s.trim())
@@ -195,12 +200,15 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     const map = this.parseTypeConcurrency();
     if (map.has(eventType)) return map.get(eventType)!;
     if (map.has('*')) return map.get('*')!;
-    return Math.max(1, Number(process.env.OUTBOX_WORKER_CONCURRENCY || '3'));
+    return Math.max(
+      1,
+      this.config.getNumber('OUTBOX_WORKER_CONCURRENCY', 3) ?? 3,
+    );
   }
 
   private async onBreakerOpen(merchantId: string) {
     try {
-      const mins = Number(process.env.OUTBOX_AUTO_PAUSE_MINS || '0');
+      const mins = this.config.getNumber('OUTBOX_AUTO_PAUSE_MINS', 0) ?? 0;
       if (!mins || mins <= 0) return;
       const until = new Date(Date.now() + mins * 60 * 1000);
       await this.prisma.merchantSettings.update({
@@ -234,7 +242,8 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       Boolean(settings?.useWebhookNext) && Boolean(settings?.webhookSecretNext);
     const secret =
       (useNext ? settings?.webhookSecretNext : settings?.webhookSecret) || '';
-    const maxRetries = Number(process.env.OUTBOX_MAX_RETRIES || '10');
+    const maxRetries =
+      this.config.getNumber('OUTBOX_MAX_RETRIES', 10) ?? 10;
     const pausedUntil = settings?.outboxPausedUntil ?? null;
     if (pausedUntil && pausedUntil > new Date()) {
       const next = pausedUntil;
@@ -312,7 +321,8 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     let to: NodeJS.Timeout | null = null;
     const ac = new AbortController();
     try {
-      const timeoutMs = Number(process.env.OUTBOX_HTTP_TIMEOUT_MS || '10000');
+      const timeoutMs =
+        this.config.getNumber('OUTBOX_HTTP_TIMEOUT_MS', 10000) ?? 10000;
       to = setTimeout(() => ac.abort(), Math.max(1000, timeoutMs));
       try {
         if (to && typeof to.unref === 'function') to.unref();
@@ -458,7 +468,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       const now = new Date();
       const staleMs = Math.max(
         60000,
-        Number(process.env.OUTBOX_SENDING_STALE_MS || '300000'),
+        this.config.getNumber('OUTBOX_SENDING_STALE_MS', 300000) ?? 300000,
       );
       try {
         await this.prisma.eventOutbox.updateMany({
@@ -481,7 +491,8 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         this.metrics.setGauge('loyalty_outbox_pending', pending);
       } catch {}
 
-      const batch = Number(process.env.OUTBOX_WORKER_BATCH || '10');
+      const batch =
+        this.config.getNumber('OUTBOX_WORKER_BATCH', 10) ?? 10;
       const items = (await this.prisma.eventOutbox.findMany({
         where: {
           status: { in: ['PENDING', 'FAILED'] },
@@ -572,7 +583,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private parseRpsByMerchant(): Map<string, number> {
     if (this.rpsByMerchantCache) return this.rpsByMerchantCache;
     const m = new Map<string, number>();
-    const raw = process.env.OUTBOX_RPS_BY_MERCHANT || '';
+    const raw = this.config.getString('OUTBOX_RPS_BY_MERCHANT', '') ?? '';
     for (const part of raw
       .split(',')
       .map((s) => s.trim())
@@ -590,7 +601,10 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private rpsForMerchant(merchantId: string): number {
     const map = this.parseRpsByMerchant();
     if (map.has(merchantId)) return map.get(merchantId)!;
-    return Math.max(0, Number(process.env.OUTBOX_RPS_DEFAULT || '0')); // 0 = unlimited
+    return Math.max(
+      0,
+      this.config.getNumber('OUTBOX_RPS_DEFAULT', 0) ?? 0,
+    ); // 0 = unlimited
   }
 
   private rateLimited(merchantId: string): boolean {

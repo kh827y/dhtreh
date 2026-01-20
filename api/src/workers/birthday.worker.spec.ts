@@ -3,6 +3,7 @@ import {
   DEFAULT_TIMEZONE_CODE,
   findTimezone,
 } from '../shared/timezone/russia-timezones';
+import { AppConfigService } from '../core/config/app-config.service';
 import type { MetricsService } from '../core/metrics/metrics.service';
 import type { PrismaService } from '../core/prisma/prisma.service';
 import type { PushService } from '../modules/notifications/push/push.service';
@@ -65,6 +66,7 @@ describe('BirthdayWorker helpers', () => {
       asPrismaService(prisma),
       asMetricsService(metrics),
       asPushService(push),
+      new AppConfigService(),
     );
   }
 
@@ -193,6 +195,7 @@ describe('BirthdayWorker helpers', () => {
       asPrismaService(prisma),
       asMetricsService(metrics),
       asPushService(push),
+      new AppConfigService(),
     );
     const workerPrivate = worker as unknown as BirthdayWorkerPrivate;
     const timezone = findTimezone(DEFAULT_TIMEZONE_CODE);

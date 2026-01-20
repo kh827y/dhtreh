@@ -24,9 +24,10 @@ export class ApiKeyGuard implements CanActivate {
       rawConfigured && rawConfigured.trim().length > 0
         ? rawConfigured.trim()
         : undefined;
+    const nodeEnv = this.configService.get<string>('NODE_ENV') || 'development';
 
     // Production: требуем корректно настроенный ключ и строгое совпадение
-    if (process.env.NODE_ENV === 'production') {
+    if (nodeEnv === 'production') {
       if (
         !configuredKey ||
         configuredKey === 'dev-api-key' ||

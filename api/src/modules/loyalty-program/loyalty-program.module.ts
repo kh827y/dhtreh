@@ -9,6 +9,7 @@ import { RedeemLimitsController } from './controllers/redeem-limits.controller';
 import { CommunicationsModule } from '../communications/communications.module';
 import { PortalGuard } from '../portal-auth/portal.guard';
 import { SubscriptionModule } from '../subscription/subscription.module';
+import { PromotionRulesService } from './services/promotion-rules.service';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
     CommunicationsModule,
     SubscriptionModule,
   ],
-  providers: [LoyaltyProgramService, PortalGuard],
+  providers: [LoyaltyProgramService, PromotionRulesService, PortalGuard],
   controllers: [
     PromotionsController,
     OperationsLogController,

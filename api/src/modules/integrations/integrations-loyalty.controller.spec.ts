@@ -1,7 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { IntegrationsLoyaltyController } from './integrations-loyalty.controller';
-import type { LoyaltyService } from '../loyalty/loyalty.service';
+import type { LoyaltyService } from '../loyalty/services/loyalty.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
+import type { LookupCacheService } from '../../core/cache/lookup-cache.service';
 import type {
   IntegrationBonusDto,
   IntegrationCalculateActionDto,
@@ -39,6 +40,11 @@ type LoyaltyStub = {
   calculateAction: MockFn;
 };
 type LoyaltyOverrides = Partial<LoyaltyStub>;
+type CacheStub = {
+  getMerchantSettings: MockFn;
+  getOutlet: MockFn;
+  getStaff: MockFn;
+};
 type IntegrationRequestStub = {
   integrationMerchantId?: string;
   integrationId?: string;
@@ -58,6 +64,8 @@ const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
 const asPrismaService = (stub: MockPrisma) => stub as unknown as PrismaService;
 const asLoyaltyService = (stub: LoyaltyStub) =>
   stub as unknown as LoyaltyService;
+const asCacheService = (stub: CacheStub) =>
+  stub as unknown as LookupCacheService;
 const asRequest = (req: IntegrationRequestStub) =>
   req as unknown as Parameters<
     IntegrationsLoyaltyController['calculateBonusPreview']
@@ -105,11 +113,60 @@ function createPrismaMock(overrides: PrismaOverrides = {}): MockPrisma {
   return { ...base, ...overrides };
 }
 
+function createCacheMock(prisma: MockPrisma): CacheStub {
+  return {
+    getMerchantSettings: mockFn().mockImplementation(
+      async (merchantId: string) =>
+        prisma.merchantSettings.findUnique({
+          where: { merchantId },
+        }),
+    ),
+    getOutlet: mockFn().mockImplementation(
+      async (merchantId: string, outletId: string) => {
+        const outlet = await prisma.outlet.findFirst({
+          where: { id: outletId, merchantId },
+        });
+        if (!outlet) return null;
+        return {
+          id: outlet.id,
+          merchantId: outlet.merchantId ?? merchantId,
+          name: outlet.name ?? null,
+        };
+      },
+    ),
+    getStaff: mockFn().mockImplementation(
+      async (merchantId: string, staffId: string) => {
+        const staff = await prisma.staff.findFirst({
+          where: { id: staffId, merchantId },
+        });
+        if (!staff) return null;
+        const accesses = Array.isArray(staff.accesses)
+          ? staff.accesses
+          : [];
+        return {
+          id: staff.id,
+          merchantId: staff.merchantId ?? merchantId,
+          status: staff.status ?? 'ACTIVE',
+          firstName: staff.firstName ?? null,
+          lastName: staff.lastName ?? null,
+          login: staff.login ?? null,
+          email: staff.email ?? null,
+          allowedOutletId: staff.allowedOutletId ?? null,
+          accessOutletIds: accesses
+            .map((entry) => entry?.outletId)
+            .filter(Boolean),
+        };
+      },
+    ),
+  };
+}
+
 function createController(
   prismaOverrides: PrismaOverrides = {},
   loyaltyOverrides: LoyaltyOverrides = {},
 ) {
   const prisma = createPrismaMock(prismaOverrides);
+  const cache = createCacheMock(prisma);
   const loyalty: LoyaltyStub = {
     calculateBonusPreview: mockFn(),
     processIntegrationBonus: mockFn(),
@@ -123,8 +180,9 @@ function createController(
   const controller = new IntegrationsLoyaltyController(
     asLoyaltyService(loyalty),
     asPrismaService(prisma),
+    asCacheService(cache),
   );
-  return { controller, prisma, loyalty };
+  return { controller, prisma, loyalty, cache };
 }
 
 describe('IntegrationsLoyaltyController', () => {

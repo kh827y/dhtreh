@@ -15,6 +15,7 @@ import { TelegramBotService } from '../telegram/telegram-bot.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../../shared/pg-lock.util';
 import { isSystemAllAudience } from '../customer-audiences/audience.utils';
 import { applyCurlyPlaceholders } from './message-placeholders';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 type TelegramRecipient = {
   customerId: string;
@@ -56,14 +57,16 @@ export class CommunicationsDispatcherWorker
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
     private readonly telegramBots: TelegramBotService,
+    private readonly config: AppConfigService,
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED !== '1') {
+    if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('Communications worker disabled (WORKERS_ENABLED!=1)');
       return;
     }
-    const intervalMs = Number(process.env.COMM_WORKER_INTERVAL_MS || '15000');
+    const intervalMs =
+      this.config.getNumber('COMM_WORKER_INTERVAL_MS', 15000) ?? 15000;
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     if (typeof this.timer.unref === 'function') this.timer.unref();
     this.logger.log(
@@ -97,7 +100,7 @@ export class CommunicationsDispatcherWorker
           OR: [{ scheduledAt: null }, { scheduledAt: { lte: new Date() } }],
         },
         orderBy: { createdAt: 'asc' },
-        take: Number(process.env.COMM_WORKER_BATCH || '10'),
+        take: this.config.getNumber('COMM_WORKER_BATCH', 10) ?? 10,
       });
       for (const task of due) {
         if (task.channel === CommunicationChannel.TELEGRAM) {

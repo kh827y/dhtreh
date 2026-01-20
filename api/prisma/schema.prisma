@@ -476,6 +476,7 @@ model Hold {
   @@index([merchantId, outletId])
   @@index([merchantId, staffId])
   @@index([merchantId, deviceId])
+  @@index([status, expiresAt])
 }
 
 model HoldItem {
@@ -542,6 +543,7 @@ model Receipt {
   @@index([merchantId, staffId])
   @@index([merchantId, deviceId])
   @@index([merchantId, canceledAt])
+  @@index([merchantId, receiptNumber])
 }
 
 model ReceiptItem {
@@ -608,6 +610,7 @@ model Transaction {
   @@index([merchantId, staffId])
   @@index([merchantId, deviceId])
   @@index([merchantId, customerId, type, createdAt])
+  @@index([merchantId, orderId])
 }
 
 model TransactionItem {
@@ -1602,6 +1605,7 @@ model CommunicationTask {
 
   @@index([merchantId, status])
   @@index([channel])
+  @@index([status, scheduledAt])
 }
 
 model CommunicationTaskRecipient {
@@ -2125,6 +2129,8 @@ model Review {
   transaction Transaction?     @relation(fields: [transactionId], references: [id])
   response    ReviewResponse?
   reactions   ReviewReaction[]
+
+  @@index([merchantId, orderId])
 }
 
 model ReviewResponse {

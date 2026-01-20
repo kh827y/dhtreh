@@ -1,6 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
+import { MerchantsSettingsService } from './services/merchants-settings.service';
+import { AppConfigService } from '../../core/config/app-config.service';
+import type { LookupCacheService } from '../../core/cache/lookup-cache.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -40,11 +43,30 @@ type PrismaOutletStub = {
   merchantSettings: { findUnique: MockFn };
   outlet: { count: MockFn; create: MockFn };
 };
+type CacheStub = {
+  invalidateSettings: MockFn;
+  invalidateOutlet?: MockFn;
+  invalidateStaff?: MockFn;
+};
 
 const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
   jest.fn<Return, Args>();
 const asPrismaService = (stub: PrismaStub | PrismaOutletStub) =>
   stub as unknown as PrismaService;
+const asCacheService = (stub: CacheStub) =>
+  stub as unknown as LookupCacheService;
+const makeSettingsService = (prisma: PrismaStub) =>
+  new MerchantsSettingsService(
+    asPrismaService(prisma),
+    new AppConfigService(),
+    asCacheService({ invalidateSettings: mockFn() }),
+  );
+const makeSettingsStub = () =>
+  ({
+    getSettings: jest.fn(),
+    updateSettings: jest.fn(),
+    normalizeRulesJson: jest.fn((value: unknown) => value),
+  }) as unknown as MerchantsSettingsService;
 
 describe('MerchantsService rulesJson validation', () => {
   function makeSvc() {
@@ -86,7 +108,11 @@ describe('MerchantsService rulesJson validation', () => {
         ),
       },
     };
-    return new MerchantsService(asPrismaService(prisma));
+    return new MerchantsService(
+      asPrismaService(prisma),
+      makeSettingsService(prisma),
+      asCacheService({ invalidateSettings: mockFn() }),
+    );
   }
 
   it('should reject invalid rules with 400 (BadRequestException)', async () => {
@@ -189,7 +215,11 @@ describe('MerchantsService outlet limits', () => {
         create: mockFn(),
       },
     };
-    const svc = new MerchantsService(asPrismaService(prisma));
+    const svc = new MerchantsService(
+      asPrismaService(prisma),
+      makeSettingsStub(),
+      asCacheService({ invalidateSettings: mockFn() }),
+    );
     await expect(svc.createOutlet('M-1', 'Main')).rejects.toBeInstanceOf(
       BadRequestException,
     );

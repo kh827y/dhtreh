@@ -4,6 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { AppConfigService } from '../config/app-config.service';
 
 type JWTPayload = Record<string, unknown>;
 
@@ -21,9 +22,13 @@ function getHeader(req: RequestLike, name: string): string | undefined {
 
 @Injectable()
 export class OAuthGuard implements CanActivate {
+  constructor(private readonly config: AppConfigService) {}
+
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Allow if guard disabled (default: on)
-    const sw = (process.env.OAUTH_GUARD || 'on').trim().toLowerCase();
+    const sw = (this.config.getString('OAUTH_GUARD') || 'on')
+      .trim()
+      .toLowerCase();
     if (sw === 'off' || sw === '0' || sw === 'false' || sw === 'no')
       return true;
 
@@ -34,13 +39,15 @@ export class OAuthGuard implements CanActivate {
       throw new UnauthorizedException('Bearer token required');
     const token = parts[1];
 
-    const audience = (process.env.OAUTH_AUDIENCE || '').trim() || undefined;
-    const issuer = (process.env.OAUTH_ISSUER || '').trim() || undefined;
+    const audience =
+      (this.config.getString('OAUTH_AUDIENCE') || '').trim() || undefined;
+    const issuer =
+      (this.config.getString('OAUTH_ISSUER') || '').trim() || undefined;
     const requiredScope =
-      (process.env.OAUTH_REQUIRED_SCOPE || '').trim() || undefined;
+      (this.config.getString('OAUTH_REQUIRED_SCOPE') || '').trim() || undefined;
 
-    const jwksUrl = (process.env.OAUTH_JWKS_URL || '').trim();
-    const hsSecret = (process.env.OAUTH_HS_SECRET || '').trim();
+    const jwksUrl = (this.config.getString('OAUTH_JWKS_URL') || '').trim();
+    const hsSecret = (this.config.getString('OAUTH_HS_SECRET') || '').trim();
 
     // If no verification is configured — allow without importing ESM-only 'jose'
     if (!jwksUrl && !hsSecret) return true;

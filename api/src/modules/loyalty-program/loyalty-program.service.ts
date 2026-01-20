@@ -14,7 +14,8 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { MetricsService } from '../../core/metrics/metrics.service';
 import { computePromotionRedeemRevenueFromData } from './promotion-redeem-revenue';
 import { CommunicationsService } from '../communications/communications.service';
-import { ensureBaseTier } from '../loyalty/tier-defaults.util';
+import { ensureBaseTier } from '../loyalty/utils/tier-defaults.util';
+import { PromotionRulesService } from './services/promotion-rules.service';
 
 type JsonRecord = Record<string, unknown>;
 type PromotionRecord = Prisma.LoyaltyPromotionGetPayload<object>;
@@ -168,201 +169,10 @@ export class LoyaltyProgramService {
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
     private readonly comms: CommunicationsService,
+    private readonly promotionRules: PromotionRulesService,
   ) {}
 
   // ===== Loyalty tiers =====
-
-  private assertNonNegativeNumber(value: unknown, field: string) {
-    if (value === undefined || value === null) return;
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      throw new BadRequestException(`Некорректное значение ${field}`);
-    }
-  }
-
-  private sanitizePercent(value: number | null | undefined, fallbackBps = 0) {
-    if (value == null) return fallbackBps;
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed < 0) return fallbackBps;
-    if (parsed > 100) return 10000;
-    return Math.round(parsed * 100);
-  }
-
-  private normalizePointsTtl(days?: number | null): number | null {
-    if (days === undefined || days === null) return null;
-    const parsed = Number(days);
-    if (!Number.isFinite(parsed) || parsed <= 0) return null;
-    return Math.max(1, Math.trunc(parsed));
-  }
-
-  private normalizeIdList(value: unknown): string[] {
-    if (!Array.isArray(value)) return [];
-    const normalized = value
-      .map((item) => (typeof item === 'string' ? item.trim() : ''))
-      .filter((item) => item.length > 0);
-    return Array.from(new Set(normalized));
-  }
-
-  private normalizePointsRuleType(
-    value: unknown,
-  ): 'multiplier' | 'percent' | 'fixed' | null {
-    if (typeof value !== 'string') return null;
-    const normalized = value.trim().toLowerCase();
-    if (!normalized) return null;
-    if (
-      normalized === 'multiplier' ||
-      normalized === 'percent' ||
-      normalized === 'fixed'
-    ) {
-      return normalized;
-    }
-    throw new BadRequestException(
-      'pointsRuleType должен быть multiplier/percent/fixed',
-    );
-  }
-
-  private normalizePointsValue(
-    ruleType: 'multiplier' | 'percent' | 'fixed',
-    value: unknown,
-  ): number {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      throw new BadRequestException('Укажите pointsValue для товарной акции');
-    }
-    const normalized = ruleType === 'fixed' ? Math.floor(parsed) : parsed;
-    if (!Number.isFinite(normalized) || normalized <= 0) {
-      throw new BadRequestException('Укажите pointsValue для товарной акции');
-    }
-    return normalized;
-  }
-
-  private normalizePromotionDate(value: unknown, label: string): Date | null {
-    if (value == null) return null;
-    if (value instanceof Date) return value;
-    if (typeof value !== 'string' && typeof value !== 'number') {
-      throw new BadRequestException(`Некорректная дата ${label}`);
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      throw new BadRequestException(`Некорректная дата ${label}`);
-    }
-    return date;
-  }
-
-  private validatePromotionDates(
-    startAt: Date | null,
-    endAt: Date | null,
-    status: PromotionStatus,
-  ) {
-    if (startAt && endAt && endAt.getTime() < startAt.getTime()) {
-      throw new BadRequestException(
-        'Дата окончания не может быть раньше даты начала',
-      );
-    }
-    const now = new Date();
-    if (status === PromotionStatus.ACTIVE) {
-      if (startAt && startAt.getTime() > now.getTime()) {
-        throw new BadRequestException(
-          'Акция не может быть активной до даты старта',
-        );
-      }
-      if (endAt && endAt.getTime() < now.getTime()) {
-        throw new BadRequestException('Акция уже завершена');
-      }
-    }
-    if (status === PromotionStatus.SCHEDULED) {
-      if (!startAt) {
-        throw new BadRequestException('Для отложенной акции нужна дата старта');
-      }
-      if (startAt.getTime() <= now.getTime()) {
-        throw new BadRequestException('Дата старта должна быть в будущем');
-      }
-    }
-  }
-
-  // ===== Notifications scheduling =====
-  private normalizeFuture(date: Date | null | undefined): Date | null {
-    if (!date) return null;
-    const d = new Date(date);
-    if (Number.isNaN(d.getTime())) return null;
-    // Если время уже прошло — отправим немедленно (scheduledAt=null)
-    return d.getTime() > Date.now() ? d : null;
-  }
-
-  private async taskExists(params: {
-    merchantId: string;
-    promotionId: string;
-    channel: CommunicationChannel;
-    scheduledAt: Date | null;
-  }): Promise<boolean> {
-    const { merchantId, promotionId, channel, scheduledAt } = params;
-    const where: Prisma.CommunicationTaskWhereInput = {
-      merchantId,
-      promotionId,
-      channel,
-      status: { in: ['SCHEDULED', 'RUNNING', 'PAUSED'] },
-      ...(scheduledAt !== null ? { scheduledAt } : {}),
-    };
-    const existing = await this.prisma.communicationTask.findFirst({ where });
-    return !!existing;
-  }
-
-  private buildStartText(promotion: PromotionRecord): string {
-    const parts: string[] = [];
-    parts.push(`Акция стартовала: ${promotion.name || 'Новая акция'}`);
-    if (
-      promotion.rewardType === PromotionRewardType.POINTS &&
-      Number.isFinite(Number(promotion.rewardValue))
-    ) {
-      parts.push(
-        `Бонус: +${Math.max(
-          0,
-          Math.round(Number(promotion.rewardValue)),
-        )} баллов`,
-      );
-    }
-    if (promotion.endAt) {
-      try {
-        const dd = new Date(promotion.endAt);
-        parts.push(`До ${dd.toLocaleDateString('ru-RU')}`);
-      } catch {}
-    }
-    return parts.join(' · ');
-  }
-
-  private buildReminderText(promotion: PromotionRecord, hours: number): string {
-    const parts: string[] = [];
-    parts.push(`Скоро завершится акция: ${promotion.name || ''}`.trim());
-    if (
-      promotion.rewardType === PromotionRewardType.POINTS &&
-      Number.isFinite(Number(promotion.rewardValue))
-    ) {
-      parts.push(
-        `Успейте получить +${Math.max(
-          0,
-          Math.round(Number(promotion.rewardValue)),
-        )} баллов`,
-      );
-    }
-    parts.push(`Осталось ~${Math.max(1, Math.round(hours))} ч.`);
-    return parts.join(' · ');
-  }
-
-  private resolvePromotionText(
-    promotion: PromotionRecord,
-    kind: 'start' | 'reminder',
-    reminderHours?: number,
-  ): string {
-    const meta = asRecord(promotion.metadata) ?? {};
-    const raw =
-      kind === 'start'
-        ? readString(meta.pushMessage)
-        : readString(meta.pushReminderMessage);
-    if (typeof raw === 'string' && raw.trim()) return raw.trim();
-    if (kind === 'start') return this.buildStartText(promotion);
-    return this.buildReminderText(promotion, reminderHours ?? 48);
-  }
-
   private async ensureSegmentOwned(
     merchantId: string,
     segmentId: string | null | undefined,
@@ -417,21 +227,21 @@ export class LoyaltyProgramService {
     if (promotion.pushOnStart) {
       let when: Date | null | undefined = undefined;
       if (promotion.status === 'SCHEDULED' && promotion.startAt) {
-        when = this.normalizeFuture(promotion.startAt);
+        when = this.promotionRules.normalizeFuture(promotion.startAt);
       } else if (promotion.status === 'ACTIVE') {
         // Если акция активна, но ещё не началась (startAt в будущем) — шедулим на startAt.
         if (promotion.startAt && promotion.startAt.getTime() > now) {
-          when = this.normalizeFuture(promotion.startAt);
+          when = this.promotionRules.normalizeFuture(promotion.startAt);
         } else {
           // немедленная отправка
           when = null;
         }
       }
       if (when !== undefined) {
-        const text = this.resolvePromotionText(promotion, 'start');
+        const text = this.promotionRules.resolvePromotionText(promotion, 'start');
         // PUSH — шедулим даже без шаблона, текст берём из payload
         if (
-          !(await this.taskExists({
+          !(await this.promotionRules.taskExists({
             merchantId,
             promotionId: promotion.id,
             channel: CommunicationChannel.PUSH,
@@ -466,15 +276,15 @@ export class LoyaltyProgramService {
       const end = new Date(promotion.endAt).getTime();
       const ts = end - offsetH * 3600_000;
       if (ts > now) {
-        const when = this.normalizeFuture(new Date(ts));
+        const when = this.promotionRules.normalizeFuture(new Date(ts));
         if (when) {
-          const text = this.resolvePromotionText(
+          const text = this.promotionRules.resolvePromotionText(
             promotion,
             'reminder',
             offsetH,
           );
           if (
-            !(await this.taskExists({
+            !(await this.promotionRules.taskExists({
               merchantId,
               promotionId: promotion.id,
               channel: CommunicationChannel.PUSH,
@@ -673,13 +483,13 @@ export class LoyaltyProgramService {
     if (!payload?.name?.trim())
       throw new BadRequestException('Название обязательно');
     const name = payload.name.trim();
-    this.assertNonNegativeNumber(payload.thresholdAmount, 'thresholdAmount');
-    this.assertNonNegativeNumber(payload.earnRatePercent, 'earnRatePercent');
+    this.promotionRules.assertNonNegativeNumber(payload.thresholdAmount, 'thresholdAmount');
+    this.promotionRules.assertNonNegativeNumber(payload.earnRatePercent, 'earnRatePercent');
     if (
       payload.redeemRatePercent !== null &&
       payload.redeemRatePercent !== undefined
     ) {
-      this.assertNonNegativeNumber(
+      this.promotionRules.assertNonNegativeNumber(
         payload.redeemRatePercent,
         'redeemRatePercent',
       );
@@ -688,16 +498,16 @@ export class LoyaltyProgramService {
       payload.minPaymentAmount !== null &&
       payload.minPaymentAmount !== undefined
     ) {
-      this.assertNonNegativeNumber(
+      this.promotionRules.assertNonNegativeNumber(
         payload.minPaymentAmount,
         'minPaymentAmount',
       );
     }
     const thresholdAmount = this.sanitizeAmount(payload.thresholdAmount, 0);
-    const earnRateBps = this.sanitizePercent(payload.earnRatePercent, 0);
+    const earnRateBps = this.promotionRules.sanitizePercent(payload.earnRatePercent, 0);
     const redeemRateBps =
       payload.redeemRatePercent != null
-        ? this.sanitizePercent(payload.redeemRatePercent, 0)
+        ? this.promotionRules.sanitizePercent(payload.redeemRatePercent, 0)
         : null;
     const minPaymentAmount =
       payload.minPaymentAmount != null
@@ -783,19 +593,19 @@ export class LoyaltyProgramService {
       payload.thresholdAmount !== null &&
       payload.thresholdAmount !== undefined
     ) {
-      this.assertNonNegativeNumber(payload.thresholdAmount, 'thresholdAmount');
+      this.promotionRules.assertNonNegativeNumber(payload.thresholdAmount, 'thresholdAmount');
     }
     if (
       payload.earnRatePercent !== null &&
       payload.earnRatePercent !== undefined
     ) {
-      this.assertNonNegativeNumber(payload.earnRatePercent, 'earnRatePercent');
+      this.promotionRules.assertNonNegativeNumber(payload.earnRatePercent, 'earnRatePercent');
     }
     if (
       payload.redeemRatePercent !== null &&
       payload.redeemRatePercent !== undefined
     ) {
-      this.assertNonNegativeNumber(
+      this.promotionRules.assertNonNegativeNumber(
         payload.redeemRatePercent,
         'redeemRatePercent',
       );
@@ -804,7 +614,7 @@ export class LoyaltyProgramService {
       payload.minPaymentAmount !== null &&
       payload.minPaymentAmount !== undefined
     ) {
-      this.assertNonNegativeNumber(
+      this.promotionRules.assertNonNegativeNumber(
         payload.minPaymentAmount,
         'minPaymentAmount',
       );
@@ -815,11 +625,11 @@ export class LoyaltyProgramService {
         : tier.thresholdAmount;
     const earnRateBps =
       payload.earnRatePercent != null
-        ? this.sanitizePercent(payload.earnRatePercent, tier.earnRateBps)
+        ? this.promotionRules.sanitizePercent(payload.earnRatePercent, tier.earnRateBps)
         : tier.earnRateBps;
     const redeemRateBps =
       payload.redeemRatePercent != null
-        ? this.sanitizePercent(
+        ? this.promotionRules.sanitizePercent(
             payload.redeemRatePercent,
             tier.redeemRateBps ?? 0,
           )
@@ -1143,8 +953,8 @@ export class LoyaltyProgramService {
       );
     }
     const rewardMetadata = cloneRecord(payload.rewardMetadata);
-    const productIds = this.normalizeIdList(rewardMetadata.productIds);
-    const categoryIds = this.normalizeIdList(rewardMetadata.categoryIds);
+    const productIds = this.promotionRules.normalizeIdList(rewardMetadata.productIds);
+    const categoryIds = this.promotionRules.normalizeIdList(rewardMetadata.categoryIds);
     const hasTargets = productIds.length > 0 || categoryIds.length > 0;
     if (rewardType === PromotionRewardType.DISCOUNT && !hasTargets) {
       throw new BadRequestException('Выберите товары или категории');
@@ -1153,7 +963,7 @@ export class LoyaltyProgramService {
       rewardMetadata.productIds = productIds;
       rewardMetadata.categoryIds = categoryIds;
     }
-    const pointsRuleType = this.normalizePointsRuleType(
+    const pointsRuleType = this.promotionRules.normalizePointsRuleType(
       rewardMetadata.pointsRuleType,
     );
     if (rewardType === PromotionRewardType.POINTS && hasTargets) {
@@ -1163,7 +973,7 @@ export class LoyaltyProgramService {
         );
       }
       rewardMetadata.pointsRuleType = pointsRuleType;
-      rewardMetadata.pointsValue = this.normalizePointsValue(
+      rewardMetadata.pointsValue = this.promotionRules.normalizePointsValue(
         pointsRuleType,
         rewardMetadata.pointsValue,
       );
@@ -1175,7 +985,7 @@ export class LoyaltyProgramService {
       0,
       Math.floor(Number(payload.rewardValue ?? 0) || 0),
     );
-    let pointsExpireInDays = this.normalizePointsTtl(
+    let pointsExpireInDays = this.promotionRules.normalizePointsTtl(
       payload.pointsExpireInDays,
     );
     if (rewardType === PromotionRewardType.POINTS) {
@@ -1226,9 +1036,9 @@ export class LoyaltyProgramService {
 
     await this.ensureSegmentOwned(merchantId, payload.segmentId ?? null);
     const status = payload.status ?? PromotionStatus.DRAFT;
-    const startAt = this.normalizePromotionDate(payload.startAt, 'startAt');
-    const endAt = this.normalizePromotionDate(payload.endAt, 'endAt');
-    this.validatePromotionDates(startAt, endAt, status);
+    const startAt = this.promotionRules.normalizePromotionDate(payload.startAt, 'startAt');
+    const endAt = this.promotionRules.normalizePromotionDate(payload.endAt, 'endAt');
+    this.promotionRules.validatePromotionDates(startAt, endAt, status);
 
     const promotion = await this.prisma.loyaltyPromotion.create({
       data: {
@@ -1306,8 +1116,8 @@ export class LoyaltyProgramService {
     const rewardMetadata = asRecord(payload.rewardMetadata)
       ? cloneRecord(payload.rewardMetadata)
       : cloneRecord(promotion.rewardMetadata);
-    const productIds = this.normalizeIdList(rewardMetadata.productIds);
-    const categoryIds = this.normalizeIdList(rewardMetadata.categoryIds);
+    const productIds = this.promotionRules.normalizeIdList(rewardMetadata.productIds);
+    const categoryIds = this.promotionRules.normalizeIdList(rewardMetadata.categoryIds);
     const hasTargets = productIds.length > 0 || categoryIds.length > 0;
     if (rewardType === PromotionRewardType.DISCOUNT && !hasTargets) {
       throw new BadRequestException('Выберите товары или категории');
@@ -1316,7 +1126,7 @@ export class LoyaltyProgramService {
       rewardMetadata.productIds = productIds;
       rewardMetadata.categoryIds = categoryIds;
     }
-    const pointsRuleType = this.normalizePointsRuleType(
+    const pointsRuleType = this.promotionRules.normalizePointsRuleType(
       rewardMetadata.pointsRuleType,
     );
     if (rewardType === PromotionRewardType.POINTS && hasTargets) {
@@ -1326,7 +1136,7 @@ export class LoyaltyProgramService {
         );
       }
       rewardMetadata.pointsRuleType = pointsRuleType;
-      rewardMetadata.pointsValue = this.normalizePointsValue(
+      rewardMetadata.pointsValue = this.promotionRules.normalizePointsValue(
         pointsRuleType,
         rewardMetadata.pointsValue,
       );
@@ -1340,7 +1150,7 @@ export class LoyaltyProgramService {
         Number(payload.rewardValue ?? promotion.rewardValue ?? 0) || 0,
       ),
     );
-    let pointsExpireInDays = this.normalizePointsTtl(
+    let pointsExpireInDays = this.promotionRules.normalizePointsTtl(
       payload.pointsExpireInDays ?? promotion.pointsExpireInDays,
     );
     if (rewardType === PromotionRewardType.POINTS) {
@@ -1398,13 +1208,13 @@ export class LoyaltyProgramService {
     const startAt =
       payload.startAt === undefined
         ? promotion.startAt
-        : this.normalizePromotionDate(payload.startAt, 'startAt');
+        : this.promotionRules.normalizePromotionDate(payload.startAt, 'startAt');
     const endAt =
       payload.endAt === undefined
         ? promotion.endAt
-        : this.normalizePromotionDate(payload.endAt, 'endAt');
+        : this.promotionRules.normalizePromotionDate(payload.endAt, 'endAt');
     const status = payload.status ?? promotion.status;
-    this.validatePromotionDates(startAt, endAt, status);
+    this.promotionRules.validatePromotionDates(startAt, endAt, status);
 
     const updated = await this.prisma.loyaltyPromotion.update({
       where: { id: promotionId },

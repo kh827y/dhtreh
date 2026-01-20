@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
-import { PortalController } from './portal.controller';
+import { PortalController } from './controllers/portal.controller';
 import { MerchantsModule } from '../merchants/merchants.module';
 import { PrismaModule } from '../../core/prisma/prisma.module';
 import { PortalGuard } from '../portal-auth/portal.guard';
 import { PromoCodesModule } from '../promocodes/promocodes.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
-import { PortalCatalogService } from './catalog.service';
-import { PortalCustomersService } from './customers.service';
+import { PortalCatalogService } from './services/catalog.service';
+import { PortalCustomersService } from './services/customers.service';
 import { StaffMotivationService } from './services/staff-motivation.service';
 import { OperationsLogService } from './services/operations-log.service';
 import { TelegramModule } from '../telegram/telegram.module';

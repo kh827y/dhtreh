@@ -2,6 +2,7 @@ import { AutoReturnWorker } from './auto-return.worker';
 import type { MetricsService } from '../core/metrics/metrics.service';
 import type { PrismaService } from '../core/prisma/prisma.service';
 import type { PushService } from '../modules/notifications/push/push.service';
+import { AppConfigService } from '../core/config/app-config.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -37,6 +38,7 @@ describe('AutoReturnWorker helpers', () => {
       asPrismaService(prisma),
       asMetricsService(metrics),
       asPushService(push),
+      new AppConfigService(),
     );
   }
 
