@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { AppConfigService } from '../config/app-config.service';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const ALLOWED_PREFIXES = [
@@ -28,6 +29,8 @@ const isAllowedPath = (path: string): boolean =>
 
 @Injectable()
 export class MaintenanceGuard implements CanActivate {
+  constructor(private readonly config: AppConfigService) {}
+
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<Request>();
     const path = req?.path ?? req?.url ?? '';
@@ -35,11 +38,14 @@ export class MaintenanceGuard implements CanActivate {
 
     if (isAllowedPath(path)) return true;
 
-    if (isEnabled(process.env.MAINTENANCE_MODE)) {
+    if (isEnabled(this.config.getString('MAINTENANCE_MODE'))) {
       throw new ServiceUnavailableException('Maintenance mode');
     }
 
-    if (isEnabled(process.env.READ_ONLY_MODE) && !SAFE_METHODS.has(method)) {
+    if (
+      isEnabled(this.config.getString('READ_ONLY_MODE')) &&
+      !SAFE_METHODS.has(method)
+    ) {
       throw new ForbiddenException('Read-only mode');
     }
 

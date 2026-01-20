@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { MetricsService } from '../../../core/metrics/metrics.service';
@@ -25,6 +26,7 @@ import { planConsume, planRevoke, planUnconsume } from '../utils/lots.util';
 import { LoyaltyContextService } from './loyalty-context.service';
 import { LoyaltyTierService } from './loyalty-tier.service';
 import { getRulesRoot, getRulesSection } from '../../../shared/rules-json.util';
+import { safeExecAsync } from '../../../shared/safe-exec';
 import {
   HoldStatus,
   TxnType,
@@ -135,6 +137,38 @@ type OptionalModelsClient = PrismaClientLike & {
 
 @Injectable()
 export class LoyaltyService {
+  private readonly logger = new Logger(LoyaltyService.name);
+
+  private async bestEffort(
+    message: string,
+    action: () => Promise<unknown>,
+    level: 'warn' | 'debug' = 'warn',
+  ) {
+    const logger =
+      level === 'debug'
+        ? { warn: this.logger.debug.bind(this.logger) }
+        : this.logger;
+    await safeExecAsync(action, async () => undefined, logger, message);
+  }
+
+  private async tryUpdateHoldOutlet(
+    holdId: string,
+    outletId: string,
+    context: string,
+  ): Promise<boolean> {
+    const updated = await safeExecAsync(
+      () =>
+        this.prisma.hold.update({
+          where: { id: holdId },
+          data: { outletId },
+        }),
+      async () => null,
+      { warn: this.logger.debug.bind(this.logger) },
+      `quote: ${context} update hold outlet`,
+    );
+    return !!updated;
+  }
+
   // Simple wrappers for modules that directly earn/redeem points without QR/holds
   async earn(params: {
     customerId: string;
@@ -148,13 +182,17 @@ export class LoyaltyService {
     if (context.accrualsBlocked) {
       throw new BadRequestException('Начисления заблокированы администратором');
     }
-    try {
-      await this.prisma.merchant.upsert({
-        where: { id: merchantId },
-        update: {},
-        create: { id: merchantId, name: merchantId, initialName: merchantId },
-      });
-    } catch {}
+    await this.bestEffort(
+      'earn: ensure merchant stub',
+      async () => {
+        await this.prisma.merchant.upsert({
+          where: { id: merchantId },
+          update: {},
+          create: { id: merchantId, name: merchantId, initialName: merchantId },
+        });
+      },
+      'debug',
+    );
 
     return this.prisma.$transaction(async (tx) => {
       let wallet = await tx.wallet.findFirst({
@@ -2206,13 +2244,17 @@ export class LoyaltyService {
     if (context.redemptionsBlocked) {
       throw new BadRequestException('Списания заблокированы администратором');
     }
-    try {
-      await this.prisma.merchant.upsert({
-        where: { id: merchantId },
-        update: {},
-        create: { id: merchantId, name: merchantId, initialName: merchantId },
-      });
-    } catch {}
+    await this.bestEffort(
+      'redeem: ensure merchant stub',
+      async () => {
+        await this.prisma.merchant.upsert({
+          where: { id: merchantId },
+          update: {},
+          create: { id: merchantId, name: merchantId, initialName: merchantId },
+        });
+      },
+      'debug',
+    );
 
     return this.prisma.$transaction(async (tx) => {
       let wallet = await tx.wallet.findFirst({
@@ -2716,17 +2758,21 @@ export class LoyaltyService {
     const dryRun = opts?.dryRun ?? false;
     const operationDate = opts?.operationDate ?? null;
     // Ensure the merchant exists to satisfy FK constraints for wallet/holds
-    try {
-      await this.prisma.merchant.upsert({
-        where: { id: dto.merchantId },
-        update: {},
-        create: {
-          id: dto.merchantId,
-          name: dto.merchantId,
-          initialName: dto.merchantId,
-        },
-      });
-    } catch {}
+    await this.bestEffort(
+      'quote: ensure merchant stub',
+      async () => {
+        await this.prisma.merchant.upsert({
+          where: { id: dto.merchantId },
+          update: {},
+          create: {
+            id: dto.merchantId,
+            name: dto.merchantId,
+            initialName: dto.merchantId,
+          },
+        });
+      },
+      'debug',
+    );
     await ensureBaseTier(this.prisma, dto.merchantId).catch(() => null);
     const {
       redeemCooldownSec,
@@ -2803,13 +2849,15 @@ export class LoyaltyService {
       if (existing) {
         if (existing.status === HoldStatus.PENDING) {
           if (effectiveOutletId && existing.outletId !== effectiveOutletId) {
-            try {
-              await this.prisma.hold.update({
-                where: { id: existing.id },
-                data: { outletId: effectiveOutletId },
-              });
+            if (
+              await this.tryUpdateHoldOutlet(
+                existing.id,
+                effectiveOutletId,
+                'existing-hold',
+              )
+            ) {
               existing.outletId = effectiveOutletId;
-            } catch {}
+            }
           }
           // идемпотентно отдадим тот же расчёт/holdId
           return this.quoteFromExistingHold(dto.mode, existing);
@@ -2830,9 +2878,13 @@ export class LoyaltyService {
           throw new BadRequestException('Bad QR token');
         }
         if (nonce.expiresAt && nonce.expiresAt.getTime() <= now.getTime()) {
-          try {
-            await this.prisma.qrNonce.delete({ where: { jti: qr.jti } });
-          } catch {}
+          await this.bestEffort(
+            'quote: cleanup expired qr nonce',
+            async () => {
+              await this.prisma.qrNonce.delete({ where: { jti: qr.jti } });
+            },
+            'debug',
+          );
           throw new BadRequestException(
             'JWTExpired: "exp" claim timestamp check failed',
           );
@@ -2844,13 +2896,15 @@ export class LoyaltyService {
           if (again) {
             if (again.status === HoldStatus.PENDING) {
               if (effectiveOutletId && again.outletId !== effectiveOutletId) {
-                try {
-                  await this.prisma.hold.update({
-                    where: { id: again.id },
-                    data: { outletId: effectiveOutletId },
-                  });
+                if (
+                  await this.tryUpdateHoldOutlet(
+                    again.id,
+                    effectiveOutletId,
+                    'short-qr-nonce-used',
+                  )
+                ) {
                   again.outletId = effectiveOutletId;
-                } catch {}
+                }
               }
               return this.quoteFromExistingHold(dto.mode, again);
             }
@@ -2870,13 +2924,15 @@ export class LoyaltyService {
           if (again) {
             if (again.status === HoldStatus.PENDING) {
               if (effectiveOutletId && again.outletId !== effectiveOutletId) {
-                try {
-                  await this.prisma.hold.update({
-                    where: { id: again.id },
-                    data: { outletId: effectiveOutletId },
-                  });
+                if (
+                  await this.tryUpdateHoldOutlet(
+                    again.id,
+                    effectiveOutletId,
+                    'short-qr-updated',
+                  )
+                ) {
                   again.outletId = effectiveOutletId;
-                } catch {}
+                }
               }
               return this.quoteFromExistingHold(dto.mode, again);
             }
@@ -2890,18 +2946,23 @@ export class LoyaltyService {
         }
       } else {
         // 1) «помечаем» QR как использованный ВНЕ транзакции (чтобы метка не откатывалась)
-        try {
-          await this.prisma.qrNonce.create({
-            data: {
-              jti: qr.jti,
-              customerId: customer.id,
-              merchantId: dto.merchantId,
-              issuedAt: new Date(qr.iat * 1000),
-              expiresAt: new Date(qr.exp * 1000),
-              usedAt: new Date(),
-            },
-          });
-        } catch {
+        const marked = await safeExecAsync(
+          () =>
+            this.prisma.qrNonce.create({
+              data: {
+                jti: qr.jti,
+                customerId: customer.id,
+                merchantId: dto.merchantId,
+                issuedAt: new Date(qr.iat * 1000),
+                expiresAt: new Date(qr.exp * 1000),
+                usedAt: new Date(),
+              },
+            }),
+          async () => null,
+          { warn: this.logger.debug.bind(this.logger) },
+          'quote: mark qr nonce used',
+        );
+        if (!marked) {
           // гонка: пока мы шли сюда, кто-то другой успел использовать QR — проверим hold ещё раз
           const again = await this.prisma.hold.findUnique({
             where: { qrJti: qr.jti },
@@ -2909,13 +2970,15 @@ export class LoyaltyService {
           if (again) {
             if (again.status === HoldStatus.PENDING) {
               if (effectiveOutletId && again.outletId !== effectiveOutletId) {
-                try {
-                  await this.prisma.hold.update({
-                    where: { id: again.id },
-                    data: { outletId: effectiveOutletId },
-                  });
+                if (
+                  await this.tryUpdateHoldOutlet(
+                    again.id,
+                    effectiveOutletId,
+                    'qr-marked',
+                  )
+                ) {
                   again.outletId = effectiveOutletId;
-                } catch {}
+                }
               }
               return this.quoteFromExistingHold(dto.mode, again);
             }
@@ -3023,17 +3086,21 @@ export class LoyaltyService {
       // Проверка: если указан orderId, учитываем уже применённое списание по этому заказу
       let priorRedeemApplied = 0;
       if (dto.orderId) {
-        try {
-          const rcp = await this.prisma.receipt.findUnique({
-            where: {
-              merchantId_orderId: {
-                merchantId: dto.merchantId,
-                orderId: dto.orderId,
+        const rcp = await safeExecAsync(
+          () =>
+            this.prisma.receipt.findUnique({
+              where: {
+                merchantId_orderId: {
+                  merchantId: dto.merchantId,
+                  orderId: dto.orderId,
+                },
               },
-            },
-          });
-          if (rcp) priorRedeemApplied = Math.max(0, rcp.redeemApplied || 0);
-        } catch {}
+            }),
+          async () => null,
+          { warn: this.logger.debug.bind(this.logger) },
+          'quote: load receipt for prior redeem',
+        );
+        if (rcp) priorRedeemApplied = Math.max(0, rcp.redeemApplied || 0);
       }
       const limit = Math.floor((sanitizedTotal * redeemLimitBps) / 10000);
       const remainingByOrder = Math.max(0, limit - priorRedeemApplied);
@@ -3147,17 +3214,21 @@ export class LoyaltyService {
       // 2) дальше — обычный расчёт в транзакции и создание нового hold (уникальный qrJti не даст дубликат)
       return this.prisma.$transaction(async (tx) => {
         // Ensure merchant exists within the same transaction/connection (FK safety)
-        try {
-          await tx.merchant.upsert({
-            where: { id: dto.merchantId },
-            update: {},
-            create: {
-              id: dto.merchantId,
-              name: dto.merchantId,
-              initialName: dto.merchantId,
-            },
-          });
-        } catch {}
+        await this.bestEffort(
+          'quote: ensure merchant stub (tx)',
+          async () => {
+            await tx.merchant.upsert({
+              where: { id: dto.merchantId },
+              update: {},
+              create: {
+                id: dto.merchantId,
+                name: dto.merchantId,
+                initialName: dto.merchantId,
+              },
+            });
+          },
+          'debug',
+        );
         let wallet = await tx.wallet.findFirst({
           where: {
             customerId: customer.id,
@@ -3365,17 +3436,21 @@ export class LoyaltyService {
 
     return this.prisma.$transaction(async (tx) => {
       // Ensure merchant exists within the same transaction/connection (FK safety)
-      try {
-        await tx.merchant.upsert({
-          where: { id: dto.merchantId },
-          update: {},
-          create: {
-            id: dto.merchantId,
-            name: dto.merchantId,
-            initialName: dto.merchantId,
-          },
-        });
-      } catch {}
+      await this.bestEffort(
+        'quote: ensure merchant stub (earn tx)',
+        async () => {
+          await tx.merchant.upsert({
+            where: { id: dto.merchantId },
+            update: {},
+            create: {
+              id: dto.merchantId,
+              name: dto.merchantId,
+              initialName: dto.merchantId,
+            },
+          });
+        },
+        'debug',
+      );
       let wallet = await tx.wallet.findFirst({
         where: {
           customerId: customer.id,
@@ -3866,72 +3941,82 @@ export class LoyaltyService {
         // Доп. начисление при списании, если включено allowEarnRedeemSameReceipt
         let extraEarn = 0;
         if (!accrualsBlocked) {
-          try {
-            const msRules = await tx.merchantSettings.findUnique({
-              where: { merchantId: hold.merchantId },
-            });
-            const rules =
-              msRules?.rulesJson &&
-              typeof msRules.rulesJson === 'object' &&
-              !Array.isArray(msRules.rulesJson)
-                ? (msRules.rulesJson as Record<string, unknown>)
-                : {};
-            const allowSame = Boolean(rules.allowEarnRedeemSameReceipt);
-            if (
-              manualEarnOverride == null &&
-              hold.mode === 'REDEEM' &&
-              allowSame &&
-              baseEarnFromHold === 0
-            ) {
-              const { earnDailyCap } = await this.getSettings(hold.merchantId);
-              let earnBpsEff = 0;
-              let tierMinPaymentLocal: number | null = null;
-              try {
-                const tierRates = await this.tiers.resolveTierRatesForCustomer(
+          const msRules = await safeExecAsync(
+            () =>
+              tx.merchantSettings.findUnique({
+                where: { merchantId: hold.merchantId },
+              }),
+            async () => null,
+            { warn: this.logger.debug.bind(this.logger) },
+            'commit: load merchant settings for extra earn',
+          );
+          const rules =
+            msRules?.rulesJson &&
+            typeof msRules.rulesJson === 'object' &&
+            !Array.isArray(msRules.rulesJson)
+              ? (msRules.rulesJson as Record<string, unknown>)
+              : {};
+          const allowSame = Boolean(rules.allowEarnRedeemSameReceipt);
+          if (
+            manualEarnOverride == null &&
+            hold.mode === 'REDEEM' &&
+            allowSame &&
+            baseEarnFromHold === 0
+          ) {
+            const { earnDailyCap } = await this.getSettings(hold.merchantId);
+            let earnBpsEff = 0;
+            let tierMinPaymentLocal: number | null = null;
+            const tierRates = await safeExecAsync(
+              () =>
+                this.tiers.resolveTierRatesForCustomer(
                   hold.merchantId,
                   hold.customerId,
                   tx,
-                );
-                earnBpsEff = tierRates.earnBps;
-                tierMinPaymentLocal = tierRates.tierMinPayment;
-              } catch {}
-              const appliedRedeemAmt = Math.max(0, appliedRedeem);
-              const total = effectiveTotal;
-              const eligible = effectiveEligible;
-              const finalPayable = Math.max(0, total - appliedRedeemAmt);
-              const earnBaseOnCash = Math.min(finalPayable, eligible);
-              if (
-                !(
-                  tierMinPaymentLocal != null &&
-                  finalPayable < tierMinPaymentLocal
-                ) &&
-                earnBaseOnCash > 0
-              ) {
-                let pts = Math.floor((earnBaseOnCash * earnBpsEff) / 10000);
-                if (pts > 0 && earnDailyCap && earnDailyCap > 0) {
-                  const since = new Date(
-                    operationTimestamp - 24 * 60 * 60 * 1000,
-                  );
-                  const txns = await tx.transaction.findMany({
-                    where: {
-                      merchantId: hold.merchantId,
-                      customerId: hold.customerId,
-                      type: 'EARN',
-                      orderId: { not: null },
-                      createdAt: { gte: since },
-                    },
-                  });
-                  const used = txns.reduce(
-                    (sum, t) => sum + Math.max(0, t.amount),
-                    0,
-                  );
-                  const left = Math.max(0, earnDailyCap - used);
-                  pts = Math.min(pts, left);
-                }
-                extraEarn = Math.max(0, pts);
-              }
+                ),
+              async () => null,
+              { warn: this.logger.debug.bind(this.logger) },
+              'commit: resolve tier rates for extra earn',
+            );
+            if (tierRates) {
+              earnBpsEff = tierRates.earnBps;
+              tierMinPaymentLocal = tierRates.tierMinPayment;
             }
-          } catch {}
+            const appliedRedeemAmt = Math.max(0, appliedRedeem);
+            const total = effectiveTotal;
+            const eligible = effectiveEligible;
+            const finalPayable = Math.max(0, total - appliedRedeemAmt);
+            const earnBaseOnCash = Math.min(finalPayable, eligible);
+            if (
+              !(
+                tierMinPaymentLocal != null &&
+                finalPayable < tierMinPaymentLocal
+              ) &&
+              earnBaseOnCash > 0
+            ) {
+              let pts = Math.floor((earnBaseOnCash * earnBpsEff) / 10000);
+              if (pts > 0 && earnDailyCap && earnDailyCap > 0) {
+                const since = new Date(
+                  operationTimestamp - 24 * 60 * 60 * 1000,
+                );
+                const txns = await tx.transaction.findMany({
+                  where: {
+                    merchantId: hold.merchantId,
+                    customerId: hold.customerId,
+                    type: 'EARN',
+                    orderId: { not: null },
+                    createdAt: { gte: since },
+                  },
+                });
+                const used = txns.reduce(
+                  (sum, t) => sum + Math.max(0, t.amount),
+                  0,
+                );
+                const left = Math.max(0, earnDailyCap - used);
+                pts = Math.min(pts, left);
+              }
+              extraEarn = Math.max(0, pts);
+            }
+          }
         }
         const appliedEarnTotal = baseEarnFromHold + promoBonus + extraEarn;
 
@@ -4546,42 +4631,54 @@ export class LoyaltyService {
           }
         }
 
-        try {
-          await tx.hold.update({
-            where: { id: hold.id },
-            data: { receiptId: created.id },
-          });
-        } catch {}
+        await this.bestEffort(
+          'commit: attach receipt to hold',
+          async () => {
+            await tx.hold.update({
+              where: { id: hold.id },
+              data: { receiptId: created.id },
+            });
+          },
+          'debug',
+        );
 
         if (hold.staffId && staffMotivationSettings?.enabled) {
-          try {
-            await this.staffMotivation.recordPurchase(tx, {
-              merchantId: hold.merchantId,
-              staffId: hold.staffId,
-              outletId: hold.outletId ?? null,
-              customerId: hold.customerId,
-              orderId,
-              receiptId: created.id,
-              eventAt: created.createdAt ?? new Date(),
-              isFirstPurchase: staffMotivationIsFirstPurchase,
-              settings: staffMotivationSettings,
-            });
-          } catch {}
+          await this.bestEffort(
+            'commit: record staff motivation',
+            async () => {
+              await this.staffMotivation.recordPurchase(tx, {
+                merchantId: hold.merchantId,
+                staffId: hold.staffId,
+                outletId: hold.outletId ?? null,
+                customerId: hold.customerId,
+                orderId,
+                receiptId: created.id,
+                eventAt: created.createdAt ?? new Date(),
+                isFirstPurchase: staffMotivationIsFirstPurchase,
+                settings: staffMotivationSettings,
+              });
+            },
+            'debug',
+          );
         }
 
         // Начисление реферальных бонусов пригласителям (многоуровневая схема, триггеры first/all)
-        try {
-          await this.applyReferralRewards(tx, {
-            merchantId: hold.merchantId,
-            buyerId: hold.customerId,
-            purchaseAmount: effectiveEligible,
-            receiptId: created.id,
-            orderId,
-            outletId: hold.outletId ?? null,
-            staffId: hold.staffId ?? null,
-            deviceId: hold.deviceId ?? null,
-          });
-        } catch {}
+        await this.bestEffort(
+          'commit: apply referral rewards',
+          async () => {
+            await this.applyReferralRewards(tx, {
+              merchantId: hold.merchantId,
+              buyerId: hold.customerId,
+              purchaseAmount: effectiveEligible,
+              receiptId: created.id,
+              orderId,
+              outletId: hold.outletId ?? null,
+              staffId: hold.staffId ?? null,
+              deviceId: hold.deviceId ?? null,
+            });
+          },
+          'warn',
+        );
         // Пишем событие в outbox (минимально)
         const commitPayload: Record<string, unknown> = {
           schemaVersion: 1,
@@ -4605,27 +4702,35 @@ export class LoyaltyService {
             payload: commitPayload as Prisma.InputJsonValue,
           },
         });
-        try {
-          await tx.eventOutbox.create({
-            data: {
-              merchantId: hold.merchantId,
-              eventType: 'notify.staff.telegram',
-              createdAt: operationDateObj,
-              payload: {
-                kind: 'ORDER',
-                receiptId: created.id,
-                at: created.createdAt.toISOString(),
-              } satisfies StaffNotificationPayload,
-            },
-          });
-        } catch {}
+        await this.bestEffort(
+          'commit: enqueue staff notify',
+          async () => {
+            await tx.eventOutbox.create({
+              data: {
+                merchantId: hold.merchantId,
+                eventType: 'notify.staff.telegram',
+                createdAt: operationDateObj,
+                payload: {
+                  kind: 'ORDER',
+                  receiptId: created.id,
+                  at: created.createdAt.toISOString(),
+                } satisfies StaffNotificationPayload,
+              },
+            });
+          },
+          'debug',
+        );
         // ===== Автоповышение уровня по порогу (portal-managed tiers) =====
-        try {
-          await this.tiers.recomputeTierProgress(tx, {
-            merchantId: hold.merchantId,
-            customerId: hold.customerId,
-          });
-        } catch {}
+        await this.bestEffort(
+          'commit: recompute tier progress',
+          async () => {
+            await this.tiers.recomputeTierProgress(tx, {
+              merchantId: hold.merchantId,
+              customerId: hold.customerId,
+            });
+          },
+          'debug',
+        );
         return {
           ok: true,
           customerId: context.customerId,
@@ -4638,23 +4743,27 @@ export class LoyaltyService {
       // В редкой гонке уникальный индекс по (merchantId, orderId) может сработать —
       // любая следующая команда в рамках той же транзакции упадёт с 25P02 (transaction aborted).
       // Выполним идемпотентный поиск вне транзакции.
-      try {
-        const existing2 = await this.prisma.receipt.findUnique({
-          where: {
-            merchantId_orderId: { merchantId: hold.merchantId, orderId },
-          },
-        });
-        if (existing2) {
-          return {
-            ok: true,
-            customerId: context.customerId,
-            alreadyCommitted: true,
-            receiptId: existing2.id,
-            redeemApplied: existing2.redeemApplied,
-            earnApplied: existing2.earnApplied,
-          };
-        }
-      } catch {}
+      const existing2 = await safeExecAsync(
+        () =>
+          this.prisma.receipt.findUnique({
+            where: {
+              merchantId_orderId: { merchantId: hold.merchantId, orderId },
+            },
+          }),
+        async () => null,
+        this.logger,
+        'commit: load receipt after txn failure',
+      );
+      if (existing2) {
+        return {
+          ok: true,
+          customerId: context.customerId,
+          alreadyCommitted: true,
+          receiptId: existing2.id,
+          redeemApplied: existing2.redeemApplied,
+          earnApplied: existing2.earnApplied,
+        };
+      }
       throw error;
     }
   }
@@ -4681,26 +4790,32 @@ export class LoyaltyService {
     const rawItems = this.sanitizePositions(
       (params.items as PositionInput[]) ?? [],
     );
-    try {
-      await this.prisma.merchant.upsert({
-        where: { id: merchantId },
-        update: {},
-        create: {
-          id: merchantId,
-          name: merchantId,
-          initialName: merchantId,
-        },
-      });
-    } catch {}
+    await this.bestEffort(
+      'integration-bonus: ensure merchant stub',
+      async () => {
+        await this.prisma.merchant.upsert({
+          where: { id: merchantId },
+          update: {},
+          create: {
+            id: merchantId,
+            name: merchantId,
+            initialName: merchantId,
+          },
+        });
+      },
+      'debug',
+    );
 
     let existingReceipt: Receipt | null = null;
-    try {
-      existingReceipt = await this.prisma.receipt.findUnique({
-        where: { merchantId_orderId: { merchantId, orderId } },
-      });
-    } catch {
-      existingReceipt = null;
-    }
+    existingReceipt = await safeExecAsync(
+      () =>
+        this.prisma.receipt.findUnique({
+          where: { merchantId_orderId: { merchantId, orderId } },
+        }),
+      async () => null,
+      this.logger,
+      'integration-bonus: find existing receipt',
+    );
     if (existingReceipt) {
       if (existingReceipt.customerId !== customerId) {
         throw new ConflictException(
@@ -4846,6 +4961,7 @@ export class LoyaltyService {
       }
     } else {
       const holdExisting = existingHold!;
+      const holdIdValue = holdId!;
       if (manualRedeemOverride == null) {
         manualRedeemOverride =
           holdExisting.redeemAmount != null
@@ -4860,34 +4976,42 @@ export class LoyaltyService {
       }
 
       if ((manualRedeem || manualEarn) && positionsForHold.length) {
-        try {
-          await this.upsertHoldItems(
-            this.prisma,
-            holdId,
-            merchantId,
-            positionsForHold,
-          );
-        } catch {}
-        try {
-          await this.prisma.hold.update({
-            where: { id: holdId },
-            data: {
-              total: calc.total,
-              eligibleTotal: calc.eligibleAmount,
-              outletId: params.outletId ?? null,
-              staffId: params.staffId ?? null,
-              deviceId: params.resolvedDeviceId ?? null,
-              mode:
-                redeemToSave && redeemToSave > 0
-                  ? HoldMode.REDEEM
-                  : holdExisting.mode,
-              redeemAmount: manualRedeem
-                ? redeemToSave
-                : holdExisting.redeemAmount,
-              earnPoints: manualEarn ? earnToSave : holdExisting.earnPoints,
-            },
-          });
-        } catch {}
+        await this.bestEffort(
+          'integration-bonus: upsert hold items',
+          async () => {
+            await this.upsertHoldItems(
+              this.prisma,
+              holdIdValue,
+              merchantId,
+              positionsForHold,
+            );
+          },
+          'debug',
+        );
+        await this.bestEffort(
+          'integration-bonus: update hold totals',
+          async () => {
+            await this.prisma.hold.update({
+              where: { id: holdIdValue },
+              data: {
+                total: calc.total,
+                eligibleTotal: calc.eligibleAmount,
+                outletId: params.outletId ?? null,
+                staffId: params.staffId ?? null,
+                deviceId: params.resolvedDeviceId ?? null,
+                mode:
+                  redeemToSave && redeemToSave > 0
+                    ? HoldMode.REDEEM
+                    : holdExisting.mode,
+                redeemAmount: manualRedeem
+                  ? redeemToSave
+                  : holdExisting.redeemAmount,
+                earnPoints: manualEarn ? earnToSave : holdExisting.earnPoints,
+              },
+            });
+          },
+          'debug',
+        );
       }
     }
 
@@ -4917,13 +5041,17 @@ export class LoyaltyService {
     );
     let receiptId: string | null = commitResult.receiptId ?? null;
     if (!receiptId) {
-      try {
-        const fallback = await this.prisma.receipt.findUnique({
-          where: { merchantId_orderId: { merchantId, orderId } },
-          select: { id: true },
-        });
-        receiptId = fallback?.id ?? null;
-      } catch {}
+      const fallback = await safeExecAsync(
+        () =>
+          this.prisma.receipt.findUnique({
+            where: { merchantId_orderId: { merchantId, orderId } },
+            select: { id: true },
+          }),
+        async () => null,
+        this.logger,
+        'integration-bonus: load receipt after commit',
+      );
+      receiptId = fallback?.id ?? null;
     }
     if (!receiptId) {
       throw new BadRequestException('Не удалось зафиксировать операцию');
@@ -5689,32 +5817,44 @@ export class LoyaltyService {
           payload: refundPayload as Prisma.InputJsonValue,
         },
       });
-      try {
-        await this.rollbackReferralRewards(tx, {
-          merchantId,
-          receipt: {
-            id: receipt.id,
+      await this.bestEffort(
+        'refund: rollback referral rewards',
+        async () => {
+          await this.rollbackReferralRewards(tx, {
+            merchantId,
+            receipt: {
+              id: receipt.id,
+              orderId: receipt.orderId,
+              customerId: receipt.customerId,
+              outletId: refundOutletId,
+              staffId: receipt.staffId ?? null,
+            },
+          });
+        },
+        'warn',
+      );
+      await this.bestEffort(
+        'refund: record staff motivation',
+        async () => {
+          await this.staffMotivation.recordRefund(tx, {
+            merchantId,
             orderId: receipt.orderId,
+            eventAt: operationDateObj,
+            share: 1,
+          });
+        },
+        'debug',
+      );
+      await this.bestEffort(
+        'refund: recompute tier progress',
+        async () => {
+          await this.tiers.recomputeTierProgress(tx, {
+            merchantId,
             customerId: receipt.customerId,
-            outletId: refundOutletId,
-            staffId: receipt.staffId ?? null,
-          },
-        });
-      } catch {}
-      try {
-        await this.staffMotivation.recordRefund(tx, {
-          merchantId,
-          orderId: receipt.orderId,
-          eventAt: operationDateObj,
-          share: 1,
-        });
-      } catch {}
-      try {
-        await this.tiers.recomputeTierProgress(tx, {
-          merchantId,
-          customerId: receipt.customerId,
-        });
-      } catch {}
+          });
+        },
+        'debug',
+      );
       return {
         ok: true,
         share: 1,
@@ -6091,7 +6231,13 @@ export class LoyaltyService {
             reviewDismissedByTxId.set(record.transactionId, ts);
           }
         }
-      } catch {}
+      } catch (err) {
+        this.logger.debug(
+          `transactions: load realtime review events failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
     }
 
     // 2) «Отложенные начисления» (EarnLot.status = PENDING)

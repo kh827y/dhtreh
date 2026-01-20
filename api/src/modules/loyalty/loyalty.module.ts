@@ -1,6 +1,10 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { LoyaltyService } from './services/loyalty.service';
-import { LoyaltyController } from './controllers/loyalty.controller';
+import { LoyaltyCashierController } from './controllers/loyalty-cashier.controller';
+import { LoyaltyMetaController } from './controllers/loyalty-meta.controller';
+import { LoyaltyProfileController } from './controllers/loyalty-profile.controller';
+import { LoyaltyPromotionsController } from './controllers/loyalty-promotions.controller';
+import { LoyaltyTransactionsController } from './controllers/loyalty-transactions.controller';
 import { LoyaltyPublicController } from './controllers/loyalty.public.controller';
 import { PrismaModule } from '../../core/prisma/prisma.module';
 import { MetricsModule } from '../../core/metrics/metrics.module';
@@ -43,7 +47,14 @@ import { LoyaltyTierService } from './services/loyalty-tier.service';
     LoyaltyContextService,
     LoyaltyTierService,
   ],
-  controllers: [LoyaltyController, LoyaltyPublicController],
+  controllers: [
+    LoyaltyCashierController,
+    LoyaltyMetaController,
+    LoyaltyProfileController,
+    LoyaltyPromotionsController,
+    LoyaltyTransactionsController,
+    LoyaltyPublicController,
+  ],
   exports: [LoyaltyService, LoyaltyEventsService],
 })
 export class LoyaltyModule {}

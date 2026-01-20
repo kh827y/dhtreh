@@ -66,17 +66,33 @@
 Интервалы/батчи:
 - `EARN_ACTIVATION_INTERVAL_MS`, `EARN_ACTIVATION_BATCH`.
 - `HOLD_GC_INTERVAL_MS`.
+- `RETENTION_GC_INTERVAL_MS` — период запуска ретеншн GC.
+- `IDEMPOTENCY_GC_INTERVAL_MS` — период очистки идемпотентных ключей.
+- `IDEMPOTENCY_TTL_HOURS` — TTL идемпотентности (часы).
+- `OUTBOX_GC_INTERVAL_MS` — период очистки outbox (статусы SENT/DEAD).
+- `OUTBOX_RETENTION_DAYS` — хранение outbox записей в днях.
 - `OUTBOX_WORKER_INTERVAL_MS`, `OUTBOX_WORKER_CONCURRENCY`, `OUTBOX_WORKER_BATCH`, `OUTBOX_MAX_RETRIES`, `OUTBOX_RPS_DEFAULT`, `OUTBOX_RPS_BY_MERCHANT`.
 - `NOTIFY_WORKER_INTERVAL_MS`, `NOTIFY_WORKER_BATCH`, `NOTIFY_MAX_RETRIES`, `NOTIFY_RPS_DEFAULT`, `NOTIFY_RPS_BY_MERCHANT`.
 - `AUTO_RETURN_WORKER_INTERVAL_MS`, `AUTO_RETURN_BATCH_SIZE`.
 - `BIRTHDAY_WORKER_INTERVAL_MS`, `BIRTHDAY_WORKER_BATCH_SIZE`.
 - `POINTS_TTL_BURN_INTERVAL_MS`, `POINTS_TTL_REMINDER_INTERVAL_MS`.
 
+## Ретеншн логов (опционально)
+
+- `ADMIN_AUDIT_RETENTION_DAYS` — хранение audit‑логов админки (по умолчанию 90 дней).
+- `SYNC_LOG_RETENTION_DAYS` — хранение интеграционных sync‑логов (по умолчанию 30 дней).
+- `COMMUNICATION_TASK_RETENTION_DAYS` — хранение завершённых рассылок (по умолчанию 180 дней).
+
 ## Уведомления
 
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` — email.
 - `TELEGRAM_NOTIFY_BOT_TOKEN`, `TELEGRAM_NOTIFY_WEBHOOK_SECRET` — бот для уведомлений сотрудников.
 - Push клиентам доставляется через Telegram Mini App (настраивается в портале).
+
+## Логирование
+
+- `LOG_LEVEL` — уровень логов HTTP (`trace|debug|info|warn|error|fatal`).
+- `LOG_HTTP_IGNORE_PATHS` — список путей, которые не логируются (через запятую). Пример: `/healthz,/readyz,/live,/metrics`.
 
 ## Алерты и мониторинг
 

@@ -4,10 +4,12 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { Resource } from '@opentelemetry/resources';
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
+import { Logger } from '@nestjs/common';
 
 const enabled =
   process.env.OTEL_ENABLED === '1' || !!process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 if (enabled) {
+  const logger = new Logger('otel');
   const serviceName = process.env.OTEL_SERVICE_NAME || 'loyalty-api';
   const serviceVersion = process.env.APP_VERSION || 'dev';
   const endpoint =
@@ -33,9 +35,12 @@ if (enabled) {
   try {
     sdk.start();
 
-    console.log('[OTel] Tracing initialized');
+    logger.log('Tracing initialized');
   } catch (err) {
-    console.error('[OTel] init error', err);
+    logger.error(
+      'Tracing init error',
+      err instanceof Error ? err.stack : String(err),
+    );
   }
 
   const shutdown = () => {

@@ -22,6 +22,7 @@ import { CrmModule } from '../modules/crm/crm.module';
 import { HoldGcWorker } from '../workers/hold-gc.worker';
 import { IdempotencyGcWorker } from '../workers/idempotency-gc.worker';
 import { EventOutboxGcWorker } from '../workers/event-outbox-gc.worker';
+import { RetentionGcWorker } from '../workers/retention-gc.worker';
 import { OutboxDispatcherWorker } from '../workers/outbox-dispatcher.worker';
 import { NotificationDispatcherWorker } from '../workers/notification-dispatcher.worker';
 import { PointsBurnWorker } from '../workers/points-burn.worker';
@@ -114,6 +115,7 @@ try {
     NotificationDispatcherWorker,
     IdempotencyGcWorker,
     EventOutboxGcWorker,
+    RetentionGcWorker,
     PointsTtlWorker,
     PointsTtlReminderWorker,
     PointsBurnWorker,

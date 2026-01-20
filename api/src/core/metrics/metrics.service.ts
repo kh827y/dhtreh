@@ -6,6 +6,7 @@ import {
   Registry,
   collectDefaultMetrics,
 } from 'prom-client';
+import { AppConfigService } from '../config/app-config.service';
 
 type CMap = Record<string, number>;
 
@@ -39,11 +40,12 @@ export class MetricsService implements OnModuleDestroy {
 
   private stopDefaultMetrics?: () => void;
 
-  constructor() {
+  constructor(private readonly config: AppConfigService) {
     this.registry = new Registry();
     try {
       const enableDefaults =
-        process.env.METRICS_DEFAULTS === '1' || process.env.NODE_ENV !== 'test';
+        this.config.getBoolean('METRICS_DEFAULTS', false) ||
+        this.config.getString('NODE_ENV') !== 'test';
       if (enableDefaults) {
         const stop = collectDefaultMetrics({
           register: this.registry,

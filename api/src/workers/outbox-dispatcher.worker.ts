@@ -35,6 +35,30 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     private readonly config: AppConfigService,
   ) {}
 
+  private logDebug(message: string, err: unknown) {
+    const detail =
+      err instanceof Error
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : err == null
+            ? 'unknown error'
+            : String(err);
+    this.logger.debug(`${message}: ${detail}`);
+  }
+
+  private logWarn(message: string, err: unknown) {
+    const detail =
+      err instanceof Error
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : err == null
+            ? 'unknown error'
+            : String(err);
+    this.logger.warn(`${message}: ${detail}`);
+  }
+
   onModuleInit() {
     if (!this.config.getBoolean('WORKERS_ENABLED', false)) {
       this.logger.log('Workers disabled (WORKERS_ENABLED!=1)');
@@ -42,11 +66,17 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     }
     const intervalMs =
       this.config.getNumber('OUTBOX_WORKER_INTERVAL_MS', 15000) ?? 15000;
-    this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    this.timer = setInterval(() => {
+      this.tick().catch((err) =>
+        this.logWarn('outbox tick failed', err),
+      );
+    }, intervalMs);
     try {
       if (this.timer && typeof this.timer.unref === 'function')
         this.timer.unref();
-    } catch {}
+    } catch (err) {
+      this.logDebug('outbox timer unref failed', err);
+    }
     this.logger.log(`OutboxDispatcherWorker started, interval=${intervalMs}ms`);
     this.startedAt = new Date();
   }
@@ -101,7 +131,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       s.fails = 0;
       s.windowStart = now;
       if (wasClosed) {
-        this.onBreakerOpen(merchantId).catch(() => {});
+        this.onBreakerOpen(merchantId).catch((err) =>
+          this.logWarn('outbox breaker open handler failed', err),
+        );
       }
     }
     this.cb.set(merchantId, s);
@@ -125,7 +157,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       if (!isNaN(n) && n > 0) return Math.max(current, Date.now() + n * 1000);
       const d = new Date(ra).getTime();
       if (!isNaN(d) && d > Date.now()) return Math.max(current, d);
-    } catch {}
+    } catch (err) {
+      this.logDebug('outbox: parse retry-after failed', err);
+    }
     return current;
   }
 
@@ -218,7 +252,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(
         `Outbox circuit opened for merchant=${merchantId}, auto-paused until ${until.toISOString()}`,
       );
-    } catch {}
+    } catch (err) {
+      this.logWarn('outbox auto-pause failed', err);
+    }
   }
 
   private async claim(row: OutboxRow): Promise<boolean> {
@@ -228,7 +264,8 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         data: { status: 'SENDING', updatedAt: new Date() },
       });
       return r.count === 1;
-    } catch {
+    } catch (err) {
+      this.logDebug('outbox claim failed', err);
       return false;
     }
   }
@@ -272,7 +309,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           type: row.eventType,
           result: 'skipped',
         });
-      } catch {}
+      } catch (err) {
+        this.logDebug('outbox metrics skipped failed', err);
+      }
       return;
     }
     const validationError = this.validateWebhookUrl(url);
@@ -326,7 +365,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       to = setTimeout(() => ac.abort(), Math.max(1000, timeoutMs));
       try {
         if (to && typeof to.unref === 'function') to.unref();
-      } catch {}
+      } catch (err) {
+        this.logDebug('outbox timeout unref failed', err);
+      }
       const res = await fetch(url, {
         method: 'POST',
         headers,
@@ -345,7 +386,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             type: row.eventType,
             result: 'sent',
           });
-        } catch {}
+        } catch (err) {
+          this.logDebug('outbox metrics sent failed', err);
+        }
         this.noteSuccess(row.merchantId);
       } else {
         const text = this.truncateError(await res.text().catch(() => ''));
@@ -368,7 +411,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
               type: row.eventType,
               result: 'dead',
             });
-          } catch {}
+          } catch (err) {
+            this.logDebug('outbox metrics dead failed', err);
+          }
         } else {
           let nextTime = Date.now() + this.backoffMs(row.retries);
           if (res.status === 429 || res.status === 503) {
@@ -395,7 +440,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             type: row.eventType,
             result: 'failed',
           });
-        } catch {}
+        } catch (err) {
+          this.logDebug('outbox metrics failed failed', err);
+        }
       }
     } catch (e: unknown) {
       const message =
@@ -425,7 +472,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             type: row.eventType,
             result: 'dead',
           });
-        } catch {}
+        } catch (err) {
+          this.logDebug('outbox metrics dead failed', err);
+        }
       } else {
         const next = new Date(Date.now() + this.backoffMs(row.retries));
         await this.prisma.eventOutbox.update({
@@ -445,11 +494,15 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           type: row.eventType,
           result: 'failed',
         });
-      } catch {}
+      } catch (err) {
+        this.logDebug('outbox metrics failed failed', err);
+      }
     } finally {
       try {
         if (to) clearTimeout(to);
-      } catch {}
+      } catch (err) {
+        this.logDebug('outbox clear timeout failed', err);
+      }
     }
   }
 
@@ -464,7 +517,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           Math.floor(Date.now() / 1000),
           { worker: 'outbox' },
         );
-      } catch {}
+      } catch (err) {
+        this.logDebug('outbox metrics tick gauge failed', err);
+      }
       const now = new Date();
       const staleMs = Math.max(
         60000,
@@ -482,14 +537,18 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             lastError: 'stale sending',
           },
         });
-      } catch {}
+      } catch (err) {
+        this.logWarn('outbox stale sending reset failed', err);
+      }
       // обновим gauge pending
       try {
         const pending = await this.prisma.eventOutbox.count({
           where: { status: { in: ['PENDING', 'FAILED'] } },
         });
         this.metrics.setGauge('loyalty_outbox_pending', pending);
-      } catch {}
+      } catch (err) {
+        this.logDebug('outbox pending gauge failed', err);
+      }
 
       const batch =
         this.config.getNumber('OUTBOX_WORKER_BATCH', 10) ?? 10;
@@ -522,8 +581,12 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
               type: row.eventType,
               result: 'circuit_open',
             });
-          } catch {}
-        } catch {}
+          } catch (err) {
+            this.logDebug('outbox metrics circuit_open failed', err);
+          }
+        } catch (err) {
+          this.logWarn('outbox circuit open update failed', err);
+        }
       }
       // Group by eventType and apply per-type concurrency
       const byType = new Map<string, OutboxRow[]>();
@@ -556,8 +619,12 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
                       type: row.eventType,
                       result: 'rate_limited',
                     });
-                  } catch {}
-                } catch {}
+                  } catch (err) {
+                    this.logDebug('outbox metrics rate_limited failed', err);
+                  }
+                } catch (err) {
+                  this.logWarn('outbox rate limit update failed', err);
+                }
                 return;
               }
               const claimed = await this.claim(row);
@@ -574,7 +641,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           (s) => s.openUntil > Date.now(),
         ).length;
         this.metrics.setGauge('loyalty_outbox_circuit_open', openCount);
-      } catch {}
+      } catch (err) {
+        this.logDebug('outbox circuit gauge failed', err);
+      }
     } finally {
       this.running = false;
     }

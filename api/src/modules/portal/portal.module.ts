@@ -1,5 +1,13 @@
 import { Module } from '@nestjs/common';
-import { PortalController } from './controllers/portal.controller';
+import { PortalAccountController } from './controllers/portal-account.controller';
+import { PortalAnalyticsController } from './controllers/portal-analytics.controller';
+import { PortalCatalogController } from './controllers/portal-catalog.controller';
+import { PortalCommunicationsController } from './controllers/portal-communications.controller';
+import { PortalCustomersController } from './controllers/portal-customers.controller';
+import { PortalIntegrationsController } from './controllers/portal-integrations.controller';
+import { PortalOperationsController } from './controllers/portal-operations.controller';
+import { PortalPromocodesController } from './controllers/portal-promocodes.controller';
+import { PortalSettingsController } from './controllers/portal-settings.controller';
 import { MerchantsModule } from '../merchants/merchants.module';
 import { PrismaModule } from '../../core/prisma/prisma.module';
 import { PortalGuard } from '../portal-auth/portal.guard';
@@ -22,6 +30,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { PortalRestApiIntegrationService } from './services/rest-api-integration.service';
 import { ImportExportModule } from '../import-export/import-export.module';
+import { PortalControllerHelpers } from './controllers/portal.controller-helpers';
 
 @Module({
   imports: [
@@ -39,9 +48,20 @@ import { ImportExportModule } from '../import-export/import-export.module';
     IntegrationsModule,
     ImportExportModule,
   ],
-  controllers: [PortalController],
+  controllers: [
+    PortalAccountController,
+    PortalAnalyticsController,
+    PortalCatalogController,
+    PortalCommunicationsController,
+    PortalCustomersController,
+    PortalIntegrationsController,
+    PortalOperationsController,
+    PortalPromocodesController,
+    PortalSettingsController,
+  ],
   providers: [
     PortalGuard,
+    PortalControllerHelpers,
     PortalCatalogService,
     StaffMotivationService,
     OperationsLogService,

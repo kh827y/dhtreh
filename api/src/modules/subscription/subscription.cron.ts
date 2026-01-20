@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
@@ -17,6 +17,8 @@ type SubscriptionWithPlan = Prisma.SubscriptionGetPayload<{
  */
 @Injectable()
 export class SubscriptionCronService {
+  private readonly logger = new Logger(SubscriptionCronService.name);
+
   constructor(
     private prisma: PrismaService,
     private pushService: PushService,
@@ -36,7 +38,7 @@ export class SubscriptionCronService {
       'cron:subscription_reminders',
     );
     if (!lock.ok) return;
-    console.log('[CRON] Starting expiration reminder process...');
+    this.logger.log('Starting expiration reminder process');
 
     try {
       // Напоминание за 7 дней до истечения
@@ -101,11 +103,14 @@ export class SubscriptionCronService {
         });
       }
 
-      console.log(
-        `[CRON] Sent ${expiringSoon.length + expiringTomorrow.length} expiration reminders`,
+      this.logger.log(
+        `Sent ${expiringSoon.length + expiringTomorrow.length} expiration reminders`,
       );
     } catch (error) {
-      console.error('[CRON] Error sending expiration reminders:', error);
+      this.logger.error(
+        'Error sending expiration reminders',
+        error instanceof Error ? error.stack : String(error),
+      );
       this.metrics.increment('subscription_reminder_errors');
     } finally {
       await pgAdvisoryUnlock(this.prisma, lock.key);
@@ -124,7 +129,7 @@ export class SubscriptionCronService {
       'cron:subscription_deactivate',
     );
     if (!lock.ok) return;
-    console.log('[CRON] Starting expired subscription deactivation...');
+    this.logger.log('Starting expired subscription deactivation');
 
     try {
       const now = new Date();
@@ -143,8 +148,8 @@ export class SubscriptionCronService {
       });
 
       if (expired.count > 0) {
-        console.log(
-          `[CRON] Deactivated ${expired.count} expired subscriptions`,
+        this.logger.log(
+          `Deactivated ${expired.count} expired subscriptions`,
         );
         this.metrics.increment('subscriptions_expired', expired.count);
       }
@@ -167,8 +172,8 @@ export class SubscriptionCronService {
       });
 
       if (canceled.count > 0) {
-        console.log(
-          `[CRON] Canceled ${canceled.count} subscriptions after grace period`,
+        this.logger.log(
+          `Canceled ${canceled.count} subscriptions after grace period`,
         );
         this.metrics.increment(
           'subscriptions_canceled_after_grace',
@@ -176,7 +181,10 @@ export class SubscriptionCronService {
         );
       }
     } catch (error) {
-      console.error('[CRON] Error deactivating expired subscriptions:', error);
+      this.logger.error(
+        'Error deactivating expired subscriptions',
+        error instanceof Error ? error.stack : String(error),
+      );
       this.metrics.increment('subscription_deactivation_errors');
     } finally {
       await pgAdvisoryUnlock(this.prisma, lock.key);
@@ -195,7 +203,7 @@ export class SubscriptionCronService {
       'cron:subscription_reports',
     );
     if (!lock.ok) return;
-    console.log('[CRON] Starting monthly report generation...');
+    this.logger.log('Starting monthly report generation');
 
     try {
       // Получаем всех активных мерчантов с подписками
@@ -217,9 +225,7 @@ export class SubscriptionCronService {
         },
       });
 
-      console.log(
-        `[CRON] Generating reports for ${merchants.length} merchants`,
-      );
+      this.logger.log(`Generating reports for ${merchants.length} merchants`);
 
       for (const merchant of merchants) {
         try {
@@ -245,18 +251,21 @@ export class SubscriptionCronService {
           // Отправляем отчет на email
           // await this.emailService.sendMonthlyReport(merchant.email, report);
 
-          console.log(
-            `[CRON] Generated monthly report for merchant ${merchant.id}`,
+          this.logger.log(
+            `Generated monthly report for merchant ${merchant.id}`,
           );
         } catch (error) {
-          console.error(
-            `[CRON] Failed to generate report for merchant ${merchant.id}:`,
-            error,
+          this.logger.error(
+            `Failed to generate report for merchant ${merchant.id}`,
+            error instanceof Error ? error.stack : String(error),
           );
         }
       }
     } catch (error) {
-      console.error('[CRON] Error generating monthly reports:', error);
+      this.logger.error(
+        'Error generating monthly reports',
+        error instanceof Error ? error.stack : String(error),
+      );
       this.metrics.increment('monthly_report_errors');
     } finally {
       await pgAdvisoryUnlock(this.prisma, lock.key);
@@ -275,7 +284,7 @@ export class SubscriptionCronService {
       'cron:subscription_cleanup',
     );
     if (!lock.ok) return;
-    console.log('[CRON] Starting cleanup process...');
+    this.logger.log('Starting cleanup process');
 
     try {
       // Сброс флагов напоминаний для новых периодов
@@ -293,7 +302,10 @@ export class SubscriptionCronService {
         },
       });
     } catch (error) {
-      console.error('[CRON] Error during cleanup:', error);
+      this.logger.error(
+        'Error during cleanup',
+        error instanceof Error ? error.stack : String(error),
+      );
       this.metrics.increment('cleanup_errors');
     } finally {
       await pgAdvisoryUnlock(this.prisma, lock.key);
@@ -332,9 +344,17 @@ export class SubscriptionCronService {
       // Push уведомление
       await this.pushService
         .sendToTopic(merchantId, title, message)
-        .catch(console.error);
+        .catch((error) => {
+          this.logger.error(
+            'Error sending renewal notification',
+            error instanceof Error ? error.stack : String(error),
+          );
+        });
     } catch (error) {
-      console.error('Error sending renewal notification:', error);
+      this.logger.error(
+        'Error sending renewal notification',
+        error instanceof Error ? error.stack : String(error),
+      );
     }
   }
 
@@ -350,9 +370,17 @@ export class SubscriptionCronService {
 
       await this.pushService
         .sendToTopic(subscription.merchantId, 'Напоминание о подписке', message)
-        .catch(console.error);
+        .catch((error) => {
+          this.logger.error(
+            'Error sending expiration reminder',
+            error instanceof Error ? error.stack : String(error),
+          );
+        });
     } catch (error) {
-      console.error('Error sending expiration reminder:', error);
+      this.logger.error(
+        'Error sending expiration reminder',
+        error instanceof Error ? error.stack : String(error),
+      );
     }
   }
 
@@ -370,9 +398,17 @@ export class SubscriptionCronService {
 
       await this.pushService
         .sendToTopic(merchantId, 'Предупреждение о лимите', message)
-        .catch(console.error);
+        .catch((error) => {
+          this.logger.error(
+            'Error sending limit warning',
+            error instanceof Error ? error.stack : String(error),
+          );
+        });
     } catch (error) {
-      console.error('Error sending limit warning:', error);
+      this.logger.error(
+        'Error sending limit warning',
+        error instanceof Error ? error.stack : String(error),
+      );
     }
   }
 }

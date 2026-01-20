@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 type AlertSeverity = 'info' | 'warn' | 'critical';
 
@@ -29,12 +30,14 @@ export class AlertsService {
   private throttleMap: Map<string, number> = new Map();
   private readonly maxRecent = 50;
 
+  constructor(private readonly config: AppConfigService) {}
+
   private get tgToken(): string | undefined {
-    const v = process.env.ALERT_TELEGRAM_BOT_TOKEN;
+    const v = this.config.getString('ALERT_TELEGRAM_BOT_TOKEN');
     return v && v.trim() ? v.trim() : undefined;
   }
   private get tgChatId(): string | undefined {
-    const v = process.env.ALERT_TELEGRAM_CHAT_ID;
+    const v = this.config.getString('ALERT_TELEGRAM_CHAT_ID');
     return v && v.trim() ? v.trim() : undefined;
   }
 
@@ -56,7 +59,8 @@ export class AlertsService {
   }
 
   getStatus() {
-    const sampleRate = Number(process.env.ALERTS_5XX_SAMPLE_RATE || '0');
+    const sampleRate =
+      this.config.getNumber('ALERTS_5XX_SAMPLE_RATE', 0) ?? 0;
     const chatMask = this.tgChatId
       ? `***${String(this.tgChatId).slice(-4)}`
       : null;
@@ -134,8 +138,8 @@ export class AlertsService {
     throttleMinutes?: number;
     force?: boolean;
   }): Promise<void> {
-    const env = process.env.NODE_ENV || 'development';
-    const version = process.env.APP_VERSION || 'dev';
+    const env = this.config.getString('NODE_ENV', 'development') ?? 'development';
+    const version = this.config.getString('APP_VERSION', 'dev') ?? 'dev';
     const header = [`[${env}] ${params.title}`, `version: ${version}`];
     const text = [...header, ...params.lines.filter(Boolean)].join('\n');
     await this.notifyText(text, {

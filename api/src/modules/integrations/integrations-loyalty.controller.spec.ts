@@ -45,6 +45,22 @@ type CacheStub = {
   getOutlet: MockFn;
   getStaff: MockFn;
 };
+type OutletStub = {
+  id: string;
+  merchantId?: string | null;
+  name?: string | null;
+};
+type StaffStub = {
+  id: string;
+  merchantId?: string | null;
+  status?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  login?: string | null;
+  email?: string | null;
+  allowedOutletId?: string | null;
+  accesses?: Array<{ outletId?: string | null } | null>;
+};
 type IntegrationRequestStub = {
   integrationMerchantId?: string;
   integrationId?: string;
@@ -123,9 +139,9 @@ function createCacheMock(prisma: MockPrisma): CacheStub {
     ),
     getOutlet: mockFn().mockImplementation(
       async (merchantId: string, outletId: string) => {
-        const outlet = await prisma.outlet.findFirst({
+        const outlet = (await prisma.outlet.findFirst({
           where: { id: outletId, merchantId },
-        });
+        })) as OutletStub | null;
         if (!outlet) return null;
         return {
           id: outlet.id,
@@ -136,9 +152,9 @@ function createCacheMock(prisma: MockPrisma): CacheStub {
     ),
     getStaff: mockFn().mockImplementation(
       async (merchantId: string, staffId: string) => {
-        const staff = await prisma.staff.findFirst({
+        const staff = (await prisma.staff.findFirst({
           where: { id: staffId, merchantId },
-        });
+        })) as StaffStub | null;
         if (!staff) return null;
         const accesses = Array.isArray(staff.accesses)
           ? staff.accesses

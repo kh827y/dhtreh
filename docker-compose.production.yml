@@ -27,6 +27,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # Redis для кеширования и rate limiting
   redis:
@@ -43,6 +51,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
   # API сервер
   api:
@@ -67,6 +83,20 @@ services:
       MINIAPP_BASE_URL: ${MINIAPP_BASE_URL}
       SENTRY_DSN: ${SENTRY_DSN}
       METRICS_TOKEN: ${METRICS_TOKEN}
+      MAINTENANCE_MODE: ${MAINTENANCE_MODE}
+      READ_ONLY_MODE: ${READ_ONLY_MODE}
+      CACHE_MAX_ENTRIES: ${CACHE_MAX_ENTRIES}
+      CACHE_TTL_SETTINGS_MS: ${CACHE_TTL_SETTINGS_MS}
+      CACHE_TTL_OUTLET_MS: ${CACHE_TTL_OUTLET_MS}
+      CACHE_TTL_STAFF_MS: ${CACHE_TTL_STAFF_MS}
+      RETENTION_GC_INTERVAL_MS: ${RETENTION_GC_INTERVAL_MS}
+      ADMIN_AUDIT_RETENTION_DAYS: ${ADMIN_AUDIT_RETENTION_DAYS}
+      SYNC_LOG_RETENTION_DAYS: ${SYNC_LOG_RETENTION_DAYS}
+      COMMUNICATION_TASK_RETENTION_DAYS: ${COMMUNICATION_TASK_RETENTION_DAYS}
+      OUTBOX_GC_INTERVAL_MS: ${OUTBOX_GC_INTERVAL_MS}
+      OUTBOX_RETENTION_DAYS: ${OUTBOX_RETENTION_DAYS}
+      IDEMPOTENCY_GC_INTERVAL_MS: ${IDEMPOTENCY_GC_INTERVAL_MS}
+      IDEMPOTENCY_TTL_HOURS: ${IDEMPOTENCY_TTL_HOURS}
       ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN}
       ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID}
       ALERTS_5XX_SAMPLE_RATE: ${ALERTS_5XX_SAMPLE_RATE}
@@ -142,6 +172,20 @@ services:
       MINIAPP_BASE_URL: ${MINIAPP_BASE_URL}
       SENTRY_DSN: ${SENTRY_DSN}
       METRICS_TOKEN: ${METRICS_TOKEN}
+      MAINTENANCE_MODE: ${MAINTENANCE_MODE}
+      READ_ONLY_MODE: ${READ_ONLY_MODE}
+      CACHE_MAX_ENTRIES: ${CACHE_MAX_ENTRIES}
+      CACHE_TTL_SETTINGS_MS: ${CACHE_TTL_SETTINGS_MS}
+      CACHE_TTL_OUTLET_MS: ${CACHE_TTL_OUTLET_MS}
+      CACHE_TTL_STAFF_MS: ${CACHE_TTL_STAFF_MS}
+      RETENTION_GC_INTERVAL_MS: ${RETENTION_GC_INTERVAL_MS}
+      ADMIN_AUDIT_RETENTION_DAYS: ${ADMIN_AUDIT_RETENTION_DAYS}
+      SYNC_LOG_RETENTION_DAYS: ${SYNC_LOG_RETENTION_DAYS}
+      COMMUNICATION_TASK_RETENTION_DAYS: ${COMMUNICATION_TASK_RETENTION_DAYS}
+      OUTBOX_GC_INTERVAL_MS: ${OUTBOX_GC_INTERVAL_MS}
+      OUTBOX_RETENTION_DAYS: ${OUTBOX_RETENTION_DAYS}
+      IDEMPOTENCY_GC_INTERVAL_MS: ${IDEMPOTENCY_GC_INTERVAL_MS}
+      IDEMPOTENCY_TTL_HOURS: ${IDEMPOTENCY_TTL_HOURS}
       ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN}
       ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID}
       ALERTS_5XX_SAMPLE_RATE: ${ALERTS_5XX_SAMPLE_RATE}
@@ -184,6 +228,9 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
   # Admin панель
   admin:
@@ -199,7 +246,8 @@ services:
       ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET}
       ADMIN_UI_PASSWORD: ${ADMIN_UI_PASSWORD}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const req=require('http').get('http://localhost:3001/',res=>process.exit(res.statusCode<500?0:1));req.on('error',()=>process.exit(1));\""]
       interval: 30s
@@ -216,6 +264,14 @@ services:
       - "traefik.http.services.admin.loadbalancer.server.port=3001"
       - "traefik.http.routers.admin.middlewares=admin-auth"
       - "traefik.http.middlewares.admin-auth.basicauth.users=${ADMIN_BASIC_AUTH}"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
   # Merchant portal
   merchant-portal:
@@ -228,7 +284,8 @@ services:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE: https://api.${DOMAIN}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const req=require('http').get('http://localhost:3000/',res=>process.exit(res.statusCode<500?0:1));req.on('error',()=>process.exit(1));\""]
       interval: 30s
@@ -243,6 +300,14 @@ services:
       - "traefik.http.routers.portal.tls=true"
       - "traefik.http.routers.portal.tls.certresolver=letsencrypt"
       - "traefik.http.services.portal.loadbalancer.server.port=3000"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
   # Cashier виртуальный терминал
   cashier:
@@ -254,6 +319,9 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE: https://api.${DOMAIN}
+    depends_on:
+      api:
+        condition: service_healthy
     networks:
       - loyalty_network
     healthcheck:
@@ -268,6 +336,14 @@ services:
       - "traefik.http.routers.cashier.tls=true"
       - "traefik.http.routers.cashier.tls.certresolver=letsencrypt"
       - "traefik.http.services.cashier.loadbalancer.server.port=3000"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 192M
+        reservations:
+          cpus: '0.1'
+          memory: 96M
 
   # Miniapp для Telegram
   miniapp:
@@ -279,6 +355,9 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE: https://api.${DOMAIN}
+    depends_on:
+      api:
+        condition: service_healthy
     networks:
       - loyalty_network
     healthcheck:
@@ -299,6 +378,9 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
+        reservations:
+          cpus: '0.2'
+          memory: 128M
 
   # Traefik reverse proxy
   traefik:
@@ -320,6 +402,7 @@ services:
       - "--metrics.prometheus=true"
       - "--metrics.prometheus.entrypoint=metrics"
       - "--entrypoints.metrics.address=:8082"
+      - "--ping=true"
     ports:
       - "80:80"
       - "443:443"
@@ -328,6 +411,12 @@ services:
       - letsencrypt_data:/letsencrypt
     networks:
       - loyalty_network
+    healthcheck:
+      test: ["CMD", "traefik", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN}`)"
@@ -336,6 +425,14 @@ services:
       - "traefik.http.routers.dashboard.service=api@internal"
       - "traefik.http.routers.dashboard.middlewares=dashboard-auth"
       - "traefik.http.middlewares.dashboard-auth.basicauth.users=${TRAEFIK_BASIC_AUTH}"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
 
   # Prometheus для метрик
   prometheus:
@@ -355,6 +452,12 @@ services:
       - '--web.console.templates=/usr/share/prometheus/consoles'
     networks:
       - loyalty_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:9090/-/healthy >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.prometheus.rule=Host(`metrics.${DOMAIN}`)"
@@ -363,6 +466,14 @@ services:
       - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
       - "traefik.http.routers.prometheus.middlewares=prometheus-auth"
       - "traefik.http.middlewares.prometheus-auth.basicauth.users=${METRICS_BASIC_AUTH}"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
 
   # Grafana для визуализации
   grafana:
@@ -377,12 +488,26 @@ services:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning
     networks:
       - loyalty_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)"
       - "traefik.http.routers.grafana.tls=true"
       - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
       - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
   # Backup сервис
   backup:

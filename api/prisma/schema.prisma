@@ -1370,6 +1370,7 @@ model AdminAudit {
   payload    Json?
 
   @@index([merchantId, createdAt])
+  @@index([createdAt])
 }
 
 model TelegramBot {
@@ -1606,6 +1607,7 @@ model CommunicationTask {
   @@index([merchantId, status])
   @@index([channel])
   @@index([status, scheduledAt])
+  @@index([status, createdAt])
 }
 
 model CommunicationTaskRecipient {
@@ -2059,6 +2061,7 @@ model SyncLog {
 
   @@index([merchantId, createdAt])
   @@index([integrationId, createdAt])
+  @@index([createdAt])
 }
 
 model CustomerSegment {

@@ -1,12 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
-import { LoyaltyController } from '../controllers/loyalty.controller';
-import type { LoyaltyService } from '../services/loyalty.service';
-import type { LevelsService } from '../../levels/levels.service';
-import type { MerchantsService } from '../../merchants/merchants.service';
-import type { MetricsService } from '../../../core/metrics/metrics.service';
-import type { PromoCodesService } from '../../promocodes/promocodes.service';
+import { LoyaltyProfileController } from '../controllers/loyalty-profile.controller';
 import type { PrismaService } from '../../../core/prisma/prisma.service';
-import type { ReviewService } from '../../reviews/review.service';
 import type { LookupCacheService } from '../../../core/cache/lookup-cache.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
@@ -50,19 +44,7 @@ const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
 const mockFnWithImpl = <Return, Args extends unknown[]>(
   impl: (...args: Args) => Return,
 ) => mockFn<Return, Args>().mockImplementation(impl);
-const asLoyaltyService = (stub: Record<string, unknown>) =>
-  stub as unknown as LoyaltyService;
 const asPrismaService = (stub: MockPrisma) => stub as unknown as PrismaService;
-const asMetricsService = (stub: Record<string, unknown>) =>
-  stub as unknown as MetricsService;
-const asPromoCodesService = (stub: Record<string, unknown>) =>
-  stub as unknown as PromoCodesService;
-const asMerchantsService = (stub: Record<string, unknown>) =>
-  stub as unknown as MerchantsService;
-const asReviewService = (stub: Record<string, unknown>) =>
-  stub as unknown as ReviewService;
-const asLevelsService = (stub: Record<string, unknown>) =>
-  stub as unknown as LevelsService;
 const asCacheService = (stub: CacheStub) =>
   stub as unknown as LookupCacheService;
 
@@ -133,20 +115,14 @@ function createCacheMock(): CacheStub {
 function createController(prismaOverrides: PrismaOverrides = {}) {
   const prisma = createPrismaMock(prismaOverrides);
   const cache = createCacheMock();
-  const controller = new LoyaltyController(
-    asLoyaltyService({}),
+  const controller = new LoyaltyProfileController(
     asPrismaService(prisma),
-    asMetricsService({}),
-    asPromoCodesService({}),
-    asMerchantsService({}),
-    asReviewService({}),
-    asLevelsService({}),
     asCacheService(cache),
   );
   return { controller, prisma, cache };
 }
 
-describe('LoyaltyController.saveProfile', () => {
+describe('LoyaltyProfileController.saveProfile', () => {
   it('мерджит клиента по телефону и возвращает существующий customerId', async () => {
     const current: CustomerRecord = {
       id: 'cust-new',

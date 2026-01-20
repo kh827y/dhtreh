@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app/app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import compression from 'compression';
 import pinoHttp from 'pino-http';
@@ -21,6 +21,8 @@ type RequestLike = {
   headers?: Record<string, string | string[] | undefined>;
   body?: unknown;
   requestId?: string;
+  url?: string;
+  originalUrl?: string;
 };
 
 type ExpressMiddleware = (req: unknown, res: unknown, next: () => void) => void;
@@ -46,6 +48,7 @@ function getHeader(req: RequestLike, name: string): string | undefined {
 }
 
 async function bootstrap() {
+  const logger = new Logger('bootstrap');
   // Fail-fast ENV validation (Ajv schema)
   (function validateEnv() {
     const ajv = new Ajv({
@@ -162,10 +165,29 @@ async function bootstrap() {
   const compressionMiddleware =
     compression as unknown as () => ExpressMiddleware;
   app.use(compressionMiddleware());
+  app.disable('x-powered-by');
+
+  const logLevel =
+    process.env.LOG_LEVEL ||
+    (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
+  const logIgnorePaths = (process.env.LOG_HTTP_IGNORE_PATHS || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const autoLogging =
+    logIgnorePaths.length > 0
+      ? {
+          ignore: (req: RequestLike) => {
+            const url = req.originalUrl || req.url || '';
+            return logIgnorePaths.some((prefix) => url.startsWith(prefix));
+          },
+        }
+      : true;
 
   // JSON-логирование запросов
   app.use(
     pinoHttp({
+      level: logLevel,
       // редактирование чувствительных полей
       redact: {
         paths: [
@@ -179,12 +201,19 @@ async function bootstrap() {
           'req.headers.cookie',
           'req.body.userToken',
           'req.body.initData',
+          'req.body.password',
+          'req.body.pin',
+          'req.body.code',
+          'req.body.totp',
+          'req.body.otp',
+          'req.body.refreshToken',
+          'req.body.accessToken',
           'res.headers["set-cookie"]',
           'res.headers["x-loyalty-signature"]',
         ],
         censor: '[REDACTED]',
       },
-      autoLogging: true,
+      autoLogging,
       customProps: (req: RequestLike) => {
         const body = asRecord(req.body);
         const mId =
@@ -246,10 +275,10 @@ async function bootstrap() {
   });
   if (process.env.NO_HTTP === '1') {
     await app.init();
-    console.log('Workers-only mode: NO_HTTP=1 (HTTP server disabled)');
+    logger.log('Workers-only mode: NO_HTTP=1 (HTTP server disabled)');
     return;
   }
   await app.listen(3000);
-  console.log(`API on http://localhost:3000`);
+  logger.log('API on http://localhost:3000');
 }
 void bootstrap();

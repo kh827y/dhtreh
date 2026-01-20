@@ -29,7 +29,16 @@ const logError = (
 ) => {
   const prefix = message ? `${message}: ` : '';
   const line = `${prefix}${formatError(err)}`;
-  (logger?.warn ?? defaultLogger.warn.bind(defaultLogger))(line);
+  const warn = logger?.warn;
+  if (typeof warn === 'function') {
+    try {
+      warn.call(logger, line);
+      return;
+    } catch {
+      // fall through to default logger
+    }
+  }
+  defaultLogger.warn(line);
 };
 
 export const safeExec = <T>(

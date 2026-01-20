@@ -124,6 +124,8 @@ D. Проверка результатов
 ## Полезные ссылки
 - Документация по подписи: admin → Docs → Signature
 - Варианты интеграции: admin → Docs → Integration
+- Гайд по деплою: [`DEPLOYMENT_GUIDE.md`](./DEPLOYMENT_GUIDE.md)
+- Runbooks для продакшена: [`RUNBOOKS.md`](./RUNBOOKS.md)
 
 ## Продакшн-минимум (50-300 мерчантов)
 

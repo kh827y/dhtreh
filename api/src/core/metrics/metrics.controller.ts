@@ -7,16 +7,20 @@ import {
 } from '@nestjs/common';
 import { MetricsService } from './metrics.service';
 import type { Request } from 'express';
+import { AppConfigService } from '../config/app-config.service';
 
 @Controller()
 export class MetricsController {
-  constructor(private metrics: MetricsService) {}
+  constructor(
+    private metrics: MetricsService,
+    private readonly config: AppConfigService,
+  ) {}
 
   @Get('metrics')
   @Header('Content-Type', 'text/plain; version=0.0.4')
   async metricsEndpoint(@Req() req: Request): Promise<string> {
-    const token = process.env.METRICS_TOKEN || '';
-    const requireToken = process.env.NODE_ENV === 'production';
+    const token = this.config.getString('METRICS_TOKEN', '') ?? '';
+    const requireToken = this.config.getString('NODE_ENV') === 'production';
     if (requireToken && !token) {
       throw new UnauthorizedException('Metrics token required');
     }

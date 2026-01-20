@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import {
   Prisma,
   ReferralProgram,
@@ -87,6 +87,8 @@ type CustomerReferralRow = {
 
 @Injectable()
 export class ReferralService {
+  private readonly logger = new Logger(ReferralService.name);
+
   constructor(
     private prisma: PrismaService,
     private loyaltyService: LoyaltyService,
@@ -731,7 +733,12 @@ export class ReferralService {
           merchantId: referral.program.merchantId,
           customerId: referrer.id,
         })
-        .catch(console.error);
+        .catch((error) => {
+          this.logger.error(
+            'Error sending referral completion email',
+            error instanceof Error ? error.stack : String(error),
+          );
+        });
     }
   }
 

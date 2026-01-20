@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer from 'nodemailer';
 import * as handlebars from 'handlebars';
@@ -54,6 +54,7 @@ export interface EmailTemplate {
 
 @Injectable()
 export class EmailService {
+  private readonly logger = new Logger(EmailService.name);
   private transporter: EmailTransporter;
   private templates: Map<string, handlebars.TemplateDelegate> = new Map();
   private defaultFrom: string;
@@ -151,7 +152,10 @@ export class EmailService {
 
       return true;
     } catch (error: unknown) {
-      console.error('Error sending email:', error);
+      this.logger.error(
+        'Error sending email',
+        error instanceof Error ? error.stack : String(error),
+      );
       const message =
         error && typeof error === 'object' && 'message' in error
           ? (error as { message?: unknown }).message

@@ -330,6 +330,12 @@ docker compose --env-file .env.production -f docker-compose.production.yml run -
 docker exec postgres pg_dump -U loyalty loyalty | gzip > backup_$(date +%Y%m%d).sql.gz
 ```
 
+### Верификация бэкапа
+```bash
+# Проверка целостности файла бэкапа
+./scripts/backup-verify.sh backup_20240101.sql.gz
+```
+
 ### Планировщик (cron/systemd)
 
 Cron (пример, ежедневный бэкап в 03:00):
@@ -378,6 +384,15 @@ docker compose --env-file .env.production -f docker-compose.production.yml up -d
 
 # Применение новых миграций
 docker compose --env-file .env.production -f docker-compose.production.yml exec api pnpm prisma migrate deploy
+```
+
+### Релиз и откат (через deploy-скрипт)
+```bash
+# Релиз с preflight, backup, миграциями и smoke-check
+./scripts/deploy.sh production deploy
+
+# Откат на предыдущий коммит
+./scripts/deploy.sh production rollback
 ```
 
 ### Очистка Docker
@@ -439,7 +454,7 @@ services:
 - [ ] Домены и DNS настроены (api/admin/portal/cashier/app)
 - [ ] SSL включён через Traefik или собственные сертификаты
 - [ ] `WORKERS_ENABLED=1` у сервиса `worker`
-- [ ] Бэкап (backup сервис или pg_dump) проверен
+- [ ] Бэкап создан и проверен (backup сервис/pg_dump + `scripts/backup-verify.sh`)
 
 ### Production
 - [ ] `API_BASE_URL`, `MINIAPP_BASE_URL`, `CORS_ORIGINS` указаны
@@ -470,6 +485,7 @@ docker compose --env-file .env.production -f docker-compose.production.yml logs 
 ## 📚 Дополнительные ресурсы
 
 - [README](./README.md)
+- [Runbooks](./RUNBOOKS.md)
 - [API Documentation](./API_DOCUMENTATION.md)
 - [REST API Docs](./REST-API-DOCS.md)
 - [ENV Configuration (API)](./api/ENV_CONFIGURATION.md)

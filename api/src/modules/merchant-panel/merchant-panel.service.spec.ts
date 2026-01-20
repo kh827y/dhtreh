@@ -3,6 +3,7 @@ import { MerchantPanelService } from './merchant-panel.service';
 import type { MerchantsService } from '../merchants/merchants.service';
 import type { MetricsService } from '../../core/metrics/metrics.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
+import type { LookupCacheService } from '../../core/cache/lookup-cache.service';
 import type { UpsertOutletPayload } from './merchant-panel.service';
 import {
   StaffStatus,
@@ -91,6 +92,8 @@ const asMerchantsService = (stub: MerchantsService) =>
   stub as unknown as MerchantsService;
 const asMetricsService = (stub: MetricsStub) =>
   stub as unknown as MetricsService;
+const asCacheService = (stub: Record<string, unknown>) =>
+  stub as unknown as LookupCacheService;
 const asPrivateService = (service: MerchantPanelService) =>
   service as unknown as MerchantPanelServicePrivate;
 const objectContaining = <T extends object>(value: T) =>
@@ -179,6 +182,7 @@ describe('MerchantPanelService', () => {
       asPrismaService(prisma),
       asMerchantsService(merchants),
       asMetricsService(metrics),
+      asCacheService({ invalidateStaff: mockFn() }),
     );
     const result = await service.listStaff(
       'mrc_1',
@@ -268,6 +272,7 @@ describe('MerchantPanelService', () => {
       asPrismaService(prisma),
       asMerchantsService(merchants),
       asMetricsService(metrics),
+      asCacheService({ invalidateStaff: mockFn() }),
     );
     const servicePrivate = asPrivateService(service);
     servicePrivate.logger = { log: mockFn() };
@@ -311,6 +316,7 @@ describe('MerchantPanelService', () => {
       asPrismaService(prisma),
       asMerchantsService(merchants),
       asMetricsService(metrics),
+      asCacheService({ invalidateStaff: mockFn() }),
     );
     const payload: UpsertOutletPayload = { name: 'Main' };
     await expect(service.createOutlet('mrc_1', payload)).rejects.toBeInstanceOf(
