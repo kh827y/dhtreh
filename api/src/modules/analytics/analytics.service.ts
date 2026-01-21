@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, PromotionStatus, TxnType, WalletType } from '@prisma/client';
@@ -14,6 +14,7 @@ import {
   type ReceiptAggregateRow,
 } from '../../shared/common/receipt-aggregates.util';
 import { AnalyticsAggregatorWorker } from './analytics-aggregator.worker';
+import { AnalyticsCacheService } from './analytics-cache.service';
 
 export interface DashboardPeriod {
   from: Date;
@@ -354,8 +355,21 @@ export class AnalyticsService {
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
-    private aggregatorWorker?: AnalyticsAggregatorWorker,
+    private cache: AnalyticsCacheService,
+    @Optional() private aggregatorWorker?: AnalyticsAggregatorWorker,
   ) {}
+
+  private cacheKey(
+    prefix: string,
+    parts: Array<string | number | null | undefined>,
+  ) {
+    return [prefix, ...parts.map((part) => (part == null ? '' : String(part)))]
+      .join('|');
+  }
+
+  private withCache<T>(key: string, compute: () => Promise<T>): Promise<T> {
+    return this.cache.getOrSet(key, compute);
+  }
 
   private asRecord(value: unknown): Record<string, unknown> | null {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -373,73 +387,85 @@ export class AnalyticsService {
     timezone?: string | RussiaTimezone,
   ): Promise<DashboardSummary> {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
-    const grouping = this.resolveGrouping(period);
-    const previousPeriod = this.getPreviousPeriod(period);
-
-    const [
-      currentAggregates,
-      previousAggregates,
-      currentDailySales,
-      previousDailySales,
-      currentRegistrationsByDay,
-      previousRegistrationsByDay,
-      visitFrequency,
-      previousVisitFrequency,
-      retentionBases,
-      composition,
-    ] = await Promise.all([
-      this.getDashboardAggregates(merchantId, period),
-      this.getDashboardAggregates(merchantId, previousPeriod),
-      this.getDailyRevenue(merchantId, period, grouping, tz),
-      this.getDailyRevenue(merchantId, previousPeriod, grouping, tz),
-      this.getRegistrationsByDay(merchantId, period, tz),
-      this.getRegistrationsByDay(merchantId, previousPeriod, tz),
-      this.calculateVisitFrequencyDays(merchantId, period, tz),
-      this.calculateVisitFrequencyDays(merchantId, previousPeriod, tz),
-      this.getRetentionBases(merchantId, period, previousPeriod),
-      this.getCompositionStats(merchantId, period),
+    const cacheKey = this.cacheKey('dashboard', [
+      merchantId,
+      tz.code,
+      period.type,
+      period.from.toISOString(),
+      period.to.toISOString(),
     ]);
+    return this.withCache(cacheKey, async () => {
+      const grouping = this.resolveGrouping(period);
+      const previousPeriod = this.getPreviousPeriod(period);
 
-    const metrics = this.buildDashboardMetrics(
-      currentAggregates,
-      currentRegistrationsByDay,
-      visitFrequency,
-    );
-    const previousMetrics = this.buildDashboardMetrics(
-      previousAggregates,
-      previousRegistrationsByDay,
-      previousVisitFrequency,
-    );
-    const timeline = {
-      current: this.mergeTimeline(currentDailySales, currentRegistrationsByDay),
-      previous: this.mergeTimeline(
+      const [
+        currentAggregates,
+        previousAggregates,
+        currentDailySales,
         previousDailySales,
+        currentRegistrationsByDay,
         previousRegistrationsByDay,
-      ),
-      grouping,
-    };
-    const retention = this.calculateRetentionStats(
-      retentionBases.current,
-      retentionBases.previous,
-    );
+        visitFrequency,
+        previousVisitFrequency,
+        retentionBases,
+        composition,
+      ] = await Promise.all([
+        this.getDashboardAggregates(merchantId, period),
+        this.getDashboardAggregates(merchantId, previousPeriod),
+        this.getDailyRevenue(merchantId, period, grouping, tz),
+        this.getDailyRevenue(merchantId, previousPeriod, grouping, tz),
+        this.getRegistrationsByDay(merchantId, period, tz),
+        this.getRegistrationsByDay(merchantId, previousPeriod, tz),
+        this.calculateVisitFrequencyDays(merchantId, period, tz),
+        this.calculateVisitFrequencyDays(merchantId, previousPeriod, tz),
+        this.getRetentionBases(merchantId, period, previousPeriod),
+        this.getCompositionStats(merchantId, period),
+      ]);
 
-    return {
-      period: {
-        from: period.from.toISOString(),
-        to: period.to.toISOString(),
-        type: period.type,
-      },
-      previousPeriod: {
-        from: previousPeriod.from.toISOString(),
-        to: previousPeriod.to.toISOString(),
-        type: previousPeriod.type,
-      },
-      metrics,
-      previousMetrics,
-      timeline,
-      composition,
-      retention,
-    };
+      const metrics = this.buildDashboardMetrics(
+        currentAggregates,
+        currentRegistrationsByDay,
+        visitFrequency,
+      );
+      const previousMetrics = this.buildDashboardMetrics(
+        previousAggregates,
+        previousRegistrationsByDay,
+        previousVisitFrequency,
+      );
+      const timeline = {
+        current: this.mergeTimeline(
+          currentDailySales,
+          currentRegistrationsByDay,
+        ),
+        previous: this.mergeTimeline(
+          previousDailySales,
+          previousRegistrationsByDay,
+        ),
+        grouping,
+      };
+      const retention = this.calculateRetentionStats(
+        retentionBases.current,
+        retentionBases.previous,
+      );
+
+      return {
+        period: {
+          from: period.from.toISOString(),
+          to: period.to.toISOString(),
+          type: period.type,
+        },
+        previousPeriod: {
+          from: previousPeriod.from.toISOString(),
+          to: previousPeriod.to.toISOString(),
+          type: previousPeriod.type,
+        },
+        metrics,
+        previousMetrics,
+        timeline,
+        composition,
+        retention,
+      };
+    });
   }
 
   /**
@@ -450,6 +476,14 @@ export class AnalyticsService {
     period: DashboardPeriod,
     segmentId?: string,
   ): Promise<CustomerPortraitMetrics> {
+    const cacheKey = this.cacheKey('portrait', [
+      merchantId,
+      segmentId,
+      period.from.toISOString(),
+      period.to.toISOString(),
+    ]);
+    const cached = this.cache.get<CustomerPortraitMetrics>(cacheKey);
+    if (cached) return cached;
     const receipts = await this.prisma.receipt.findMany({
       where: {
         merchantId,
@@ -644,7 +678,9 @@ export class AnalyticsService {
         return a.sex.localeCompare(b.sex);
       });
 
-    return { gender, age, sexAge };
+    const result = { gender, age, sexAge };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -655,6 +691,14 @@ export class AnalyticsService {
     period: DashboardPeriod,
     outletId?: string,
   ): Promise<RepeatPurchasesMetrics> {
+    const cacheKey = this.cacheKey('repeat', [
+      merchantId,
+      outletId,
+      period.from.toISOString(),
+      period.to.toISOString(),
+    ]);
+    const cached = this.cache.get<RepeatPurchasesMetrics>(cacheKey);
+    if (cached) return cached;
     const outletFilter = outletId && outletId !== 'all' ? outletId : null;
     const purchases = await this.prisma.$queryRaw<
       Array<{ customerId: string; purchases: bigint | number | null }>
@@ -727,7 +771,9 @@ export class AnalyticsService {
       ) AS first_orders
     `);
     const newBuyers = Number(newBuyersRow?.count ?? 0);
-    return { uniqueBuyers, newBuyers, repeatBuyers, histogram };
+    const result = { uniqueBuyers, newBuyers, repeatBuyers, histogram };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -740,6 +786,14 @@ export class AnalyticsService {
     timezone?: string | RussiaTimezone,
   ): Promise<BirthdayItem[]> {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const cacheKey = this.cacheKey('birthdays', [
+      merchantId,
+      tz.code,
+      withinDays,
+      limit,
+    ]);
+    const cached = this.cache.get<BirthdayItem[]>(cacheKey);
+    if (cached) return cached;
     const offsetMs = tz.utcOffsetMinutes * 60 * 1000;
     const now = new Date();
     const localNow = new Date(now.getTime() + offsetMs);
@@ -781,7 +835,9 @@ export class AnalyticsService {
       }
     }
     items.sort((a, b) => a.nextBirthday.localeCompare(b.nextBirthday));
-    return items.slice(0, limit);
+    const result = items.slice(0, limit);
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -793,6 +849,14 @@ export class AnalyticsService {
     timezone?: string | RussiaTimezone,
   ): Promise<ReferralSummary> {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const cacheKey = this.cacheKey('referral-summary', [
+      merchantId,
+      tz.code,
+      period.from.toISOString(),
+      period.to.toISOString(),
+    ]);
+    const cached = this.cache.get<ReferralSummary>(cacheKey);
+    if (cached) return cached;
     const current = await this.computeReferralPeriodStats(
       merchantId,
       period,
@@ -806,7 +870,7 @@ export class AnalyticsService {
       { withTimeline: false, withLeaderboard: false },
     );
 
-    return {
+    const result = {
       ...current,
       previous: {
         registeredViaReferral: previous.registeredViaReferral,
@@ -815,6 +879,8 @@ export class AnalyticsService {
         bonusesIssued: previous.bonusesIssued,
       },
     };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   async getReferralLeaderboard(
@@ -825,13 +891,27 @@ export class AnalyticsService {
     limit = 50,
   ): Promise<{ items: ReferralSummary['topReferrers'] }> {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const cacheKey = this.cacheKey('referral-leaderboard', [
+      merchantId,
+      tz.code,
+      period.from.toISOString(),
+      period.to.toISOString(),
+      offset,
+      limit,
+    ]);
+    const cached = this.cache.get<{ items: ReferralSummary['topReferrers'] }>(
+      cacheKey,
+    );
+    if (cached) return cached;
     const data = await this.computeReferralPeriodStats(merchantId, period, tz, {
       withTimeline: false,
       withLeaderboard: true,
       leaderboardOffset: offset,
       leaderboardLimit: limit,
     });
-    return { items: data.topReferrers };
+    const result = { items: data.topReferrers };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   private computeReferralReward(
@@ -1096,6 +1176,21 @@ export class AnalyticsService {
       retention: number[];
     }>
   > {
+    const cacheKey = this.cacheKey('retention-cohorts', [
+      merchantId,
+      by,
+      limit,
+    ]);
+    const cached = this.cache.get<
+      Array<{
+        cohort: string;
+        from: string;
+        to: string;
+        size: number;
+        retention: number[];
+      }>
+    >(cacheKey);
+    if (cached) return cached;
     // Сформируем периоды когорт от новейших к более старым
     const now = new Date();
     const cohorts: Array<{ label: string; start: Date; end: Date }> = [];
@@ -1211,6 +1306,7 @@ export class AnalyticsService {
       });
     }
 
+    this.cache.set(cacheKey, results);
     return results;
   }
 
@@ -1483,6 +1579,15 @@ export class AnalyticsService {
   }
 
   async getRfmGroupsAnalytics(merchantId: string) {
+    const cacheKey = this.cacheKey('rfm-analytics', [merchantId]);
+    const cached = this.cache.get<{
+      merchantId: string;
+      settings: Record<string, unknown>;
+      groups: RfmGroupSummary[];
+      distribution: Array<{ class: string; customers: number }>;
+      totals: { customers: number };
+    }>(cacheKey);
+    if (cached) return cached;
     const [settingsRow, stats] = await Promise.all([
       this.prisma.merchantSettings.findUnique({
         where: { merchantId },
@@ -1662,13 +1767,15 @@ export class AnalyticsService {
           a.class.localeCompare(b.class),
       );
 
-    return {
+    const result = {
       merchantId,
       settings: settingsResponse,
       groups,
       distribution: distributionRows,
       totals: { customers: eligibleStats.length },
     };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   async updateRfmSettings(merchantId: string, dto: UpdateRfmSettingsDto) {
@@ -1716,6 +1823,15 @@ export class AnalyticsService {
     timezone?: string | RussiaTimezone,
   ): Promise<RevenueMetrics> {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const cacheKey = this.cacheKey('revenue', [
+      merchantId,
+      tz.code,
+      grouping,
+      period.from.toISOString(),
+      period.to.toISOString(),
+    ]);
+    const cached = this.cache.get<RevenueMetrics>(cacheKey);
+    if (cached) return cached;
     const effectiveGrouping = this.resolveGrouping(period, grouping);
     const [currentTotals] = await this.prisma.$queryRaw<
       Array<{
@@ -1788,7 +1904,7 @@ export class AnalyticsService {
       tz,
     );
 
-    return {
+    const result = {
       totalRevenue,
       averageCheck: Math.round(averageCheck),
       transactionCount,
@@ -1797,6 +1913,8 @@ export class AnalyticsService {
       dailyRevenue,
       seriesGrouping: effectiveGrouping,
     };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -1806,6 +1924,13 @@ export class AnalyticsService {
     merchantId: string,
     period: DashboardPeriod,
   ): Promise<CustomerMetrics> {
+    const cacheKey = this.cacheKey('customers', [
+      merchantId,
+      period.from.toISOString(),
+      period.to.toISOString(),
+    ]);
+    const cached = this.cache.get<CustomerMetrics>(cacheKey);
+    if (cached) return cached;
     const totalCustomers = await this.prisma.customer.count({
       where: { merchantId },
     });
@@ -1873,7 +1998,7 @@ export class AnalyticsService {
 
     const topCustomers = await this.getTopCustomers(merchantId, 10);
 
-    return {
+    const result = {
       totalCustomers,
       newCustomers,
       activeCustomers,
@@ -1883,6 +2008,8 @@ export class AnalyticsService {
       averageVisitsPerCustomer: Math.round(averageVisits * 10) / 10,
       topCustomers,
     };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -1895,6 +2022,15 @@ export class AnalyticsService {
     timezone?: string | RussiaTimezone,
   ): Promise<LoyaltyMetrics> {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const cacheKey = this.cacheKey('loyalty', [
+      merchantId,
+      tz.code,
+      grouping,
+      period.from.toISOString(),
+      period.to.toISOString(),
+    ]);
+    const cached = this.cache.get<LoyaltyMetrics>(cacheKey);
+    if (cached) return cached;
     const effectiveGrouping = this.resolveGrouping(period, grouping);
 
     const [earnedRows, redeemedRows, balances, activeWallets, pointsSeries] =
@@ -1966,7 +2102,7 @@ export class AnalyticsService {
       period,
     );
 
-    return {
+    const result = {
       totalPointsIssued,
       totalPointsRedeemed,
       pointsRedemptionRate: Math.round(redemptionRate * 10) / 10,
@@ -1977,6 +2113,8 @@ export class AnalyticsService {
       pointsSeries,
       pointsGrouping: effectiveGrouping,
     };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -2052,6 +2190,14 @@ export class AnalyticsService {
     timezone?: string | RussiaTimezone,
   ): Promise<OperationalMetrics> {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const cacheKey = this.cacheKey('operational', [
+      merchantId,
+      tz.code,
+      period.from.toISOString(),
+      period.to.toISOString(),
+    ]);
+    const cached = this.cache.get<OperationalMetrics>(cacheKey);
+    if (cached) return cached;
     const [outletMetrics, staffMetrics, peakHours, outletUsage] =
       await Promise.all([
         this.getOutletMetrics(merchantId, period),
@@ -2063,7 +2209,7 @@ export class AnalyticsService {
     const topOutlets = outletMetrics.slice(0, 5);
     const topStaff = staffMetrics.slice(0, 5);
 
-    return {
+    const result = {
       topOutlets,
       outletMetrics,
       topStaff,
@@ -2071,6 +2217,8 @@ export class AnalyticsService {
       peakHours,
       outletUsage,
     };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   async getAutoReturnMetrics(
@@ -2108,6 +2256,44 @@ export class AnalyticsService {
       rfmReturns: Array<{ date: string; segment: string; returned: number }>;
     };
   }> {
+    const cacheKey = this.cacheKey('auto-return', [
+      merchantId,
+      outletId,
+      period.from.toISOString(),
+      period.to.toISOString(),
+    ]);
+    const cached = this.cache.get<{
+      period: {
+        from: string;
+        to: string;
+        type: DashboardPeriod['type'];
+        thresholdDays: number;
+        giftPoints: number;
+        giftTtlDays: number;
+        giftBurnEnabled: boolean;
+      };
+      summary: {
+        invitations: number;
+        returned: number;
+        conversion: number;
+        pointsCost: number;
+        firstPurchaseRevenue: number;
+      };
+      distance: {
+        customers: number;
+        purchasesPerCustomer: number;
+        purchasesCount: number;
+        totalAmount: number;
+        averageCheck: number;
+      };
+      rfm: Array<{ segment: string; invitations: number; returned: number }>;
+      trends: {
+        attempts: Array<{ date: string; invitations: number; returns: number }>;
+        revenue: Array<{ date: string; total: number; firstPurchases: number }>;
+        rfmReturns: Array<{ date: string; segment: string; returned: number }>;
+      };
+    }>(cacheKey);
+    if (cached) return cached;
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
       select: { rulesJson: true },
@@ -2229,7 +2415,7 @@ export class AnalyticsService {
 
     const attempts = Array.from(attemptsByCustomer.values());
     if (!attempts.length) {
-      return {
+      const empty = {
         period: {
           from: from.toISOString(),
           to: to.toISOString(),
@@ -2256,6 +2442,8 @@ export class AnalyticsService {
         rfm: [],
         trends: { attempts: [], revenue: [], rfmReturns: [] },
       };
+      this.cache.set(cacheKey, empty);
+      return empty;
     }
 
     const customerIds = attempts.map((item) => item.customerId);
@@ -2514,7 +2702,7 @@ export class AnalyticsService {
           a.segment.localeCompare(b.segment),
       );
 
-    return {
+    const result = {
       period: {
         from: from.toISOString(),
         to: to.toISOString(),
@@ -2533,6 +2721,8 @@ export class AnalyticsService {
         rfmReturns,
       },
     };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   async getBirthdayMechanicMetrics(
@@ -2561,6 +2751,35 @@ export class AnalyticsService {
     timeline: Array<{ date: string; greetings: number; purchases: number }>;
     revenue: Array<{ date: string; revenue: number }>;
   }> {
+    const cacheKey = this.cacheKey('birthday-mechanic', [
+      merchantId,
+      outletId,
+      period.from.toISOString(),
+      period.to.toISOString(),
+    ]);
+    const cached = this.cache.get<{
+      period: {
+        from: string;
+        to: string;
+        type: DashboardPeriod['type'];
+        daysBefore: number;
+        onlyBuyers: boolean;
+        giftPoints: number;
+        giftTtlDays: number;
+        purchaseWindowDays: number;
+      };
+      summary: {
+        greetings: number;
+        giftPurchasers: number;
+        revenueNet: number;
+        averageCheck: number;
+        giftPointsSpent: number;
+        receiptsWithGifts: number;
+      };
+      timeline: Array<{ date: string; greetings: number; purchases: number }>;
+      revenue: Array<{ date: string; revenue: number }>;
+    }>(cacheKey);
+    if (cached) return cached;
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
       select: { rulesJson: true },
@@ -2697,6 +2916,7 @@ export class AnalyticsService {
     });
     const relevantCustomers = new Set<string>(greetingCustomers);
     if (relevantCustomers.size === 0) {
+      this.cache.set(cacheKey, empty);
       return empty;
     }
 
@@ -2884,7 +3104,7 @@ export class AnalyticsService {
       .map(([date, revenue]) => ({ date, revenue }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    return {
+    const result = {
       ...basePeriod,
       summary: {
         greetings: greetingCustomers.size,
@@ -2898,6 +3118,8 @@ export class AnalyticsService {
       timeline,
       revenue: revenueTimeline,
     };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   // Вспомогательные методы
@@ -4287,6 +4509,14 @@ export class AnalyticsService {
     timezone?: string | RussiaTimezone,
   ): Promise<PurchaseRecencyDistribution> {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const cacheKey = this.cacheKey('recency', [
+      merchantId,
+      tz.code,
+      group,
+      rawLimit,
+    ]);
+    const cached = this.cache.get<PurchaseRecencyDistribution>(cacheKey);
+    if (cached) return cached;
     const offsetInterval = Prisma.sql`${tz.utcOffsetMinutes} * interval '1 minute'`;
     const normalizedGroup: RecencyGrouping =
       group === 'week' || group === 'month' ? group : 'day';
@@ -4381,11 +4611,13 @@ export class AnalyticsService {
       0,
     );
 
-    return {
+    const result = {
       group: normalizedGroup,
       buckets,
       totalCustomers,
     };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   async getTimeActivityMetrics(
@@ -4394,6 +4626,14 @@ export class AnalyticsService {
     timezone?: string | RussiaTimezone,
   ): Promise<TimeActivityMetrics> {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const cacheKey = this.cacheKey('time-activity', [
+      merchantId,
+      tz.code,
+      period.from.toISOString(),
+      period.to.toISOString(),
+    ]);
+    const cached = this.cache.get<TimeActivityMetrics>(cacheKey);
+    if (cached) return cached;
     const offsetInterval = Prisma.sql`${tz.utcOffsetMinutes} * interval '1 minute'`;
     const refundExclusion = Prisma.sql`
       AND NOT EXISTS (
@@ -4527,7 +4767,9 @@ export class AnalyticsService {
       }
     }
 
-    return { dayOfWeek, hours, heatmap };
+    const result = { dayOfWeek, hours, heatmap };
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   private pluralize(value: number, forms: [string, string, string]): string {

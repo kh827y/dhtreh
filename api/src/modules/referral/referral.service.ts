@@ -89,12 +89,12 @@ type CustomerReferralRow = {
 @Injectable()
 export class ReferralService {
   private readonly logger = new Logger(ReferralService.name);
-  private readonly config = new AppConfigService();
 
   constructor(
     private prisma: PrismaService,
     private loyaltyService: LoyaltyService,
     private emailService: EmailService,
+    private readonly config: AppConfigService,
   ) {}
 
   /**

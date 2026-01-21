@@ -17,6 +17,7 @@ import type {
   StaffNotificationPayload,
 } from '../../telegram/staff-notifications.service';
 import { safeExecAsync } from '../../../shared/safe-exec';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import { LoyaltyOpsBase } from './loyalty-ops-base.service';
 import type {
   OptionalModelsClient,
@@ -176,7 +177,13 @@ export class LoyaltyCommitService extends LoyaltyOpsBase {
               });
               staffMotivationIsFirstPurchase = previousPurchases === 0;
             }
-          } catch {
+          } catch (err) {
+            logIgnoredError(
+              err,
+              'LoyaltyCommitService staff motivation',
+              this.logger,
+              'debug',
+            );
             staffMotivationSettings = null;
             staffMotivationIsFirstPurchase = false;
           }

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { logIgnoredError } from './logging/ignore-error.util';
 import { AccessScope, Prisma } from '@prisma/client';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { AppConfigService } from '../core/config/app-config.service';
@@ -77,7 +78,8 @@ export function loadAccessGroupPresets(): AccessGroupPreset[] {
   let parsed: RawPresetFile | null = null;
   try {
     parsed = JSON.parse(readFileSync(presetPath, 'utf8')) as RawPresetFile;
-  } catch {
+  } catch (err) {
+    logIgnoredError(err, 'access-group-presets read', undefined, 'debug');
     return [];
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {

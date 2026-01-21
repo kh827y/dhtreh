@@ -1,6 +1,7 @@
 import { PortalCustomersService } from './customers.service';
 import type { CustomerAudiencesService } from '../../customer-audiences/customer-audiences.service';
 import type { PrismaService } from '../../../core/prisma/prisma.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -141,6 +142,7 @@ describe('PortalCustomersService.create', () => {
     const service = new PortalCustomersService(
       asPrismaService(prisma),
       asAudiencesService(audiences),
+      new AppConfigService(),
     );
     jest.spyOn(service, 'get').mockResolvedValue({} as CustomerGetResult);
 
@@ -167,6 +169,7 @@ describe('PortalCustomersService.create', () => {
     const service = new PortalCustomersService(
       asPrismaService(prisma),
       asAudiencesService(audiences),
+      new AppConfigService(),
     );
     jest.spyOn(service, 'get').mockResolvedValue({} as CustomerGetResult);
 
@@ -192,6 +195,7 @@ describe('PortalCustomersService.create', () => {
     const service = new PortalCustomersService(
       asPrismaService(prisma),
       asAudiencesService(audiences),
+      new AppConfigService(),
     );
     const getSpy = jest.spyOn(service, 'get').mockResolvedValue({
       id: 'cust-existing',
@@ -222,6 +226,7 @@ describe('PortalCustomersService.ensureOperationAllowed', () => {
     const service = new PortalCustomersService(
       asPrismaService(prisma),
       asAudiencesService(audiences),
+      new AppConfigService(),
     );
     const servicePrivate = asPrivateService(service);
 
@@ -240,6 +245,7 @@ describe('PortalCustomersService.ensureOperationAllowed', () => {
     const service = new PortalCustomersService(
       asPrismaService(prisma),
       asAudiencesService(audiences),
+      new AppConfigService(),
     );
     const servicePrivate = asPrivateService(service);
 
@@ -263,6 +269,7 @@ describe('PortalCustomersService.list', () => {
     const service = new PortalCustomersService(
       asPrismaService(prisma),
       asAudiencesService(audiences),
+      new AppConfigService(),
     );
     const servicePrivate = asPrivateService(service);
     const emptyAggregates: AggregatesStub = {

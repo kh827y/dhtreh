@@ -18,6 +18,7 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { MetricsService } from '../../core/metrics/metrics.service';
 import { hashPassword, verifyPassword } from '../../shared/password.util';
 import { LookupCacheService } from '../../core/cache/lookup-cache.service';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 import {
   normalizeDeviceCode,
   ensureUniqueDeviceCodes,
@@ -484,7 +485,13 @@ export class MerchantPanelService {
       if (typeof value === 'string') return value;
       try {
         return JSON.stringify(value);
-      } catch {
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'MerchantPanelService normalizeConditions',
+          this.logger,
+          'debug',
+        );
         return null;
       }
     };

@@ -16,6 +16,7 @@ import { PointsTtlWorker } from '../../workers/points-ttl.worker';
 import { PointsTtlReminderWorker } from '../../workers/points-ttl-reminder.worker';
 import { PointsBurnWorker } from '../../workers/points-burn.worker';
 import { AppConfigService } from '../../core/config/app-config.service';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 export type WorkerState = {
   name: string;
@@ -85,7 +86,10 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     this.timer = setInterval(
-      () => this.tick().catch(() => {}),
+      () =>
+        this.tick().catch((err) =>
+          logIgnoredError(err, 'OpsAlertMonitor tick', this.logger),
+        ),
       this.monitorIntervalMs,
     );
     if (typeof this.timer.unref === 'function') this.timer.unref();

@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { firstValueFrom, isObservable } from 'rxjs';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 import { CashierGuard } from './cashier.guard';
 import { TelegramMiniappGuard } from './telegram-miniapp.guard';
 
@@ -31,7 +32,8 @@ export class LevelsAccessGuard implements CanActivate {
         return await firstValueFrom(result);
       }
       return await Promise.resolve(result);
-    } catch {
+    } catch (err) {
+      logIgnoredError(err, 'LevelsAccessGuard tryGuard', undefined, 'debug');
       return false;
     }
   }

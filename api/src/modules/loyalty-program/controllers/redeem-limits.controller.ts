@@ -29,9 +29,10 @@ const MAX_DELAY_DAYS = 3650;
 @UseGuards(PortalGuard)
 @Controller('portal/loyalty/redeem-limits')
 export class RedeemLimitsController {
-  private readonly config = new AppConfigService();
-
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: AppConfigService,
+  ) {}
 
   private merchantId(req: PortalRequest) {
     return String(req.portalMerchantId);

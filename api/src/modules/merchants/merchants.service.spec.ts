@@ -8,6 +8,11 @@ import type { MerchantsAccessService } from './services/merchants-access.service
 import type { MerchantsStaffService } from './services/merchants-staff.service';
 import { MerchantsOutletsService } from './services/merchants-outlets.service';
 import type { MerchantsOutboxService } from './services/merchants-outbox.service';
+import type { MerchantsAntifraudService } from './services/merchants-antifraud.service';
+import type { MerchantsLedgerService } from './services/merchants-ledger.service';
+import type { MerchantsAdminService } from './services/merchants-admin.service';
+import type { MerchantsPortalAuthService } from './services/merchants-portal-auth.service';
+import type { MerchantsIntegrationsService } from './services/merchants-integrations.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -63,6 +68,12 @@ const asAccessService = (stub: object) => stub as MerchantsAccessService;
 const asStaffService = (stub: object) => stub as MerchantsStaffService;
 const asOutletsService = (stub: object) => stub as MerchantsOutletsService;
 const asOutboxService = (stub: object) => stub as MerchantsOutboxService;
+const asAntifraudService = (stub: object) => stub as MerchantsAntifraudService;
+const asLedgerService = (stub: object) => stub as MerchantsLedgerService;
+const asAdminService = (stub: object) => stub as MerchantsAdminService;
+const asPortalAuthService = (stub: object) => stub as MerchantsPortalAuthService;
+const asIntegrationsService = (stub: object) =>
+  stub as MerchantsIntegrationsService;
 const makeOutletsService = (prisma: PrismaOutletStub, cache: CacheStub) =>
   new MerchantsOutletsService(asPrismaService(prisma), asCacheService(cache));
 const makeSettingsService = (prisma: PrismaStub) =>
@@ -119,13 +130,16 @@ describe('MerchantsService rulesJson validation', () => {
       },
     };
     return new MerchantsService(
-      asPrismaService(prisma),
       makeSettingsService(prisma),
-      asCacheService({ invalidateSettings: mockFn() }),
       asAccessService({}),
       asStaffService({}),
       asOutletsService({}),
       asOutboxService({}),
+      asAntifraudService({}),
+      asLedgerService({}),
+      asAdminService({}),
+      asPortalAuthService({}),
+      asIntegrationsService({}),
     );
   }
 
@@ -176,7 +190,7 @@ describe('MerchantsService rulesJson validation', () => {
     expect(r.earnBps).toBe(500);
     expect(r.rulesJson).toEqual({
       ...okRules,
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
   });
 
@@ -209,7 +223,7 @@ describe('MerchantsService rulesJson validation', () => {
     );
 
     expect(result.rulesJson).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       af: {
         merchant: { limit: 10, windowSec: 60 },
         device: { limit: 5, windowSec: 120 },
@@ -234,9 +248,7 @@ describe('MerchantsService outlet limits', () => {
       },
     };
     const svc = new MerchantsService(
-      asPrismaService(prisma),
       makeSettingsStub(),
-      asCacheService({ invalidateSettings: mockFn() }),
       asAccessService({}),
       asStaffService({}),
       makeOutletsService(prisma, {
@@ -245,6 +257,11 @@ describe('MerchantsService outlet limits', () => {
         invalidateStaff: mockFn(),
       }),
       asOutboxService({}),
+      asAntifraudService({}),
+      asLedgerService({}),
+      asAdminService({}),
+      asPortalAuthService({}),
+      asIntegrationsService({}),
     );
     await expect(svc.createOutlet('M-1', 'Main')).rejects.toBeInstanceOf(
       BadRequestException,

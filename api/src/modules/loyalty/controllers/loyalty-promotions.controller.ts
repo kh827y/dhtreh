@@ -18,9 +18,11 @@ import {
 } from '@prisma/client';
 import { LoyaltyService } from '../services/loyalty.service';
 import { MetricsService } from '../../../core/metrics/metrics.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import { ReviewService } from '../../reviews/review.service';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 import { CashierGuard } from '../../../core/guards/cashier.guard';
 import { SubscriptionGuard } from '../../../core/guards/subscription.guard';
 import { getRulesRoot, getRulesSection } from '../../../shared/rules-json.util';
@@ -41,8 +43,9 @@ export class LoyaltyPromotionsController extends LoyaltyControllerBase {
     private readonly metrics: MetricsService,
     private readonly reviews: ReviewService,
     cache: LookupCacheService,
+    config: AppConfigService,
   ) {
-    super(prisma, cache);
+    super(prisma, cache, config);
   }
 
   // ===== Promotions (miniapp public) =====
@@ -310,7 +313,14 @@ export class LoyaltyPromotionsController extends LoyaltyControllerBase {
             pointsIssued: { increment: points },
           },
         });
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'LoyaltyPromotionsController metrics',
+          undefined,
+          'debug',
+        );
+      }
 
       this.metrics.inc('loyalty_promotions_claim_total', { result: 'ok' });
       return {
@@ -453,7 +463,14 @@ export class LoyaltyPromotionsController extends LoyaltyControllerBase {
           options: this.buildShareOptions(share, outletId ?? null),
         };
       }
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyPromotionsController share settings',
+        undefined,
+        'debug',
+      );
+    }
 
     // Наблюдаемость: метрика решения по второму шагу (share)
     try {
@@ -472,7 +489,14 @@ export class LoyaltyPromotionsController extends LoyaltyControllerBase {
         outcome: outcomeShown ? 'shown' : 'hidden',
         reason,
       });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyPromotionsController share metrics',
+        undefined,
+        'debug',
+      );
+    }
 
     return {
       ok: true,
@@ -557,7 +581,14 @@ export class LoyaltyPromotionsController extends LoyaltyControllerBase {
       await this.prisma.$executeRaw`
         SELECT pg_notify('loyalty_realtime_events', ${message}::text)
       `;
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyPromotionsController notify',
+        undefined,
+        'debug',
+      );
+    }
 
     return { ok: true, dismissedAt: payload.dismissedAt };
   }

@@ -28,6 +28,8 @@ import { LoyaltyService } from '../services/loyalty.service';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { MetricsService } from '../../../core/metrics/metrics.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import { AntiFraudGuard } from '../../../core/guards/antifraud.guard';
 import { CashierGuard } from '../../../core/guards/cashier.guard';
 import { SubscriptionGuard } from '../../../core/guards/subscription.guard';
@@ -72,8 +74,9 @@ export class LoyaltyTransactionsController extends LoyaltyControllerBase {
     prisma: PrismaService,
     private readonly metrics: MetricsService,
     cache: LookupCacheService,
+    config: AppConfigService,
   ) {
-    super(prisma, cache);
+    super(prisma, cache, config);
   }
 
   @Post('qr')
@@ -250,7 +253,14 @@ export class LoyaltyTransactionsController extends LoyaltyControllerBase {
       holdCached = await this.prisma.hold.findUnique({
         where: { id: dto.holdId },
       });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyTransactionsController hold lookup',
+        undefined,
+        'debug',
+      );
+    }
     const merchantIdEff = holdCached?.merchantId || dto.merchantId;
 
     let customerId: string | null = null;
@@ -323,7 +333,13 @@ export class LoyaltyTransactionsController extends LoyaltyControllerBase {
                 response: Prisma.JsonNull,
               },
             });
-          } catch {
+          } catch (err) {
+            logIgnoredError(
+              err,
+              'LoyaltyTransactionsController create idempotency key',
+              undefined,
+              'debug',
+            );
             const saved = await this.prisma.idempotencyKey.findUnique({
               where: { merchantId_scope_key: keyWhere },
             });
@@ -370,7 +386,14 @@ export class LoyaltyTransactionsController extends LoyaltyControllerBase {
                 await this.prisma.idempotencyKey.delete({
                   where: { merchantId_scope_key: keyWhere },
                 });
-              } catch {}
+              } catch (err) {
+                logIgnoredError(
+                  err,
+                  'LoyaltyTransactionsController idem cleanup',
+                  undefined,
+                  'debug',
+                );
+              }
               throw e;
             }
           }
@@ -415,7 +438,14 @@ export class LoyaltyTransactionsController extends LoyaltyControllerBase {
         if (kid) res.setHeader('X-Signature-Key-Id', kid);
         if (req.requestId) res.setHeader('X-Request-Id', req.requestId);
       }
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyTransactionsController webhook headers',
+        undefined,
+        'debug',
+      );
+    }
     const dataRecord = asRecord(data);
     if (customerId && dataRecord) {
       dataRecord.customerId = customerId;
@@ -625,7 +655,13 @@ export class LoyaltyTransactionsController extends LoyaltyControllerBase {
                 response: Prisma.JsonNull,
               },
             });
-          } catch {
+          } catch (err) {
+            logIgnoredError(
+              err,
+              'LoyaltyTransactionsController create idempotency key',
+              undefined,
+              'debug',
+            );
             const savedLater = await this.prisma.idempotencyKey.findUnique({
               where: { merchantId_scope_key: keyWhere },
             });
@@ -667,7 +703,14 @@ export class LoyaltyTransactionsController extends LoyaltyControllerBase {
                 await this.prisma.idempotencyKey.delete({
                   where: { merchantId_scope_key: keyWhere },
                 });
-              } catch {}
+              } catch (err) {
+                logIgnoredError(
+                  err,
+                  'LoyaltyTransactionsController idem cleanup',
+                  undefined,
+                  'debug',
+                );
+              }
               throw e;
             }
           }
@@ -705,7 +748,14 @@ export class LoyaltyTransactionsController extends LoyaltyControllerBase {
             );
             customerId = mc.id;
           }
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'LoyaltyTransactionsController refund receipt',
+            undefined,
+            'debug',
+          );
+        }
       }
       this.metrics.inc('loyalty_refund_requests_total', { result: 'ok' });
     } catch (e) {
@@ -728,7 +778,14 @@ export class LoyaltyTransactionsController extends LoyaltyControllerBase {
           res.setHeader('X-Signature-Key-Id', s.webhookKeyId);
         if (req.requestId) res.setHeader('X-Request-Id', req.requestId);
       }
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyTransactionsController refund headers',
+        undefined,
+        'debug',
+      );
+    }
     const dataRecord = asRecord(data);
     if (customerId && dataRecord) {
       dataRecord.customerId = customerId;

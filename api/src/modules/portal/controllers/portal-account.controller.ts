@@ -6,38 +6,22 @@ import {
 } from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { PortalPermissionsHandled } from '../../portal-auth/portal-permissions.util';
-import { PortalReviewsService } from '../services/reviews.service';
-import { SubscriptionService } from '../../subscription/subscription.service';
-import { PortalControllerHelpers } from './portal.controller-helpers';
 import type { PortalRequest } from './portal.controller-helpers';
 import { TransactionItemDto } from '../../loyalty/dto/dto';
 import { AllowInactiveSubscription } from '../../../core/guards/subscription.guard';
+import { PortalAccountUseCase } from '../use-cases/portal-account.use-case';
 
 @ApiTags('portal')
 @ApiExtraModels(TransactionItemDto)
 @Controller('portal')
 @UseGuards(PortalGuard)
 export class PortalAccountController {
-  constructor(
-    private readonly reviews: PortalReviewsService,
-    private readonly subscriptions: SubscriptionService,
-    private readonly helpers: PortalControllerHelpers,
-  ) {}
+  constructor(private readonly useCase: PortalAccountUseCase) {}
 
   @Get('subscription')
   @AllowInactiveSubscription()
   async subscription(@Req() req: PortalRequest) {
-    const merchantId = this.helpers.getMerchantId(req);
-    const { state } = await this.subscriptions.describeSubscription(merchantId);
-    return {
-      planId: state.planId,
-      planName: state.planName,
-      status: state.status,
-      currentPeriodEnd: state.currentPeriodEnd,
-      daysLeft: state.daysLeft,
-      expiresSoon: state.expiresSoon,
-      expired: state.expired,
-    };
+    return this.useCase.subscription(req);
   }
 
   @Get('reviews')
@@ -50,15 +34,15 @@ export class PortalAccountController {
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
-    const merchantId = this.helpers.getMerchantId(req);
-    return this.reviews.list(merchantId, {
-      withCommentOnly: withCommentOnly === '1' || withCommentOnly === 'true',
-      outletId: outletId || undefined,
-      staffId: staffId || undefined,
-      deviceId: deviceId || undefined,
-      limit: limit ? Number(limit) : undefined,
-      offset: offset ? Number(offset) : undefined,
-    });
+    return this.useCase.listReviews(
+      req,
+      withCommentOnly,
+      outletId,
+      staffId,
+      deviceId,
+      limit,
+      offset,
+    );
   }
 
   @Get('me')
@@ -103,35 +87,6 @@ export class PortalAccountController {
     },
   })
   me(@Req() req: PortalRequest) {
-    const actor = req.portalActor || 'MERCHANT';
-    const staff =
-      actor === 'STAFF'
-        ? {
-            id: String(req.portalStaffId || ''),
-            name:
-              typeof req.portalStaffName === 'string'
-                ? req.portalStaffName
-                : null,
-            email:
-              typeof req.portalStaffEmail === 'string'
-                ? req.portalStaffEmail
-                : null,
-            role:
-              typeof req.portalStaffRole === 'string'
-                ? req.portalStaffRole
-                : null,
-            groups: Array.isArray(req.portalAccessGroups)
-              ? req.portalAccessGroups
-              : [],
-          }
-        : null;
-    return {
-      merchantId: this.helpers.getMerchantId(req),
-      role: req.portalRole || 'MERCHANT',
-      actor,
-      adminImpersonation: !!req.portalAdminImpersonation,
-      staff,
-      permissions: this.helpers.normalizePortalPermissions(req.portalPermissions),
-    };
+    return this.useCase.me(req);
   }
 }

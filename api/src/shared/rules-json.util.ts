@@ -1,8 +1,4 @@
-import {
-  DEFAULT_JSON_SCHEMA_VERSION,
-  getJsonSchemaVersion,
-  withJsonSchemaVersion,
-} from './json-version.util';
+import { getJsonSchemaVersion, withJsonSchemaVersion } from './json-version.util';
 
 export type RulesJson = Record<string, unknown>;
 
@@ -77,17 +73,38 @@ export const RULES_JSON_SCHEMA = {
   },
 } as const;
 
-export const RULES_JSON_SCHEMA_VERSION = DEFAULT_JSON_SCHEMA_VERSION;
+export const RULES_JSON_SCHEMA_VERSION = 2;
 
 const isPlainObject = (value: unknown): value is RulesJson =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export const getRulesRoot = (rulesJson: unknown): RulesJson | null =>
-  isPlainObject(rulesJson) ? (rulesJson as RulesJson) : null;
+export const migrateRulesJson = (rulesJson: unknown): RulesJson | null => {
+  if (rulesJson == null) return null;
+  if (Array.isArray(rulesJson)) {
+    return withJsonSchemaVersion(
+      { rules: rulesJson },
+      RULES_JSON_SCHEMA_VERSION,
+    ) as RulesJson;
+  }
+  if (!isPlainObject(rulesJson)) return null;
+  const root = { ...(rulesJson as Record<string, unknown>) };
+  return withJsonSchemaVersion(root, RULES_JSON_SCHEMA_VERSION) as RulesJson;
+};
+
+export const getRulesRoot = (rulesJson: unknown): RulesJson | null => {
+  if (Array.isArray(rulesJson)) {
+    return { rules: rulesJson } as RulesJson;
+  }
+  return isPlainObject(rulesJson) ? (rulesJson as RulesJson) : null;
+};
 
 export const ensureRulesRoot = (rulesJson: unknown): RulesJson => {
-  const root = { ...(getRulesRoot(rulesJson) ?? {}) };
-  return withJsonSchemaVersion(root, RULES_JSON_SCHEMA_VERSION) as RulesJson;
+  const migrated = migrateRulesJson(rulesJson);
+  if (migrated) return migrated;
+  return withJsonSchemaVersion(
+    {},
+    RULES_JSON_SCHEMA_VERSION,
+  ) as RulesJson;
 };
 
 export const getRulesSchemaVersion = (rulesJson: unknown): number | null =>

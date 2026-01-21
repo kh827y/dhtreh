@@ -16,6 +16,7 @@ import { PushService } from '../modules/notifications/push/push.service';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../shared/pg-lock.util';
 import { getRulesSection } from '../shared/rules-json.util';
 import { AppConfigService } from '../core/config/app-config.service';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
 
 type AutoReturnConfig = {
   enabled: boolean;
@@ -64,7 +65,13 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
       typeof rawInterval === 'number' && rawInterval > 0
         ? Math.max(60_000, rawInterval)
         : DAY_MS;
-    this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    this.timer = setInterval(
+      () =>
+        this.tick().catch((err) =>
+          logIgnoredError(err, 'AutoReturnWorker tick', this.logger),
+        ),
+      intervalMs,
+    );
     if (typeof this.timer.unref === 'function') this.timer.unref();
     this.startedAt = new Date();
     this.logger.log(

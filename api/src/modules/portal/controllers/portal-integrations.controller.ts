@@ -10,24 +10,16 @@ import {
 } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiExtraModels, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { MerchantsService } from '../../merchants/merchants.service';
-import { PortalRestApiIntegrationService } from '../services/rest-api-integration.service';
-import { PortalTelegramIntegrationService } from '../services/telegram-integration.service';
-import { PortalControllerHelpers } from './portal.controller-helpers';
 import type { PortalRequest } from './portal.controller-helpers';
 import { TransactionItemDto, ErrorDto } from '../../loyalty/dto/dto';
+import { PortalIntegrationsUseCase } from '../use-cases/portal-integrations.use-case';
 
 @ApiTags('portal')
 @ApiExtraModels(TransactionItemDto)
 @Controller('portal')
 @UseGuards(PortalGuard)
 export class PortalIntegrationsController {
-  constructor(
-    private readonly merchants: MerchantsService,
-    private readonly restApiIntegration: PortalRestApiIntegrationService,
-    private readonly telegramIntegration: PortalTelegramIntegrationService,
-    private readonly helpers: PortalControllerHelpers,
-  ) {}
+  constructor(private readonly useCase: PortalIntegrationsUseCase) {}
 
   @Get('integrations')
   @ApiOkResponse({
@@ -47,7 +39,7 @@ export class PortalIntegrationsController {
     },
   })
   integrations(@Req() req: PortalRequest) {
-    return this.merchants.listIntegrations(this.helpers.getMerchantId(req));
+    return this.useCase.integrations(req);
   }
 
   @Get('integrations/rest-api')
@@ -103,7 +95,7 @@ export class PortalIntegrationsController {
     },
   })
   restApiIntegrationState(@Req() req: PortalRequest) {
-    return this.restApiIntegration.getState(this.helpers.getMerchantId(req));
+    return this.useCase.restApiIntegrationState(req);
   }
 
   @Post('integrations/rest-api/issue')
@@ -118,13 +110,13 @@ export class PortalIntegrationsController {
     },
   })
   restApiIntegrationIssue(@Req() req: PortalRequest) {
-    return this.restApiIntegration.issueKey(this.helpers.getMerchantId(req));
+    return this.useCase.restApiIntegrationIssue(req);
   }
 
   @Delete('integrations/rest-api')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   restApiIntegrationDisable(@Req() req: PortalRequest) {
-    return this.restApiIntegration.disable(this.helpers.getMerchantId(req));
+    return this.useCase.restApiIntegrationDisable(req);
   }
 
   @Get('integrations/telegram-mini-app')
@@ -145,7 +137,7 @@ export class PortalIntegrationsController {
     },
   })
   telegramMiniAppState(@Req() req: PortalRequest) {
-    return this.telegramIntegration.getState(this.helpers.getMerchantId(req));
+    return this.useCase.telegramMiniAppState(req);
   }
 
   @Post('integrations/telegram-mini-app/connect')
@@ -155,17 +147,14 @@ export class PortalIntegrationsController {
     @Req() req: PortalRequest,
     @Body() body: { token?: string },
   ) {
-    return this.telegramIntegration.connect(
-      this.helpers.getMerchantId(req),
-      body?.token || '',
-    );
+    return this.useCase.telegramMiniAppConnect(req, body);
   }
 
   @Post('integrations/telegram-mini-app/check')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   @ApiBadRequestResponse({ type: ErrorDto })
   telegramMiniAppCheck(@Req() req: PortalRequest) {
-    return this.telegramIntegration.check(this.helpers.getMerchantId(req));
+    return this.useCase.telegramMiniAppCheck(req);
   }
 
   @Post('integrations/telegram-mini-app/link')
@@ -183,10 +172,7 @@ export class PortalIntegrationsController {
     @Req() req: PortalRequest,
     @Body() body: { outletId?: string },
   ) {
-    return this.telegramIntegration.generateLink(
-      this.helpers.getMerchantId(req),
-      body?.outletId,
-    );
+    return this.useCase.telegramMiniAppLink(req, body);
   }
 
   @Post('integrations/telegram-mini-app/setup-menu')
@@ -195,12 +181,12 @@ export class PortalIntegrationsController {
   })
   @ApiBadRequestResponse({ type: ErrorDto })
   telegramMiniAppSetupMenu(@Req() req: PortalRequest) {
-    return this.telegramIntegration.setupMenu(this.helpers.getMerchantId(req));
+    return this.useCase.telegramMiniAppSetupMenu(req);
   }
 
   @Delete('integrations/telegram-mini-app')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   telegramMiniAppDisconnect(@Req() req: PortalRequest) {
-    return this.telegramIntegration.disconnect(this.helpers.getMerchantId(req));
+    return this.useCase.telegramMiniAppDisconnect(req);
   }
 }

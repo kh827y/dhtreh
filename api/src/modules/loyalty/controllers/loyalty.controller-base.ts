@@ -16,6 +16,7 @@ import {
 } from '@prisma/client';
 import { AppConfigService } from '../../../core/config/app-config.service';
 import { normalizePhoneE164 } from '../../../shared/common/phone.util';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 // После рефакторинга Customer = per-merchant (бывший Customer)
 export type CustomerRecord = Customer & {
@@ -68,11 +69,10 @@ export const readErrorMessage = (err: unknown): string => {
 };
 
 export class LoyaltyControllerBase {
-  protected readonly config = new AppConfigService();
-
   constructor(
     protected readonly prisma: PrismaService,
     protected readonly cache: LookupCacheService,
+    protected readonly config: AppConfigService,
   ) {}
 
   protected async resolveOutlet(merchantId?: string, outletId?: string | null) {
@@ -81,7 +81,14 @@ export class LoyaltyControllerBase {
       try {
         const found = await this.cache.getOutlet(merchantId, outletId);
         if (found) return found;
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'LoyaltyControllerBase resolve outlet',
+          undefined,
+          'debug',
+        );
+      }
     }
 
     return null;
@@ -213,7 +220,13 @@ export class LoyaltyControllerBase {
     if (!origin && refererHeader) {
       try {
         origin = new URL(refererHeader).origin;
-      } catch {
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'LoyaltyControllerBase parse referer origin',
+          undefined,
+          'debug',
+        );
         origin = '';
       }
     }
@@ -221,7 +234,13 @@ export class LoyaltyControllerBase {
     let originHost = '';
     try {
       originHost = new URL(origin).host;
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyControllerBase parse origin host',
+        undefined,
+        'debug',
+      );
       originHost = '';
     }
     const requestHost = String(req.headers.host || '');
@@ -586,7 +605,13 @@ export class LoyaltyControllerBase {
         birthday: customer.birthday ?? customer.profileBirthDate ?? null,
         profileCompletedAt: customer.profileCompletedAt ?? null,
       });
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyControllerBase fetchCustomerProfileFlags',
+        undefined,
+        'debug',
+      );
       return { hasPhone: false, onboarded: false };
     }
   }
@@ -854,7 +879,14 @@ export class LoyaltyControllerBase {
           expiresAt: { lt: issuedAt },
         },
       });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyControllerBase cleanup nonces',
+        undefined,
+        'debug',
+      );
+    }
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const code = String(randomInt(100000000, 1000000000));
       try {
@@ -925,7 +957,14 @@ export class LoyaltyControllerBase {
       if (!Number.isFinite(expMs) || expMs <= Date.now()) {
         try {
           await this.prisma.qrNonce.delete({ where: { jti: shortCode } });
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'LoyaltyControllerBase delete nonce',
+            undefined,
+            'debug',
+          );
+        }
         throw new BadRequestException(
           'JWTExpired: "exp" claim timestamp check failed',
         );

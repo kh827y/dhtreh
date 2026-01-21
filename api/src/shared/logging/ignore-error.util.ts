@@ -21,7 +21,7 @@ const formatError = (err: unknown): string => {
   if (err == null) return 'unknown error';
   try {
     return JSON.stringify(err);
-  } catch {
+  } catch (_err) {
     return 'unknown error';
   }
 };
@@ -57,7 +57,7 @@ export const logIgnoredError = (
   const line = `${prefix}${formatError(err)}`;
   try {
     logWithLevel(resolveLogger(logger), level, line);
-  } catch {
+  } catch (_err) {
     // Ignore logging failures to avoid infinite loops.
   }
 };

@@ -214,7 +214,8 @@ async function bootstrap() {
           const traceId = sc?.traceId;
           const spanId = sc?.spanId;
           return { requestId: reqId, merchantId: mId, traceId, spanId };
-        } catch {
+        } catch (err) {
+          logIgnoredError(err, 'pino customProps', undefined, 'debug');
           return { requestId: reqId, merchantId: mId };
         }
       },
@@ -278,7 +279,11 @@ async function bootstrap() {
     logger.log('Workers-only mode: NO_HTTP=1 (HTTP server disabled)');
     return;
   }
-  await app.listen(3000);
-  logger.log('API on http://localhost:3000');
+  const rawPort =
+    process.env.PORT ?? process.env.APP_PORT ?? process.env.API_PORT ?? '3000';
+  const parsedPort = Number(rawPort);
+  const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3000;
+  await app.listen(port);
+  logger.log(`API on http://localhost:${port}`);
 }
 void bootstrap();

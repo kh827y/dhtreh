@@ -31,6 +31,15 @@ import { IntegrationsModule } from '../integrations/integrations.module';
 import { PortalRestApiIntegrationService } from './services/rest-api-integration.service';
 import { ImportExportModule } from '../import-export/import-export.module';
 import { PortalControllerHelpers } from './controllers/portal.controller-helpers';
+import { PortalAccountUseCase } from './use-cases/portal-account.use-case';
+import { PortalAnalyticsUseCase } from './use-cases/portal-analytics.use-case';
+import { PortalCatalogUseCase } from './use-cases/portal-catalog.use-case';
+import { PortalCommunicationsUseCase } from './use-cases/portal-communications.use-case';
+import { PortalCustomersUseCase } from './use-cases/portal-customers.use-case';
+import { PortalIntegrationsUseCase } from './use-cases/portal-integrations.use-case';
+import { PortalOperationsUseCase } from './use-cases/portal-operations.use-case';
+import { PortalPromocodesUseCase } from './use-cases/portal-promocodes.use-case';
+import { PortalSettingsUseCase } from './use-cases/portal-settings.use-case';
 
 @Module({
   imports: [
@@ -62,6 +71,15 @@ import { PortalControllerHelpers } from './controllers/portal.controller-helpers
   providers: [
     PortalGuard,
     PortalControllerHelpers,
+    PortalAccountUseCase,
+    PortalAnalyticsUseCase,
+    PortalCatalogUseCase,
+    PortalCommunicationsUseCase,
+    PortalCustomersUseCase,
+    PortalIntegrationsUseCase,
+    PortalOperationsUseCase,
+    PortalPromocodesUseCase,
+    PortalSettingsUseCase,
     PortalCatalogService,
     StaffMotivationService,
     OperationsLogService,

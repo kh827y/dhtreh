@@ -200,7 +200,8 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     let parsed: URL;
     try {
       parsed = new URL(url);
-    } catch {
+    } catch (err) {
+      this.logDebug('outbox: parse webhook url failed', err);
       return 'Invalid webhook URL';
     }
     if (parsed.protocol !== 'https:') {

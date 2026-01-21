@@ -4,6 +4,7 @@ import nodemailer from 'nodemailer';
 import * as handlebars from 'handlebars';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { Prisma, WalletType } from '@prisma/client';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 type SmtpConfig = {
   host: string;
@@ -311,7 +312,14 @@ export class EmailService {
         });
         allowedCustomerIds = consentRows.map((row) => row.customerId);
       }
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'EmailService consent lookup',
+        this.logger,
+        'debug',
+      );
+    }
 
     if (!allowedCustomerIds.length) {
       return { sent: 0, failed: 0, total: 0 };

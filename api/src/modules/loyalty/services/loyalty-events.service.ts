@@ -8,6 +8,7 @@ import { Client as PgClientCtor } from 'pg';
 import type { LoyaltyRealtimeEvent as PrismaLoyaltyRealtimeEvent } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 export type LoyaltyRealtimeEvent = {
   id: string;
@@ -64,7 +65,6 @@ const readNumber = (record: JsonRecord, key: string): number | null => {
 @Injectable()
 export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LoyaltyEventsService.name);
-  private readonly config = new AppConfigService();
   private readonly listeners = new Set<PendingListener>();
   private readonly activeCustomerPolls = new Map<string, number>();
   private nextListenerId = 1;
@@ -72,7 +72,10 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
   private pgConnecting = false;
   private reconnectTimer?: NodeJS.Timeout;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: AppConfigService,
+  ) {}
 
   async onModuleInit() {
     await this.ensurePgSubscriber();
@@ -225,7 +228,14 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
         where: { id: eventId },
         data: { customerId },
       });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyEventsService patch customer',
+        this.logger,
+        'debug',
+      );
+    }
   }
 
   private async markDelivered(eventId: string) {
@@ -348,10 +358,24 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
     this.pgClient = undefined;
     try {
       client.removeAllListeners();
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyEventsService pg remove listeners',
+        this.logger,
+        'debug',
+      );
+    }
     try {
       await client.end();
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyEventsService pg end',
+        this.logger,
+        'debug',
+      );
+    }
   }
 
   private async handlePgFailure() {
@@ -368,7 +392,14 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
     }, delayMs);
     try {
       this.reconnectTimer?.unref?.();
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyEventsService reconnect timer',
+        this.logger,
+        'debug',
+      );
+    }
   }
 
   private handleNotification(payload?: string | null) {

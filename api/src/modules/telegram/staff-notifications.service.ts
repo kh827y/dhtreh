@@ -11,6 +11,7 @@ import {
   findTimezone,
 } from '../../shared/timezone/russia-timezones';
 import { ensureRulesRoot, getRulesSection } from '../../shared/rules-json.util';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 export type StaffNotifySettings = {
   notifyOrders: boolean;
@@ -349,7 +350,14 @@ export class TelegramStaffNotificationsService {
           where: { id: { in: recipients.map((r) => r.subscriberId) } },
           data: { lastSeenAt: new Date() },
         });
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'StaffNotificationsService update last seen',
+          this.logger,
+          'debug',
+        );
+      }
     }
     return { delivered };
   }
@@ -738,8 +746,14 @@ export class TelegramStaffNotificationsService {
           (customer?.name && customer.name.trim()) ||
           (customer?.phone && customer.phone.trim()) ||
           (customer?.id ? `ID ${customer.id.slice(0, 8)}` : null);
-        if (label) lines.push(`Клиент: ${label}`);
-      } catch {
+      if (label) lines.push(`Клиент: ${label}`);
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'StaffNotificationsService customer lookup',
+          this.logger,
+          'debug',
+        );
         lines.push(`Клиент: ID ${payload.customerId.slice(0, 8)}`);
       }
     }
@@ -754,7 +768,13 @@ export class TelegramStaffNotificationsService {
         } else {
           lines.push(`Точка: ${payload.outletId}`);
         }
-      } catch {
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'StaffNotificationsService outlet lookup',
+          this.logger,
+          'debug',
+        );
         lines.push(`Точка: ${payload.outletId}`);
       }
     }
@@ -773,7 +793,14 @@ export class TelegramStaffNotificationsService {
         if (staffName) {
           lines.push(`Сотрудник: ${staffName}`);
         }
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'StaffNotificationsService staff lookup',
+          this.logger,
+          'debug',
+        );
+      }
     }
     if (payload.deviceId) {
       try {
@@ -783,7 +810,13 @@ export class TelegramStaffNotificationsService {
         });
         const label = device?.code || payload.deviceId;
         if (label) lines.push(`Устройство: ${label}`);
-      } catch {
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'StaffNotificationsService device lookup',
+          this.logger,
+          'debug',
+        );
         lines.push(`Устройство: ${payload.deviceId}`);
       }
     }
@@ -878,7 +911,13 @@ export class TelegramStaffNotificationsService {
         currency: 'RUB',
         maximumFractionDigits: 0,
       }).format(value);
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'StaffNotificationsService formatCurrency',
+        this.logger,
+        'debug',
+      );
       return `${Math.round(value)} ₽`;
     }
   }
@@ -894,7 +933,13 @@ export class TelegramStaffNotificationsService {
         minute: '2-digit',
         timeZone,
       });
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'StaffNotificationsService formatDateTime',
+        this.logger,
+        'debug',
+      );
       return String(date);
     }
   }
@@ -907,7 +952,13 @@ export class TelegramStaffNotificationsService {
         year: 'numeric',
         timeZone,
       });
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'StaffNotificationsService formatDate',
+        this.logger,
+        'debug',
+      );
       return date.toISOString().slice(0, 10);
     }
   }

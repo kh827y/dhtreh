@@ -48,6 +48,9 @@ import { AdminObservabilityController } from '../modules/admin/admin-observabili
 import { AdminAuditInterceptor } from '../modules/admin/admin-audit.interceptor';
 import { CacheModule } from '../core/cache/cache.module';
 import { AppConfigService } from '../core/config/app-config.service';
+import { DataImportWorker } from '../workers/data-import.worker';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
+import { ImportExportModule } from '../modules/import-export/import-export.module';
 // Optional Redis storage for Throttler
 let throttlerStorage: object | undefined = undefined;
 try {
@@ -65,7 +68,8 @@ try {
     };
     throttlerStorage = new ThrottlerStorageRedisService(new Redis(redisUrl));
   }
-} catch {
+} catch (err) {
+  logIgnoredError(err, 'AppModule throttler redis init', undefined, 'debug');
   // keep in-memory storage if deps not installed
 }
 
@@ -104,6 +108,7 @@ try {
     LoyaltyProgramModule,
     CustomerAudiencesModule,
     CommunicationsModule,
+    ImportExportModule,
   ],
   controllers: [
     HealthController,
@@ -124,6 +129,7 @@ try {
     AutoReturnWorker,
     BirthdayWorker,
     TelegramStaffDigestWorker,
+    DataImportWorker,
     OpsAlertMonitor,
     AdminAuditInterceptor,
     { provide: APP_GUARD, useClass: MaintenanceGuard },

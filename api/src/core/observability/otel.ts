@@ -6,6 +6,7 @@ import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions'
 import { PrismaInstrumentation } from '@prisma/instrumentation';
 import { Logger } from '@nestjs/common';
 import { AppConfigService } from '../config/app-config.service';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 const config = new AppConfigService();
 const enabled = config.getOtelEnabled();
@@ -43,7 +44,9 @@ if (enabled) {
   }
 
   const shutdown = () => {
-    sdk.shutdown().catch(() => {});
+    sdk
+      .shutdown()
+      .catch((err) => logIgnoredError(err, 'otel shutdown', logger, 'debug'));
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);

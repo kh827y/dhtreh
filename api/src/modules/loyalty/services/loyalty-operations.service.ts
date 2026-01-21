@@ -5,6 +5,7 @@ import { TelegramStaffNotificationsService } from '../../telegram/staff-notifica
 import { StaffMotivationEngine } from '../../staff-motivation/staff-motivation.engine';
 import { LoyaltyContextService } from './loyalty-context.service';
 import { LoyaltyTierService } from './loyalty-tier.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 import { LoyaltyOpsBase } from './loyalty-ops-base.service';
 import { LoyaltyQuoteService } from './loyalty-quote.service';
 import { LoyaltyCommitService } from './loyalty-commit.service';
@@ -25,6 +26,7 @@ export class LoyaltyOperationsService extends LoyaltyOpsBase {
     staffMotivation: StaffMotivationEngine,
     context: LoyaltyContextService,
     tiers: LoyaltyTierService,
+    config: AppConfigService,
   ) {
     super(
       prisma,
@@ -34,6 +36,7 @@ export class LoyaltyOperationsService extends LoyaltyOpsBase {
       staffMotivation,
       context,
       tiers,
+      config,
     );
     this.commitService = new LoyaltyCommitService(
       prisma,
@@ -43,6 +46,7 @@ export class LoyaltyOperationsService extends LoyaltyOpsBase {
       staffMotivation,
       context,
       tiers,
+      config,
     );
     this.quoteService = new LoyaltyQuoteService(
       prisma,
@@ -52,6 +56,7 @@ export class LoyaltyOperationsService extends LoyaltyOpsBase {
       staffMotivation,
       context,
       tiers,
+      config,
     );
     this.refundService = new LoyaltyRefundService(
       prisma,
@@ -61,6 +66,7 @@ export class LoyaltyOperationsService extends LoyaltyOpsBase {
       staffMotivation,
       context,
       tiers,
+      config,
     );
     this.integrationService = new LoyaltyIntegrationService(
       this.commitService,
@@ -71,6 +77,7 @@ export class LoyaltyOperationsService extends LoyaltyOpsBase {
       staffMotivation,
       context,
       tiers,
+      config,
     );
   }
 

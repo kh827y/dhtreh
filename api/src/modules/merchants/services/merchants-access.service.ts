@@ -8,6 +8,7 @@ import { Prisma, Staff, StaffOutletAccessStatus, StaffStatus } from '@prisma/cli
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import {
   ensureUniqueCashierLogin,
   generateUniqueOutletPin,
@@ -26,6 +27,10 @@ export class MerchantsAccessService {
     private readonly cache: LookupCacheService,
     private readonly config: AppConfigService,
   ) {}
+
+  private logIgnored(err: unknown, context: string) {
+    logIgnoredError(err, `MerchantsAccessService ${context}`, undefined, 'debug');
+  }
 
   async getCashierCredentials(merchantId: string) {
     const m = await this.prisma.merchant.findUnique({
@@ -341,7 +346,9 @@ export class MerchantsAccessService {
           where: { id: session.id },
           data: { revokedAt: now },
         });
-      } catch {}
+      } catch (err) {
+        this.logIgnored(err, 'cashier session revoke');
+      }
       return null;
     }
     if (
@@ -353,7 +360,9 @@ export class MerchantsAccessService {
           where: { id: session.id },
           data: { lastSeenAt: now },
         });
-      } catch {}
+      } catch (err) {
+        this.logIgnored(err, 'cashier session lastSeen');
+      }
     }
     return {
       id: session.id,
@@ -447,7 +456,9 @@ export class MerchantsAccessService {
           data: { lastSeenAt: now },
         });
         session.lastSeenAt = now;
-      } catch {}
+      } catch (err) {
+        this.logIgnored(err, 'cashier session lastSeen');
+      }
     }
     const displayName =
       [session.staff.firstName, session.staff.lastName]
@@ -522,7 +533,9 @@ export class MerchantsAccessService {
             g._count?._all || 0,
           ]),
         );
-      } catch {}
+      } catch (err) {
+        this.logIgnored(err, 'staff outlet counters');
+      }
     }
     return acc.map((a) => ({
       outletId: a.outletId,
@@ -552,7 +565,13 @@ export class MerchantsAccessService {
         merchantId,
         existing?.id,
       );
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'MerchantsAccessService generate outlet pin',
+        undefined,
+        'debug',
+      );
       throw new BadRequestException('Unable to generate unique PIN');
     }
     await this.prisma.staffOutletAccess.upsert({
@@ -600,7 +619,9 @@ export class MerchantsAccessService {
           merchantId_staffId_outletId: { merchantId, staffId, outletId },
         },
       });
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'remove staff access');
+    }
     this.cache.invalidateStaff(merchantId, staffId);
     return { ok: true };
   }
@@ -626,7 +647,13 @@ export class MerchantsAccessService {
         merchantId,
         access.id,
       );
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'MerchantsAccessService generate personal pin',
+        undefined,
+        'debug',
+      );
       throw new BadRequestException('Unable to generate unique PIN');
     }
     await this.prisma.staffOutletAccess.update({
@@ -663,7 +690,13 @@ export class MerchantsAccessService {
         merchantId,
         access.id,
       );
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'MerchantsAccessService regenerate pin',
+        undefined,
+        'debug',
+      );
       throw new BadRequestException('Unable to generate unique PIN');
     }
     await this.prisma.staffOutletAccess.update({
@@ -785,7 +818,9 @@ export class MerchantsAccessService {
             pinLockedUntil: null,
           };
         }
-      } catch {}
+      } catch (err) {
+        this.logIgnored(err, 'device pin lock');
+      }
     }
     const pinHash = hashPin(normalizedPin);
     let matches = await this.prisma.staffOutletAccess.findMany({
@@ -853,7 +888,9 @@ export class MerchantsAccessService {
               pinLockedUntil: lockedUntil,
             },
           });
-        } catch {}
+        } catch (err) {
+          this.logIgnored(err, 'device pin update');
+        }
       }
       const message =
         remainingAttempts === null
@@ -904,7 +941,9 @@ export class MerchantsAccessService {
             pinLockedUntil: null,
           },
         });
-      } catch {}
+      } catch (err) {
+        this.logIgnored(err, 'device pin reset');
+      }
     }
     return {
       access: {

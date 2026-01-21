@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { TelegramBotService } from '../../telegram/telegram-bot.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 export interface TelegramIntegrationState {
   enabled: boolean;
@@ -369,7 +370,13 @@ export class PortalTelegramIntegrationService {
     try {
       const value = credentials as Record<string, unknown>;
       return typeof value?.tokenMask === 'string' ? value.tokenMask : null;
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'PortalTelegramIntegrationService extractTokenMask',
+        undefined,
+        'debug',
+      );
       return null;
     }
   }

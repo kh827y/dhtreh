@@ -1,6 +1,7 @@
 import { OperationsLogService } from '../operations-log.service';
 import type { LoyaltyService } from '../../../loyalty/services/loyalty.service';
 import type { PrismaService } from '../../../../core/prisma/prisma.service';
+import { AppConfigService } from '../../../../core/config/app-config.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -54,6 +55,7 @@ describe('OperationsLogService', () => {
     service = new OperationsLogService(
       asPrismaService(prisma),
       asLoyaltyService(loyalty),
+      new AppConfigService(),
     );
     prisma.receipt.count.mockResolvedValue(0);
     prisma.transaction.count.mockResolvedValue(0);

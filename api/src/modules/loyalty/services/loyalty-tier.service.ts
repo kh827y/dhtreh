@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, type LoyaltyTier } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import {
   computeLevelState,
   DEFAULT_LEVELS_METRIC,
@@ -20,6 +21,10 @@ type OptionalModelsClient = PrismaClientLike & {
 export class LoyaltyTierService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private logIgnored(err: unknown, context: string) {
+    logIgnoredError(err, `LoyaltyTierService ${context}`, undefined, 'debug');
+  }
+
   async resolveTierRatesForCustomer(
     merchantId: string,
     customerId: string,
@@ -32,7 +37,9 @@ export class LoyaltyTierService {
           merchantId,
           customerId,
         );
-      } catch {}
+      } catch (err) {
+        this.logIgnored(err, 'refresh assignment');
+      }
       let assignment = await prisma.loyaltyTierAssignment.findFirst({
         where: {
           merchantId,
@@ -80,7 +87,9 @@ export class LoyaltyTierService {
             ) {
               expiresInDays = Math.floor(Number(raw));
             }
-          } catch {}
+          } catch (err) {
+            this.logIgnored(err, 'promo metadata');
+          }
         }
         if (expiresInDays == null) {
           expiresInDays = DEFAULT_LEVELS_PERIOD_DAYS;
@@ -100,14 +109,18 @@ export class LoyaltyTierService {
               },
               data: { expiresAt: promoExpiresAt },
             });
-          } catch {}
+          } catch (err) {
+            this.logIgnored(err, 'promo expires update');
+          }
           if (promoExpiresAt.getTime() <= Date.now()) {
             try {
               await this.recomputeTierProgress(prisma, {
                 merchantId,
                 customerId,
               });
-            } catch {}
+            } catch (err) {
+              this.logIgnored(err, 'recompute progress');
+            }
             assignment = await prisma.loyaltyTierAssignment.findFirst({
               where: {
                 merchantId,
@@ -153,9 +166,12 @@ export class LoyaltyTierService {
             }
           }
         }
-      } catch {}
+      } catch (err) {
+        this.logIgnored(err, 'tier metadata');
+      }
       return { earnBps, redeemLimitBps, tierMinPayment };
-    } catch {
+    } catch (err) {
+      this.logIgnored(err, 'resolve tier rates');
       return { earnBps: 0, redeemLimitBps: 0, tierMinPayment: null };
     }
   }
@@ -169,7 +185,9 @@ export class LoyaltyTierService {
       });
       const rules = getRulesRoot(settings?.rulesJson);
       if (rules) allowSame = Boolean(rules.allowEarnRedeemSameReceipt);
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'same receipt rules');
+    }
     return allowSame;
   }
 
@@ -208,7 +226,9 @@ export class LoyaltyTierService {
         rules?.levelsPeriodDays,
         DEFAULT_LEVELS_PERIOD_DAYS,
       );
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'load settings');
+    }
     const metric: 'earn' | 'redeem' | 'transactions' = DEFAULT_LEVELS_METRIC;
     const tiers = await tx.loyaltyTier.findMany({
       where: { merchantId: params.merchantId },

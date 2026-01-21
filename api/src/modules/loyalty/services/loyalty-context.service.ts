@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { normalizeDeviceCode } from '../../../shared/devices/device.util';
 import type { CustomerContext } from '../loyalty.types';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 @Injectable()
 export class LoyaltyContextService {
@@ -74,7 +75,13 @@ export class LoyaltyContextService {
         select: { id: true },
       });
       return { outletId: outlet?.id ?? null };
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyContextService resolveOutletContext',
+        undefined,
+        'debug',
+      );
       return { outletId: null };
     }
   }

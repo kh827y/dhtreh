@@ -1,5 +1,6 @@
 import type { PrismaService } from '../../../core/prisma/prisma.service';
 import { validateTelegramInitData } from './telegram.util';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 export type TelegramAuthContext = {
   merchantId: string;
@@ -21,7 +22,13 @@ export function readTelegramInitDataFromHeader(
     if (!match) return null;
     const initData = match[1]?.trim();
     return initData?.length ? initData : null;
-  } catch {
+  } catch (err) {
+    logIgnoredError(
+      err,
+      'readTelegramInitDataFromHeader',
+      undefined,
+      'debug',
+    );
     return null;
   }
 }
@@ -42,7 +49,13 @@ export async function resolveTelegramAuthContext(
     });
     if (!token) token = settings?.telegramBotToken || '';
     startParamRequired = Boolean(settings?.telegramStartParamRequired);
-  } catch {
+  } catch (err) {
+    logIgnoredError(
+      err,
+      'resolveTelegramAuthContext settings lookup',
+      undefined,
+      'debug',
+    );
     if (!token) token = '';
   }
   if (!token) return null;
@@ -57,7 +70,13 @@ export async function resolveTelegramAuthContext(
       if (!isReferral && trimmed !== merchantId) {
         return null;
       }
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'resolveTelegramAuthContext start_param parse',
+        undefined,
+        'debug',
+      );
       return null;
     }
   }
@@ -76,7 +95,13 @@ export async function resolveTelegramAuthContext(
       customerId: customer.id,
       tgId,
     };
-  } catch {
+  } catch (err) {
+    logIgnoredError(
+      err,
+      'resolveTelegramAuthContext customer lookup',
+      undefined,
+      'debug',
+    );
     return null;
   }
 }

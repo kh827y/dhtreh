@@ -9,6 +9,8 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { MetricsService } from '../../core/metrics/metrics.service';
 import { DEFAULT_LEVELS_PERIOD_DAYS } from '../loyalty/utils/levels.util';
 import { logEvent, safeMetric } from '../../shared/logging/event-log.util';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
+import { ensureMetadataVersion } from '../../shared/metadata.util';
 
 export type PortalPromoCodePayload = {
   code: string;
@@ -97,7 +99,7 @@ export class PromoCodesService {
     return value as Record<string, unknown>;
   }
 
-  private toMetadata(payload: PortalPromoCodePayload) {
+  private toMetadata(payload: PortalPromoCodePayload): Prisma.InputJsonValue {
     const usageLimit =
       payload.usageLimit === 'once_total' ||
       payload.usageLimit === 'once_per_customer'
@@ -111,7 +113,7 @@ export class PromoCodesService {
       payload.perCustomerLimit != null
         ? Math.max(1, Math.floor(Number(payload.perCustomerLimit)))
         : undefined;
-    return {
+    const meta = {
       awardPoints: payload.awardPoints !== false,
       burn: {
         enabled: payload.burnEnabled ?? false,
@@ -143,6 +145,7 @@ export class PromoCodesService {
           : undefined,
       },
     } satisfies Record<string, unknown>;
+    return ensureMetadataVersion(meta) as Prisma.InputJsonValue;
   }
 
   private normalizeStatus(scope?: string) {
@@ -170,8 +173,13 @@ export class PromoCodesService {
           archivedAt: promo.archivedAt ?? new Date(),
         },
       });
-    } catch {
-      /* ignore archival failures */
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'PromoCodesService archive expired',
+        this.logger,
+        'debug',
+      );
     }
   }
 
@@ -230,7 +238,9 @@ export class PromoCodesService {
           archivedAt: now,
         },
       });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'PromoCodesService archive expired', this.logger, 'debug');
+    }
     if (status) {
       if (status === PromoCodeStatus.ARCHIVED) {
         where.status = {
@@ -651,7 +661,9 @@ export class PromoCodesService {
     // Lock row to avoid races on usage counters
     try {
       await tx.$executeRaw`SELECT id FROM "PromoCode" WHERE id = ${promo.id} FOR UPDATE`;
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'PromoCodesService lock promocode', this.logger, 'debug');
+    }
 
     if (promo.requireVisit) {
       if (!params.customerId) throw new BadRequestException('Требуется клиент');
@@ -836,7 +848,9 @@ export class PromoCodesService {
 
     try {
       this.metrics.inc('promocodes_redeemed_total');
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'PromoCodesService metrics', this.logger, 'debug');
+    }
 
     return {
       promoCode: promo,

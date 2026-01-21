@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import React from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
 const originalFetch = global.fetch;
 
@@ -209,13 +209,30 @@ describe("promocodes page (new design)", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "gold" } });
 
     fireEvent.click(screen.getByLabelText(/Ограничить общее количество/));
-    const spinbuttonsAfterLimit = screen.getAllByRole("spinbutton");
-    fireEvent.change(spinbuttonsAfterLimit[2], { target: { value: "1000" } }); // total limit
-    fireEvent.change(spinbuttonsAfterLimit[3], { target: { value: "3" } }); // per client
+    const totalLimitRow = screen
+      .getByText("Ограничить общее количество")
+      .closest("label")
+      ?.parentElement;
+    assert.ok(totalLimitRow);
+    const totalLimitInput = await within(totalLimitRow).findByRole("spinbutton");
+    fireEvent.change(totalLimitInput, { target: { value: "1000" } });
+
+    const perClientRow = screen
+      .getByText("Ограничить на клиента")
+      .closest("label")
+      ?.parentElement;
+    assert.ok(perClientRow);
+    const perClientInput = await within(perClientRow).findByRole("spinbutton");
+    fireEvent.change(perClientInput, { target: { value: "3" } });
 
     fireEvent.click(screen.getByLabelText(/Период использования в днях/));
-    const spinbuttonsAfterFrequency = screen.getAllByRole("spinbutton");
-    fireEvent.change(spinbuttonsAfterFrequency[4], { target: { value: "7" } }); // frequency days
+    const frequencyRow = screen
+      .getByText("Период использования в днях")
+      .closest("label")
+      ?.parentElement;
+    assert.ok(frequencyRow);
+    const frequencyInput = await within(frequencyRow).findByRole("spinbutton");
+    fireEvent.change(frequencyInput, { target: { value: "7" } });
 
     fireEvent.click(screen.getByLabelText(/Активен только если был визит/));
     fireEvent.click(screen.getByLabelText("Бессрочно"));

@@ -109,7 +109,8 @@ export class HealthController {
       outboxOk =
         (pendingThreshold <= 0 || outboxPending <= pendingThreshold) &&
         (deadThreshold <= 0 || outboxDead <= deadThreshold);
-    } catch {
+    } catch (err) {
+      logIgnoredError(err, 'HealthController snapshot', undefined, 'debug');
       workersOk = false;
       outboxOk = false;
     }

@@ -8,6 +8,11 @@ import { MerchantsAccessService } from './services/merchants-access.service';
 import type { MerchantsStaffService } from './services/merchants-staff.service';
 import type { MerchantsOutletsService } from './services/merchants-outlets.service';
 import type { MerchantsOutboxService } from './services/merchants-outbox.service';
+import type { MerchantsAntifraudService } from './services/merchants-antifraud.service';
+import type { MerchantsLedgerService } from './services/merchants-ledger.service';
+import type { MerchantsAdminService } from './services/merchants-admin.service';
+import type { MerchantsPortalAuthService } from './services/merchants-portal-auth.service';
+import type { MerchantsIntegrationsService } from './services/merchants-integrations.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -89,6 +94,12 @@ const asCacheService = (stub: CacheStub) =>
 const asStaffService = (stub: object) => stub as MerchantsStaffService;
 const asOutletsService = (stub: object) => stub as MerchantsOutletsService;
 const asOutboxService = (stub: object) => stub as MerchantsOutboxService;
+const asAntifraudService = (stub: object) => stub as MerchantsAntifraudService;
+const asLedgerService = (stub: object) => stub as MerchantsLedgerService;
+const asAdminService = (stub: object) => stub as MerchantsAdminService;
+const asPortalAuthService = (stub: object) => stub as MerchantsPortalAuthService;
+const asIntegrationsService = (stub: object) =>
+  stub as MerchantsIntegrationsService;
 const makeAccessService = (
   prisma: PrismaTransactionStub | PrismaSessionStub,
   cache: CacheStub,
@@ -149,13 +160,16 @@ describe('MerchantsService cashier activation codes', () => {
       >().mockImplementation((cb) => cb(tx)),
     };
     const svc = new MerchantsService(
-      asPrismaService(prisma),
       makeSettingsStub(),
-      asCacheService(makeCacheStub()),
       makeAccessService(prisma, makeCacheStub()),
       asStaffService({}),
       asOutletsService({}),
       asOutboxService({}),
+      asAntifraudService({}),
+      asLedgerService({}),
+      asAdminService({}),
+      asPortalAuthService({}),
+      asIntegrationsService({}),
     );
 
     const result = await svc.issueCashierActivationCodes('M-123', 2);
@@ -221,13 +235,16 @@ describe('MerchantsService cashier activation codes', () => {
     };
 
     const svc = new MerchantsService(
-      asPrismaService(prisma),
       makeSettingsStub(),
-      asCacheService(makeCacheStub()),
       makeAccessService(prisma, makeCacheStub()),
       asStaffService({}),
       asOutletsService({}),
       asOutboxService({}),
+      asAntifraudService({}),
+      asLedgerService({}),
+      asAdminService({}),
+      asPortalAuthService({}),
+      asIntegrationsService({}),
     );
 
     const result = await svc.activateCashierDeviceByCode(
@@ -309,13 +326,16 @@ describe('MerchantsService cashier activation codes', () => {
       >().mockImplementation((cb) => cb(tx)),
     };
     const svc = new MerchantsService(
-      asPrismaService(prisma),
       makeSettingsStub(),
-      asCacheService(makeCacheStub()),
       makeAccessService(prisma, makeCacheStub()),
       asStaffService({}),
       asOutletsService({}),
       asOutboxService({}),
+      asAntifraudService({}),
+      asLedgerService({}),
+      asAdminService({}),
+      asPortalAuthService({}),
+      asIntegrationsService({}),
     );
 
     await expect(
@@ -348,13 +368,16 @@ describe('MerchantsService cashier activation codes', () => {
     };
 
     const svc = new MerchantsService(
-      asPrismaService(prisma),
       makeSettingsStub(),
-      asCacheService(makeCacheStub()),
       makeAccessService(prisma, makeCacheStub()),
       asStaffService({}),
       asOutletsService({}),
       asOutboxService({}),
+      asAntifraudService({}),
+      asLedgerService({}),
+      asAdminService({}),
+      asPortalAuthService({}),
+      asIntegrationsService({}),
     );
     const session = await svc.getCashierDeviceSessionByToken('device-token');
 

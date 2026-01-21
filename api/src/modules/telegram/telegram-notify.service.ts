@@ -9,6 +9,7 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { TelegramStaffNotificationsService } from './staff-notifications.service';
 import { TelegramStaffActorType } from '@prisma/client';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 interface TgChat {
   id: number;
@@ -51,7 +52,8 @@ function parseJson(raw: string): unknown {
   if (!raw) return null;
   try {
     return JSON.parse(raw) as unknown;
-  } catch {
+  } catch (err) {
+    logIgnoredError(err, 'telegram-notify parseJson', undefined, 'debug');
     return null;
   }
 }
@@ -503,7 +505,13 @@ export class TelegramNotifyService implements OnModuleInit {
         chat.id,
         `Подписка на уведомления для мерчанта «${merchant?.name ?? invite.merchantId}» активирована.`,
       );
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'telegram-notify merchant lookup',
+        this.logger,
+        'debug',
+      );
       await this.sendMessage(chat.id, `Подписка на уведомления активирована.`);
     }
   }

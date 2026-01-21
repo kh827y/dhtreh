@@ -8,6 +8,7 @@ import { PrismaService } from '../../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
 import { hashPassword, verifyPassword } from '../../../shared/password.util';
 import { CreateStaffDto, UpdateStaffDto } from '../dto';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 @Injectable()
 export class MerchantsStaffService {
@@ -31,7 +32,9 @@ export class MerchantsStaffService {
       accessMap = new Map<string, number>(
         acc.map((row) => [row.staffId, row._count?._all ?? 0]),
       );
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'MerchantsStaffService access map', undefined, 'debug');
+    }
     let lastMap = new Map<string, Date | null>();
     try {
       const tx = await this.prisma.transaction.groupBy({
@@ -44,7 +47,9 @@ export class MerchantsStaffService {
           .filter((row) => row.staffId)
           .map((row) => [row.staffId as string, row._max?.createdAt ?? null]),
       );
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'MerchantsStaffService last activity', undefined, 'debug');
+    }
     return staff.map((s) => ({
       ...s,
       outletsCount: accessMap.get(s.id) || 0,

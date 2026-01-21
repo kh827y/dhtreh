@@ -22,6 +22,7 @@ import {
   findTimezone,
   type RussiaTimezone,
 } from '../shared/timezone/russia-timezones';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
 
 type BirthdayConfig = {
   enabled: boolean;
@@ -100,7 +101,13 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
         ? Math.max(60_000, rawInterval)
         : 6 * 60 * 60 * 1000; // 6 часов по умолчанию
 
-    this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    this.timer = setInterval(
+      () =>
+        this.tick().catch((err) =>
+          logIgnoredError(err, 'BirthdayWorker tick', this.logger),
+        ),
+      intervalMs,
+    );
     if (typeof this.timer.unref === 'function') this.timer.unref();
     this.logger.log(
       `BirthdayWorker started, interval=${Math.round(intervalMs / 1000)}s`,

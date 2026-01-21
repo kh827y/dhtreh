@@ -121,7 +121,8 @@ export class CashierGuard implements CanActivate {
         req.teleauth = ctx;
       }
       return ctx;
-    } catch {
+    } catch (err) {
+      logIgnoredError(err, 'CashierGuard telegram auth', undefined, 'debug');
       return null;
     }
   }

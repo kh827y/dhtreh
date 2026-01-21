@@ -6,6 +6,7 @@ import {
   PromotionStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 type JsonRecord = Record<string, unknown>;
 type PromotionRecord = Prisma.LoyaltyPromotionGetPayload<object>;
@@ -190,7 +191,14 @@ export class PromotionRulesService {
       try {
         const dd = new Date(promotion.endAt);
         parts.push(`До ${dd.toLocaleDateString('ru-RU')}`);
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'PromotionRulesService format endAt',
+          undefined,
+          'debug',
+        );
+      }
     }
     return parts.join(' · ');
   }

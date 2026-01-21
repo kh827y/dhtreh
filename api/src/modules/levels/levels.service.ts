@@ -14,6 +14,7 @@ import {
 } from '../loyalty/utils/tier-defaults.util';
 import { Prisma, type LoyaltyTier } from '@prisma/client';
 import { getRulesRoot } from '../../shared/rules-json.util';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 type TierAssignmentWithTier = Prisma.LoyaltyTierAssignmentGetPayload<{
   include: { tier: true };
@@ -46,7 +47,9 @@ export class LevelsService {
         where: { merchantId },
         orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
       });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'LevelsService load tiers', undefined, 'debug');
+    }
     const visibleLevels = tiers
       .filter((tier) => !tier?.isHidden)
       .map((tier) => toLevelRule(tier));
@@ -65,7 +68,9 @@ export class LevelsService {
         rules?.levelsPeriodDays,
         DEFAULT_LEVELS_PERIOD_DAYS,
       );
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'LevelsService settings', undefined, 'debug');
+    }
     const cfg = {
       periodDays,
       metric: DEFAULT_LEVELS_METRIC,

@@ -14,6 +14,7 @@ import { AdminGuard } from '../../core/guards/admin.guard';
 import { AdminIpGuard } from '../../core/guards/admin-ip.guard';
 import { MetricsService } from '../../core/metrics/metrics.service';
 import { AdminAuditInterceptor } from '../admin/admin-audit.interceptor';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 @Controller()
 export class TelegramController {
@@ -45,17 +46,27 @@ export class TelegramController {
     }
     try {
       await this.bots.processWebhook(merchantId, update);
-    } catch {
+    } catch (err) {
+      logIgnoredError(err, 'TelegramController webhook', undefined, 'debug');
       // Do not propagate to Telegram to avoid retries storm.
       // We intentionally drop the update on failure (best-effort processing).
       try {
         this.metrics.inc('telegram_updates_failed_total');
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'TelegramController metrics',
+          undefined,
+          'debug',
+        );
+      }
       return { ok: true };
     }
     try {
       this.metrics.inc('telegram_updates_total');
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'TelegramController metrics', undefined, 'debug');
+    }
     return { ok: true };
   }
 

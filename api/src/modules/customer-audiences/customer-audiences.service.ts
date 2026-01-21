@@ -11,6 +11,7 @@ import { fetchReceiptAggregates } from '../../shared/common/receipt-aggregates.u
 import { MetricsService } from '../../core/metrics/metrics.service';
 import { ALL_CUSTOMERS_SEGMENT_KEY } from './audience.constants';
 import { isSystemAllAudience } from './audience.utils';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 export interface CustomerFilters {
   search?: string;
@@ -61,6 +62,15 @@ export class CustomerAudiencesService {
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
   ) {}
+
+  private logIgnored(err: unknown, context: string) {
+    logIgnoredError(
+      err,
+      `CustomerAudiencesService ${context}`,
+      this.logger,
+      'debug',
+    );
+  }
 
   private toNumber(value: unknown): number | undefined {
     if (value === null || value === undefined) return undefined;
@@ -878,7 +888,9 @@ export class CustomerAudiencesService {
         }),
       );
       this.metrics.inc('portal_customers_list_total');
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'customers list');
+    }
     return result;
   }
 
@@ -912,7 +924,9 @@ export class CustomerAudiencesService {
         }),
       );
       this.metrics.inc('portal_customers_get_total', { result: 'found' });
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'customers get');
+    }
     return result;
   }
 
@@ -940,7 +954,9 @@ export class CustomerAudiencesService {
         }),
       );
       this.metrics.inc('portal_audiences_list_total');
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'segments list');
+    }
     return segments;
   }
 
@@ -976,7 +992,9 @@ export class CustomerAudiencesService {
         }),
       );
       this.metrics.inc('portal_audiences_changed_total', { action: 'create' });
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'segment create');
+    }
     let updated: CustomerSegment | null = null;
     try {
       await this.recalculateSegmentMembership(merchantId, segment);
@@ -1027,7 +1045,9 @@ export class CustomerAudiencesService {
         }),
       );
       this.metrics.inc('portal_audiences_changed_total', { action: 'update' });
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'segment update');
+    }
     let refreshed: CustomerSegment | null = null;
     try {
       await this.recalculateSegmentMembership(merchantId, updated);
@@ -1111,7 +1131,9 @@ export class CustomerAudiencesService {
         }),
       );
       this.metrics.inc('portal_audience_recalculate_total');
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'segment recalculate');
+    }
     return { segmentId: segment.id, processed: customerIds.length };
   }
 
@@ -1204,7 +1226,9 @@ export class CustomerAudiencesService {
           removed,
         }),
       );
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'segment evaluate customer');
+    }
     return { processed: segments.length, added, removed };
   }
 
@@ -1235,7 +1259,9 @@ export class CustomerAudiencesService {
         }),
       );
       this.metrics.inc('portal_audiences_changed_total', { action: 'status' });
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'segment status');
+    }
     return updated;
   }
 
@@ -1276,7 +1302,9 @@ export class CustomerAudiencesService {
         }),
       );
       this.metrics.inc('portal_audiences_changed_total', { action: 'delete' });
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'segment delete');
+    }
     return { ok: true };
   }
 
@@ -1309,7 +1337,9 @@ export class CustomerAudiencesService {
           }),
         );
         this.metrics.inc('portal_audience_refresh_total');
-      } catch {}
+      } catch (err) {
+        this.logIgnored(err, 'segment refresh');
+      }
       return updated;
     }
     await this.recalculateSegmentMembership(merchantId, segment);
@@ -1327,7 +1357,9 @@ export class CustomerAudiencesService {
         }),
       );
       this.metrics.inc('portal_audience_refresh_total');
-    } catch {}
+    } catch (err) {
+      this.logIgnored(err, 'segment refresh');
+    }
     return updated;
   }
 }

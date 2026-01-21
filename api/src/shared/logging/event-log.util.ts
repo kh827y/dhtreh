@@ -20,7 +20,7 @@ const formatError = (err: unknown): string => {
   if (err == null) return 'unknown error';
   try {
     return JSON.stringify(err);
-  } catch {
+  } catch (_err) {
     return 'unknown error';
   }
 };
@@ -36,7 +36,7 @@ export const logEvent = (
     const warn = logger.warn ?? logger.log;
     try {
       warn.call(logger, `event_log_failed: ${event}: ${formatError(err)}`);
-    } catch {
+    } catch (_err) {
       // ignore secondary logging failure
     }
   }
@@ -56,7 +56,7 @@ export const safeMetric = (
     const warn = logger.warn ?? logger.log;
     try {
       warn.call(logger, `metric_failed: ${name}: ${formatError(err)}`);
-    } catch {
+    } catch (_err) {
       // ignore secondary logging failure
     }
   }

@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 const parseEntityId = (json: string): string | null => {
   try {
@@ -9,7 +10,9 @@ const parseEntityId = (json: string): string | null => {
     if (typeof id === 'string' || typeof id === 'number') {
       return String(id);
     }
-  } catch {}
+  } catch (err) {
+    logIgnoredError(err, 'telegram util parseEntityId', undefined, 'debug');
+  }
   return null;
 };
 
@@ -47,7 +50,8 @@ export function validateTelegramInitData(
       if (userId) return { ok: true, userId };
     }
     return { ok: false };
-  } catch {
+  } catch (err) {
+    logIgnoredError(err, 'telegram util validate init data', undefined, 'debug');
     return { ok: false };
   }
 }

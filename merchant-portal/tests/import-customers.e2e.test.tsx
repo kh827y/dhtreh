@@ -40,14 +40,39 @@ describe("import customers page (new design)", () => {
 
   it("отправляет CSV файл на импорт", async () => {
     const payload = {
-      total: 2,
-      customersCreated: 1,
-      customersUpdated: 1,
-      receiptsImported: 1,
-      receiptsSkipped: 0,
-      statsUpdated: 1,
-      balancesSet: 1,
-      errors: [],
+      jobId: "job-1",
+      status: "UPLOADED",
+      createdAt: new Date().toISOString(),
+      startedAt: null,
+      completedAt: null,
+      totalRows: 2,
+      successRows: 0,
+      failedRows: 0,
+      skippedRows: 0,
+      errorSummary: [],
+      stats: null,
+    };
+    const completedPayload = {
+      jobId: "job-1",
+      status: "COMPLETED",
+      createdAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      totalRows: 2,
+      successRows: 2,
+      failedRows: 0,
+      skippedRows: 0,
+      errorSummary: [],
+      stats: {
+        total: 2,
+        customersCreated: 1,
+        customersUpdated: 1,
+        receiptsImported: 1,
+        receiptsSkipped: 0,
+        statsUpdated: 1,
+        balancesSet: 1,
+        errors: [],
+      },
     };
 
     fetchMock = mock.method(global, "fetch", async (input: any, init?: any) => {
@@ -60,6 +85,12 @@ describe("import customers page (new design)", () => {
         assert.ok(file instanceof File);
         assert.equal(file.name, "import.csv");
         return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/portal/customers/import/job-1") && method === "GET") {
+        return new Response(JSON.stringify(completedPayload), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });

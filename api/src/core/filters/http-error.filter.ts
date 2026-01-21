@@ -5,6 +5,7 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 @Catch()
 export class HttpErrorFilter implements ExceptionFilter {
@@ -62,7 +63,8 @@ export class HttpErrorFilter implements ExceptionFilter {
       }
       try {
         return JSON.stringify(message);
-      } catch {
+      } catch (err) {
+        logIgnoredError(err, 'HttpErrorFilter formatMessage', undefined, 'debug');
         return 'Internal Server Error';
       }
     }
@@ -70,7 +72,8 @@ export class HttpErrorFilter implements ExceptionFilter {
     if (message && typeof message === 'object') {
       try {
         return JSON.stringify(message);
-      } catch {
+      } catch (err) {
+        logIgnoredError(err, 'HttpErrorFilter formatMessage', undefined, 'debug');
         return 'Internal Server Error';
       }
     }

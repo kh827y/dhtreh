@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { TelegramStaffNotificationsService } from '../telegram/staff-notifications.service';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 export interface CreateReviewDto {
   merchantId: string;
@@ -165,7 +166,9 @@ export class ReviewService {
           reviewId: review.id,
           at: new Date().toISOString(),
         });
-      } catch {}
+      } catch (err) {
+        logIgnoredError(err, 'ReviewService staff notify', undefined, 'debug');
+      }
       return {
         id: review.id,
         rating: review.rating,

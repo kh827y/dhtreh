@@ -1,5 +1,6 @@
 import type { MetricsService } from '../../../core/metrics/metrics.service';
 import type { PrismaService } from '../../../core/prisma/prisma.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -252,6 +253,8 @@ export async function computeLevelState(args: {
   const progressToNext = next ? Math.max(0, next.threshold - value) : 0;
   try {
     metrics?.inc?.('levels_evaluations_total', { metric: config.metric });
-  } catch {}
+  } catch (err) {
+    logIgnoredError(err, 'levels util metrics', undefined, 'debug');
+  }
   return { value, current, next, progressToNext, refundsCount };
 }

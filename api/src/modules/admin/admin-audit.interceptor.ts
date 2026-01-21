@@ -10,6 +10,7 @@ import { Observable, throwError } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { safeExecAsync } from '../../shared/safe-exec';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 @Injectable()
 export class AdminAuditInterceptor implements NestInterceptor {
@@ -172,7 +173,8 @@ function sanitizePayload(body: unknown): Prisma.InputJsonValue | null {
     return json.length > 10_000
       ? ({ truncated: true } as Prisma.InputJsonValue)
       : (clone as Prisma.InputJsonValue);
-  } catch {
+  } catch (err) {
+    logIgnoredError(err, 'AdminAuditInterceptor sanitize payload', undefined, 'debug');
     return null;
   }
 }

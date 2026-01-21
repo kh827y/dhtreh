@@ -7,6 +7,7 @@ import {
   DEFAULT_TIMEZONE_CODE,
   findTimezone,
 } from '../../shared/timezone/russia-timezones';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 export enum RiskLevel {
   LOW = 'LOW',
@@ -679,7 +680,8 @@ export class AntiFraudService {
         select: { timezone: true },
       });
       return findTimezone(row?.timezone ?? DEFAULT_TIMEZONE_CODE);
-    } catch {
+    } catch (err) {
+      logIgnoredError(err, 'AntifraudService resolveTimezone', this.logger, 'debug');
       return findTimezone(DEFAULT_TIMEZONE_CODE);
     }
   }

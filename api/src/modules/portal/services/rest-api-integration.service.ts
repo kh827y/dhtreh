@@ -5,6 +5,7 @@ import {
   RestApiIntegrationsService,
   RestApiRateLimits,
 } from '../../integrations/rest-api-integrations.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 export interface RestApiIntegrationState {
   enabled: boolean;
@@ -161,7 +162,13 @@ export class PortalRestApiIntegrationService {
             ? raw.tokenMask
             : null;
       return mask ?? null;
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'PortalRestApiIntegrationService extractMaskFromCredentials',
+        undefined,
+        'debug',
+      );
       return null;
     }
   }

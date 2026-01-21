@@ -16,6 +16,7 @@ import type {
 } from '../loyalty-program.types';
 import { cloneRecord } from '../loyalty-program.utils';
 import { logEvent, safeMetric } from '../../../shared/logging/event-log.util';
+import { ensureMetadataVersion } from '../../../shared/metadata.util';
 
 @Injectable()
 export class LoyaltyProgramTiersService {
@@ -236,7 +237,9 @@ export class LoyaltyProgramTiersService {
         ? this.sanitizeAmount(payload.minPaymentAmount, 0)
         : null;
     const metadata =
-      minPaymentAmount != null ? { minPaymentAmount } : undefined;
+      minPaymentAmount != null
+        ? (ensureMetadataVersion({ minPaymentAmount }) as Prisma.InputJsonValue)
+        : undefined;
     const isInitial = !!payload.isInitial;
     const isHidden = !!payload.isHidden;
 
@@ -278,7 +281,7 @@ export class LoyaltyProgramTiersService {
           isDefault: isInitial,
           isHidden,
           color: payload.color ?? null,
-          metadata: metadata as Prisma.InputJsonValue,
+          metadata,
           order: nextOrder,
         },
       });
@@ -373,6 +376,10 @@ export class LoyaltyProgramTiersService {
       metadata.minPaymentAmount = minPaymentAmount;
     else if (payload.minPaymentAmount === null)
       delete metadata.minPaymentAmount;
+    const hasMetadata = Object.keys(metadata).length > 0;
+    const nextMetadata = hasMetadata
+      ? (ensureMetadataVersion(metadata as Prisma.InputJsonValue) as Prisma.InputJsonValue)
+      : Prisma.JsonNull;
 
     const isInitial =
       payload.isInitial != null ? !!payload.isInitial : tier.isInitial;
@@ -421,9 +428,7 @@ export class LoyaltyProgramTiersService {
           isDefault: isInitial,
           isHidden,
           color: payload.color ?? tier.color,
-          metadata: Object.keys(metadata).length
-            ? (metadata as Prisma.InputJsonValue)
-            : Prisma.JsonNull,
+          metadata: nextMetadata,
         },
       });
       return next;

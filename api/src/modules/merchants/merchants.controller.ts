@@ -34,6 +34,7 @@ import {
 } from './dto';
 import { AdminGuard } from '../../core/guards/admin.guard';
 import { AdminIpGuard } from '../../core/guards/admin-ip.guard';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 import {
   ApiBadRequestResponse,
   ApiExtraModels,
@@ -1002,7 +1003,8 @@ export class MerchantsController {
     if (value instanceof Date) return value.toISOString();
     try {
       return JSON.stringify(value);
-    } catch {
+    } catch (err) {
+      logIgnoredError(err, 'MerchantsController toCsvString', undefined, 'debug');
       return '';
     }
   }

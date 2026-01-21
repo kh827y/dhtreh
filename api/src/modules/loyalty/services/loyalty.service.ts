@@ -11,6 +11,7 @@ import { StaffMotivationEngine } from '../../staff-motivation/staff-motivation.e
 import { LoyaltyContextService } from './loyalty-context.service';
 import { LoyaltyTierService } from './loyalty-tier.service';
 import { LoyaltyOperationsService } from './loyalty-operations.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 
 @Injectable()
 export class LoyaltyService extends LoyaltyOperationsService {
@@ -22,6 +23,7 @@ export class LoyaltyService extends LoyaltyOperationsService {
     staffMotivation: StaffMotivationEngine,
     context: LoyaltyContextService,
     tiers: LoyaltyTierService,
+    config: AppConfigService = new AppConfigService(),
   ) {
     super(
       prisma,
@@ -31,6 +33,7 @@ export class LoyaltyService extends LoyaltyOperationsService {
       staffMotivation,
       context,
       tiers,
+      config,
     );
   }
 }

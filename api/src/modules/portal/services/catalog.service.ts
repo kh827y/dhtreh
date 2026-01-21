@@ -18,6 +18,7 @@ import {
 import { MetricsService } from '../../../core/metrics/metrics.service';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import {
   CategoryDto,
   CreateCategoryDto,
@@ -292,7 +293,8 @@ export class PortalCatalogService {
       if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
       // базовая защита: без javascript:, data:, file:
       return true;
-    } catch {
+    } catch (err) {
+      logIgnoredError(err, 'CatalogService invalid URL', this.logger, 'debug');
       return false;
     }
   }
@@ -625,7 +627,14 @@ export class PortalCatalogService {
           error: errorMessage,
         },
       });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'PortalCatalogService sync log',
+        this.logger,
+        'debug',
+      );
+    }
   }
 
   // ===== Categories =====

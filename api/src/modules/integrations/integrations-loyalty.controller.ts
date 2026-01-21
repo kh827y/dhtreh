@@ -19,6 +19,7 @@ import { LoyaltyService } from '../loyalty/services/loyalty.service';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { IntegrationApiKeyGuard } from './integration-api-key.guard';
 import { ApiTags } from '@nestjs/swagger';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 import {
   IntegrationBonusDto,
   IntegrationCalculateActionDto,
@@ -85,12 +86,11 @@ const readErrorMessage = (error: unknown): string => {
 @UseGuards(IntegrationApiKeyGuard)
 @ApiTags('integrations')
 export class IntegrationsLoyaltyController {
-  private readonly config = new AppConfigService();
-
   constructor(
     private readonly loyalty: LoyaltyService,
     private readonly prisma: PrismaService,
     private readonly cache: LookupCacheService,
+    private readonly config: AppConfigService,
   ) {}
 
   private parseOperationDate(raw?: string | null): Date | null {
@@ -252,7 +252,14 @@ export class IntegrationsLoyaltyController {
       if (!Number.isFinite(expMs) || expMs <= Date.now()) {
         try {
           await this.prisma.qrNonce.delete({ where: { jti: shortCode } });
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'IntegrationsLoyaltyController delete nonce',
+            undefined,
+            'debug',
+          );
+        }
         throw new BadRequestException(
           'JWTExpired: "exp" claim timestamp check failed',
         );
@@ -547,7 +554,14 @@ export class IntegrationsLoyaltyController {
           error: errorMessage,
         },
       });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'IntegrationsLoyaltyController sync log',
+        undefined,
+        'debug',
+      );
+    }
   }
 
   @Post('code')

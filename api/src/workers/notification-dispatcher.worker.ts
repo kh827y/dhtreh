@@ -891,7 +891,13 @@ export class NotificationDispatcherWorker
     if (value instanceof Date) return value.toISOString();
     try {
       return JSON.stringify(value);
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'notification stringify value',
+        this.logger,
+        'debug',
+      );
       return '';
     }
   }

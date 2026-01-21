@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { LoyaltyProfileController } from '../controllers/loyalty-profile.controller';
 import type { PrismaService } from '../../../core/prisma/prisma.service';
 import type { LookupCacheService } from '../../../core/cache/lookup-cache.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -118,6 +119,7 @@ function createController(prismaOverrides: PrismaOverrides = {}) {
   const controller = new LoyaltyProfileController(
     asPrismaService(prisma),
     asCacheService(cache),
+    new AppConfigService(),
   );
   return { controller, prisma, cache };
 }

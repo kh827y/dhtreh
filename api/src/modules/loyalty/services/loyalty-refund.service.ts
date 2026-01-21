@@ -12,6 +12,7 @@ import {
   WalletType,
 } from '@prisma/client';
 import { LoyaltyOpsBase } from './loyalty-ops-base.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 export class LoyaltyRefundService extends LoyaltyOpsBase {
   async cancel(holdId: string, merchantId?: string | null) {
@@ -40,8 +41,13 @@ export class LoyaltyRefundService extends LoyaltyOpsBase {
           } else {
             await tx.qrNonce.delete({ where: { jti: qrJti } });
           }
-        } catch {
-          /* ignore */
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'LoyaltyRefundService cancel qrNonce cleanup',
+            undefined,
+            'debug',
+          );
         }
       }
     });
@@ -125,7 +131,13 @@ export class LoyaltyRefundService extends LoyaltyOpsBase {
           !meta.receiptId ||
           meta.receiptId === receipt.id;
         return receiptMatch;
-      } catch {
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'LoyaltyRefundService match existing refund metadata',
+          undefined,
+          'debug',
+        );
         return false;
       }
     });
@@ -173,7 +185,13 @@ export class LoyaltyRefundService extends LoyaltyOpsBase {
               !meta.receiptId ||
               meta.receiptId === receipt.id;
             return receiptMatch;
-          } catch {
+          } catch (err) {
+            logIgnoredError(
+              err,
+              'LoyaltyRefundService match refund metadata in retry',
+              undefined,
+              'debug',
+            );
             return false;
           }
         });

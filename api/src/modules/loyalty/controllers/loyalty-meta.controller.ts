@@ -14,8 +14,10 @@ import { LoyaltyService } from '../services/loyalty.service';
 import { LevelsService } from '../../levels/levels.service';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 import { CashierGuard } from '../../../core/guards/cashier.guard';
 import { SubscriptionGuard } from '../../../core/guards/subscription.guard';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import {
   ConsentGetRespDto,
   OkDto,
@@ -34,8 +36,9 @@ export class LoyaltyMetaController extends LoyaltyControllerBase {
     prisma: PrismaService,
     private readonly levelsService: LevelsService,
     cache: LookupCacheService,
+    config: AppConfigService,
   ) {
-    super(prisma, cache);
+    super(prisma, cache, config);
   }
 
   @Get('transactions')
@@ -191,7 +194,14 @@ export class LoyaltyMetaController extends LoyaltyControllerBase {
             },
           },
         });
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'LoyaltyMetaController delete consent',
+          undefined,
+          'debug',
+        );
+      }
     }
     return { ok: true };
   }

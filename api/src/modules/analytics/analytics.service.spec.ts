@@ -1,6 +1,8 @@
 import { ConfigService } from '@nestjs/config';
 import { AnalyticsService } from './analytics.service';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { AnalyticsCacheService } from './analytics-cache.service';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 function createPrismaMock() {
   return {
@@ -22,6 +24,8 @@ describe('AnalyticsService — RFM segmentation', () => {
     service = new AnalyticsService(
       prisma as unknown as PrismaService,
       {} as ConfigService,
+      new AnalyticsCacheService(new AppConfigService()),
+      undefined,
     );
   });
 

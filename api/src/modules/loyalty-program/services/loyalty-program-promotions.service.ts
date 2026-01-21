@@ -23,7 +23,8 @@ import {
   readString,
 } from '../loyalty-program.utils';
 import { logEvent, safeMetric } from '../../../shared/logging/event-log.util';
-import { withJsonSchemaVersion } from '../../../shared/json-version.util';
+import { ensureMetadataVersion } from '../../../shared/metadata.util';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 type PromotionRecord = Prisma.LoyaltyPromotionGetPayload<object>;
 type PromotionMetricRecord = Prisma.LoyaltyPromotionMetricGetPayload<object>;
@@ -58,7 +59,7 @@ const toCreateJson = (
   value: unknown,
 ): Prisma.InputJsonValue | Prisma.NullTypes.JsonNull => {
   if (value === null || value === undefined) return Prisma.JsonNull;
-  return withJsonSchemaVersion(value) as Prisma.InputJsonValue;
+  return ensureMetadataVersion(value as Prisma.InputJsonValue) as Prisma.InputJsonValue;
 };
 
 const toUpdateJson = (
@@ -66,7 +67,7 @@ const toUpdateJson = (
 ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined => {
   if (value === undefined) return undefined;
   if (value === null) return Prisma.DbNull;
-  return withJsonSchemaVersion(value) as Prisma.InputJsonValue;
+  return ensureMetadataVersion(value as Prisma.InputJsonValue) as Prisma.InputJsonValue;
 };
 
 @Injectable()
@@ -106,7 +107,14 @@ export class LoyaltyProgramPromotionsService {
           status: { in: ['SCHEDULED', 'PAUSED'] },
         },
       });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyProgramPromotionsService clear tasks',
+        this.logger,
+        'debug',
+      );
+    }
   }
 
   private async refreshPromotionNotifications(

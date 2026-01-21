@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import type { Plan } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { withJsonSchemaVersion } from '../../shared/json-version.util';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 // import { Cron, CronExpression } from '@nestjs/schedule';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -168,7 +169,14 @@ export class SubscriptionService {
               new Date(),
           },
         });
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'SubscriptionService update expired',
+          undefined,
+          'debug',
+        );
+      }
     }
     return state;
   }
@@ -197,7 +205,14 @@ export class SubscriptionService {
               new Date(),
           },
         });
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'SubscriptionService update expired',
+          undefined,
+          'debug',
+        );
+      }
     }
     return { subscription, state };
   }
@@ -617,7 +632,13 @@ export class SubscriptionService {
       if (parsed === null) return Prisma.JsonNull;
       if (this.isJsonValue(parsed)) return parsed;
       return Prisma.JsonNull;
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'SubscriptionService toJsonValue',
+        undefined,
+        'debug',
+      );
       if (
         typeof value === 'string' ||
         typeof value === 'number' ||

@@ -3,6 +3,7 @@ import { IntegrationsLoyaltyController } from './integrations-loyalty.controller
 import type { LoyaltyService } from '../loyalty/services/loyalty.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
 import type { LookupCacheService } from '../../core/cache/lookup-cache.service';
+import { AppConfigService } from '../../core/config/app-config.service';
 import type {
   IntegrationBonusDto,
   IntegrationCalculateActionDto,
@@ -197,6 +198,7 @@ function createController(
     asLoyaltyService(loyalty),
     asPrismaService(prisma),
     asCacheService(cache),
+    new AppConfigService(),
   );
   return { controller, prisma, loyalty, cache };
 }

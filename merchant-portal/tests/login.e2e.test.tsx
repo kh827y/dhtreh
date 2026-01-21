@@ -37,7 +37,7 @@ describe("login page", () => {
       ),
     );
 
-    fireEvent.change(await screen.findByPlaceholderText("name@company.com"), { target: { value: "test@example.com" } });
+    fireEvent.change(await screen.findByPlaceholderText("ваш логин"), { target: { value: "test@example.com" } });
     fireEvent.change(screen.getByPlaceholderText("••••••••"), { target: { value: "password" } });
     fireEvent.click(screen.getByText("Войти"));
 
@@ -70,7 +70,7 @@ describe("login page", () => {
       ),
     );
 
-    fireEvent.change(await screen.findByPlaceholderText("name@company.com"), { target: { value: "test@example.com" } });
+    fireEvent.change(await screen.findByPlaceholderText("ваш логин"), { target: { value: "test@example.com" } });
     fireEvent.change(screen.getByPlaceholderText("••••••••"), { target: { value: "password" } });
     fireEvent.click(screen.getByText("Войти"));
 

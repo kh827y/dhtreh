@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 @Injectable()
 export class MerchantsOutboxService {
@@ -214,7 +215,9 @@ export class MerchantsOutboxService {
       });
       for (const g of grouped)
         typeCounts[g.eventType] = g._count?.eventType ?? 0;
-    } catch {}
+    } catch (err) {
+      logIgnoredError(err, 'MerchantsOutboxService stats', undefined, 'debug');
+    }
     const lastDead = await this.prisma.eventOutbox.findFirst({
       where: { merchantId, status: 'DEAD' },
       orderBy: { createdAt: 'desc' },

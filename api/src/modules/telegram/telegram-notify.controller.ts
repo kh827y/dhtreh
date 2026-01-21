@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { TelegramNotifyService } from './telegram-notify.service';
 import { AdminGuard } from '../../core/guards/admin.guard';
 import { AdminIpGuard } from '../../core/guards/admin-ip.guard';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 @Controller()
 export class TelegramNotifyController {
@@ -31,7 +32,14 @@ export class TelegramNotifyController {
     if (!secret || secret.trim() !== expected) return { ok: true };
     try {
       await this.notify.processUpdate(update);
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'TelegramNotifyController webhook',
+        undefined,
+        'debug',
+      );
+    }
     return { ok: true };
   }
 

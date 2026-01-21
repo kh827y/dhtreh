@@ -1,8 +1,15 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { Prisma, WalletType, TxnType } from '@prisma/client';
+import {
+  Prisma,
+  WalletType,
+  TxnType,
+  DataImportStatus,
+  DataImportType,
+} from '@prisma/client';
 import type { Response } from 'express';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { fetchReceiptAggregates } from '../../shared/common/receipt-aggregates.util';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 import * as XLSX from 'xlsx';
 import * as csv from 'csv-parse/sync';
 import * as csvStringify from 'csv-stringify/sync';
@@ -14,6 +21,27 @@ export interface ImportCustomersDto {
   updateExisting?: boolean;
   sendWelcome?: boolean;
 }
+
+export interface ImportCustomersJobDto extends ImportCustomersDto {
+  sourceFileName?: string | null;
+  sourceFileSize?: number | null;
+  sourceMimeType?: string | null;
+  uploadedById?: string | null;
+}
+
+export type ImportJobSummary = {
+  jobId: string;
+  status: DataImportStatus;
+  createdAt: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  totalRows: number;
+  successRows: number;
+  failedRows: number;
+  skippedRows: number;
+  errorSummary: Array<{ row: number; error: string }>;
+  stats: Record<string, unknown> | null;
+};
 
 export interface BulkUpdateCustomersDto {
   merchantId: string;
@@ -67,6 +95,201 @@ type RowRecord = Record<string, unknown>;
 @Injectable()
 export class ImportExportService {
   constructor(private prisma: PrismaService) {}
+
+  private buildImportJobSettings(dto: ImportCustomersJobDto) {
+    return {
+      format: dto.format,
+      updateExisting: dto.updateExisting === true,
+      sendWelcome: dto.sendWelcome === true,
+      dataBase64: dto.data.toString('base64'),
+    };
+  }
+
+  private decodeImportJobSettings(settings: Prisma.JsonValue | null): {
+    format: 'csv' | 'excel';
+    data: Buffer;
+    updateExisting: boolean;
+    sendWelcome: boolean;
+    raw: Record<string, unknown>;
+  } {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      throw new BadRequestException('Import settings not found');
+    }
+    const data = settings as Record<string, unknown>;
+    const format =
+      data.format === 'csv' || data.format === 'excel' ? data.format : null;
+    const rawBase64 = typeof data.dataBase64 === 'string' ? data.dataBase64 : '';
+    if (!format || !rawBase64) {
+      throw new BadRequestException('Import settings are invalid');
+    }
+    return {
+      format,
+      data: Buffer.from(rawBase64, 'base64'),
+      updateExisting: Boolean(data.updateExisting),
+      sendWelcome: Boolean(data.sendWelcome),
+      raw: data,
+    };
+  }
+
+  private cleanupImportJobSettings(
+    settings: Record<string, unknown>,
+  ): Prisma.InputJsonValue {
+    const next = { ...settings };
+    delete next.dataBase64;
+    return next as Prisma.InputJsonValue;
+  }
+
+  async enqueueImportCustomers(dto: ImportCustomersJobDto) {
+    const job = await this.prisma.dataImportJob.create({
+      data: {
+        merchantId: dto.merchantId,
+        type: DataImportType.CUSTOMERS,
+        status: DataImportStatus.UPLOADED,
+        sourceFileName: dto.sourceFileName ?? 'customers-import',
+        sourceFileSize: dto.sourceFileSize ?? dto.data.length,
+        sourceMimeType: dto.sourceMimeType ?? null,
+        uploadedById: dto.uploadedById ?? null,
+        settings: this.buildImportJobSettings(dto),
+      },
+    });
+    return this.getImportJobSummary(dto.merchantId, job.id);
+  }
+
+  async getImportJobSummary(
+    merchantId: string,
+    jobId: string,
+  ): Promise<ImportJobSummary> {
+    const job = await this.prisma.dataImportJob.findFirst({
+      where: { id: jobId, merchantId },
+      include: { metrics: true },
+    });
+    if (!job) {
+      throw new BadRequestException('Import job not found');
+    }
+    const errorSummary = Array.isArray(job.errorSummary)
+      ? (job.errorSummary as Array<{ row: number; error: string }>)
+      : [];
+    const stats =
+      job.metrics && job.metrics.stats && typeof job.metrics.stats === 'object'
+        ? (job.metrics.stats as Record<string, unknown>)
+        : null;
+    return {
+      jobId: job.id,
+      status: job.status,
+      createdAt: job.createdAt,
+      startedAt: job.startedAt ?? null,
+      completedAt: job.completedAt ?? null,
+      totalRows: job.totalRows,
+      successRows: job.successRows,
+      failedRows: job.failedRows,
+      skippedRows: job.skippedRows,
+      errorSummary,
+      stats,
+    };
+  }
+
+  async listImportJobs(
+    merchantId: string,
+    limit = 20,
+    offset = 0,
+  ): Promise<ImportJobSummary[]> {
+    const jobs = await this.prisma.dataImportJob.findMany({
+      where: { merchantId, type: DataImportType.CUSTOMERS },
+      include: { metrics: true },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Math.max(limit, 1), 100),
+      skip: Math.max(offset, 0),
+    });
+    return jobs.map((job) => {
+      const errorSummary = Array.isArray(job.errorSummary)
+        ? (job.errorSummary as Array<{ row: number; error: string }>)
+        : [];
+      const stats =
+        job.metrics && job.metrics.stats && typeof job.metrics.stats === 'object'
+          ? (job.metrics.stats as Record<string, unknown>)
+          : null;
+      return {
+        jobId: job.id,
+        status: job.status,
+        createdAt: job.createdAt,
+        startedAt: job.startedAt ?? null,
+        completedAt: job.completedAt ?? null,
+        totalRows: job.totalRows,
+        successRows: job.successRows,
+        failedRows: job.failedRows,
+        skippedRows: job.skippedRows,
+        errorSummary,
+        stats,
+      };
+    });
+  }
+
+  async processImportJob(jobId: string) {
+    const job = await this.prisma.dataImportJob.findUnique({
+      where: { id: jobId },
+    });
+    if (!job) {
+      throw new BadRequestException('Import job not found');
+    }
+    if (
+      job.status !== DataImportStatus.UPLOADED &&
+      job.status !== DataImportStatus.VALIDATING
+    ) {
+      return;
+    }
+    const startedAt = new Date();
+    await this.prisma.dataImportJob.update({
+      where: { id: jobId },
+      data: { status: DataImportStatus.PROCESSING, startedAt },
+    });
+    try {
+      const settings = this.decodeImportJobSettings(job.settings ?? null);
+      const result = await this.importCustomers({
+        merchantId: job.merchantId,
+        format: settings.format,
+        data: settings.data,
+        updateExisting: settings.updateExisting,
+        sendWelcome: settings.sendWelcome,
+      });
+      const errorSummary = result.errors.slice(0, 200);
+      const totalRows = result.total;
+      const failedRows = result.errors.length;
+      const successRows = Math.max(0, totalRows - failedRows);
+      await this.prisma.$transaction([
+        this.prisma.dataImportMetric.upsert({
+          where: { jobId },
+          update: { stats: result },
+          create: { jobId, stats: result },
+        }),
+        this.prisma.dataImportJob.update({
+          where: { id: jobId },
+          data: {
+            status: DataImportStatus.COMPLETED,
+            completedAt: new Date(),
+            processedAt: new Date(),
+            totalRows,
+            successRows,
+            failedRows,
+            skippedRows: 0,
+            errorSummary: errorSummary as Prisma.InputJsonValue,
+            settings: this.cleanupImportJobSettings(settings.raw),
+          },
+        }),
+      ]);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.prisma.dataImportJob.update({
+        where: { id: jobId },
+        data: {
+          status: DataImportStatus.FAILED,
+          completedAt: new Date(),
+          processedAt: new Date(),
+          errorSummary: [{ row: 0, error: message }],
+        },
+      });
+      throw error;
+    }
+  }
 
   /**
    * Импорт клиентов из файла
@@ -1165,7 +1388,14 @@ export class ImportExportService {
           error: this.formatLogError(params.error),
         },
       });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'ImportExportService sync log',
+        undefined,
+        'debug',
+      );
+    }
   }
 
   private formatLogError(error: unknown): string | null {
@@ -1174,7 +1404,13 @@ export class ImportExportService {
     if (typeof error === 'string') return error;
     try {
       return JSON.stringify(error);
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'ImportExportService formatLogError',
+        undefined,
+        'debug',
+      );
       const fallback = Object.prototype.toString.call(error) as string;
       return fallback;
     }
@@ -1194,7 +1430,8 @@ export class ImportExportService {
     if (value === null) return Prisma.JsonNull;
     try {
       return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-    } catch {
+    } catch (err) {
+      logIgnoredError(err, 'ImportExportService toJsonValue', undefined, 'debug');
       if (
         typeof value === 'string' ||
         typeof value === 'number' ||
@@ -1279,7 +1516,13 @@ export class ImportExportService {
     if (value instanceof Date) return value.toISOString();
     try {
       return JSON.stringify(value);
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'ImportExportService stringifyCsvValue',
+        undefined,
+        'debug',
+      );
       return '';
     }
   }

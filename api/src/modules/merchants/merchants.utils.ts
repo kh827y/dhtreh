@@ -25,7 +25,9 @@ export const formatUnknownError = (value: unknown, fallback: string): string => 
   if (value == null) return fallback;
   try {
     return JSON.stringify(value);
-  } catch {
+  } catch (err) {
+    logIgnoredError(err, 'formatUnknownError', undefined, 'debug');
     return fallback;
   }
 };
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';

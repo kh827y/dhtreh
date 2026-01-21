@@ -12,8 +12,14 @@ import {
   hasOwn,
   isNonEmptyString,
 } from '../merchants.utils';
-import { DEFAULT_TIMEZONE_CODE } from '../../../shared/timezone/russia-timezones';
+import {
+  DEFAULT_TIMEZONE_CODE,
+  findTimezone,
+  serializeTimezone,
+} from '../../../shared/timezone/russia-timezones';
 import { withJsonSchemaVersion } from '../../../shared/json-version.util';
+import { migrateRulesJson, RULES_JSON_SCHEMA_VERSION } from '../../../shared/rules-json.util';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 type AjvInstance = {
   validate: (schema: unknown, data: unknown) => boolean;
@@ -50,7 +56,8 @@ const loadAjvConstructor = (): AjvConstructor | null => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports -- optional dependency
     const mod = require('ajv') as AjvModule;
     return resolveAjvConstructor(mod);
-  } catch {
+  } catch (err) {
+    logIgnoredError(err, 'MerchantsSettingsService loadAjv', undefined, 'debug');
     return null;
   }
 };
@@ -136,11 +143,10 @@ export class MerchantsSettingsService {
 
   normalizeRulesJson(rulesJson: unknown) {
     if (rulesJson == null) return rulesJson;
-    if (Array.isArray(rulesJson)) return null;
-    const rulesRecord = asRecord(rulesJson);
-    if (!rulesRecord) return rulesJson;
+    const migrated = migrateRulesJson(rulesJson);
+    if (!migrated) return null;
 
-    const clone: Record<string, unknown> = { ...rulesRecord };
+    const clone: Record<string, unknown> = { ...migrated };
     const afRecord = asRecord(clone.af);
     if (afRecord) {
       const af: Record<string, unknown> = { ...afRecord };
@@ -165,7 +171,10 @@ export class MerchantsSettingsService {
       }
       clone.af = af;
     }
-    return withJsonSchemaVersion(clone) as Record<string, unknown>;
+    return withJsonSchemaVersion(
+      clone,
+      RULES_JSON_SCHEMA_VERSION,
+    ) as Record<string, unknown>;
   }
 
   validateRules(rulesJson: unknown) {
@@ -268,6 +277,37 @@ export class MerchantsSettingsService {
       outboxPausedUntil: s?.outboxPausedUntil ?? null,
       timezone: s?.timezone ?? DEFAULT_TIMEZONE_CODE,
     };
+  }
+
+  async getTimezone(merchantId: string) {
+    const row = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { timezone: true },
+    });
+    return serializeTimezone(row?.timezone ?? DEFAULT_TIMEZONE_CODE);
+  }
+
+  async updateTimezone(merchantId: string, code: string) {
+    const normalized = findTimezone(code);
+    await this.prisma.merchantSettings.upsert({
+      where: { merchantId },
+      update: { timezone: normalized.code, updatedAt: new Date() },
+      create: {
+        merchantId,
+        earnBps: 300,
+        redeemLimitBps: 5000,
+        qrTtlSec: 300,
+        redeemCooldownSec: 0,
+        earnCooldownSec: 0,
+        redeemDailyCap: null,
+        earnDailyCap: null,
+        requireJwtForQuote: false,
+        rulesJson: Prisma.JsonNull,
+        timezone: normalized.code,
+      },
+    });
+    this.cache.invalidateSettings(merchantId);
+    return serializeTimezone(normalized.code);
   }
 
   async updateSettings(
@@ -527,7 +567,13 @@ export class MerchantsSettingsService {
     let parsed: URL;
     try {
       parsed = new URL(url);
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'MerchantsSettingsService parse webhook',
+        undefined,
+        'debug',
+      );
       return 'Invalid webhook URL';
     }
     if (parsed.protocol !== 'https:') {
@@ -546,7 +592,13 @@ export class MerchantsSettingsService {
     let records: Array<{ address: string; family: number }> = [];
     try {
       records = await lookup(host, { all: true, verbatim: true });
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'MerchantsSettingsService webhook lookup',
+        undefined,
+        'debug',
+      );
       return 'Webhook URL host is not resolvable';
     }
     if (!records.length) {

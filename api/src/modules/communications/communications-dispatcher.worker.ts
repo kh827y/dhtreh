@@ -16,6 +16,7 @@ import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../../shared/pg-lock.util';
 import { isSystemAllAudience } from '../customer-audiences/audience.utils';
 import { applyCurlyPlaceholders } from './message-placeholders';
 import { AppConfigService } from '../../core/config/app-config.service';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 type TelegramRecipient = {
   customerId: string;
@@ -67,7 +68,17 @@ export class CommunicationsDispatcherWorker
     }
     const intervalMs =
       this.config.getNumber('COMM_WORKER_INTERVAL_MS', 15000) ?? 15000;
-    this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    this.timer = setInterval(
+      () =>
+        this.tick().catch((err) =>
+          logIgnoredError(
+            err,
+            'CommunicationsDispatcherWorker tick',
+            this.logger,
+          ),
+        ),
+      intervalMs,
+    );
     if (typeof this.timer.unref === 'function') this.timer.unref();
     this.logger.log(
       `CommunicationsDispatcherWorker started, interval=${intervalMs}ms`,
@@ -350,7 +361,14 @@ export class CommunicationsDispatcherWorker
         channel: 'telegram',
         result: failed ? (sent ? 'partial' : 'failed') : 'ok',
       });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'CommunicationsDispatcherWorker metrics',
+        this.logger,
+        'debug',
+      );
+    }
   }
 
   private async processPushTask(task: CommunicationTask) {
@@ -486,7 +504,14 @@ export class CommunicationsDispatcherWorker
         channel: 'push',
         result: failed ? (sent ? 'partial' : 'failed') : 'ok',
       });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'CommunicationsDispatcherWorker metrics',
+        this.logger,
+        'debug',
+      );
+    }
   }
 
   private async finishTask(

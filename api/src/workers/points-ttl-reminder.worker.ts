@@ -377,7 +377,13 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
         month: '2-digit',
         year: 'numeric',
       }).format(date);
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'points-ttl format burn date',
+        this.logger,
+        'debug',
+      );
       return date.toISOString().slice(0, 10);
     }
   }

@@ -23,6 +23,20 @@ type ImportResult = {
   errors?: Array<{ row: number; error: string }>;
 };
 
+type ImportJob = {
+  jobId: string;
+  status: "UPLOADED" | "VALIDATING" | "PROCESSING" | "COMPLETED" | "FAILED" | "CANCELED";
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  totalRows: number;
+  successRows: number;
+  failedRows: number;
+  skippedRows: number;
+  errorSummary?: Array<{ row: number; error: string }>;
+  stats?: ImportResult | null;
+};
+
 type TableRow = {
   col: string;
   name: string;
@@ -159,8 +173,10 @@ export default function ImportCustomersPage() {
   const [uploading, setUploading] = useState(false);
   const [updateExisting, setUpdateExisting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importJob, setImportJob] = useState<ImportJob | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pollTimerRef = useRef<number | null>(null);
 
   const handleDrag = (event: React.DragEvent) => {
     event.preventDefault();
@@ -209,6 +225,63 @@ export default function ImportCustomersPage() {
     }
   };
 
+  const stopPolling = () => {
+    if (pollTimerRef.current !== null) {
+      window.clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  };
+
+  const pollImportJob = async (jobId: string) => {
+    try {
+      const res = await fetch(`/api/portal/customers/import/${jobId}`);
+      if (!res.ok) {
+        const text = await res.text();
+        const message = readApiError(text) || "Не удалось получить статус импорта.";
+        setImportError(message);
+        return;
+      }
+      const job = (await res.json().catch(() => null)) as ImportJob | null;
+      if (!job) {
+        setImportError("Некорректный ответ сервера.");
+        return;
+      }
+      setImportJob(job);
+      if (job.status === "COMPLETED") {
+        stopPolling();
+        if (job.stats) {
+          setImportResult(job.stats);
+          const errorCount = job.stats.errors?.length ?? 0;
+          if (errorCount > 0) {
+            alert(`Импорт завершён с ошибками: ${errorCount}. Проверьте файл и повторите загрузку.`);
+          } else {
+            alert(
+              `Импорт завершён. Клиентов: ${job.stats.customersCreated} новых, ${job.stats.customersUpdated} обновлено. ` +
+                `Чеков добавлено: ${job.stats.receiptsImported}. Агрегатов обновлено: ${job.stats.statsUpdated}.`,
+            );
+            handleRemoveFile();
+          }
+        } else {
+          alert("Импорт завершён.");
+        }
+        setUploading(false);
+        return;
+      }
+      if (job.status === "FAILED" || job.status === "CANCELED") {
+        stopPolling();
+        const summary = job.errorSummary?.[0]?.error || "Импорт завершился ошибкой.";
+        setImportError(summary);
+        alert(summary);
+        setUploading(false);
+        return;
+      }
+      pollTimerRef.current = window.setTimeout(() => pollImportJob(jobId), 1500);
+    } catch {
+      setImportError("Ошибка соединения. Попробуйте ещё раз.");
+      setUploading(false);
+    }
+  };
+
   const handleUpload = async () => {
     if (!selectedFile) {
       alert("Выберите CSV или Excel файл для загрузки.");
@@ -217,7 +290,9 @@ export default function ImportCustomersPage() {
 
     setUploading(true);
     setImportResult(null);
+    setImportJob(null);
     setImportError(null);
+    stopPolling();
 
     const formData = new FormData();
     formData.append("file", selectedFile);
@@ -245,6 +320,13 @@ export default function ImportCustomersPage() {
         return;
       }
 
+      const jobPayload = payload as unknown as ImportJob;
+      if (jobPayload.jobId) {
+        setImportJob(jobPayload);
+        pollImportJob(jobPayload.jobId);
+        return;
+      }
+
       setImportResult(payload);
       const errorCount = payload.errors?.length ?? 0;
       if (errorCount > 0) {
@@ -261,7 +343,9 @@ export default function ImportCustomersPage() {
       setImportError(message);
       alert(message);
     } finally {
-      setUploading(false);
+      if (!pollTimerRef.current) {
+        setUploading(false);
+      }
     }
   };
 
@@ -386,6 +470,65 @@ export default function ImportCustomersPage() {
               <div className="text-sm text-red-700">
                 <span className="font-bold block mb-1">Ошибка импорта</span>
                 {importError}
+              </div>
+            </div>
+          )}
+
+          {importJob && (
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+              <h3 className="font-bold text-gray-900 mb-3">Статус импорта</h3>
+              <div className="text-sm text-gray-600 space-y-2">
+                <div>
+                  Статус:{" "}
+                  <span className="font-medium text-gray-900">
+                    {importJob.status === "UPLOADED" && "В очереди"}
+                    {importJob.status === "VALIDATING" && "Проверка файла"}
+                    {importJob.status === "PROCESSING" && "Обработка"}
+                    {importJob.status === "COMPLETED" && "Завершён"}
+                    {importJob.status === "FAILED" && "Ошибка"}
+                    {importJob.status === "CANCELED" && "Отменён"}
+                  </span>
+                </div>
+                <div>
+                  Обработано:{" "}
+                  <span className="font-medium text-gray-900">
+                    {Math.max(
+                      0,
+                      (importJob.successRows || 0) +
+                        (importJob.failedRows || 0) +
+                        (importJob.skippedRows || 0),
+                    )}
+                  </span>
+                  {importJob.totalRows > 0 && (
+                    <>
+                      {" "}
+                      из{" "}
+                      <span className="font-medium text-gray-900">
+                        {importJob.totalRows}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                  <div
+                    className="h-full bg-purple-500 transition-all"
+                    style={{
+                      width:
+                        importJob.totalRows > 0
+                          ? `${Math.min(
+                              100,
+                              Math.round(
+                                ((importJob.successRows +
+                                  importJob.failedRows +
+                                  importJob.skippedRows) /
+                                  importJob.totalRows) *
+                                  100,
+                              ),
+                            )}%`
+                          : "12%",
+                    }}
+                  />
+                </div>
               </div>
             </div>
           )}

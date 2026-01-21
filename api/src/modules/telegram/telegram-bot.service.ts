@@ -6,6 +6,7 @@ import { toLevelRule } from '../loyalty/utils/tier-defaults.util';
 import { getRulesRoot, getRulesSection } from '../../shared/rules-json.util';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { normalizePhoneE164 } from '../../shared/common/phone.util';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 interface BotConfig {
   token: string;
@@ -306,7 +307,14 @@ export class TelegramBotService {
           asString(payload?.description) ||
           asString(toRecord(payload?.result)?.description);
         if (description) return description;
-      } catch {}
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'TelegramBotService parse telegram error',
+          this.logger,
+          'debug',
+        );
+      }
     }
     if (trimmed) return trimmed;
     if (rawMessage) return rawMessage;
@@ -498,7 +506,14 @@ export class TelegramBotService {
                 where: { id: profile.customerId },
                 data: { phone },
               });
-            } catch {}
+            } catch (err) {
+              logIgnoredError(
+                err,
+                'TelegramBotService update phone',
+                this.logger,
+                'debug',
+              );
+            }
             this.logger.log(
               `Сохранён телефон для customer=${profile.customerId} (merchant=${merchantId})`,
             );
@@ -1133,7 +1148,14 @@ ${supportLine}
               where: { id: existingByPhone.id },
               data: { phone: normalized },
             })
-            .catch(() => {});
+            .catch((err) =>
+              logIgnoredError(
+                err,
+                'TelegramBotService update phone',
+                this.logger,
+                'debug',
+              ),
+            );
         }
       }
       if (existingByPhone) return { customerId: existingByPhone.id };
@@ -1158,7 +1180,14 @@ ${supportLine}
         .create({
           data: { merchantId, tgId, customerId: created.id },
         })
-        .catch(() => {});
+        .catch((err) =>
+          logIgnoredError(
+            err,
+            'TelegramBotService create customer telegram',
+            this.logger,
+            'debug',
+          ),
+        );
     }
 
     return { customerId: created.id };
@@ -1191,7 +1220,14 @@ ${supportLine}
             where: { id: existing.id },
             data: { phone: normalized },
           })
-          .catch(() => {});
+          .catch((err) =>
+            logIgnoredError(
+              err,
+              'TelegramBotService update phone',
+              this.logger,
+              'debug',
+            ),
+          );
       }
     }
     return existing;
@@ -1395,7 +1431,8 @@ function parseJson(raw: string): unknown {
   if (!raw) return null;
   try {
     return JSON.parse(raw) as unknown;
-  } catch {
+  } catch (err) {
+    logIgnoredError(err, 'telegram-bot parseJson', undefined, 'debug');
     return null;
   }
 }

@@ -1,6 +1,8 @@
 import { ConfigService } from '@nestjs/config';
 import { AnalyticsService } from './analytics.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
+import { AnalyticsCacheService } from './analytics-cache.service';
+import { AppConfigService } from '../../core/config/app-config.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -36,6 +38,8 @@ describe('AnalyticsService — customer portrait', () => {
     const service = new AnalyticsService(
       asPrismaService(prisma),
       {} as ConfigService,
+      new AnalyticsCacheService(new AppConfigService()),
+      undefined,
     );
 
     const period = {

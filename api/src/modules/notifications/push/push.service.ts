@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { TelegramBotService } from '../../telegram/telegram-bot.service';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 export interface SendPushDto {
   merchantId: string;
@@ -246,7 +247,8 @@ export class PushService {
           },
         );
         sent += 1;
-      } catch {
+      } catch (err) {
+        logIgnoredError(err, 'PushService send', undefined, 'debug');
         failed += 1;
       }
     }

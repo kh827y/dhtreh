@@ -12,8 +12,10 @@ import { Throttle } from '@nestjs/throttler';
 import { Prisma, WalletType } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 import { CashierGuard } from '../../../core/guards/cashier.guard';
 import { SubscriptionGuard } from '../../../core/guards/subscription.guard';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import {
   CustomerPhoneStatusDto,
   CustomerProfileDto,
@@ -30,8 +32,12 @@ import {
 @UseGuards(CashierGuard, SubscriptionGuard)
 @Controller('loyalty')
 export class LoyaltyProfileController extends LoyaltyControllerBase {
-  constructor(prisma: PrismaService, cache: LookupCacheService) {
-    super(prisma, cache);
+  constructor(
+    prisma: PrismaService,
+    cache: LookupCacheService,
+    config: AppConfigService,
+  ) {
+    super(prisma, cache, config);
   }
 
   // Telegram miniapp auth: принимает merchantId + initData, валидирует токеном бота мерчанта и возвращает customerId
@@ -101,7 +107,14 @@ export class LoyaltyProfileController extends LoyaltyControllerBase {
         .create({
           data: { merchantId, tgId, customerId: customer.id },
         })
-        .catch(() => {});
+        .catch((err) =>
+          logIgnoredError(
+            err,
+            'LoyaltyProfileController create customer telegram',
+            undefined,
+            'debug',
+          ),
+        );
     }
 
     const flags = await this.fetchCustomerProfileFlags(customer.id);

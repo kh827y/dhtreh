@@ -14,6 +14,7 @@ import { PrismaService } from '../../../core/prisma/prisma.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
 import { LoyaltyService } from '../../loyalty/services/loyalty.service';
 import { planRevoke, planUnconsume } from '../../loyalty/utils/lots.util';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 export interface OperationsLogFilters {
   from?: string | Date;
@@ -76,11 +77,10 @@ export interface OperationDetailsDto {
 
 @Injectable()
 export class OperationsLogService {
-  private readonly config = new AppConfigService();
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly loyalty: LoyaltyService,
+    private readonly config: AppConfigService,
   ) {}
 
   private normalizeFlag(input: unknown): boolean {
@@ -1603,7 +1603,14 @@ export class OperationsLogService {
       if (allowEarnRedeemSameReceipt !== undefined) {
         allowSame = this.normalizeFlag(allowEarnRedeemSameReceipt);
       }
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'OperationsLogService same receipt rules',
+        undefined,
+        'debug',
+      );
+    }
     return allowSame;
   }
 }

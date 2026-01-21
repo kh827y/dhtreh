@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Controller,
   Get,
   Param,
@@ -15,26 +14,20 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { OperationsLogService, type OperationsLogFilters } from '../services/operations-log.service';
-import { MerchantsService } from '../../merchants/merchants.service';
 import {
   LedgerEntryDto,
   ReceiptDto,
 } from '../../merchants/dto';
 import { TransactionItemDto } from '../../loyalty/dto/dto';
-import { PortalControllerHelpers } from './portal.controller-helpers';
 import type { PortalRequest } from './portal.controller-helpers';
+import { PortalOperationsUseCase } from '../use-cases/portal-operations.use-case';
 
 @ApiTags('portal')
 @ApiExtraModels(TransactionItemDto)
 @Controller('portal')
 @UseGuards(PortalGuard)
 export class PortalOperationsController {
-  constructor(
-    private readonly operations: OperationsLogService,
-    private readonly merchants: MerchantsService,
-    private readonly helpers: PortalControllerHelpers,
-  ) {}
+  constructor(private readonly useCase: PortalOperationsUseCase) {}
 
   // ===== Operations journal =====
   @Get('operations/log')
@@ -66,31 +59,22 @@ export class PortalOperationsController {
     @Query('offset') offsetStr?: string,
     @Query('before') before?: string,
   ) {
-    const offset = this.helpers.getTimezoneOffsetMinutes(req);
-    const fromDate = from
-      ? this.helpers.parseLocalDate(from, offset, false)
-      : undefined;
-    const toDate = to ? this.helpers.parseLocalDate(to, offset, true) : undefined;
-    const beforeDate = before ? new Date(before) : undefined;
-    if (before && Number.isNaN(beforeDate?.getTime() ?? NaN)) {
-      throw new BadRequestException('before is invalid');
-    }
-    const filters: OperationsLogFilters = {
-      from: fromDate || undefined,
-      to: toDate || undefined,
-      before: beforeDate || undefined,
-      staffId: staffId || undefined,
-      staffStatus: this.helpers.normalizeStaffStatus(staffStatus),
-      outletId: outletId || undefined,
-      deviceId: deviceId || undefined,
-      direction: this.helpers.normalizeDirection(direction),
-      receiptNumber: receiptNumber || undefined,
-      operationType: operationType || undefined,
-      carrier: carrier || undefined,
-      limit: limitStr ? parseInt(limitStr, 10) : undefined,
-      offset: offsetStr ? parseInt(offsetStr, 10) : undefined,
-    };
-    return this.operations.list(this.helpers.getMerchantId(req), filters);
+    return this.useCase.getOperationsLog(
+      req,
+      from,
+      to,
+      staffId,
+      staffStatus,
+      outletId,
+      deviceId,
+      direction,
+      receiptNumber,
+      operationType,
+      carrier,
+      limitStr,
+      offsetStr,
+      before,
+    );
   }
 
   @Get('operations/log/:receiptId')
@@ -99,7 +83,7 @@ export class PortalOperationsController {
     @Req() req: PortalRequest,
     @Param('receiptId') receiptId: string,
   ) {
-    return this.operations.getDetails(this.helpers.getMerchantId(req), receiptId);
+    return this.useCase.getOperationDetails(req, receiptId);
   }
 
   @Post('operations/log/:receiptId/cancel')
@@ -108,9 +92,7 @@ export class PortalOperationsController {
     @Req() req: PortalRequest,
     @Param('receiptId') receiptId: string,
   ) {
-    const merchantId = this.helpers.getMerchantId(req);
-    const staffId: string | null = req.portalStaffId ?? null;
-    return this.operations.cancelOperation(merchantId, receiptId, staffId);
+    return this.useCase.cancelOperation(req, receiptId);
   }
 
   // Transactions & Receipts (read-only)
@@ -132,23 +114,17 @@ export class PortalOperationsController {
     @Query('outletId') outletId?: string,
     @Query('staffId') staffId?: string,
   ) {
-    const id = this.helpers.getMerchantId(req);
-    const limit = limitStr
-      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
-      : 50;
-    const before = this.helpers.parseDateParam(req, beforeStr, true);
-    const from = this.helpers.parseDateParam(req, fromStr, false);
-    const to = this.helpers.parseDateParam(req, toStr, true);
-    return this.merchants.listTransactions(id, {
-      limit,
-      before,
-      from,
-      to,
+    return this.useCase.listTransactions(
+      req,
+      limitStr,
+      beforeStr,
+      fromStr,
+      toStr,
       type,
       customerId,
       outletId,
       staffId,
-    });
+    );
   }
 
   @Get('receipts')
@@ -160,17 +136,13 @@ export class PortalOperationsController {
     @Query('orderId') orderId?: string,
     @Query('customerId') customerId?: string,
   ) {
-    const id = this.helpers.getMerchantId(req);
-    const limit = limitStr
-      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
-      : 50;
-    const before = this.helpers.parseDateParam(req, beforeStr, true);
-    return this.merchants.listReceipts(id, {
-      limit,
-      before,
+    return this.useCase.listReceipts(
+      req,
+      limitStr,
+      beforeStr,
       orderId,
       customerId,
-    });
+    );
   }
 
   @Get('ledger')
@@ -184,20 +156,14 @@ export class PortalOperationsController {
     @Query('customerId') customerId?: string,
     @Query('type') type?: string,
   ) {
-    const id = this.helpers.getMerchantId(req);
-    const limit = limitStr
-      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500)
-      : 50;
-    const before = this.helpers.parseDateParam(req, beforeStr, true);
-    const from = this.helpers.parseDateParam(req, fromStr, false);
-    const to = this.helpers.parseDateParam(req, toStr, true);
-    return this.merchants.listLedger(id, {
-      limit,
-      before,
+    return this.useCase.listLedger(
+      req,
+      limitStr,
+      beforeStr,
+      fromStr,
+      toStr,
       customerId,
-      from,
-      to,
       type,
-    });
+    );
   }
 }

@@ -17,7 +17,7 @@ const formatError = (err: unknown): string => {
   if (err == null) return 'unknown error';
   try {
     return JSON.stringify(err);
-  } catch {
+  } catch (_err) {
     return 'unknown error';
   }
 };
@@ -34,7 +34,7 @@ const logError = (
     try {
       warn.call(logger, line);
       return;
-    } catch {
+    } catch (_err) {
       // fall through to default logger
     }
   }

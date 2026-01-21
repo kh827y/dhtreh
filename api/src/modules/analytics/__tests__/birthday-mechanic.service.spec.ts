@@ -1,6 +1,8 @@
 import { AnalyticsService, DashboardPeriod } from '../analytics.service';
+import { AnalyticsCacheService } from '../analytics-cache.service';
 import type { ConfigService } from '@nestjs/config';
 import type { PrismaService } from '../../../core/prisma/prisma.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -80,6 +82,8 @@ describe('AnalyticsService.getBirthdayMechanicMetrics', () => {
     service = new AnalyticsService(
       asPrismaService(prisma),
       asConfigService(config),
+      new AnalyticsCacheService(new AppConfigService()),
+      undefined,
     );
   });
 

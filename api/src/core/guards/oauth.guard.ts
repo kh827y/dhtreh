@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { AppConfigService } from '../config/app-config.service';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 type JWTPayload = Record<string, unknown>;
 
@@ -67,7 +68,8 @@ export class OAuthGuard implements CanActivate {
       } else {
         return true;
       }
-    } catch {
+    } catch (err) {
+      logIgnoredError(err, 'OAuthGuard verify', undefined, 'debug');
       throw new UnauthorizedException('Invalid OAuth token');
     }
 

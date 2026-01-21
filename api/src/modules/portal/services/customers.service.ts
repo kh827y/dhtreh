@@ -18,6 +18,7 @@ import { ensureBaseTier } from '../../loyalty/utils/tier-defaults.util';
 import { CustomerAudiencesService } from '../../customer-audiences/customer-audiences.service';
 import { isSystemAllAudience } from '../../customer-audiences/audience.utils';
 import { fetchReceiptAggregates } from '../../../shared/common/receipt-aggregates.util';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import { getRulesRoot } from '../../../shared/rules-json.util';
 import { AppConfigService } from '../../../core/config/app-config.service';
 import {
@@ -215,11 +216,11 @@ export class PortalCustomersService {
   ]);
 
   private readonly logger = new Logger(PortalCustomersService.name);
-  private readonly config = new AppConfigService();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly audiences: CustomerAudiencesService,
+    private readonly config: AppConfigService,
   ) {}
 
   private normalizeFlag(input: unknown): boolean {
@@ -706,7 +707,13 @@ export class PortalCustomersService {
     if (typeof input === 'string') {
       try {
         return normalize(JSON.parse(input) as unknown);
-      } catch {
+      } catch (err) {
+        logIgnoredError(
+          err,
+          'PortalCustomersService parse JSON payload',
+          this.logger,
+          'debug',
+        );
         return null;
       }
     }
@@ -1091,7 +1098,14 @@ export class PortalCustomersService {
       ) {
         allowSame = this.normalizeFlag(rules.allowEarnRedeemSameReceipt);
       }
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'PortalCustomersService same receipt rules',
+        this.logger,
+        'debug',
+      );
+    }
     return allowSame;
   }
 
@@ -1813,7 +1827,13 @@ export class PortalCustomersService {
         merchantId,
         customerId,
       );
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'PortalCustomersService resolve earnRateBps',
+        this.logger,
+        'debug',
+      );
       baseDto.earnRateBps = null;
     }
 
@@ -2186,7 +2206,14 @@ export class PortalCustomersService {
               where: { id: existingPhone.id },
               data: { phone },
             })
-            .catch(() => {});
+            .catch((err) =>
+              logIgnoredError(
+                err,
+                'PortalCustomersService update phone',
+                this.logger,
+                'debug',
+              ),
+            );
         }
         return this.get(merchantId, existingPhone.id);
       }

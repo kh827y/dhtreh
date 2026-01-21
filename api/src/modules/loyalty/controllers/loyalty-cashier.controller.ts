@@ -18,11 +18,13 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import type { Request, Response } from 'express';
 import { LoyaltyService } from '../services/loyalty.service';
 import { MerchantsService } from '../../merchants/merchants.service';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 import { CashierGuard } from '../../../core/guards/cashier.guard';
 import {
   AllowInactiveSubscription,
@@ -46,8 +48,9 @@ export class LoyaltyCashierController extends LoyaltyControllerBase {
     prisma: PrismaService,
     private readonly merchants: MerchantsService,
     cache: LookupCacheService,
+    config: AppConfigService,
   ) {
-    super(prisma, cache);
+    super(prisma, cache, config);
   }
 
   // ===== Cashier Auth (public) =====
@@ -366,7 +369,14 @@ export class LoyaltyCashierController extends LoyaltyControllerBase {
       const balanceResp = await this.service.balance(merchantId, customer.id);
       balance =
         typeof balanceResp?.balance === 'number' ? balanceResp.balance : null;
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyCashierController balance',
+        undefined,
+        'debug',
+      );
+    }
     try {
       const outletId =
         typeof req?.cashierSession?.outletId === 'string'
@@ -385,7 +395,14 @@ export class LoyaltyCashierController extends LoyaltyControllerBase {
         typeof rates?.tierMinPayment === 'number'
           ? Math.max(0, Math.floor(Number(rates.tierMinPayment)))
           : null;
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'LoyaltyCashierController rates',
+        undefined,
+        'debug',
+      );
+    }
     return {
       customerId: customer.id,
       name: customerName,

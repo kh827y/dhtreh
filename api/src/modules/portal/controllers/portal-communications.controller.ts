@@ -9,29 +9,18 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiExtraModels, ApiOkResponse, ApiTags } from '@nestjs/swagger';
-import { Prisma, CommunicationChannel } from '@prisma/client';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import {
-  NotificationsService,
-  type BroadcastArgs,
-} from '../../notifications/notifications.service';
-import { CommunicationsService } from '../../communications/communications.service';
-import { PortalTelegramNotifyService } from '../services/telegram-notify.service';
-import { PortalControllerHelpers } from './portal.controller-helpers';
+import { type BroadcastArgs } from '../../notifications/notifications.service';
 import type { PortalRequest } from './portal.controller-helpers';
 import { TransactionItemDto } from '../../loyalty/dto/dto';
+import { PortalCommunicationsUseCase } from '../use-cases/portal-communications.use-case';
 
 @ApiTags('portal')
 @ApiExtraModels(TransactionItemDto)
 @Controller('portal')
 @UseGuards(PortalGuard)
 export class PortalCommunicationsController {
-  constructor(
-    private readonly notifications: NotificationsService,
-    private readonly communications: CommunicationsService,
-    private readonly telegramNotify: PortalTelegramNotifyService,
-    private readonly helpers: PortalControllerHelpers,
-  ) {}
+  constructor(private readonly useCase: PortalCommunicationsUseCase) {}
 
   // Notifications broadcast (enqueue or dry-run)
   @Post('notifications/broadcast')
@@ -49,8 +38,7 @@ export class PortalCommunicationsController {
     @Req() req: PortalRequest,
     @Body() body: Omit<BroadcastArgs, 'merchantId'>,
   ) {
-    const merchantId = this.helpers.getMerchantId(req);
-    return this.notifications.broadcast({ merchantId, ...body });
+    return this.useCase.notificationsBroadcast(req, body);
   }
 
   // ===== Push campaigns =====
@@ -62,14 +50,7 @@ export class PortalCommunicationsController {
     },
   })
   listPushCampaigns(@Req() req: PortalRequest, @Query('scope') scope?: string) {
-    const merchantId = this.helpers.getMerchantId(req);
-    return this.communications
-      .listChannelTasks(
-        merchantId,
-        CommunicationChannel.PUSH,
-        this.helpers.normalizePushScope(scope),
-      )
-      .then((tasks) => tasks.map((task) => this.helpers.mapPushTask(task)));
+    return this.useCase.listPushCampaigns(req, scope);
   }
 
   @Post('push-campaigns')
@@ -87,31 +68,7 @@ export class PortalCommunicationsController {
       timezone?: string;
     },
   ) {
-    const merchantId = this.helpers.getMerchantId(req);
-    const scheduledAt = body?.scheduledAt ?? body?.startAt ?? null;
-    const audienceId = body?.audienceId ? String(body.audienceId) : undefined;
-    const audienceCode =
-      typeof body?.audience === 'string' && body.audience.trim()
-        ? body.audience.trim()
-        : undefined;
-    const audienceName =
-      typeof body?.audienceName === 'string' && body.audienceName.trim()
-        ? body.audienceName.trim()
-        : (audienceCode ?? undefined);
-    return this.communications
-      .createTask(merchantId, {
-        channel: CommunicationChannel.PUSH,
-        scheduledAt,
-        timezone: body?.timezone ?? null,
-        audienceId,
-        audienceCode,
-        audienceName,
-        payload: {
-          text: body?.text ?? '',
-          audience: audienceCode ?? audienceId ?? null,
-        },
-      })
-      .then((task) => this.helpers.mapPushTask(task));
+    return this.useCase.createPushCampaign(req, body);
   }
 
   @Post('push-campaigns/:campaignId/cancel')
@@ -120,10 +77,7 @@ export class PortalCommunicationsController {
     @Req() req: PortalRequest,
     @Param('campaignId') campaignId: string,
   ) {
-    return this.communications.deleteTask(
-      this.helpers.getMerchantId(req),
-      campaignId,
-    );
+    return this.useCase.cancelPushCampaign(req, campaignId);
   }
 
   @Post('push-campaigns/:campaignId/archive')
@@ -132,10 +86,7 @@ export class PortalCommunicationsController {
     @Req() req: PortalRequest,
     @Param('campaignId') campaignId: string,
   ) {
-    return this.communications.deleteTask(
-      this.helpers.getMerchantId(req),
-      campaignId,
-    );
+    return this.useCase.archivePushCampaign(req, campaignId);
   }
 
   @Post('push-campaigns/:campaignId/duplicate')
@@ -145,12 +96,7 @@ export class PortalCommunicationsController {
     @Param('campaignId') campaignId: string,
     @Body() body: { scheduledAt?: string; startAt?: string },
   ) {
-    const merchantId = this.helpers.getMerchantId(req);
-    return this.communications
-      .duplicateTask(merchantId, campaignId, {
-        scheduledAt: body?.scheduledAt ?? body?.startAt ?? null,
-      })
-      .then((task) => this.helpers.mapPushTask(task));
+    return this.useCase.duplicatePushCampaign(req, campaignId, body);
   }
 
   // ===== Telegram campaigns =====
@@ -165,14 +111,7 @@ export class PortalCommunicationsController {
     @Req() req: PortalRequest,
     @Query('scope') scope?: string,
   ) {
-    const merchantId = this.helpers.getMerchantId(req);
-    return this.communications
-      .listChannelTasks(
-        merchantId,
-        CommunicationChannel.TELEGRAM,
-        this.helpers.normalizeTelegramScope(scope),
-      )
-      .then((tasks) => tasks.map((task) => this.helpers.mapTelegramTask(task)));
+    return this.useCase.listTelegramCampaigns(req, scope);
   }
 
   @Post('telegram-campaigns')
@@ -190,24 +129,7 @@ export class PortalCommunicationsController {
       timezone?: string;
     },
   ) {
-    const merchantId = this.helpers.getMerchantId(req);
-    return this.communications
-      .createTask(merchantId, {
-        channel: CommunicationChannel.TELEGRAM,
-        audienceId: body?.audienceId ?? undefined,
-        audienceName: body?.audienceName ?? undefined,
-        audienceSnapshot: {
-          audienceId: body?.audienceId ?? null,
-          audienceName: body?.audienceName ?? null,
-        },
-        scheduledAt: body?.scheduledAt ?? body?.startAt ?? null,
-        timezone: body?.timezone ?? null,
-        payload: {
-          text: body?.text ?? '',
-        },
-        media: (body?.media ?? null) as Prisma.InputJsonValue | null,
-      })
-      .then((task) => this.helpers.mapTelegramTask(task));
+    return this.useCase.createTelegramCampaign(req, body);
   }
 
   @Post('telegram-campaigns/:campaignId/cancel')
@@ -216,10 +138,7 @@ export class PortalCommunicationsController {
     @Req() req: PortalRequest,
     @Param('campaignId') campaignId: string,
   ) {
-    return this.communications.deleteTask(
-      this.helpers.getMerchantId(req),
-      campaignId,
-    );
+    return this.useCase.cancelTelegramCampaign(req, campaignId);
   }
 
   @Post('telegram-campaigns/:campaignId/archive')
@@ -228,10 +147,7 @@ export class PortalCommunicationsController {
     @Req() req: PortalRequest,
     @Param('campaignId') campaignId: string,
   ) {
-    return this.communications.deleteTask(
-      this.helpers.getMerchantId(req),
-      campaignId,
-    );
+    return this.useCase.archiveTelegramCampaign(req, campaignId);
   }
 
   @Post('telegram-campaigns/:campaignId/duplicate')
@@ -241,12 +157,7 @@ export class PortalCommunicationsController {
     @Param('campaignId') campaignId: string,
     @Body() body: { scheduledAt?: string; startAt?: string },
   ) {
-    const merchantId = this.helpers.getMerchantId(req);
-    return this.communications
-      .duplicateTask(merchantId, campaignId, {
-        scheduledAt: body?.scheduledAt ?? body?.startAt ?? null,
-      })
-      .then((task) => this.helpers.mapTelegramTask(task));
+    return this.useCase.duplicateTelegramCampaign(req, campaignId, body);
   }
 
   // ===== Telegram staff notifications (global bot) =====
@@ -262,7 +173,7 @@ export class PortalCommunicationsController {
     },
   })
   telegramNotifyState(@Req() req: PortalRequest) {
-    return this.telegramNotify.getState(this.helpers.getMerchantId(req));
+    return this.useCase.telegramNotifyState(req);
   }
 
   @Post('settings/telegram-notify/invite')
@@ -281,12 +192,7 @@ export class PortalCommunicationsController {
     @Req() req: PortalRequest,
     @Body() body: { forceNew?: boolean },
   ) {
-    const actor = this.helpers.resolveTelegramActor(req);
-    const staffId = actor.kind === 'STAFF' ? actor.staffId : null;
-    return this.telegramNotify.issueInvite(this.helpers.getMerchantId(req), {
-      forceNew: !!body?.forceNew,
-      staffId,
-    });
+    return this.useCase.telegramNotifyInvite(req, body);
   }
 
   @Get('settings/telegram-notify/subscribers')
@@ -297,7 +203,7 @@ export class PortalCommunicationsController {
     },
   })
   telegramNotifySubscribers(@Req() req: PortalRequest) {
-    return this.telegramNotify.listSubscribers(this.helpers.getMerchantId(req));
+    return this.useCase.telegramNotifySubscribers(req);
   }
 
   @Get('settings/telegram-notify/preferences')
@@ -314,8 +220,7 @@ export class PortalCommunicationsController {
     },
   })
   telegramNotifyPreferences(@Req() req: PortalRequest) {
-    const actor = this.helpers.resolveTelegramActor(req);
-    return this.telegramNotify.getPreferences(this.helpers.getMerchantId(req), actor);
+    return this.useCase.telegramNotifyPreferences(req);
   }
 
   @Post('settings/telegram-notify/preferences')
@@ -341,18 +246,7 @@ export class PortalCommunicationsController {
       notifyFraud?: boolean;
     },
   ) {
-    const actor = this.helpers.resolveTelegramActor(req);
-    return this.telegramNotify.updatePreferences(
-      this.helpers.getMerchantId(req),
-      actor,
-      {
-        notifyOrders: body?.notifyOrders,
-        notifyReviews: body?.notifyReviews,
-        notifyReviewThreshold: body?.notifyReviewThreshold,
-        notifyDailyDigest: body?.notifyDailyDigest,
-        notifyFraud: body?.notifyFraud,
-      },
-    );
+    return this.useCase.telegramNotifyUpdatePreferences(req, body);
   }
 
   @Post('settings/telegram-notify/subscribers/:id/deactivate')
@@ -360,9 +254,6 @@ export class PortalCommunicationsController {
     schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
   })
   telegramNotifyDeactivate(@Req() req: PortalRequest, @Param('id') id: string) {
-    return this.telegramNotify.deactivateSubscriber(
-      this.helpers.getMerchantId(req),
-      String(id || ''),
-    );
+    return this.useCase.telegramNotifyDeactivate(req, id);
   }
 }

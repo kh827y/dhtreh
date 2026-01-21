@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 @Injectable()
 export class AppConfigService {
@@ -47,7 +48,8 @@ export class AppConfigService {
     if (raw === undefined) return fallback;
     try {
       return JSON.parse(raw) as T;
-    } catch {
+    } catch (err) {
+      logIgnoredError(err, `AppConfigService getJson(${key})`, undefined, 'debug');
       return fallback;
     }
   }

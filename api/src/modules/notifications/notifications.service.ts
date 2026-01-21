@@ -7,6 +7,7 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { MetricsService } from '../../core/metrics/metrics.service';
 import { isSystemAllAudience } from '../customer-audiences/audience.utils';
 import { Prisma } from '@prisma/client';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 export type BroadcastArgs = {
   merchantId: string;
@@ -32,7 +33,8 @@ export class NotificationsService {
       const normalized = JSON.parse(JSON.stringify(value)) as unknown;
       if (normalized === null) return Prisma.JsonNull;
       return normalized as Prisma.InputJsonValue;
-    } catch {
+    } catch (err) {
+      logIgnoredError(err, 'NotificationsService toJsonValue', undefined, 'debug');
       return Prisma.JsonNull;
     }
   }
@@ -63,14 +65,27 @@ export class NotificationsService {
       await this.prisma.eventOutbox.create({
         data: { merchantId, eventType: 'notify.broadcast', payload },
       });
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'NotificationsService enqueue broadcast',
+        undefined,
+        'debug',
+      );
       throw new InternalServerErrorException(
         'Не удалось поставить рассылку в очередь',
       );
     }
     try {
       this.metrics.inc('notifications_enqueued_total', { type: channel });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'NotificationsService metrics',
+        undefined,
+        'debug',
+      );
+    }
     return { ok: true };
   }
 
@@ -98,14 +113,27 @@ export class NotificationsService {
       await this.prisma.eventOutbox.create({
         data: { merchantId, eventType: 'notify.test', payload },
       });
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'NotificationsService enqueue test',
+        undefined,
+        'debug',
+      );
       throw new InternalServerErrorException(
         'Не удалось поставить тест в очередь',
       );
     }
     try {
       this.metrics.inc('notifications_enqueued_total', { type: channel });
-    } catch {}
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'NotificationsService metrics',
+        undefined,
+        'debug',
+      );
+    }
     return { ok: true };
   }
 
@@ -151,7 +179,14 @@ export class NotificationsService {
             emailCount || granted,
             Math.max(emailCount, granted),
           );
-        } catch {}
+        } catch (err) {
+          logIgnoredError(
+            err,
+            'NotificationsService consent count',
+            undefined,
+            'debug',
+          );
+        }
       }
       if (channel === 'PUSH' || channel === 'ALL') {
         // Distinct customers with active devices
@@ -166,7 +201,13 @@ export class NotificationsService {
       if (channel === 'EMAIL') return emailCount;
       if (channel === 'PUSH') return pushCount;
       return 0;
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'NotificationsService estimate recipients',
+        undefined,
+        'debug',
+      );
       return 0;
     }
   }

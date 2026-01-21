@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { logIgnoredError } from './logging/ignore-error.util';
 
 // Simple scrypt-based password hashing
 // Format: scrypt$N$r$p$saltBase64$hashBase64
@@ -26,7 +27,8 @@ export function verifyPassword(password: string, stored: string): boolean {
       p,
     });
     return crypto.timingSafeEqual(expected, Buffer.from(hash));
-  } catch {
+  } catch (err) {
+    logIgnoredError(err, 'verifyPassword failed', undefined, 'debug');
     return false;
   }
 }

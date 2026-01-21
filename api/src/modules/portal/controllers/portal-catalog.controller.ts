@@ -12,7 +12,6 @@ import {
 } from '@nestjs/common';
 import { ApiExtraModels, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { PortalCatalogService } from '../services/catalog.service';
 import {
   CategoryDto,
   CreateCategoryDto,
@@ -30,28 +29,23 @@ import {
   UpdatePortalOutletDto,
   ImportCatalogDto,
 } from '../dto/catalog.dto';
-import { MerchantsService } from '../../merchants/merchants.service';
 import { UpdateOutletStatusDto } from '../../merchants/dto';
-import { PortalControllerHelpers } from './portal.controller-helpers';
 import type { PortalRequest } from './portal.controller-helpers';
 import { TransactionItemDto } from '../../loyalty/dto/dto';
+import { PortalCatalogUseCase } from '../use-cases/portal-catalog.use-case';
 
 @ApiTags('portal')
 @ApiExtraModels(TransactionItemDto)
 @Controller('portal')
 @UseGuards(PortalGuard)
 export class PortalCatalogController {
-  constructor(
-    private readonly catalog: PortalCatalogService,
-    private readonly merchants: MerchantsService,
-    private readonly helpers: PortalControllerHelpers,
-  ) {}
+  constructor(private readonly useCase: PortalCatalogUseCase) {}
 
   // Catalog — Categories
   @Get('catalog/categories')
   @ApiOkResponse({ type: CategoryDto, isArray: true })
   listCatalogCategories(@Req() req: PortalRequest) {
-    return this.catalog.listCategories(this.helpers.getMerchantId(req));
+    return this.useCase.listCatalogCategories(req);
   }
 
   @Post('catalog/categories')
@@ -60,7 +54,7 @@ export class PortalCatalogController {
     @Req() req: PortalRequest,
     @Body() dto: CreateCategoryDto,
   ) {
-    return this.catalog.createCategory(this.helpers.getMerchantId(req), dto);
+    return this.useCase.createCatalogCategory(req, dto);
   }
 
   @Put('catalog/categories/:categoryId')
@@ -70,11 +64,7 @@ export class PortalCatalogController {
     @Param('categoryId') categoryId: string,
     @Body() dto: UpdateCategoryDto,
   ) {
-    return this.catalog.updateCategory(
-      this.helpers.getMerchantId(req),
-      categoryId,
-      dto,
-    );
+    return this.useCase.updateCatalogCategory(req, categoryId, dto);
   }
 
   @Post('catalog/categories/reorder')
@@ -88,7 +78,7 @@ export class PortalCatalogController {
     @Req() req: PortalRequest,
     @Body() dto: ReorderCategoriesDto,
   ) {
-    return this.catalog.reorderCategories(this.helpers.getMerchantId(req), dto);
+    return this.useCase.reorderCatalogCategories(req, dto);
   }
 
   @Delete('catalog/categories/:categoryId')
@@ -99,7 +89,7 @@ export class PortalCatalogController {
     @Req() req: PortalRequest,
     @Param('categoryId') categoryId: string,
   ) {
-    return this.catalog.deleteCategory(this.helpers.getMerchantId(req), categoryId);
+    return this.useCase.deleteCatalogCategory(req, categoryId);
   }
 
   // Catalog — Products
@@ -109,7 +99,7 @@ export class PortalCatalogController {
     @Req() req: PortalRequest,
     @Query() query: ListProductsQueryDto,
   ) {
-    return this.catalog.listProducts(this.helpers.getMerchantId(req), query);
+    return this.useCase.listCatalogProducts(req, query);
   }
 
   @Get('catalog/products/:productId')
@@ -118,7 +108,7 @@ export class PortalCatalogController {
     @Req() req: PortalRequest,
     @Param('productId') productId: string,
   ) {
-    return this.catalog.getProduct(this.helpers.getMerchantId(req), productId);
+    return this.useCase.getCatalogProduct(req, productId);
   }
 
   @Post('catalog/products')
@@ -127,7 +117,7 @@ export class PortalCatalogController {
     @Req() req: PortalRequest,
     @Body() dto: CreateProductDto,
   ) {
-    return this.catalog.createProduct(this.helpers.getMerchantId(req), dto);
+    return this.useCase.createCatalogProduct(req, dto);
   }
 
   @Put('catalog/products/:productId')
@@ -137,11 +127,7 @@ export class PortalCatalogController {
     @Param('productId') productId: string,
     @Body() dto: UpdateProductDto,
   ) {
-    return this.catalog.updateProduct(
-      this.helpers.getMerchantId(req),
-      productId,
-      dto,
-    );
+    return this.useCase.updateCatalogProduct(req, productId, dto);
   }
 
   @Delete('catalog/products/:productId')
@@ -152,7 +138,7 @@ export class PortalCatalogController {
     @Req() req: PortalRequest,
     @Param('productId') productId: string,
   ) {
-    return this.catalog.deleteProduct(this.helpers.getMerchantId(req), productId);
+    return this.useCase.deleteCatalogProduct(req, productId);
   }
 
   @Post('catalog/products/bulk')
@@ -166,25 +152,17 @@ export class PortalCatalogController {
     @Req() req: PortalRequest,
     @Body() dto: ProductBulkActionDto,
   ) {
-    return this.catalog.bulkProductAction(this.helpers.getMerchantId(req), dto);
+    return this.useCase.bulkCatalogProducts(req, dto);
   }
 
   @Post('catalog/import/commerce-ml')
   importCommerceMl(@Req() req: PortalRequest, @Body() dto: ImportCatalogDto) {
-    return this.catalog.importCatalog(
-      this.helpers.getMerchantId(req),
-      'COMMERCE_ML',
-      dto,
-    );
+    return this.useCase.importCommerceMl(req, dto);
   }
 
   @Post('catalog/import/moysklad')
   importMoySklad(@Req() req: PortalRequest, @Body() dto: ImportCatalogDto) {
-    return this.catalog.importCatalog(
-      this.helpers.getMerchantId(req),
-      'MOYSKLAD',
-      dto,
-    );
+    return this.useCase.importMoySklad(req, dto);
   }
 
   // Outlets
@@ -195,31 +173,19 @@ export class PortalCatalogController {
     @Query('status') status?: 'active' | 'inactive' | 'all',
     @Query('search') search?: string,
   ) {
-    const rawStatus =
-      typeof status === 'string' ? status.trim().toLowerCase() : '';
-    const normalized: 'active' | 'inactive' | 'all' =
-      rawStatus === 'active'
-        ? 'active'
-        : rawStatus === 'inactive'
-          ? 'inactive'
-          : 'all';
-    return this.catalog.listOutlets(
-      this.helpers.getMerchantId(req),
-      normalized,
-      search,
-    );
+    return this.useCase.listOutlets(req, status, search);
   }
 
   @Get('outlets/:outletId')
   @ApiOkResponse({ type: PortalOutletDto })
   getOutlet(@Req() req: PortalRequest, @Param('outletId') outletId: string) {
-    return this.catalog.getOutlet(this.helpers.getMerchantId(req), outletId);
+    return this.useCase.getOutlet(req, outletId);
   }
 
   @Post('outlets')
   @ApiOkResponse({ type: PortalOutletDto })
   createOutlet(@Req() req: PortalRequest, @Body() dto: CreatePortalOutletDto) {
-    return this.catalog.createOutlet(this.helpers.getMerchantId(req), dto);
+    return this.useCase.createOutlet(req, dto);
   }
 
   @Put('outlets/:outletId')
@@ -229,11 +195,7 @@ export class PortalCatalogController {
     @Param('outletId') outletId: string,
     @Body() dto: UpdatePortalOutletDto,
   ) {
-    return this.catalog.updateOutlet(
-      this.helpers.getMerchantId(req),
-      outletId,
-      dto,
-    );
+    return this.useCase.updateOutlet(req, outletId, dto);
   }
 
   @Delete('outlets/:outletId')
@@ -241,7 +203,7 @@ export class PortalCatalogController {
     schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
   })
   deleteOutlet(@Req() req: PortalRequest, @Param('outletId') outletId: string) {
-    return this.merchants.deleteOutlet(this.helpers.getMerchantId(req), outletId);
+    return this.useCase.deleteOutlet(req, outletId);
   }
 
   @Put('outlets/:outletId/status')
@@ -251,9 +213,6 @@ export class PortalCatalogController {
     @Param('outletId') outletId: string,
     @Body() dto: UpdateOutletStatusDto,
   ) {
-    const merchantId = this.helpers.getMerchantId(req);
-    return this.merchants
-      .updateOutletStatus(merchantId, outletId, dto.status)
-      .then(() => this.catalog.getOutlet(merchantId, outletId));
+    return this.useCase.updateOutletStatus(req, outletId, dto);
   }
 }

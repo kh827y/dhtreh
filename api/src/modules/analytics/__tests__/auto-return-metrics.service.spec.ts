@@ -1,10 +1,12 @@
 import { AnalyticsService, DashboardPeriod } from '../analytics.service';
+import { AnalyticsCacheService } from '../analytics-cache.service';
 import {
   DEFAULT_TIMEZONE_CODE,
   findTimezone,
 } from '../../../shared/timezone/russia-timezones';
 import type { ConfigService } from '@nestjs/config';
 import type { PrismaService } from '../../../core/prisma/prisma.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -53,6 +55,8 @@ describe('AnalyticsService.getAutoReturnMetrics', () => {
     service = new AnalyticsService(
       asPrismaService(prisma),
       asConfigService(config),
+      new AnalyticsCacheService(new AppConfigService()),
+      undefined,
     );
     jest
       .spyOn(asPrivateService(service), 'getTimezoneInfo')

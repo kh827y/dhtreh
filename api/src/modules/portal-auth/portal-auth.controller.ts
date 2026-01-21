@@ -6,6 +6,7 @@ import {
   Post,
   UnauthorizedException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { createHash } from 'crypto';
@@ -24,6 +25,7 @@ import {
   verifyPortalRefreshJwt,
 } from './portal-jwt.util';
 import { StaffStatus } from '@prisma/client';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 const LOGIN_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const LOGIN_ATTEMPT_LIMIT = 10;
@@ -44,6 +46,8 @@ function isTokenRevoked(
 @ApiTags('portal-auth')
 @Controller('portal/auth')
 export class PortalAuthController {
+  private readonly logger = new Logger(PortalAuthController.name);
+
   constructor(private prisma: PrismaService) {}
 
   @Post('login')
@@ -90,7 +94,13 @@ export class PortalAuthController {
             try {
               // eslint-disable-next-line @typescript-eslint/no-require-imports -- optional dependency
               return require('otplib') as unknown;
-            } catch {
+            } catch (err) {
+              logIgnoredError(
+                err,
+                'PortalAuthController otplib require failed',
+                this.logger,
+                'debug',
+              );
               return null;
             }
           })();
