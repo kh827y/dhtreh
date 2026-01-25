@@ -58,7 +58,6 @@ export class MerchantsOutletsService {
       await tx.staffOutletAccess.deleteMany({
         where: { merchantId, outletId },
       });
-      await tx.productStock.deleteMany({ where: { outletId } });
       await tx.cashierSession.deleteMany({ where: { merchantId, outletId } });
       await tx.promoCodeUsage.deleteMany({ where: { merchantId, outletId } });
       await tx.promotionParticipant.deleteMany({

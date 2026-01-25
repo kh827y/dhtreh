@@ -37,28 +37,11 @@ export class LoyaltyPositionDto {
   productId?: string;
 
   @ApiPropertyOptional({
-    description: 'Провайдер внешней системы (iiko, r_keeper, MoySklad и т.п.)',
-  })
-  @IsOptional()
-  @IsString()
-  externalProvider?: string;
-
-  @ApiPropertyOptional({
     description: 'Внешний ID товара в указанной системе',
   })
   @IsOptional()
   @IsString()
   externalId?: string;
-
-  @ApiPropertyOptional({ description: 'Штрихкод товара' })
-  @IsOptional()
-  @IsString()
-  barcode?: string;
-
-  @ApiPropertyOptional({ description: 'Артикул/SKU товара' })
-  @IsOptional()
-  @IsString()
-  sku?: string;
 
   @ApiPropertyOptional({ description: 'Название товара' })
   @IsOptional()

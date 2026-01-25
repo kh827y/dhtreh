@@ -27,11 +27,8 @@ export declare class LoyaltyApi {
         promoCode?: string;
         positions?: Array<{
             productId?: string;
-            externalProvider?: string;
             externalId?: string;
             name?: string;
-            sku?: string;
-            barcode?: string;
             qty: number;
             price: number;
             accruePoints?: boolean;

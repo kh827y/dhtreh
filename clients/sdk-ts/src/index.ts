@@ -23,7 +23,7 @@ export class LoyaltyApi {
   }
 
   // Endpoints
-  quote(body: { mode: 'redeem'|'earn'; merchantId: string; userToken: string; orderId: string; total: number; outletId?: string; staffId?: string; category?: string; promoCode?: string; positions?: Array<{ productId?: string; externalProvider?: string; externalId?: string; name?: string; sku?: string; barcode?: string; qty: number; price: number; accruePoints?: boolean }> }) {
+  quote(body: { mode: 'redeem'|'earn'; merchantId: string; userToken: string; orderId: string; total: number; outletId?: string; staffId?: string; category?: string; promoCode?: string; positions?: Array<{ productId?: string; externalId?: string; name?: string; qty: number; price: number; accruePoints?: boolean }> }) {
     const json = JSON.stringify(body);
     return this.http('/loyalty/quote', { method: 'POST', body: json });
   }

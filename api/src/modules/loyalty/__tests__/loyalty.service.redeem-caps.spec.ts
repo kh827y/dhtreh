@@ -65,7 +65,6 @@ type ProductRecord = {
 };
 type ProductFindArgs = { where?: { externalId?: string } };
 type PrismaStub = {
-  productExternalId?: { findMany: MockFn<Promise<unknown[]>, [unknown]> };
   product?: { findMany: MockFn<Promise<ProductRecord[]>, [ProductFindArgs]> };
 };
 type LoyaltyServicePrivate = {
@@ -497,9 +496,6 @@ describe('LoyaltyService redeem caps', () => {
       categoryIds: new Set<string>(),
     };
     const prisma: PrismaStub = {
-      productExternalId: {
-        findMany: mockFn<Promise<unknown[]>, [unknown]>().mockResolvedValue([]),
-      },
       product: {
         findMany: mockFn<
           Promise<ProductRecord[]>,

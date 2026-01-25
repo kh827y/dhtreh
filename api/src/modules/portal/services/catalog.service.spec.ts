@@ -16,7 +16,6 @@ type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
 type MockModel = Record<string, MockFn>;
 type PrismaStub = {
   product?: MockModel;
-  productExternalId?: MockModel;
   [key: string]: MockModel | MockFn | undefined;
 };
 type MetricsStub = Pick<
@@ -28,16 +27,13 @@ type CacheStub = {
 };
 type CategoryCreateData = {
   name: string;
-  slug: string;
   description?: string | null;
-  imageUrl?: string | null;
   parentId?: string | null;
-  order?: number | null;
   status?: string | null;
 };
 type CategoryCreateArgs = { data: CategoryCreateData };
 type ProductFindFirstArgs = {
-  select?: { id?: boolean; order?: boolean };
+  select?: { id?: boolean };
 };
 type OutletCreateData = {
   name: string;
@@ -82,16 +78,13 @@ describe('PortalCatalogService', () => {
     jest.clearAllMocks();
   });
 
-  it('generates slug when creating category', async () => {
+  it('creates category with trimmed description and default status', async () => {
     const createMock = mockFnWithImpl(({ data }: CategoryCreateArgs) => ({
       id: 'cat-1',
       merchantId: 'm-1',
       name: data.name,
-      slug: data.slug,
       description: data.description,
-      imageUrl: data.imageUrl,
       parentId: data.parentId,
-      order: data.order,
       status: data.status,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -99,18 +92,8 @@ describe('PortalCatalogService', () => {
     }));
     const tx: PrismaStub = {
       productCategory: {
-        findFirst: mockFnWithImpl(() => ({ order: 1000 })),
         create: createMock,
       },
-      product: {
-        findFirst: mockFnWithImpl(() => ({ order: 500 })),
-      },
-      outlet: {
-        findFirst: mockFnWithImpl(() => ({ id: 'outlet-1' })),
-      },
-      productImage: { deleteMany: mockFn(), createMany: mockFn() },
-      productVariant: { deleteMany: mockFn(), createMany: mockFn() },
-      productStock: { deleteMany: mockFn(), create: mockFn() },
     };
     const prisma: PrismaStub = {
       $transaction: mockFnWithImpl((fn: (tx: PrismaStub) => unknown) => fn(tx)),
@@ -123,21 +106,17 @@ describe('PortalCatalogService', () => {
         update: mockFn(),
         findFirst: mockFn(),
       },
-      productImage: { deleteMany: mockFn(), createMany: mockFn() },
-      productVariant: { deleteMany: mockFn(), createMany: mockFn() },
-      productStock: { deleteMany: mockFn(), create: mockFn() },
     };
 
     const service = buildService(prisma, metrics);
-    const dto: CreateCategoryDto = { name: 'Супы' };
+    const dto: CreateCategoryDto = { name: 'Супы', description: '  Горячие ' };
     const result = await service.createCategory('m-1', dto);
 
     expect(createMock).toHaveBeenCalledTimes(1);
     const payload = createMock.mock.calls[0][0].data;
-    expect(payload.slug).toBe('supy');
-    expect(payload.order).toBe(1010);
+    expect(payload.description).toBe('Горячие');
     expect(payload.status).toBe('ACTIVE');
-    expect(result.slug).toBe('supy');
+    expect(result.description).toBe('Горячие');
     expect(metrics.inc).toHaveBeenCalledWith(
       'portal_catalog_categories_changed_total',
       { action: 'create' },
@@ -175,39 +154,17 @@ describe('PortalCatalogService', () => {
       name: 'Латте',
       categoryId: null,
       category: null,
-      description: null,
-      iikoProductId: null,
-      hasVariants: false,
-      priceEnabled: true,
-      price: 0,
-      allowCart: true,
       accruePoints: true,
       allowRedeem: true,
       redeemPercent: 100,
-      weightValue: null,
-      weightUnit: null,
-      heightCm: null,
-      widthCm: null,
-      depthCm: null,
-      proteins: null,
-      fats: null,
-      carbs: null,
-      calories: null,
-      tags: [],
-      purchasesMonth: 0,
-      purchasesTotal: 0,
-      order: 1010,
+      externalId: 'latte-01',
+      price: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: null,
-      images: [],
-      variants: [],
-      stocks: [],
-      externalMappings: [],
     };
     const productFindFirst = mockFnWithImpl((args?: ProductFindFirstArgs) => {
       if (args?.select?.id) return null;
-      if (args?.select?.order) return { order: 1000 };
       return createdProduct;
     });
     const tx: PrismaStub = {
@@ -217,7 +174,6 @@ describe('PortalCatalogService', () => {
         findFirst: productFindFirst,
         create: mockFnWithImpl(() => createdProduct),
       },
-      productExternalId: { deleteMany: mockFnWithImpl(() => ({ count: 2 })) },
     };
     const prisma: PrismaStub = {
       $transaction: mockFnWithImpl((fn: (tx: PrismaStub) => unknown) => fn(tx)),
@@ -232,20 +188,14 @@ describe('PortalCatalogService', () => {
 
     expect(tx.product!.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ['old-1', 'old-2'] } },
-      data: { externalId: null, externalProvider: null },
-    });
-    expect(tx.productExternalId!.deleteMany).toHaveBeenCalledWith({
-      where: { merchantId: 'm-1', productId: { in: ['old-1', 'old-2'] } },
+      data: { externalId: null },
     });
   });
 
-  it('nulls externalId and removes external mappings on delete', async () => {
+  it('nulls externalId on delete', async () => {
     const prisma: PrismaStub = {
       product: {
         updateMany: mockFnWithImpl(() => ({ count: 1 })),
-      },
-      productExternalId: {
-        deleteMany: mockFnWithImpl(() => ({ count: 1 })),
       },
     };
     const service = buildService(prisma, metrics);
@@ -257,11 +207,7 @@ describe('PortalCatalogService', () => {
       data: {
         deletedAt: expect.any(Date) as unknown as Date,
         externalId: null,
-        externalProvider: null,
       },
-    });
-    expect(prisma.productExternalId!.deleteMany).toHaveBeenCalledWith({
-      where: { merchantId: 'm-1', productId: 'prod-1' },
     });
   });
 

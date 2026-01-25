@@ -156,6 +156,50 @@ docker compose --env-file .env.production -f docker-compose.production.yml logs 
 curl http://localhost:3000/healthz
 ```
 
+## ✅ Single VPS чек‑лист (production)
+
+### Ресурсы и лимиты контейнеров
+- В `docker-compose.production.yml` добавлены `mem_limit`, `mem_reservation`, `cpus` — они **работают в обычном docker compose**.
+- Блок `deploy.resources` используется только в Swarm и **не применяется** в single‑VPS режиме.
+- Если нужно масштабирование без Swarm — используйте `docker compose up -d --scale api=2`.
+
+### Healthchecks
+- Все ключевые сервисы имеют healthcheck.
+- Быстрая проверка:
+```bash
+BASE_URL=https://api.example.com METRICS_TOKEN=... ./scripts/smoke-check.sh
+```
+
+### Ротация логов
+- В `docker-compose.production.yml` настроена ротация docker‑логов:
+  - `max-size: 10m`
+  - `max-file: 5`
+
+### Бэкапы и расписание
+- Бэкапы запускаются через `scripts/backup.sh` (использует backup‑контейнер).
+- Пример cron‑расписания: `infra/cron/loyalty-cron.example`.
+- Перед установкой cron:
+  - создайте `/var/log/loyalty`
+  - проверьте, что в `.env.production` заполнены `S3_*` (если используете S3)
+
+### Базовые алерты
+- Укажите Telegram‑бота для алертов:
+  - `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID`
+- Настройте пороги:
+  - `ALERT_HTTP_5XX_PER_MIN`
+  - `ALERT_HTTP_SLOW_PER_MIN`
+  - `ALERT_HTTP_SLOW_THRESHOLD_MS`
+  - `ALERT_OUTBOX_DEAD_DELTA`
+
+### Команды восстановления
+```bash
+# Откат после неудачного релиза
+./scripts/deploy.sh production rollback
+
+# Восстановление БД из бэкапа
+./scripts/restore.sh backup_YYYYMMDD_HHMMSS.sql.gz
+```
+
 ## ✉️ Уведомления (Email/Push)
 
 ### Переменные окружения (API/worker)

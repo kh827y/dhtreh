@@ -16,7 +16,6 @@ import {
   CategoryDto,
   CreateCategoryDto,
   UpdateCategoryDto,
-  ReorderCategoriesDto,
   CreateProductDto,
   UpdateProductDto,
   ProductListResponseDto,
@@ -65,20 +64,6 @@ export class PortalCatalogController {
     @Body() dto: UpdateCategoryDto,
   ) {
     return this.useCase.updateCatalogCategory(req, categoryId, dto);
-  }
-
-  @Post('catalog/categories/reorder')
-  @ApiOkResponse({
-    schema: {
-      type: 'object',
-      properties: { ok: { type: 'boolean' }, updated: { type: 'number' } },
-    },
-  })
-  reorderCatalogCategories(
-    @Req() req: PortalRequest,
-    @Body() dto: ReorderCategoriesDto,
-  ) {
-    return this.useCase.reorderCatalogCategories(req, dto);
   }
 
   @Delete('catalog/categories/:categoryId')

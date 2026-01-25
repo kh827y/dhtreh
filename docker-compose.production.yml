@@ -13,6 +13,9 @@ services:
     <<: *default-logging
     image: postgres:15-alpine
     restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 512m
+    cpus: "1.0"
     environment:
       POSTGRES_DB: loyalty
       POSTGRES_USER: loyalty
@@ -41,6 +44,9 @@ services:
     <<: *default-logging
     image: redis:7-alpine
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: "0.5"
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
@@ -67,6 +73,9 @@ services:
       context: .
       dockerfile: api/Dockerfile
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 256m
+    cpus: "1.0"
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://loyalty:${DB_PASSWORD}@postgres:5432/loyalty
@@ -100,6 +109,10 @@ services:
       ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN}
       ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID}
       ALERTS_5XX_SAMPLE_RATE: ${ALERTS_5XX_SAMPLE_RATE}
+      ALERT_HTTP_5XX_PER_MIN: ${ALERT_HTTP_5XX_PER_MIN}
+      ALERT_HTTP_SLOW_PER_MIN: ${ALERT_HTTP_SLOW_PER_MIN}
+      ALERT_HTTP_SLOW_THRESHOLD_MS: ${ALERT_HTTP_SLOW_THRESHOLD_MS}
+      ALERT_OUTBOX_DEAD_DELTA: ${ALERT_OUTBOX_DEAD_DELTA}
       ALERT_OUTBOX_PENDING_THRESHOLD: ${ALERT_OUTBOX_PENDING_THRESHOLD}
       ALERT_OUTBOX_DEAD_THRESHOLD: ${ALERT_OUTBOX_DEAD_THRESHOLD}
       ALERT_WORKER_STALE_MINUTES: ${ALERT_WORKER_STALE_MINUTES}
@@ -155,6 +168,9 @@ services:
       context: .
       dockerfile: api/Dockerfile
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: "0.5"
     command: npm run start:worker
     environment:
       NODE_ENV: production
@@ -189,6 +205,10 @@ services:
       ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN}
       ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID}
       ALERTS_5XX_SAMPLE_RATE: ${ALERTS_5XX_SAMPLE_RATE}
+      ALERT_HTTP_5XX_PER_MIN: ${ALERT_HTTP_5XX_PER_MIN}
+      ALERT_HTTP_SLOW_PER_MIN: ${ALERT_HTTP_SLOW_PER_MIN}
+      ALERT_HTTP_SLOW_THRESHOLD_MS: ${ALERT_HTTP_SLOW_THRESHOLD_MS}
+      ALERT_OUTBOX_DEAD_DELTA: ${ALERT_OUTBOX_DEAD_DELTA}
       ALERT_OUTBOX_PENDING_THRESHOLD: ${ALERT_OUTBOX_PENDING_THRESHOLD}
       ALERT_OUTBOX_DEAD_THRESHOLD: ${ALERT_OUTBOX_DEAD_THRESHOLD}
       ALERT_WORKER_STALE_MINUTES: ${ALERT_WORKER_STALE_MINUTES}
@@ -239,6 +259,9 @@ services:
       context: .
       dockerfile: admin/Dockerfile
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: "0.3"
     environment:
       NODE_ENV: production
       API_BASE: http://api:3000
@@ -280,6 +303,9 @@ services:
       context: .
       dockerfile: merchant-portal/Dockerfile
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: "0.3"
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE: https://api.${DOMAIN}
@@ -316,6 +342,9 @@ services:
       context: .
       dockerfile: cashier/Dockerfile
     restart: unless-stopped
+    mem_limit: 192m
+    mem_reservation: 96m
+    cpus: "0.2"
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE: https://api.${DOMAIN}
@@ -352,6 +381,9 @@ services:
       context: .
       dockerfile: miniapp/Dockerfile
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: "0.5"
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE: https://api.${DOMAIN}
@@ -387,6 +419,9 @@ services:
     <<: *default-logging
     image: traefik:v3.0
     restart: unless-stopped
+    mem_limit: 128m
+    mem_reservation: 64m
+    cpus: "0.2"
     command:
       - "--api.dashboard=true"
       - "--providers.docker=true"
@@ -439,6 +474,9 @@ services:
     <<: *default-logging
     image: prom/prometheus:latest
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 256m
+    cpus: "0.3"
     environment:
       METRICS_TOKEN: ${METRICS_TOKEN}
     volumes:
@@ -480,6 +518,9 @@ services:
     <<: *default-logging
     image: grafana/grafana:latest
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: "0.3"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
       GF_INSTALL_PLUGINS: grafana-piechart-panel
@@ -514,12 +555,17 @@ services:
     <<: *default-logging
     image: postgres:15-alpine
     restart: "no"
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: "0.3"
     environment:
       DB_PASSWORD: ${DB_PASSWORD}
       S3_BUCKET: ${S3_BUCKET}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_ENDPOINT: ${S3_ENDPOINT}
+      TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID}
     volumes:
       - ./infra/backup:/backup
       - backup_data:/backups

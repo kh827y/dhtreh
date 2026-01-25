@@ -934,14 +934,9 @@ Response 200:
   {
     "id": "cat_1",
     "name": "Пицца",
-    "slug": "pizza",
-    "code": "PIZ",
-    "externalProvider": "MOYSKLAD",
-    "externalId": "grp-100",
     "description": "string | null",
-    "imageUrl": "https://... | null",
     "parentId": "cat_parent | null",
-    "order": 1010
+    "status": "ACTIVE"
   }
 ]
 ```
@@ -953,10 +948,9 @@ Content-Type: application/json
 
 {
   "name": "Десерты",
-  "slug": "desserts",            // optional, генерируется автоматически
   "description": "Раздел сладкого",
-  "imageUrl": "https://cdn/...",
-  "parentId": "cat_parent"       // optional
+  "parentId": "cat_parent",      // optional
+  "status": "ACTIVE"             // optional
 }
 
 Response 200: объект категории
@@ -969,25 +963,11 @@ Content-Type: application/json
 
 {
   "name": "Салаты",
-  "slug": "salads"
+  "description": "Обновлённое описание",
+  "status": "ARCHIVED"
 }
 
 Response 200: объект категории
-```
-
-```http
-POST /portal/catalog/categories/reorder
-Authorization: Bearer <portal_jwt>
-Content-Type: application/json
-
-{
-  "items": [
-    { "id": "cat_1", "order": 1000 },
-    { "id": "cat_2", "order": 1010 }
-  ]
-}
-
-Response 200: { "ok": true, "updated": 2 }
 ```
 
 ```http
@@ -1000,7 +980,7 @@ Response 200: { "ok": true }
 #### Товары
 
 ```http
-GET /portal/catalog/products?status=visible&points=with_points&categoryId=cat_1&search=маргарита
+GET /portal/catalog/products?points=with_points&categoryId=cat_1&search=маргарита
 Authorization: Bearer <portal_jwt>
 
 Response 200:
@@ -1009,20 +989,13 @@ Response 200:
     {
       "id": "prd_1",
       "name": "Маргарита",
-      "sku": "PZ-001",
-      "code": "PIZ-001",
-      "barcode": "4601234567890",
-      "unit": "шт",
-      "externalProvider": "IIKO",
       "externalId": "EXT-1",
       "categoryId": "cat_1",
       "categoryName": "Пицца",
-      "previewImage": "https://cdn/...",
-      "visible": true,
+      "price": 890,
       "accruePoints": true,
       "allowRedeem": true,
-      "purchasesMonth": 120,
-      "purchasesTotal": 1450
+      "redeemPercent": 100
     }
   ],
   "total": 1
@@ -1037,33 +1010,13 @@ Response 200:
 {
   "id": "prd_1",
   "name": "Маргарита",
-  "sku": "PZ-001",
-  "code": "PIZ-001",
-  "barcode": "4601234567890",
-  "unit": "шт",
-  "externalProvider": "IIKO",
   "externalId": "EXT-1",
-  "order": 1000,
-  "description": "Тонкое тесто, моцарелла",
   "categoryId": "cat_1",
   "categoryName": "Пицца",
-  "iikoProductId": "ext-100",
-  "hasVariants": false,
-  "priceEnabled": true,
   "price": 890,
-  "disableCart": false,
   "redeemPercent": 100,
-  "tags": ["Популярный"],
-  "images": [{ "url": "https://cdn/...", "alt": "main", "position": 0 }],
-  "variants": [],
-  "stocks": [
-    { "label": "Основной склад", "outletId": "out-1", "price": 890, "balance": 25, "currency": "RUB" }
-  ],
-  "visible": true,
   "accruePoints": true,
-  "allowRedeem": true,
-  "purchasesMonth": 120,
-  "purchasesTotal": 1450
+  "allowRedeem": true
 }
 ```
 
@@ -1074,17 +1027,12 @@ Content-Type: application/json
 
 {
   "name": "Филадельфия",
-  "sku": "SU-101",
   "categoryId": "cat_2",
-  "priceEnabled": true,
+  "externalId": "EXT-2",
   "price": 520,
-  "visible": true,
   "accruePoints": true,
   "allowRedeem": true,
-  "redeemPercent": 100,
-  "tags": ["Новинка"],
-  "images": [{ "url": "https://cdn/sushi.jpg" }],
-  "stocks": [{ "label": "Центральный склад", "balance": 10 }]
+  "redeemPercent": 100
 }
 
 Response 200: объект товара
@@ -1098,7 +1046,7 @@ Content-Type: application/json
 {
   "price": 540,
   "allowRedeem": false,
-  "tags": ["Популярный", "Для вегетарианцев"]
+  "redeemPercent": 50
 }
 
 Response 200: объект товара
@@ -1117,7 +1065,7 @@ Authorization: Bearer <portal_jwt>
 Content-Type: application/json
 
 {
-  "action": "show" | "hide" | "allow_redeem" | "forbid_redeem" | "delete",
+  "action": "allow_redeem" | "forbid_redeem" | "delete",
   "ids": ["prd_1", "prd_2"]
 }
 
@@ -1132,9 +1080,8 @@ Authorization: Bearer <portal_jwt>
 Content-Type: application/json
 
 {
-  "externalProvider": "COMMERCE_ML",
   "products": [
-    { "externalId": "pr-1", "name": "Капучино", "barcode": "460...", "sku": "CAP-01", "unit": "шт", "price": 250, "code": "COF-1" }
+    { "externalId": "pr-1", "name": "Капучино", "price": 250 }
   ]
 }
 
@@ -1148,12 +1095,12 @@ Content-Type: application/json
 
 {
   "products": [
-    { "externalId": "ms-1", "name": "Латте", "barcode": "460...", "sku": "LAT-01", "unit": "шт", "price": 280 }
+    { "externalId": "ms-1", "name": "Латте", "price": 280 }
   ]
 }
 ```
 
-Поля позиций: `externalId`, `name`, опционально `barcode`, `sku`, `code`, `unit`, `price`. Импорт выполняется по `productId`/`externalId` и, при необходимости, по `barcode`/`sku`/`code`. Все операции импортов логируются в `SyncLog` с итогом `ok/error`.
+Поля позиций: `externalId`, `name`, опционально `price`. Импорт выполняется по `externalId`. Все операции импортов логируются в `SyncLog` с итогом `ok/error`.
 
 #### Торговые точки портала
 

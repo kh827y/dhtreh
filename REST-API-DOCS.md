@@ -12,6 +12,41 @@
 - В `items` цена указывается за единицу товара.
 - Если поле отмечено как обязательное, отсутствие вернёт `400`.
 
+## Рейт-лимиты
+- Лимиты применяются по API‑ключу и конкретному эндпоинту.
+- Базовые лимиты (могут быть изменены настройками интеграции):
+  - `POST /api/integrations/code`: 60 запросов/мин
+  - `POST /api/integrations/calculate/action`: 180 запросов/мин
+  - `POST /api/integrations/calculate/bonus`: 180 запросов/мин
+  - `POST /api/integrations/bonus`: 60 запросов/мин
+  - `POST /api/integrations/refund`: 30 запросов/мин
+- При превышении лимита возвращается `429` с кодом ошибки `RateLimited`.
+
+## Формат ошибок
+```json
+{
+  "error": "BadRequest",
+  "code": "BadRequest",
+  "message": "Readable error",
+  "statusCode": 400,
+  "requestId": "req_xxx",
+  "path": "/api/integrations/bonus",
+  "timestamp": "2026-01-01T12:00:00.000Z",
+  "details": []
+}
+```
+Примечания:
+- `details` опционален и появляется при валидации.
+- `requestId` дублируется в заголовке `X-Request-Id`.
+
+## Идемпотентность
+- Для `POST /api/integrations/bonus` обязателен `idempotency_key`.
+- Повтор запроса с тем же ключом не создаёт дублей. Если ключ уже был использован для другого клиента, вернётся `409 Conflict`.
+
+## Трассировка
+- Можно передавать `X-Request-Id` — сервер вернёт его в ответе.
+- В ответах могут присутствовать `X-Trace-Id` и `X-Span-Id` для корреляции логов.
+
 ---
 
 ## CODE

@@ -255,32 +255,7 @@ export class LoyaltyOpsBase {
       name: string | null;
     };
     type ProductExternalLookup = ProductLookup & { externalId: string | null };
-    type ProductExternalMapping = { externalId: string; productId: string };
-
-    const externalMappings: ProductExternalMapping[] =
-      externalIds.length && this.prisma.productExternalId?.findMany
-        ? await this.prisma.productExternalId
-            .findMany({
-              where: { merchantId, externalId: { in: externalIds } },
-              select: { externalId: true, productId: true },
-            })
-            .catch((err) => {
-              logIgnoredError(
-                err,
-                'LoyaltyOpsBase resolvePositions external mappings',
-                this.logger,
-                'debug',
-                { merchantId },
-              );
-              return [];
-            })
-        : [];
-    const mappedProductIds = externalMappings
-      .map((item) => item.productId)
-      .filter(Boolean);
-    const productIdsToFetch = Array.from(
-      new Set([...productIds, ...mappedProductIds]),
-    );
+    const productIdsToFetch = productIds;
     const productsByIdPromise: Promise<ProductLookup[]> =
       productIdsToFetch.length
         ? this.prisma.product
@@ -424,15 +399,6 @@ export class LoyaltyOpsBase {
         name: p.name ?? null,
       });
     });
-    externalMappings.forEach((mapping) => {
-      const extId = mapping.externalId;
-      const productId = mapping.productId;
-      if (!extId || productByExtMap.has(extId)) return;
-      const product = productByIdMap.get(productId);
-      if (!product) return;
-      productByExtMap.set(extId, product);
-    });
-
     const resolved: ResolvedPosition[] = [];
     for (const item of normalized) {
       const amount = Math.max(
@@ -1237,11 +1203,8 @@ export class LoyaltyOpsBase {
         merchantId,
         productId: item.resolvedProductId ?? null,
         categoryId: item.resolvedCategoryId ?? null,
-        externalProvider: null,
         externalId: item.externalId ?? null,
         name: item.name ?? null,
-        sku: null,
-        barcode: null,
         qty: new Prisma.Decimal(item.qty),
         price: new Prisma.Decimal(item.price),
         amount: item.amount,

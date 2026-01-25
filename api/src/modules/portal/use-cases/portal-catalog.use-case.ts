@@ -4,7 +4,6 @@ import {
   CategoryDto,
   CreateCategoryDto,
   UpdateCategoryDto,
-  ReorderCategoriesDto,
   CreateProductDto,
   UpdateProductDto,
   ProductListResponseDto,
@@ -51,13 +50,6 @@ export class PortalCatalogUseCase {
       categoryId,
       dto,
     );
-  }
-
-  reorderCatalogCategories(
-    req: PortalRequest,
-    dto: ReorderCategoriesDto,
-  ): Promise<{ ok: boolean; updated: number }> {
-    return this.catalog.reorderCategories(this.helpers.getMerchantId(req), dto);
   }
 
   deleteCatalogCategory(

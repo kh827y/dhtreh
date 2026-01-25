@@ -8,11 +8,7 @@ import {
   Prisma,
   Product,
   ProductCategory,
-  ProductImage,
-  ProductStock,
-  ProductVariant,
   Outlet,
-  ProductExternalId,
   StaffOutletAccessStatus,
 } from '@prisma/client';
 import { MetricsService } from '../../../core/metrics/metrics.service';
@@ -23,7 +19,6 @@ import {
   CategoryDto,
   CreateCategoryDto,
   UpdateCategoryDto,
-  ReorderCategoriesDto,
   CreateProductDto,
   UpdateProductDto,
   ProductDto,
@@ -36,9 +31,6 @@ import {
   UpdatePortalOutletDto,
   PortalOutletDto,
   PortalOutletListResponseDto,
-  ProductImageInputDto,
-  ProductVariantInputDto,
-  ProductStockInputDto,
   ImportCatalogDto,
 } from '../dto/catalog.dto';
 import {
@@ -101,52 +93,6 @@ export class PortalCatalogService {
   ) {}
 
   // ===== Helpers =====
-  private slugify(input: string): string {
-    const map: Record<string, string> = {
-      ё: 'e',
-      й: 'i',
-      ц: 'c',
-      у: 'u',
-      к: 'k',
-      е: 'e',
-      н: 'n',
-      г: 'g',
-      ш: 'sh',
-      щ: 'sch',
-      з: 'z',
-      х: 'h',
-      ъ: '',
-      ф: 'f',
-      ы: 'y',
-      в: 'v',
-      а: 'a',
-      п: 'p',
-      р: 'r',
-      о: 'o',
-      л: 'l',
-      д: 'd',
-      ж: 'zh',
-      э: 'e',
-      я: 'ya',
-      ч: 'ch',
-      с: 's',
-      м: 'm',
-      и: 'i',
-      т: 't',
-      ь: '',
-      б: 'b',
-      ю: 'yu',
-    };
-    const base = (input || '').toString().trim().toLowerCase();
-    const translit = base
-      .split('')
-      .map((ch) => map[ch] ?? ch)
-      .join('')
-      .replace(/[^a-z0-9\-\s]/g, '')
-      .replace(/\s+/g, '-');
-    const slug = translit.replace(/-+/g, '-').replace(/^-|-$/g, '');
-    return slug || 'item';
-  }
 
   private clampPercent(value: number | undefined, fallback = 100): number {
     const numeric = Number.isFinite(value) ? Number(value) : fallback;
@@ -194,93 +140,27 @@ export class PortalCatalogService {
     return {
       id: entity.id,
       name: entity.name,
-      slug: entity.slug,
       description: entity.description ?? null,
-      imageUrl: entity.imageUrl ?? null,
       parentId: entity.parentId ?? null,
-      order: entity.order,
       status: entity.status,
     };
   }
 
-  private mapProductPreview(
+  private mapProduct(
     product: Product & {
       category?: ProductCategory | null;
-      images: ProductImage[];
-      externalMappings?: ProductExternalId[];
     },
-  ): ProductListItemDto {
+  ): ProductDto {
     return {
       id: product.id,
       name: product.name,
       categoryId: product.categoryId ?? null,
       categoryName: product.category?.name ?? null,
-      previewImage: product.images[0]?.url ?? null,
       accruePoints: product.accruePoints,
       allowRedeem: product.allowRedeem,
       redeemPercent: product.redeemPercent,
-      purchasesMonth: product.purchasesMonth,
-      purchasesTotal: product.purchasesTotal,
       externalId: product.externalId ?? null,
-    };
-  }
-
-  private mapProductDetailed(
-    product: Product & {
-      category?: ProductCategory | null;
-      images: ProductImage[];
-      variants: ProductVariant[];
-      stocks: (ProductStock & { outlet?: Outlet | null })[];
-      externalMappings?: ProductExternalId[];
-    },
-  ): ProductDto {
-    const images = product.images
-      .sort((a, b) => a.position - b.position)
-      .map<ProductImageInputDto>((img, index) => ({
-        url: img.url,
-        alt: img.alt ?? undefined,
-        position: img.position ?? index,
-      }));
-    const variants = product.variants
-      .sort((a, b) => a.position - b.position)
-      .map<ProductVariantInputDto>((variant, index) => ({
-        name: variant.name,
-        sku: variant.sku ?? undefined,
-        price: this.decimalToNumber(variant.price) ?? undefined,
-        notes: variant.notes ?? undefined,
-        position: variant.position ?? index,
-      }));
-    const stocks = product.stocks
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-      .map<ProductStockInputDto>((stock) => ({
-        label: stock.label,
-        outletId: stock.outletId ?? undefined,
-        price: this.decimalToNumber(stock.price) ?? undefined,
-        balance: this.decimalToNumber(stock.balance) ?? undefined,
-        currency: stock.currency ?? undefined,
-      }));
-    return {
-      ...this.mapProductPreview(product),
-      order: product.order,
-      description: product.description ?? null,
-      iikoProductId: product.iikoProductId ?? null,
-      hasVariants: product.hasVariants,
-      priceEnabled: product.priceEnabled,
-      price: product.priceEnabled ? this.decimalToNumber(product.price) : null,
-      disableCart: !product.allowCart,
-      weightValue: this.decimalToNumber(product.weightValue),
-      weightUnit: product.weightUnit ?? null,
-      heightCm: this.decimalToNumber(product.heightCm),
-      widthCm: this.decimalToNumber(product.widthCm),
-      depthCm: this.decimalToNumber(product.depthCm),
-      proteins: this.decimalToNumber(product.proteins),
-      fats: this.decimalToNumber(product.fats),
-      carbs: this.decimalToNumber(product.carbs),
-      calories: this.decimalToNumber(product.calories),
-      tags: product.tags ?? [],
-      images,
-      variants,
-      stocks,
+      price: this.decimalToNumber(product.price),
     };
   }
 
@@ -530,80 +410,6 @@ export class PortalCatalogService {
     return category;
   }
 
-  private async ensureOutletOwnership(
-    tx: Prisma.TransactionClient,
-    merchantId: string,
-    outletId: string,
-  ) {
-    const outlet = await tx.outlet.findFirst({
-      where: { id: outletId, merchantId },
-    });
-    if (!outlet) throw new NotFoundException('Outlet not found');
-    return outlet;
-  }
-
-  private async nextCategoryOrder(
-    tx: Prisma.TransactionClient,
-    merchantId: string,
-  ) {
-    const last = await tx.productCategory.findFirst({
-      where: { merchantId, deletedAt: null },
-      orderBy: { order: 'desc' },
-      select: { order: true },
-    });
-    return (last?.order ?? 1000) + 10;
-  }
-
-  private async nextProductOrder(
-    tx: Prisma.TransactionClient,
-    merchantId: string,
-  ) {
-    const last = await tx.product.findFirst({
-      where: { merchantId, deletedAt: null },
-      orderBy: { order: 'desc' },
-      select: { order: true },
-    });
-    return (last?.order ?? 1000) + 10;
-  }
-
-  private async syncProductExternal(
-    tx: Prisma.TransactionClient,
-    merchantId: string,
-    productId: string,
-    payload: {
-      externalProvider?: string | null;
-      externalId?: string | null;
-      barcode?: string | null;
-      sku?: string | null;
-    },
-  ) {
-    const externalProvider = payload.externalProvider?.trim();
-    const externalId = payload.externalId?.trim();
-    if (!externalProvider || !externalId) return;
-    await tx.productExternalId.upsert({
-      where: {
-        merchantId_externalProvider_externalId: {
-          merchantId,
-          externalProvider,
-          externalId,
-        },
-      },
-      update: {
-        productId,
-        barcode: payload.barcode ?? null,
-        sku: payload.sku ?? null,
-      },
-      create: {
-        merchantId,
-        productId,
-        externalProvider,
-        externalId,
-        barcode: payload.barcode ?? null,
-        sku: payload.sku ?? null,
-      },
-    });
-  }
-
   private async writeSyncLog(params: {
     merchantId: string;
     provider: string;
@@ -641,7 +447,7 @@ export class PortalCatalogService {
   async listCategories(merchantId: string): Promise<CategoryDto[]> {
     const categories = await this.prisma.productCategory.findMany({
       where: { merchantId, deletedAt: null },
-      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+      orderBy: [{ createdAt: 'asc' }],
     });
     return categories.map((category) => this.mapCategory(category));
   }
@@ -652,22 +458,17 @@ export class PortalCatalogService {
   ): Promise<CategoryDto> {
     const name = dto.name?.trim();
     if (!name) throw new BadRequestException('Category name is required');
-    const slug = dto.slug ? dto.slug.toLowerCase() : this.slugify(name);
     const assignIds = this.normalizeProductIds(dto.assignProductIds);
     return this.prisma.$transaction(async (tx) => {
       if (dto.parentId)
         await this.ensureCategoryOwnership(tx, merchantId, dto.parentId);
-      const order = await this.nextCategoryOrder(tx, merchantId);
       try {
         const created = await tx.productCategory.create({
           data: {
             merchantId,
             name,
-            slug,
-            description: dto.description ?? null,
-            imageUrl: dto.imageUrl ?? null,
+            description: dto.description?.trim() || null,
             parentId: dto.parentId ?? null,
-            order,
             status: dto.status ?? 'ACTIVE',
           },
         });
@@ -690,9 +491,6 @@ export class PortalCatalogService {
         });
         return this.mapCategory(created);
       } catch (error: unknown) {
-        if (readPrismaErrorCode(error) === 'P2002') {
-          throw new BadRequestException('Slug already exists');
-        }
         throw error;
       }
     });
@@ -722,17 +520,8 @@ export class PortalCatalogService {
           throw new BadRequestException('Category name cannot be empty');
         data.name = name;
       }
-      if (dto.slug !== undefined) {
-        const slug = dto.slug.trim().toLowerCase();
-        if (!/^[a-z0-9-]+$/.test(slug))
-          throw new BadRequestException(
-            'Slug should contain latin letters, numbers or dash',
-          );
-        data.slug = slug;
-      }
       if (dto.description !== undefined)
-        data.description = dto.description ?? null;
-      if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl ?? null;
+        data.description = dto.description?.trim() || null;
       if (dto.status !== undefined) data.status = dto.status;
       if (dto.parentId !== undefined) {
         if (dto.parentId) {
@@ -815,39 +604,9 @@ export class PortalCatalogService {
         });
         return this.mapCategory(updated);
       } catch (error: unknown) {
-        if (readPrismaErrorCode(error) === 'P2002')
-          throw new BadRequestException('Slug already exists');
         throw error;
       }
     });
-  }
-
-  async reorderCategories(merchantId: string, dto: ReorderCategoriesDto) {
-    if (!dto.items?.length) return { ok: true, updated: 0 };
-    const ids = dto.items.map((item) => item.id);
-    await this.prisma.$transaction(async (tx) => {
-      const categories = await tx.productCategory.findMany({
-        where: { id: { in: ids }, merchantId, deletedAt: null },
-      });
-      if (categories.length !== ids.length)
-        throw new NotFoundException('One of categories not found');
-      await Promise.all(
-        dto.items.map((item) =>
-          tx.productCategory.update({
-            where: { id: item.id },
-            data: { order: item.order },
-          }),
-        ),
-      );
-    });
-    logEvent(this.logger, 'portal.catalog.category.reorder', {
-      merchantId,
-      count: dto.items.length,
-    });
-    this.metrics.inc('portal_catalog_categories_changed_total', {
-      action: 'reorder',
-    });
-    return { ok: true, updated: dto.items.length };
   }
 
   async deleteCategory(merchantId: string, categoryId: string) {
@@ -900,16 +659,7 @@ export class PortalCatalogService {
       const extId = query.externalId.trim();
       if (extId) {
         andFilters.push({
-          OR: [
-            { externalId: { contains: extId, mode: 'insensitive' } },
-            {
-              externalMappings: {
-                some: {
-                  externalId: { contains: extId, mode: 'insensitive' },
-                },
-              },
-            },
-          ],
+          externalId: { contains: extId, mode: 'insensitive' },
         });
       }
     }
@@ -923,11 +673,6 @@ export class PortalCatalogService {
           OR: [
             { name: { contains: term, mode: 'insensitive' } },
             { externalId: { contains: term, mode: 'insensitive' } },
-            {
-              externalMappings: {
-                some: { externalId: { contains: term, mode: 'insensitive' } },
-              },
-            },
           ],
         });
         where.AND = and;
@@ -946,19 +691,17 @@ export class PortalCatalogService {
     const [items, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
-        orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+        orderBy: [{ createdAt: 'asc' }],
         take: limit ?? undefined,
         skip: offset || undefined,
         include: {
           category: true,
-          images: { orderBy: { position: 'asc' } },
-          externalMappings: true,
         },
       }),
       this.prisma.product.count({ where }),
     ]);
     return {
-      items: items.map((product) => this.mapProductPreview(product)),
+      items: items.map((product) => this.mapProduct(product)),
       total,
     };
   }
@@ -968,14 +711,10 @@ export class PortalCatalogService {
       where: { id: productId, merchantId, deletedAt: null },
       include: {
         category: true,
-        images: { orderBy: { position: 'asc' } },
-        variants: { orderBy: { position: 'asc' } },
-        stocks: { include: { outlet: true } },
-        externalMappings: true,
       },
     });
     if (!product) throw new NotFoundException('Product not found');
-    return this.mapProductDetailed(product);
+    return this.mapProduct(product);
   }
 
   private prepareProductCreateData(
@@ -983,78 +722,16 @@ export class PortalCatalogService {
     dto: CreateProductDto,
     opts: { categoryId?: string | null },
   ): Prisma.ProductCreateInput {
-    const hasVariants =
-      dto.hasVariants ?? (dto.variants?.length ? true : false);
-    const priceEnabled =
-      dto.priceEnabled !== undefined ? dto.priceEnabled : true;
-    const allowCart = dto.disableCart ? false : true;
     return {
       merchant: { connect: { id: merchantId } },
       name: dto.name.trim(),
-      sku: dto.sku ? dto.sku.trim() : null,
-      code: dto.code ? dto.code.trim() : null,
-      barcode: dto.barcode ? dto.barcode.trim() : null,
-      unit: dto.unit ? dto.unit.trim() : null,
-      externalProvider: dto.externalProvider
-        ? dto.externalProvider.trim()
-        : null,
       externalId: dto.externalId ? dto.externalId.trim() : null,
-      description: dto.description ?? null,
-      order: dto.order ?? 0,
-      iikoProductId: dto.iikoProductId ?? null,
-      hasVariants,
-      priceEnabled,
-      price: priceEnabled ? this.toDecimal(dto.price ?? 0) : null,
-      allowCart,
+      price: this.toDecimal(dto.price ?? null),
       accruePoints: dto.accruePoints ?? true,
       allowRedeem: dto.allowRedeem ?? true,
       redeemPercent: this.clampPercent(dto.redeemPercent, 100),
-      weightValue: this.toDecimal(dto.weightValue),
-      weightUnit: dto.weightUnit ?? null,
-      heightCm: this.toDecimal(dto.heightCm),
-      widthCm: this.toDecimal(dto.widthCm),
-      depthCm: this.toDecimal(dto.depthCm),
-      proteins: this.toDecimal(dto.proteins),
-      fats: this.toDecimal(dto.fats),
-      carbs: this.toDecimal(dto.carbs),
-      calories: this.toDecimal(dto.calories),
-      tags: dto.tags ?? [],
       category: opts.categoryId
         ? { connect: { id: opts.categoryId } }
-        : undefined,
-      images: dto.images?.length
-        ? {
-            create: dto.images.map((img, index) => ({
-              url: img.url,
-              alt: img.alt ?? null,
-              position: img.position ?? index,
-            })),
-          }
-        : undefined,
-      variants:
-        hasVariants && dto.variants?.length
-          ? {
-              create: dto.variants.map((variant, index) => ({
-                name: variant.name,
-                sku: variant.sku ?? null,
-                price: this.toDecimal(variant.price),
-                notes: variant.notes ?? null,
-                position: variant.position ?? index,
-              })),
-            }
-          : undefined,
-      stocks: dto.stocks?.length
-        ? {
-            create: dto.stocks.map((stock) => ({
-              label: stock.label,
-              outlet: stock.outletId
-                ? { connect: { id: stock.outletId } }
-                : undefined,
-              price: this.toDecimal(stock.price),
-              balance: this.toDecimal(stock.balance),
-              currency: stock.currency ?? 'RUB',
-            })),
-          }
         : undefined,
     };
   }
@@ -1068,12 +745,6 @@ export class PortalCatalogService {
     return this.prisma.$transaction(async (tx) => {
       if (dto.categoryId)
         await this.ensureCategoryOwnership(tx, merchantId, dto.categoryId);
-      if (dto.stocks) {
-        for (const stock of dto.stocks) {
-          if (stock.outletId)
-            await this.ensureOutletOwnership(tx, merchantId, stock.outletId);
-        }
-      }
       const trimmedExternalId = dto.externalId?.trim() || null;
       if (trimmedExternalId) {
         const existing = await tx.product.findFirst({
@@ -1101,52 +772,19 @@ export class PortalCatalogService {
           const archivedIds = archived.map((item) => item.id);
           await tx.product.updateMany({
             where: { id: { in: archivedIds } },
-            data: { externalId: null, externalProvider: null },
-          });
-          await tx.productExternalId.deleteMany({
-            where: { merchantId, productId: { in: archivedIds } },
+            data: { externalId: null },
           });
         }
       }
-      const order = dto.order ?? (await this.nextProductOrder(tx, merchantId));
-      const sanitizedDto: CreateProductDto = {
-        ...dto,
-        sku: undefined,
-        code: undefined,
-        barcode: undefined,
-        unit: undefined,
-        externalProvider: undefined,
-        iikoProductId: undefined,
-      };
       const data = this.prepareProductCreateData(
         merchantId,
-        { ...sanitizedDto, order },
+        dto,
         { categoryId: dto.categoryId ?? null },
       );
       const created = await tx.product.create({
         data,
         include: {
           category: true,
-          images: { orderBy: { position: 'asc' } },
-          variants: { orderBy: { position: 'asc' } },
-          stocks: { include: { outlet: true } },
-          externalMappings: true,
-        },
-      });
-      await this.syncProductExternal(tx, merchantId, created.id, {
-        externalProvider: null,
-        externalId: trimmedExternalId,
-        barcode: null,
-        sku: null,
-      });
-      const full = await tx.product.findFirst({
-        where: { id: created.id },
-        include: {
-          category: true,
-          images: { orderBy: { position: 'asc' } },
-          variants: { orderBy: { position: 'asc' } },
-          stocks: { include: { outlet: true } },
-          externalMappings: true,
         },
       });
       logEvent(this.logger, 'portal.catalog.product.create', {
@@ -1156,7 +794,7 @@ export class PortalCatalogService {
       this.metrics.inc('portal_catalog_products_changed_total', {
         action: 'create',
       });
-      return this.mapProductDetailed(full || created);
+      return this.mapProduct(created);
     });
   }
 
@@ -1173,12 +811,6 @@ export class PortalCatalogService {
       if (dto.categoryId !== undefined) {
         if (dto.categoryId)
           await this.ensureCategoryOwnership(tx, merchantId, dto.categoryId);
-      }
-      if (dto.stocks) {
-        for (const stock of dto.stocks) {
-          if (stock.outletId)
-            await this.ensureOutletOwnership(tx, merchantId, stock.outletId);
-        }
       }
       const trimmedExternalId = dto.externalId?.trim() || null;
       if (dto.externalId !== undefined && trimmedExternalId) {
@@ -1208,10 +840,7 @@ export class PortalCatalogService {
           const archivedIds = archived.map((item) => item.id);
           await tx.product.updateMany({
             where: { id: { in: archivedIds } },
-            data: { externalId: null, externalProvider: null },
-          });
-          await tx.productExternalId.deleteMany({
-            where: { merchantId, productId: { in: archivedIds } },
+            data: { externalId: null },
           });
         }
       }
@@ -1223,45 +852,14 @@ export class PortalCatalogService {
         data.name = name;
       }
       if (dto.externalId !== undefined) data.externalId = trimmedExternalId;
-      if (dto.description !== undefined)
-        data.description = dto.description ?? null;
-      if (dto.order !== undefined) data.order = dto.order;
-      if (dto.hasVariants !== undefined) data.hasVariants = dto.hasVariants;
-      if (dto.priceEnabled !== undefined) data.priceEnabled = dto.priceEnabled;
-      const priceEnabled =
-        dto.priceEnabled !== undefined
-          ? dto.priceEnabled
-          : product.priceEnabled;
-      if (dto.price !== undefined || dto.priceEnabled !== undefined) {
-        const price =
-          dto.price !== undefined
-            ? dto.price
-            : this.decimalToNumber(product.price);
-        data.price = priceEnabled ? this.toDecimal(price ?? 0) : null;
-      }
-      if (dto.disableCart !== undefined) data.allowCart = !dto.disableCart;
+      if (dto.price !== undefined) data.price = this.toDecimal(dto.price);
       if (dto.accruePoints !== undefined) data.accruePoints = dto.accruePoints;
       if (dto.allowRedeem !== undefined) data.allowRedeem = dto.allowRedeem;
       if (dto.redeemPercent !== undefined)
         data.redeemPercent = this.clampPercent(
           dto.redeemPercent,
-          product.redeemPercent,
+          product.redeemPercent ?? 100,
         );
-      if (dto.weightValue !== undefined)
-        data.weightValue = this.toDecimal(dto.weightValue);
-      if (dto.weightUnit !== undefined)
-        data.weightUnit = dto.weightUnit ?? null;
-      if (dto.heightCm !== undefined)
-        data.heightCm = this.toDecimal(dto.heightCm);
-      if (dto.widthCm !== undefined) data.widthCm = this.toDecimal(dto.widthCm);
-      if (dto.depthCm !== undefined) data.depthCm = this.toDecimal(dto.depthCm);
-      if (dto.proteins !== undefined)
-        data.proteins = this.toDecimal(dto.proteins);
-      if (dto.fats !== undefined) data.fats = this.toDecimal(dto.fats);
-      if (dto.carbs !== undefined) data.carbs = this.toDecimal(dto.carbs);
-      if (dto.calories !== undefined)
-        data.calories = this.toDecimal(dto.calories);
-      if (dto.tags !== undefined) data.tags = dto.tags;
       if (dto.categoryId !== undefined) {
         data.category = dto.categoryId
           ? { connect: { id: dto.categoryId } }
@@ -1270,61 +868,10 @@ export class PortalCatalogService {
       if (Object.keys(data).length > 0) {
         await tx.product.update({ where: { id: productId }, data });
       }
-      if (dto.images !== undefined) {
-        await tx.productImage.deleteMany({ where: { productId } });
-        if (dto.images?.length) {
-          await tx.productImage.createMany({
-            data: dto.images.map((img, index) => ({
-              productId,
-              url: img.url,
-              alt: img.alt ?? null,
-              position: img.position ?? index,
-            })),
-          });
-        }
-      }
-      const hasVariants =
-        dto.hasVariants !== undefined ? dto.hasVariants : product.hasVariants;
-      if (dto.variants !== undefined || dto.hasVariants !== undefined) {
-        await tx.productVariant.deleteMany({ where: { productId } });
-        if (hasVariants && dto.variants?.length) {
-          await tx.productVariant.createMany({
-            data: dto.variants.map((variant, index) => ({
-              productId,
-              name: variant.name,
-              sku: variant.sku ?? null,
-              price: this.toDecimal(variant.price),
-              notes: variant.notes ?? null,
-              position: variant.position ?? index,
-            })),
-          });
-        }
-      }
-      if (dto.stocks !== undefined) {
-        await tx.productStock.deleteMany({ where: { productId } });
-        if (dto.stocks?.length) {
-          for (const stock of dto.stocks) {
-            await tx.productStock.create({
-              data: {
-                productId,
-                label: stock.label,
-                outletId: stock.outletId ?? null,
-                price: this.toDecimal(stock.price),
-                balance: this.toDecimal(stock.balance),
-                currency: stock.currency ?? 'RUB',
-              },
-            });
-          }
-        }
-      }
       const updated = await tx.product.findFirst({
         where: { id: productId },
         include: {
           category: true,
-          images: { orderBy: { position: 'asc' } },
-          variants: { orderBy: { position: 'asc' } },
-          stocks: { include: { outlet: true } },
-          externalMappings: true,
         },
       });
       if (!updated) throw new NotFoundException('Product not found');
@@ -1335,14 +882,14 @@ export class PortalCatalogService {
       this.metrics.inc('portal_catalog_products_changed_total', {
         action: 'update',
       });
-      return this.mapProductDetailed(updated);
+      return this.mapProduct(updated);
     });
   }
 
   async deleteProduct(merchantId: string, productId: string) {
     const updated = await this.prisma.product.updateMany({
       where: { id: productId, merchantId, deletedAt: null },
-      data: { deletedAt: new Date(), externalId: null, externalProvider: null },
+      data: { deletedAt: new Date(), externalId: null },
     });
     if (updated.count === 0) {
       const archived = await this.prisma.product.findFirst({
@@ -1354,12 +901,9 @@ export class PortalCatalogService {
       }
       await this.prisma.product.update({
         where: { id: productId },
-        data: { externalId: null, externalProvider: null },
+        data: { externalId: null },
       });
     }
-    await this.prisma.productExternalId.deleteMany({
-      where: { merchantId, productId },
-    });
     logEvent(this.logger, 'portal.catalog.product.delete', {
       merchantId,
       productId,
@@ -1379,11 +923,7 @@ export class PortalCatalogService {
         data: {
           deletedAt: new Date(),
           externalId: null,
-          externalProvider: null,
         },
-      });
-      await this.prisma.productExternalId.deleteMany({
-        where: { merchantId, productId: { in: ids } },
       });
       logEvent(this.logger, 'portal.catalog.product.bulk', {
         merchantId,
@@ -1416,7 +956,7 @@ export class PortalCatalogService {
     provider: string,
     dto: ImportCatalogDto,
   ) {
-    const providerCode = dto.externalProvider?.trim() || provider || 'EXTERNAL';
+    const providerCode = provider || 'EXTERNAL';
     const productsInput = Array.isArray(dto.products) ? dto.products : [];
     const summary = {
       createdCategories: 0,
@@ -1431,105 +971,45 @@ export class PortalCatalogService {
           const name = (product.name || '').trim();
           if (!externalId || !name) continue;
           const categoryId = null;
-          const barcode = product.barcode?.trim() || null;
-          const sku = product.sku?.trim() || null;
-          const code = product.code?.trim() || null;
           const existing = await tx.product.findFirst({
             where: {
               merchantId,
               deletedAt: null,
-              OR: [
-                {
-                  externalProvider: providerCode,
-                  externalId,
-                },
-                {
-                  externalMappings: {
-                    some: { externalProvider: providerCode, externalId },
-                  },
-                },
-              ],
+              externalId,
             },
           });
-          let resolved = existing;
-          if (!resolved && barcode) {
-            resolved = await tx.product.findFirst({
-              where: { merchantId, deletedAt: null, barcode },
-            });
-          }
-          if (!resolved && sku) {
-            resolved = await tx.product.findFirst({
-              where: { merchantId, deletedAt: null, sku },
-            });
-          }
-          if (!resolved && code) {
-            resolved = await tx.product.findFirst({
-              where: { merchantId, deletedAt: null, code },
-            });
-          }
 
-          if (resolved) {
+          if (existing) {
             await tx.product.update({
-              where: { id: resolved.id },
+              where: { id: existing.id },
               data: {
                 name,
                 category: categoryId
                   ? { connect: { id: categoryId } }
                   : undefined,
-                sku,
-                code,
-                barcode,
-                unit: product.unit?.trim() || resolved.unit,
-                externalProvider: providerCode,
                 externalId,
                 price: this.toDecimal(
-                  product.price ?? this.decimalToNumber(resolved.price),
+                  product.price ?? this.decimalToNumber(existing.price),
                 ),
-                priceEnabled: true,
               },
-            });
-            await this.syncProductExternal(tx, merchantId, resolved.id, {
-              externalProvider: providerCode,
-              externalId,
-              barcode,
-              sku,
             });
             summary.updatedProducts += 1;
           } else {
-            const order = await this.nextProductOrder(tx, merchantId);
             const created = await tx.product.create({
               data: this.prepareProductCreateData(
                 merchantId,
                 {
                   name,
-                  sku,
-                  code,
-                  barcode,
-                  unit: product.unit,
-                  priceEnabled: true,
-                  price: product.price ?? 0,
-                  hasVariants: false,
+                  price: product.price ?? null,
                   accruePoints: true,
                   allowRedeem: true,
-                  externalProvider: providerCode,
                   externalId,
-                  order,
                 } as CreateProductDto,
                 { categoryId },
               ),
               include: {
                 category: true,
-                images: { orderBy: { position: 'asc' } },
-                variants: { orderBy: { position: 'asc' } },
-                stocks: { include: { outlet: true } },
-                externalMappings: true,
               },
-            });
-            await this.syncProductExternal(tx, merchantId, created.id, {
-              externalProvider: providerCode,
-              externalId,
-              barcode,
-              sku,
             });
             summary.createdProducts += 1;
           }
