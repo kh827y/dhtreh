@@ -17,7 +17,8 @@ import {
   type PortalPermissionState,
 } from '../../portal-auth/portal-permissions.util';
 import { LoyaltyProgramService } from '../loyalty-program.service';
-import type { TierDto, TierPayload } from '../loyalty-program.service';
+import type { TierDto } from '../loyalty-program.service';
+import { TierPayloadDto } from '../dto';
 
 type PortalRequest = Request & {
   portalMerchantId?: string;
@@ -42,7 +43,7 @@ export class TiersController {
   @Post()
   create(
     @Req() req: PortalRequest,
-    @Body() body: TierPayload,
+    @Body() body: TierPayloadDto,
   ): Promise<TierDto> {
     return this.service.createTier(this.merchantId(req), body);
   }
@@ -59,7 +60,7 @@ export class TiersController {
   update(
     @Req() req: PortalRequest,
     @Param('tierId') tierId: string,
-    @Body() body: TierPayload,
+    @Body() body: TierPayloadDto,
   ): Promise<TierDto> {
     return this.service.updateTier(this.merchantId(req), tierId, body);
   }

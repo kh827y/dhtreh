@@ -7,6 +7,7 @@ import {
   CustomerPhoneStatusDto,
   CustomerProfileDto,
   CustomerProfileSaveDto,
+  TeleauthDto,
 } from '../dto/dto';
 import { LoyaltyProfileUseCase } from '../use-cases/loyalty-profile.use-case';
 
@@ -20,12 +21,7 @@ export class LoyaltyProfileController {
   @Post('teleauth')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async teleauth(
-    @Body()
-    body: {
-      merchantId?: string;
-      initData?: string;
-      create?: boolean;
-    },
+    @Body() body: TeleauthDto,
   ) {
     return this.useCase.teleauth(body);
   }

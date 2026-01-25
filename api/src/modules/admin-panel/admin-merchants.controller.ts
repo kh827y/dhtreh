@@ -15,10 +15,14 @@ import { ApiTags } from '@nestjs/swagger';
 import { AdminGuard } from '../../core/guards/admin.guard';
 import { AdminIpGuard } from '../../core/guards/admin-ip.guard';
 import { AdminAuditInterceptor } from '../admin/admin-audit.interceptor';
+import { AdminMerchantsService } from './admin-merchants.service';
 import {
-  AdminMerchantsService,
-  type UpdateMerchantSettingsPayload,
-} from './admin-merchants.service';
+  AdminGrantSubscriptionDto,
+  AdminMerchantCreateDto,
+  AdminMerchantSettingsDto,
+  AdminMerchantUpdateDto,
+  AdminRotateCashierDto,
+} from './dto';
 
 interface ListQuery {
   search?: string;
@@ -45,13 +49,7 @@ export class AdminMerchantsController {
   @Post()
   createMerchant(
     @Body()
-    body: {
-      name: string;
-      portalEmail?: string;
-      portalPassword?: string;
-      ownerName?: string;
-      settings?: UpdateMerchantSettingsPayload;
-    },
+    body: AdminMerchantCreateDto,
   ) {
     return this.service.createMerchant({
       name: body.name,
@@ -66,13 +64,7 @@ export class AdminMerchantsController {
   updateMerchant(
     @Param('id') id: string,
     @Body()
-    body: {
-      name?: string;
-      portalEmail?: string | null;
-      portalPassword?: string | null;
-      ownerName?: string | null;
-      archived?: boolean;
-    },
+    body: AdminMerchantUpdateDto,
   ) {
     return this.service.updateMerchant(id, {
       name: body.name ?? undefined,
@@ -88,7 +80,7 @@ export class AdminMerchantsController {
   @Put(':id/settings')
   updateSettings(
     @Param('id') id: string,
-    @Body() body: UpdateMerchantSettingsPayload,
+    @Body() body: AdminMerchantSettingsDto,
   ) {
     return this.service.updateSettings(id, body);
   }
@@ -96,7 +88,7 @@ export class AdminMerchantsController {
   @Post(':id/cashier/rotate')
   rotateCashier(
     @Param('id') id: string,
-    @Body() body: { regenerateLogin?: boolean },
+    @Body() body: AdminRotateCashierDto,
   ) {
     return this.service.rotateCashierCredentials(id, !!body?.regenerateLogin);
   }
@@ -104,7 +96,7 @@ export class AdminMerchantsController {
   @Post(':id/subscription')
   grantSubscription(
     @Param('id') id: string,
-    @Body() body: { days?: number; planId?: string },
+    @Body() body: AdminGrantSubscriptionDto,
   ) {
     const days = Number(body?.days);
     if (!Number.isFinite(days) || days <= 0)

@@ -26,9 +26,9 @@ export interface CustomerFilters {
 }
 
 export interface SegmentPayload {
-  name: string;
+  name?: string;
   description?: string | null;
-  rules: Prisma.InputJsonValue;
+  rules?: Prisma.InputJsonValue;
   filters?: Prisma.InputJsonValue | null;
   tags?: string[];
   color?: string | null;
@@ -938,7 +938,10 @@ export class CustomerAudiencesService {
   }
 
   async listSegments(merchantId: string, options: ListSegmentsOptions = {}) {
-    await this.ensureDefaultAudience(merchantId).catch(() => null);
+    await this.ensureDefaultAudience(merchantId).catch((err) => {
+      this.logIgnored(err, 'segments ensure default');
+      return null;
+    });
     const where: Prisma.CustomerSegmentWhereInput = { merchantId };
     if (!options.includeSystem) where.isSystem = false;
     const segments = await this.prisma.customerSegment.findMany({

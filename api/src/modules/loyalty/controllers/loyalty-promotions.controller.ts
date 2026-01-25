@@ -3,7 +3,13 @@ import { ApiBadRequestResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { CashierGuard } from '../../../core/guards/cashier.guard';
 import { SubscriptionGuard } from '../../../core/guards/subscription.guard';
-import { ErrorDto } from '../dto/dto';
+import {
+  ErrorDto,
+  PromoCodeApplyDto,
+  PromotionClaimDto,
+  ReviewDismissDto,
+  ReviewSubmitDto,
+} from '../dto/dto';
 import { LoyaltyPromotionsUseCase } from '../use-cases/loyalty-promotions.use-case';
 
 @ApiTags('loyalty')
@@ -25,14 +31,7 @@ export class LoyaltyPromotionsController {
   @Post('promotions/claim')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async claimPromotion(
-    @Body()
-    body: {
-      merchantId?: string;
-      customerId?: string;
-      promotionId?: string;
-      outletId?: string | null;
-      staffId?: string | null;
-    },
+    @Body() body: PromotionClaimDto,
   ) {
     return this.useCase.claimPromotion(body);
   }
@@ -40,20 +39,7 @@ export class LoyaltyPromotionsController {
   @Post('reviews')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async submitReview(
-    @Body()
-    body: {
-      merchantId?: string;
-      customerId?: string;
-      orderId?: string | null;
-      rating?: number | string;
-      comment?: string;
-      title?: string;
-      tags?: unknown;
-      photos?: unknown;
-      transactionId?: string;
-      outletId?: string | null;
-      staffId?: string | null;
-    },
+    @Body() body: ReviewSubmitDto,
   ) {
     return this.useCase.submitReview(body);
   }
@@ -61,12 +47,7 @@ export class LoyaltyPromotionsController {
   @Post('reviews/dismiss')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async dismissReviewPrompt(
-    @Body()
-    body: {
-      merchantId?: string;
-      customerId?: string;
-      transactionId?: string;
-    },
+    @Body() body: ReviewDismissDto,
   ) {
     return this.useCase.dismissReviewPrompt(body);
   }
@@ -91,12 +72,7 @@ export class LoyaltyPromotionsController {
   })
   @ApiBadRequestResponse({ type: ErrorDto })
   async applyPromoCode(
-    @Body()
-    body: {
-      merchantId?: string;
-      customerId?: string;
-      code?: string;
-    },
+    @Body() body: PromoCodeApplyDto,
   ) {
     return this.useCase.applyPromoCode(body);
   }

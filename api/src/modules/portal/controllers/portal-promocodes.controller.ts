@@ -11,10 +11,13 @@ import {
 } from '@nestjs/common';
 import { ApiExtraModels, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { type PortalPromoCodePayload } from '../../promocodes/promocodes.service';
 import type { PortalRequest } from './portal.controller-helpers';
 import { TransactionItemDto } from '../../loyalty/dto/dto';
 import { PortalPromocodesUseCase } from '../use-cases/portal-promocodes.use-case';
+import {
+  PortalPromoCodePayloadDto,
+  PortalPromoCodeStatusDto,
+} from '../dto/promocodes.dto';
 
 @ApiTags('portal')
 @ApiExtraModels(TransactionItemDto)
@@ -53,7 +56,7 @@ export class PortalPromocodesController {
   })
   promocodesIssue(
     @Req() req: PortalRequest,
-    @Body() body: PortalPromoCodePayload,
+    @Body() body: PortalPromoCodePayloadDto,
   ) {
     return this.useCase.promocodesIssue(req, body);
   }
@@ -64,7 +67,7 @@ export class PortalPromocodesController {
   })
   promocodesDeactivate(
     @Req() req: PortalRequest,
-    @Body() body: { promoCodeId?: string; code?: string },
+    @Body() body: PortalPromoCodeStatusDto,
   ) {
     return this.useCase.promocodesDeactivate(req, body);
   }
@@ -75,7 +78,7 @@ export class PortalPromocodesController {
   })
   promocodesActivate(
     @Req() req: PortalRequest,
-    @Body() body: { promoCodeId?: string; code?: string },
+    @Body() body: PortalPromoCodeStatusDto,
   ) {
     return this.useCase.promocodesActivate(req, body);
   }
@@ -87,7 +90,7 @@ export class PortalPromocodesController {
   promocodesUpdate(
     @Req() req: PortalRequest,
     @Param('promoCodeId') promoCodeId: string,
-    @Body() body: PortalPromoCodePayload,
+    @Body() body: PortalPromoCodePayloadDto,
   ) {
     return this.useCase.promocodesUpdate(req, promoCodeId, body);
   }

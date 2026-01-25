@@ -12,6 +12,7 @@ import { OpsAlertMonitor } from '../alerts/ops-alert-monitor.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { ConfigService } from '@nestjs/config';
 import { AdminAuditInterceptor } from './admin-audit.interceptor';
+import { AlertsTestDto } from './dto';
 
 @UseGuards(AdminGuard, AdminIpGuard)
 @UseInterceptors(AdminAuditInterceptor)
@@ -52,14 +53,10 @@ export class AdminObservabilityController {
   }
 
   @Post('alerts/test')
-  async test(@Body() body: unknown) {
-    const record =
-      body && typeof body === 'object' && !Array.isArray(body)
-        ? (body as Record<string, unknown>)
-        : null;
+  async test(@Body() body: AlertsTestDto) {
     const text =
-      typeof record?.text === 'string' && record.text.trim()
-        ? record.text.trim()
+      typeof body?.text === 'string' && body.text.trim()
+        ? body.text.trim()
         : 'Тестовое оповещение: админка';
     await this.alerts.notifyIncident({
       title: 'Тест оповещения',

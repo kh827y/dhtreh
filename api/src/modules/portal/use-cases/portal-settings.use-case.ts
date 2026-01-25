@@ -7,10 +7,7 @@ import {
   UpdateMerchantNameDto,
   UpdateTimezoneDto,
 } from '../../merchants/dto';
-import {
-  StaffMotivationService,
-  type UpdateStaffMotivationPayload,
-} from '../services/staff-motivation.service';
+import { StaffMotivationService } from '../services/staff-motivation.service';
 import { ReferralService } from '../../referral/referral.service';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import {
@@ -28,6 +25,11 @@ import {
   type PortalRequest,
   type UploadedFile as UploadedFilePayload,
 } from '../controllers/portal.controller-helpers';
+import type {
+  UpdateReferralProgramDto,
+  UpdateSupportSettingDto,
+  UpdateStaffMotivationDto,
+} from '../dto/settings.dto';
 
 export const MAX_MINIAPP_LOGO_BYTES = 512 * 1024;
 const ALLOWED_MINIAPP_LOGO_MIME_TYPES = new Set([
@@ -53,7 +55,7 @@ export class PortalSettingsUseCase {
 
   updateStaffMotivation(
     req: PortalRequest,
-    body: UpdateStaffMotivationPayload,
+    body: UpdateStaffMotivationDto,
   ) {
     return this.staffMotivation.updateSettings(
       this.helpers.getMerchantId(req),
@@ -76,7 +78,7 @@ export class PortalSettingsUseCase {
     );
   }
 
-  updateReferralProgramSettings(req: PortalRequest, body: unknown) {
+  updateReferralProgramSettings(req: PortalRequest, body: UpdateReferralProgramDto) {
     const payload = this.helpers.normalizeReferralProgramPayload(body);
     return this.referrals.updateProgramSettingsFromPortal(
       this.helpers.getMerchantId(req),
@@ -277,13 +279,10 @@ export class PortalSettingsUseCase {
     return { supportTelegram };
   }
 
-  async updateSupportSetting(req: PortalRequest, body: unknown) {
+  async updateSupportSetting(req: PortalRequest, body: UpdateSupportSettingDto) {
     const merchantId = this.helpers.getMerchantId(req);
-    const payload = this.helpers.asRecord(body);
     const rawValue =
-      typeof payload.supportTelegram === 'string'
-        ? payload.supportTelegram
-        : '';
+      typeof body?.supportTelegram === 'string' ? body.supportTelegram : '';
     const supportTelegram = rawValue.trim() ? rawValue.trim() : null;
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },

@@ -7,6 +7,7 @@ import {
   CustomerPhoneStatusDto,
   CustomerProfileDto,
   CustomerProfileSaveDto,
+  TeleauthDto,
 } from '../dto/dto';
 import { validateTelegramInitData } from '../utils/telegram.util';
 import {
@@ -26,11 +27,7 @@ export class LoyaltyProfileUseCase {
     private readonly support: LoyaltyControllerSupportService,
   ) {}
 
-  async teleauth(body: {
-    merchantId?: string;
-    initData?: string;
-    create?: boolean;
-  }) {
+  async teleauth(body: TeleauthDto) {
     const merchantId = requireTrimmed(body?.merchantId, 'merchantId required');
     const initData = requireTrimmed(body?.initData, 'initData is required');
     const shouldCreate = body?.create !== false;

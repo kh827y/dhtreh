@@ -127,16 +127,35 @@ export class LoyaltyProgramPromotionsService {
   private async backfillPromotionMetadata(promotions: PromotionRecord[]) {
     const tasks: Array<Promise<unknown>> = [];
     for (const promotion of promotions) {
-      const upgrade = upgradeMetadata(
+      const metadataUpgrade = upgradeMetadata(
         promotion.metadata as Prisma.InputJsonValue | null,
       );
-      if (!upgrade.changed) continue;
-      promotion.metadata = (upgrade.value ?? null) as Prisma.JsonValue | null;
+      const rewardUpgrade = upgradeMetadata(
+        promotion.rewardMetadata as Prisma.InputJsonValue | null,
+      );
+      if (!metadataUpgrade.changed && !rewardUpgrade.changed) continue;
+      if (metadataUpgrade.changed) {
+        promotion.metadata = (metadataUpgrade.value ?? null) as
+          | Prisma.JsonValue
+          | null;
+      }
+      if (rewardUpgrade.changed) {
+        promotion.rewardMetadata = (rewardUpgrade.value ?? null) as
+          | Prisma.JsonValue
+          | null;
+      }
+      const data: Prisma.LoyaltyPromotionUpdateInput = {};
+      if (metadataUpgrade.changed) {
+        data.metadata = metadataUpgrade.value as Prisma.InputJsonValue;
+      }
+      if (rewardUpgrade.changed) {
+        data.rewardMetadata = rewardUpgrade.value as Prisma.InputJsonValue;
+      }
       tasks.push(
         this.prisma.loyaltyPromotion
           .update({
             where: { id: promotion.id },
-            data: { metadata: upgrade.value as Prisma.InputJsonValue },
+            data,
           })
           .catch((err) =>
             logIgnoredError(
@@ -144,7 +163,11 @@ export class LoyaltyProgramPromotionsService {
               'LoyaltyProgramPromotionsService backfill metadata',
               this.logger,
               'debug',
-              { promotionId: promotion.id, merchantId: promotion.merchantId },
+              {
+                promotionId: promotion.id,
+                merchantId: promotion.merchantId,
+                fields: Object.keys(data),
+              },
             ),
           ),
       );
@@ -510,6 +533,9 @@ export class LoyaltyProgramPromotionsService {
         );
       }
     }
+    const rewardMetadataJson = ensureMetadataVersion(
+      rewardMetadata as Prisma.InputJsonValue,
+    ) as Prisma.InputJsonValue;
 
     await this.ensureSegmentOwned(merchantId, payload.segmentId ?? null);
     const status = payload.status ?? PromotionStatus.DRAFT;
@@ -533,7 +559,7 @@ export class LoyaltyProgramPromotionsService {
         status,
         rewardType: rewardType,
         rewardValue,
-        rewardMetadata: rewardMetadata as Prisma.InputJsonValue,
+        rewardMetadata: rewardMetadataJson,
         pointsExpireInDays,
         pushTemplateStartId: payload.pushTemplateStartId ?? null,
         pushTemplateReminderId: payload.pushTemplateReminderId ?? null,
@@ -681,6 +707,9 @@ export class LoyaltyProgramPromotionsService {
         );
       }
     }
+    const rewardMetadataJson = ensureMetadataVersion(
+      rewardMetadata as Prisma.InputJsonValue,
+    ) as Prisma.InputJsonValue;
 
     const segmentId =
       payload.segmentId !== undefined ? payload.segmentId : promotion.segmentId;
@@ -712,7 +741,7 @@ export class LoyaltyProgramPromotionsService {
         status,
         rewardType,
         rewardValue,
-        rewardMetadata: rewardMetadata as Prisma.InputJsonValue,
+        rewardMetadata: rewardMetadataJson,
         pointsExpireInDays,
         pushTemplateStartId:
           payload.pushTemplateStartId ?? promotion.pushTemplateStartId,

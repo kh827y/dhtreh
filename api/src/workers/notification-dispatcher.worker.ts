@@ -238,6 +238,7 @@ export class NotificationDispatcherWorker
         const htmlRaw = this.asString(template.html) ?? '';
         const dataVars = this.toRecord(payload.variables) ?? {};
         const dispatchErrors: string[] = [];
+        let firstDispatchError: unknown | null = null;
 
         // derive recipients by segment if provided
         let customerIds: string[] = [];
@@ -308,6 +309,16 @@ export class NotificationDispatcherWorker
               pushFailed += r.success ? 0 : 1;
             }
           } catch (error: unknown) {
+            if (!firstDispatchError) {
+              firstDispatchError = error;
+              logIgnoredError(
+                error,
+                'NotificationDispatcherWorker push send',
+                this.logger,
+                'debug',
+                { merchantId, channel: 'PUSH' },
+              );
+            }
             dispatchErrors.push(`push: ${this.formatErrorMessage(error)}`);
           }
         }
@@ -383,6 +394,16 @@ export class NotificationDispatcherWorker
               }
             }
           } catch (error: unknown) {
+            if (!firstDispatchError) {
+              firstDispatchError = error;
+              logIgnoredError(
+                error,
+                'NotificationDispatcherWorker email send',
+                this.logger,
+                'debug',
+                { merchantId, channel: 'EMAIL' },
+              );
+            }
             dispatchErrors.push(`email: ${this.formatErrorMessage(error)}`);
           }
         }

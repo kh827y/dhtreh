@@ -238,6 +238,13 @@ export class TelegramNotifyService implements OnModuleInit {
           await this.sendWithRetry(item);
           item.resolve();
         } catch (error) {
+          logIgnoredError(
+            error,
+            'TelegramNotifyService send failed',
+            this.logger,
+            'debug',
+            { chatId: item.chatId },
+          );
           item.reject(error);
         }
       }

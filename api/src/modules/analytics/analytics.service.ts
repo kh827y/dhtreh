@@ -8,6 +8,10 @@ import {
   findTimezone,
 } from '../../shared/timezone/russia-timezones';
 import { withJsonSchemaVersion } from '../../shared/json-version.util';
+import {
+  ensureRulesRoot,
+  getRulesRoot,
+} from '../../shared/rules-json.util';
 import { UpdateRfmSettingsDto } from './dto/update-rfm-settings.dto';
 import {
   fetchReceiptAggregates,
@@ -1333,7 +1337,7 @@ export class AnalyticsService {
   private parseRfmSettings(
     rulesJson: Prisma.JsonValue | null | undefined,
   ): ParsedRfmSettings {
-    const root = this.toJsonObject(rulesJson);
+    const root = getRulesRoot(rulesJson);
     if (!root) return { recencyMode: 'auto' };
     const raw = root.rfm;
     if (!raw || typeof raw !== 'object' || Array.isArray(raw))
@@ -1390,8 +1394,8 @@ export class AnalyticsService {
       monetary: { mode: 'auto' | 'manual'; threshold: number | null };
     },
   ): Prisma.JsonObject {
-    const root = this.toJsonObject(rulesJson);
-    const next: Prisma.JsonObject = root ? { ...root } : {};
+    const root = ensureRulesRoot(rulesJson);
+    const next = { ...(root as Prisma.JsonObject) } as Prisma.JsonObject;
     next.rfm = {
       ...(rfm.recencyMode === 'manual' && rfm.recencyDays
         ? { recencyDays: rfm.recencyDays }
@@ -2299,7 +2303,7 @@ export class AnalyticsService {
       select: { rulesJson: true },
     });
 
-    const rules = this.asRecord(settings?.rulesJson) ?? {};
+    const rules = getRulesRoot(settings?.rulesJson) ?? {};
     const autoReturn = this.asRecord(rules.autoReturn) ?? {};
 
     const thresholdDays = Math.max(
@@ -2785,7 +2789,7 @@ export class AnalyticsService {
       select: { rulesJson: true },
     });
 
-    const rules = this.asRecord(settings?.rulesJson) ?? {};
+    const rules = getRulesRoot(settings?.rulesJson) ?? {};
     const birthday = this.asRecord(rules.birthday) ?? {};
 
     const daysBefore = Math.max(

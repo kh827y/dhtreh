@@ -1,14 +1,12 @@
 import { Body, Controller, Post, UseGuards, Req, Logger } from '@nestjs/common';
 import { ApiHeader, ApiOkResponse, ApiTags } from '@nestjs/swagger';
-import {
-  NotificationsService,
-  type BroadcastArgs,
-} from './notifications.service';
+import { NotificationsService } from './notifications.service';
 import { AdminGuard } from '../../core/guards/admin.guard';
 import { AdminIpGuard } from '../../core/guards/admin-ip.guard';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { safeExecAsync } from '../../shared/safe-exec';
+import { NotificationsBroadcastDto, NotificationsTestDto } from './dto';
 
 @ApiTags('notifications')
 @Controller('notifications')
@@ -26,7 +24,8 @@ export class NotificationsController {
   @ApiOkResponse({
     schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
   })
-  async broadcast(@Body() body: BroadcastArgs, @Req() _req: any) {
+  async broadcast(@Body() body: NotificationsBroadcastDto, @Req() _req: any) {
+    const templatePayload = body.template ? { ...body.template } : null;
     const res = await this.svc.broadcast(body);
     await safeExecAsync(
       () =>
@@ -40,7 +39,7 @@ export class NotificationsController {
             payload: {
               channel: body.channel,
               segmentId: body.segmentId ?? null,
-              template: body.template ?? null,
+              template: (templatePayload ?? null) as Prisma.InputJsonValue,
               variables: (body.variables ?? null) as Prisma.InputJsonValue,
             },
           },
@@ -57,13 +56,7 @@ export class NotificationsController {
     schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
   })
   async test(
-    @Body()
-    body: {
-      merchantId: string;
-      channel: 'EMAIL' | 'PUSH';
-      to: string;
-      template?: { subject?: string; text?: string; html?: string };
-    },
+    @Body() body: NotificationsTestDto,
     @Req() _req: any,
   ) {
     const res = await this.svc.test(

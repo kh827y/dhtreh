@@ -6,6 +6,10 @@ import {
   PortalControllerHelpers,
   type PortalRequest,
 } from '../controllers/portal.controller-helpers';
+import type {
+  TelegramMiniAppConnectDto,
+  TelegramMiniAppLinkDto,
+} from '../dto/integrations.dto';
 
 @Injectable()
 export class PortalIntegrationsUseCase {
@@ -36,7 +40,7 @@ export class PortalIntegrationsUseCase {
     return this.telegramIntegration.getState(this.helpers.getMerchantId(req));
   }
 
-  telegramMiniAppConnect(req: PortalRequest, body: { token?: string }) {
+  telegramMiniAppConnect(req: PortalRequest, body: TelegramMiniAppConnectDto) {
     return this.telegramIntegration.connect(
       this.helpers.getMerchantId(req),
       body?.token || '',
@@ -47,7 +51,7 @@ export class PortalIntegrationsUseCase {
     return this.telegramIntegration.check(this.helpers.getMerchantId(req));
   }
 
-  telegramMiniAppLink(req: PortalRequest, body: { outletId?: string }) {
+  telegramMiniAppLink(req: PortalRequest, body: TelegramMiniAppLinkDto) {
     return this.telegramIntegration.generateLink(
       this.helpers.getMerchantId(req),
       body?.outletId,

@@ -15,6 +15,7 @@ import { AdminIpGuard } from '../../core/guards/admin-ip.guard';
 import { MetricsService } from '../../core/metrics/metrics.service';
 import { AdminAuditInterceptor } from '../admin/admin-audit.interceptor';
 import { logIgnoredError } from '../../shared/logging/ignore-error.util';
+import { TelegramRegisterDto } from './dto';
 
 @Controller()
 export class TelegramController {
@@ -80,7 +81,7 @@ export class TelegramController {
   @UseInterceptors(AdminAuditInterceptor)
   async register(
     @Param('id') merchantId: string,
-    @Body() body: { botToken?: string } | null,
+    @Body() body: TelegramRegisterDto,
   ) {
     const botToken =
       typeof body?.botToken === 'string' ? body.botToken.trim() : '';

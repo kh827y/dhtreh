@@ -329,6 +329,7 @@ export class ImportExportService {
       balancesSet: 0,
       errors: [] as Array<{ row: number; error: string }>,
     };
+    let firstError: unknown | null = null;
 
     const updateExisting = dto.updateExisting === true;
     const tierCache: { loaded: boolean; map: Map<string, string> } = {
@@ -668,6 +669,16 @@ export class ImportExportService {
           );
         }
       } catch (error) {
+        if (!firstError) {
+          firstError = error;
+          logIgnoredError(
+            error,
+            'ImportExportService import customers',
+            undefined,
+            'debug',
+            { merchantId: dto.merchantId, row: rowNumber },
+          );
+        }
         results.errors.push({
           row: rowNumber,
           error: error instanceof Error ? error.message : String(error),
@@ -725,6 +736,7 @@ export class ImportExportService {
       updated: 0,
       errors: [] as Array<{ row: number; error: string }>,
     };
+    let firstError: unknown | null = null;
 
     const valueRaw = this.asString(dto.value ?? null);
     const valueAmount =
@@ -798,6 +810,16 @@ export class ImportExportService {
 
         results.updated++;
       } catch (error) {
+        if (!firstError) {
+          firstError = error;
+          logIgnoredError(
+            error,
+            'ImportExportService bulk update customers',
+            undefined,
+            'debug',
+            { merchantId: dto.merchantId, row: rowNumber },
+          );
+        }
         results.errors.push({
           row: rowNumber,
           error: error instanceof Error ? error.message : String(error),
@@ -1161,11 +1183,13 @@ export class ImportExportService {
       imported: 0,
       errors: [] as Array<{ row: number; error: string }>,
     };
+    let firstError: unknown | null = null;
 
     const allowedTypes = new Set(Object.values(TxnType));
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
+      const rowNumber = i + 2;
       if (this.isEmptyRow(row)) {
         continue;
       }
@@ -1221,8 +1245,18 @@ export class ImportExportService {
 
         results.imported++;
       } catch (error) {
+        if (!firstError) {
+          firstError = error;
+          logIgnoredError(
+            error,
+            'ImportExportService import transactions',
+            undefined,
+            'debug',
+            { merchantId, row: rowNumber },
+          );
+        }
         results.errors.push({
-          row: i + 2,
+          row: rowNumber,
           error: error instanceof Error ? error.message : String(error),
         });
       }

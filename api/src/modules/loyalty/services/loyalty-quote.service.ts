@@ -3,6 +3,7 @@ import { HoldMode, HoldStatus, WalletType } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { safeExecAsync } from '../../../shared/safe-exec';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
+import { getRulesRoot } from '../../../shared/rules-json.util';
 import { Mode, QuoteDto } from '../dto/dto';
 import { ensureBaseTier } from '../utils/tier-defaults.util';
 import { LoyaltyOpsBase } from './loyalty-ops-base.service';
@@ -98,10 +99,7 @@ export class LoyaltyQuoteService extends LoyaltyOpsBase {
       earnDailyCap,
       rulesJson,
     } = await this.getSettings(dto.merchantId);
-    const rulesConfig =
-      rulesJson && typeof rulesJson === 'object' && !Array.isArray(rulesJson)
-        ? (rulesJson as Record<string, unknown>)
-        : {};
+    const rulesConfig = getRulesRoot(rulesJson) ?? {};
     const allowSameReceipt = Boolean(rulesConfig.allowEarnRedeemSameReceipt);
     const allowSameReceiptForCustomer = allowSameReceipt && !accrualsBlocked;
     const modeUpper = String(dto.mode).toUpperCase();

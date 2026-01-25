@@ -12,10 +12,8 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { PortalGuard } from '../portal-auth/portal.guard';
-import {
-  CustomerAudiencesService,
-  type SegmentPayload,
-} from './customer-audiences.service';
+import { CustomerAudiencesService } from './customer-audiences.service';
+import { SegmentActiveDto, SegmentPayloadDto } from './dto';
 
 type PortalRequest = Request & {
   portalMerchantId?: string;
@@ -42,7 +40,7 @@ export class CustomerAudiencesController {
   }
 
   @Post('audiences')
-  createAudience(@Req() req: PortalRequest, @Body() body: SegmentPayload) {
+  createAudience(@Req() req: PortalRequest, @Body() body: SegmentPayloadDto) {
     return this.service.createSegment(this.merchantId(req), body);
   }
 
@@ -50,7 +48,7 @@ export class CustomerAudiencesController {
   updateAudience(
     @Req() req: PortalRequest,
     @Param('id') id: string,
-    @Body() body: SegmentPayload,
+    @Body() body: SegmentPayloadDto,
   ) {
     return this.service.updateSegment(this.merchantId(req), id, body);
   }
@@ -59,7 +57,7 @@ export class CustomerAudiencesController {
   activateAudience(
     @Req() req: PortalRequest,
     @Param('id') id: string,
-    @Body() body: { active: boolean },
+    @Body() body: SegmentActiveDto,
   ) {
     return this.service.setSegmentActive(
       this.merchantId(req),

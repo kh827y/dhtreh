@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsEmail,
   IsIn,
   IsInt,
   IsOptional,
@@ -8,9 +9,15 @@ import {
   Min,
   Length,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { StaffRole } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RUSSIA_TIMEZONES } from '../../shared/timezone/russia-timezones';
+import {
+  toOptionalBoolean,
+  toOptionalInt,
+  toTrimmedString,
+} from '../../shared/common/transform.util';
 
 export class UpdateMerchantSettingsDto {
   @ApiPropertyOptional({
@@ -296,6 +303,167 @@ export class UpdateStaffDto {
   @IsOptional()
   @IsString()
   currentPassword?: string;
+}
+
+// ===== Admin/request DTOs =====
+
+export class CreateMerchantDto {
+  @ApiProperty()
+  @IsString()
+  @Transform(toTrimmedString)
+  name!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEmail()
+  @Transform(toTrimmedString)
+  email?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  password?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEmail()
+  @Transform(toTrimmedString)
+  portalEmail?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  portalPassword?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  ownerName?: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Transform(toOptionalInt)
+  @IsInt()
+  @Min(1)
+  maxOutlets?: number | null;
+}
+
+export class UpdateMerchantDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  name?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEmail()
+  @Transform(toTrimmedString)
+  email?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  password?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEmail()
+  @Transform(toTrimmedString)
+  portalEmail?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  portalPassword?: string;
+}
+
+export class GrantSubscriptionDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(toOptionalInt)
+  @IsInt()
+  @Min(1)
+  days?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  planId?: string;
+}
+
+export class PortalLoginEnabledDto {
+  @ApiProperty()
+  @Transform(toOptionalBoolean)
+  @IsBoolean()
+  enabled!: boolean;
+}
+
+export class PortalTotpVerifyDto {
+  @ApiProperty()
+  @IsString()
+  @Transform(toTrimmedString)
+  code!: string;
+}
+
+export class CashierCredentialsDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  login?: string;
+}
+
+export class CashierRotateDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(toOptionalBoolean)
+  @IsBoolean()
+  regenerateLogin?: boolean;
+}
+
+export class OutboxRetrySinceDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  status?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  since?: string;
+}
+
+export class OutboxPauseDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(toOptionalInt)
+  @IsInt()
+  @Min(0)
+  minutes?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  until?: string;
+}
+
+export class ResetAntifraudLimitDto {
+  @ApiProperty()
+  @IsString()
+  @IsIn(['merchant', 'customer', 'staff', 'device', 'outlet'])
+  scope!: 'merchant' | 'customer' | 'staff' | 'device' | 'outlet';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  targetId?: string;
 }
 
 // ===== Response DTOs =====

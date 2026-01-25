@@ -84,7 +84,14 @@ export class TelegramBotService {
       const parsed = new URL(url);
       const parts = parsed.pathname.split('/').filter(Boolean);
       return parts[parts.length - 1] || 'unknown';
-    } catch {
+    } catch (err) {
+      logIgnoredError(
+        err,
+        'TelegramBotService parse endpoint',
+        this.logger,
+        'debug',
+        { url },
+      );
       return 'unknown';
     }
   }

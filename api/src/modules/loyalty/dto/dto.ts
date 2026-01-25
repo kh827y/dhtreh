@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsEnum,
   IsNumber,
   IsOptional,
@@ -10,6 +11,11 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TxnType } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
+import {
+  toOptionalBoolean,
+  toOptionalNumber,
+  toTrimmedString,
+} from '../../../shared/common/transform.util';
 
 function readString(
   source: Record<string, unknown> | null,
@@ -290,6 +296,253 @@ export class BalanceDto {
   @ApiProperty() merchantId!: string;
   @ApiProperty() customerId!: string;
   @ApiProperty() balance!: number;
+}
+
+export class TeleauthDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  merchantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  initData?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(toOptionalBoolean)
+  @IsBoolean()
+  create?: boolean;
+}
+
+export class CashierActivateDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  merchantLogin?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  activationCode?: string;
+}
+
+export class CashierStaffAccessDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  merchantLogin?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  pinCode?: string;
+}
+
+export class CashierSessionStartDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  merchantLogin?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  pinCode?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(toOptionalBoolean)
+  @IsBoolean()
+  rememberPin?: boolean;
+}
+
+export class ConsentSetDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  merchantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  customerId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(toOptionalBoolean)
+  @IsBoolean()
+  granted?: boolean;
+}
+
+export class PromotionClaimDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  merchantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  customerId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  promotionId?: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  outletId?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  staffId?: string | null;
+}
+
+export class ReviewSubmitDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  merchantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  customerId?: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  orderId?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(toOptionalNumber)
+  @IsNumber()
+  rating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  comment?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  tags?: unknown;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  photos?: unknown;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  transactionId?: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  outletId?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  staffId?: string | null;
+}
+
+export class ReviewDismissDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  merchantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  customerId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  transactionId?: string;
+}
+
+export class PromoCodeApplyDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  merchantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  customerId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  code?: string;
+}
+
+export class RegistrationBonusDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  merchantId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  customerId?: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  outletId?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @Transform(toTrimmedString)
+  staffId?: string | null;
 }
 
 export class CashierCustomerResolveDto {

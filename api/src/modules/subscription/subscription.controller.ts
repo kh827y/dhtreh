@@ -20,6 +20,11 @@ import {
 } from '@nestjs/swagger';
 import { SubscriptionService } from './subscription.service';
 import { ApiKeyGuard } from '../../core/guards/api-key.guard';
+import {
+  CreateSubscriptionRequestDto,
+  PlanRefDto,
+  UpdateSubscriptionRequestDto,
+} from './dto';
 
 @ApiTags('Subscriptions')
 @Controller('subscription')
@@ -47,11 +52,7 @@ export class SubscriptionController {
   @ApiResponse({ status: 400, description: 'Неверные данные' })
   async createSubscription(
     @Body()
-    dto: {
-      merchantId: string;
-      planId: string;
-      metadata?: any;
-    },
+    dto: CreateSubscriptionRequestDto,
   ) {
     return this.subscriptionService.createSubscription(dto);
   }
@@ -82,11 +83,7 @@ export class SubscriptionController {
   async updateSubscription(
     @Param('merchantId') merchantId: string,
     @Body()
-    dto: {
-      planId?: string;
-      cancelAtPeriodEnd?: boolean;
-      metadata?: any;
-    },
+    dto: UpdateSubscriptionRequestDto,
   ) {
     return this.subscriptionService.updateSubscription(merchantId, dto);
   }
@@ -150,7 +147,7 @@ export class SubscriptionController {
   @ApiResponse({ status: 400, description: 'Превышены лимиты плана' })
   async validatePlanLimits(
     @Param('merchantId') merchantId: string,
-    @Body() plan?: { id?: string } | null,
+    @Body() plan?: PlanRefDto | null,
   ) {
     const subscription =
       await this.subscriptionService.getSubscription(merchantId);

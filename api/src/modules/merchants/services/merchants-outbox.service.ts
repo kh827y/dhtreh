@@ -204,11 +204,16 @@ export class MerchantsOutboxService {
       ? { merchantId, createdAt: { gte: since } }
       : { merchantId };
     const statuses = ['PENDING', 'SENDING', 'FAILED', 'DEAD', 'SENT'];
-    const counts: Record<string, number> = {};
-    for (const st of statuses) {
-      counts[st] = await this.prisma.eventOutbox.count({
-        where: { ...where, status: st },
-      });
+    const counts: Record<string, number> = Object.fromEntries(
+      statuses.map((status) => [status, 0]),
+    );
+    const statusGroups = await this.prisma.eventOutbox.groupBy({
+      by: ['status'],
+      where,
+      _count: { status: true },
+    });
+    for (const row of statusGroups) {
+      counts[row.status] = row._count?.status ?? 0;
     }
     const typeCounts: Record<string, number> = {};
     try {

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import type { PrismaService } from '../../../core/prisma/prisma.service';
+import { ensureMetadataVersion } from '../../../shared/metadata.util';
 
 const BASE_TIER_PRESET = {
   name: 'Base',
@@ -46,7 +47,9 @@ export async function ensureBaseTier(
           isInitial: true,
           isDefault: true,
           isHidden: false,
-          metadata: { minPaymentAmount: BASE_TIER_PRESET.minPaymentAmount },
+          metadata: ensureMetadataVersion({
+            minPaymentAmount: BASE_TIER_PRESET.minPaymentAmount,
+          }) as Prisma.InputJsonValue,
           order: baseOrder,
         },
       });

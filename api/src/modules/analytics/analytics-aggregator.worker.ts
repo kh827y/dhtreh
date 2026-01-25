@@ -5,6 +5,7 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { fetchReceiptAggregates } from '../../shared/common/receipt-aggregates.util';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../../shared/pg-lock.util';
 import { AppConfigService } from '../../core/config/app-config.service';
+import { getRulesRoot } from '../../shared/rules-json.util';
 
 type ParsedRfmSettings = {
   recencyMode: 'auto' | 'manual';
@@ -61,7 +62,7 @@ export class AnalyticsAggregatorWorker {
   private parseRfmSettings(
     rulesJson: Prisma.JsonValue | null | undefined,
   ): ParsedRfmSettings {
-    const root = this.toJsonObject(rulesJson);
+    const root = getRulesRoot(rulesJson);
     if (!root)
       return {
         recencyMode: 'auto',

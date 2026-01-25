@@ -17,6 +17,7 @@ import {
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
 import { ensureRulesRoot } from '../../../shared/rules-json.util';
+import { RedeemLimitsUpdateDto } from '../dto';
 
 type PortalRequest = {
   portalMerchantId?: string;
@@ -68,14 +69,7 @@ export class RedeemLimitsController {
   @PortalPermissionsHandled()
   async updateSettings(
     @Req() req: PortalRequest,
-    @Body()
-    body: {
-      ttlEnabled?: boolean;
-      ttlDays?: number;
-      allowSameReceipt?: boolean;
-      delayEnabled?: boolean;
-      delayDays?: number;
-    },
+    @Body() body: RedeemLimitsUpdateDto,
   ) {
     const merchantId = this.merchantId(req);
     const s = await this.prisma.merchantSettings.findUnique({

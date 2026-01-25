@@ -17,10 +17,15 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { ReferralService } from './referral.service';
-import type { CreateReferralProgramDto } from './referral.service';
 import { ApiKeyGuard } from '../../core/guards/api-key.guard';
 import { TelegramMiniappGuard } from '../../core/guards/telegram-miniapp.guard';
 import type { TelegramAuthContext } from '../loyalty/utils/telegram-auth.helper';
+import {
+  ActivateReferralDto,
+  CompleteReferralDto,
+  CreateReferralProgramDto,
+  UpdateReferralProgramDto,
+} from './dto';
 
 @ApiTags('Referral Program')
 @Controller('referral')
@@ -57,7 +62,7 @@ export class ReferralController {
   @ApiOperation({ summary: 'Обновить реферальную программу' })
   async updateProgram(
     @Param('programId') programId: string,
-    @Body() dto: Partial<CreateReferralProgramDto>,
+    @Body() dto: UpdateReferralProgramDto,
   ) {
     return this.referralService.updateProgram(programId, dto);
   }
@@ -71,11 +76,7 @@ export class ReferralController {
   async activateReferral(
     @Req() req: { teleauth?: TelegramAuthContext | null },
     @Body()
-    dto: {
-      code: string;
-      refereeId?: string;
-      customerId?: string;
-    },
+    dto: ActivateReferralDto,
   ) {
     const teleauthCustomerId =
       typeof req?.teleauth?.customerId === 'string'
@@ -100,11 +101,7 @@ export class ReferralController {
   @ApiOperation({ summary: 'Завершить реферал после первой покупки' })
   async completeReferral(
     @Body()
-    dto: {
-      refereeId: string;
-      merchantId: string;
-      purchaseAmount: number;
-    },
+    dto: CompleteReferralDto,
   ) {
     return this.referralService.completeReferral(
       dto.refereeId,

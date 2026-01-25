@@ -275,6 +275,7 @@ export class CommunicationsDispatcherWorker
     const rows: Prisma.CommunicationTaskRecipientCreateManyInput[] = [];
     let sent = 0;
     let failed = 0;
+    let firstError: unknown | null = null;
 
     const promotion =
       task.promotionId && typeof task.promotionId === 'string'
@@ -331,6 +332,20 @@ export class CommunicationsDispatcherWorker
         status = 'FAILED';
         error = readErrorMessage(err);
         failed += 1;
+        if (!firstError) {
+          firstError = err;
+          logIgnoredError(
+            err,
+            'CommunicationsDispatcherWorker telegram delivery',
+            this.logger,
+            'debug',
+            {
+              taskId: task.id,
+              merchantId: task.merchantId,
+              customerId: recipient.customerId,
+            },
+          );
+        }
       }
 
       rows.push({
@@ -411,6 +426,7 @@ export class CommunicationsDispatcherWorker
     const rows: Prisma.CommunicationTaskRecipientCreateManyInput[] = [];
     let sent = 0;
     let failed = 0;
+    let firstError: unknown | null = null;
     const title = (() => {
       const raw = readString(payload.title);
       return raw && raw.trim() ? raw.trim() : undefined;
@@ -474,6 +490,20 @@ export class CommunicationsDispatcherWorker
         status = 'FAILED';
         error = readErrorMessage(err);
         failed += 1;
+        if (!firstError) {
+          firstError = err;
+          logIgnoredError(
+            err,
+            'CommunicationsDispatcherWorker push delivery',
+            this.logger,
+            'debug',
+            {
+              taskId: task.id,
+              merchantId: task.merchantId,
+              customerId: recipient.customerId,
+            },
+          );
+        }
       }
 
       rows.push({

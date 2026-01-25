@@ -1,15 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, CommunicationChannel } from '@prisma/client';
-import {
-  NotificationsService,
-  type BroadcastArgs,
-} from '../../notifications/notifications.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 import { CommunicationsService } from '../../communications/communications.service';
 import { PortalTelegramNotifyService } from '../services/telegram-notify.service';
 import {
   PortalControllerHelpers,
   type PortalRequest,
 } from '../controllers/portal.controller-helpers';
+import type {
+  NotificationsBroadcastDto,
+  PortalCampaignScheduleDto,
+  PortalPushCampaignDto,
+  PortalTelegramCampaignDto,
+  TelegramNotifyInviteDto,
+  TelegramNotifyPreferencesDto,
+} from '../dto/communications.dto';
 
 @Injectable()
 export class PortalCommunicationsUseCase {
@@ -20,10 +25,7 @@ export class PortalCommunicationsUseCase {
     private readonly helpers: PortalControllerHelpers,
   ) {}
 
-  notificationsBroadcast(
-    req: PortalRequest,
-    body: Omit<BroadcastArgs, 'merchantId'>,
-  ) {
+  notificationsBroadcast(req: PortalRequest, body: NotificationsBroadcastDto) {
     const merchantId = this.helpers.getMerchantId(req);
     return this.notifications.broadcast({ merchantId, ...body });
   }
@@ -39,18 +41,7 @@ export class PortalCommunicationsUseCase {
       .then((tasks) => tasks.map((task) => this.helpers.mapPushTask(task)));
   }
 
-  createPushCampaign(
-    req: PortalRequest,
-    body: {
-      text?: string;
-      audience?: string;
-      audienceId?: string;
-      audienceName?: string;
-      startAt?: string;
-      scheduledAt?: string;
-      timezone?: string;
-    },
-  ) {
+  createPushCampaign(req: PortalRequest, body: PortalPushCampaignDto) {
     const merchantId = this.helpers.getMerchantId(req);
     const scheduledAt = body?.scheduledAt ?? body?.startAt ?? null;
     const audienceId = body?.audienceId ? String(body.audienceId) : undefined;
@@ -95,7 +86,7 @@ export class PortalCommunicationsUseCase {
   duplicatePushCampaign(
     req: PortalRequest,
     campaignId: string,
-    body: { scheduledAt?: string; startAt?: string },
+    body: PortalCampaignScheduleDto,
   ) {
     const merchantId = this.helpers.getMerchantId(req);
     return this.communications
@@ -116,18 +107,7 @@ export class PortalCommunicationsUseCase {
       .then((tasks) => tasks.map((task) => this.helpers.mapTelegramTask(task)));
   }
 
-  createTelegramCampaign(
-    req: PortalRequest,
-    body: {
-      audienceId?: string;
-      audienceName?: string;
-      text?: string;
-      media?: Record<string, unknown> | null;
-      startAt?: string;
-      scheduledAt?: string;
-      timezone?: string;
-    },
-  ) {
+  createTelegramCampaign(req: PortalRequest, body: PortalTelegramCampaignDto) {
     const merchantId = this.helpers.getMerchantId(req);
     return this.communications
       .createTask(merchantId, {
@@ -165,7 +145,7 @@ export class PortalCommunicationsUseCase {
   duplicateTelegramCampaign(
     req: PortalRequest,
     campaignId: string,
-    body: { scheduledAt?: string; startAt?: string },
+    body: PortalCampaignScheduleDto,
   ) {
     const merchantId = this.helpers.getMerchantId(req);
     return this.communications
@@ -179,7 +159,7 @@ export class PortalCommunicationsUseCase {
     return this.telegramNotify.getState(this.helpers.getMerchantId(req));
   }
 
-  telegramNotifyInvite(req: PortalRequest, body: { forceNew?: boolean }) {
+  telegramNotifyInvite(req: PortalRequest, body: TelegramNotifyInviteDto) {
     const actor = this.helpers.resolveTelegramActor(req);
     const staffId = actor.kind === 'STAFF' ? actor.staffId : null;
     return this.telegramNotify.issueInvite(this.helpers.getMerchantId(req), {
@@ -202,13 +182,7 @@ export class PortalCommunicationsUseCase {
 
   telegramNotifyUpdatePreferences(
     req: PortalRequest,
-    body: {
-      notifyOrders?: boolean;
-      notifyReviews?: boolean;
-      notifyReviewThreshold?: number;
-      notifyDailyDigest?: boolean;
-      notifyFraud?: boolean;
-    },
+    body: TelegramNotifyPreferencesDto,
   ) {
     const actor = this.helpers.resolveTelegramActor(req);
     return this.telegramNotify.updatePreferences(

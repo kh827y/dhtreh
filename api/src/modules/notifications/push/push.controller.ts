@@ -15,8 +15,8 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { PushService } from './push.service';
-import type { SendPushDto } from './push.service';
 import { ApiKeyGuard } from '../../../core/guards/api-key.guard';
+import { PushTopicDto, SendPushRequestDto } from './push.dto';
 
 @ApiTags('Push Notifications')
 @Controller('push')
@@ -31,7 +31,7 @@ export class PushController {
   @Post('send')
   @ApiOperation({ summary: 'Отправить push-уведомление' })
   @ApiResponse({ status: 200, description: 'Уведомление отправлено' })
-  async sendPush(@Body() dto: SendPushDto) {
+  async sendPush(@Body() dto: SendPushRequestDto) {
     return this.pushService.sendPush(dto);
   }
 
@@ -44,11 +44,7 @@ export class PushController {
   async sendToTopic(
     @Param('merchantId') merchantId: string,
     @Body()
-    dto: {
-      title: string;
-      body: string;
-      data?: Record<string, string>;
-    },
+    dto: PushTopicDto,
   ) {
     return this.pushService.sendToTopic(
       merchantId,

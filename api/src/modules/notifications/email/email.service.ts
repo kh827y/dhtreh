@@ -34,7 +34,7 @@ export interface SendEmailDto {
   data?: Record<string, unknown>;
   attachments?: Array<{
     filename: string;
-    content?: Buffer;
+    content?: Buffer | string;
     path?: string;
     contentType?: string;
   }>;

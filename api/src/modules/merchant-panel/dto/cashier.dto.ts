@@ -1,6 +1,13 @@
 import { StaffOutletAccessStatus } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class CashierCredentialsDto {
   @ApiPropertyOptional({ description: 'Логин кассира (slug мерчанта)' })
@@ -55,4 +62,11 @@ export class CashierPinDto {
 
   @ApiProperty({ description: 'Дата обновления PIN', format: 'date-time' })
   updatedAt!: Date;
+}
+
+export class CashierIdDto {
+  @ApiPropertyOptional({ description: 'Идентификатор' })
+  @IsOptional()
+  @IsString()
+  id?: string;
 }

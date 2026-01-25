@@ -12,6 +12,7 @@ import { Throttle } from '@nestjs/throttler';
 import { CashierGuard } from '../../../core/guards/cashier.guard';
 import { SubscriptionGuard } from '../../../core/guards/subscription.guard';
 import {
+  ConsentSetDto,
   ConsentGetRespDto,
   OkDto,
   PublicOutletDto,
@@ -90,14 +91,7 @@ export class LoyaltyMetaController {
   @Post('consent')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @ApiOkResponse({ schema: { $ref: getSchemaPath(OkDto) } })
-  async setConsent(
-    @Body()
-    body: {
-      merchantId?: string;
-      customerId?: string;
-      granted?: boolean;
-    },
-  ) {
+  async setConsent(@Body() body: ConsentSetDto) {
     return this.useCase.setConsent(body);
   }
 }

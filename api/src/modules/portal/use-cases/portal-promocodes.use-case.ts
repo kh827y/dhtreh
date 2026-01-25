@@ -8,6 +8,10 @@ import {
   PortalControllerHelpers,
   type PortalRequest,
 } from '../controllers/portal.controller-helpers';
+import type {
+  PortalPromoCodePayloadDto,
+  PortalPromoCodeStatusDto,
+} from '../dto/promocodes.dto';
 
 @Injectable()
 export class PortalPromocodesUseCase {
@@ -35,20 +39,17 @@ export class PortalPromocodesUseCase {
     );
   }
 
-  promocodesIssue(req: PortalRequest, body: PortalPromoCodePayload) {
+  promocodesIssue(req: PortalRequest, body: PortalPromoCodePayloadDto) {
     const payload = this.helpers.normalizePromocodePayload(
       req,
-      body as Record<string, unknown>,
+      body as unknown as Record<string, unknown>,
     ) as PortalPromoCodePayload;
     return this.promoCodes
       .createFromPortal(this.helpers.getMerchantId(req), payload)
       .then((created) => ({ ok: true, promoCodeId: created.id }));
   }
 
-  promocodesDeactivate(
-    req: PortalRequest,
-    body: { promoCodeId?: string; code?: string },
-  ) {
+  promocodesDeactivate(req: PortalRequest, body: PortalPromoCodeStatusDto) {
     if (!body?.promoCodeId) throw new NotFoundException('Промокод не найден');
     return this.promoCodes.changeStatus(
       this.helpers.getMerchantId(req),
@@ -57,10 +58,7 @@ export class PortalPromocodesUseCase {
     );
   }
 
-  promocodesActivate(
-    req: PortalRequest,
-    body: { promoCodeId?: string; code?: string },
-  ) {
+  promocodesActivate(req: PortalRequest, body: PortalPromoCodeStatusDto) {
     if (!body?.promoCodeId) throw new NotFoundException('Промокод не найден');
     return this.promoCodes.changeStatus(
       this.helpers.getMerchantId(req),
@@ -72,11 +70,11 @@ export class PortalPromocodesUseCase {
   promocodesUpdate(
     req: PortalRequest,
     promoCodeId: string,
-    body: PortalPromoCodePayload,
+    body: PortalPromoCodePayloadDto,
   ) {
     const payload = this.helpers.normalizePromocodePayload(
       req,
-      body as Record<string, unknown>,
+      body as unknown as Record<string, unknown>,
     ) as PortalPromoCodePayload;
     return this.promoCodes.updateFromPortal(
       this.helpers.getMerchantId(req),

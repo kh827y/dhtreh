@@ -102,7 +102,16 @@ export class LevelsService {
             tier: true,
           },
         })
-        .catch(() => null);
+        .catch((err) => {
+          logIgnoredError(
+            err,
+            'LevelsService load assignment',
+            undefined,
+            'debug',
+            { merchantId, customerId },
+          );
+          return null;
+        });
 
     const { value, current, next, progressToNext } = await computeLevelState({
       prisma: this.prisma,

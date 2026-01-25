@@ -11,6 +11,9 @@ import { PrismaService } from '../../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
 import { LoyaltyControllerSupportService } from '../services/loyalty-controller-support.service';
 import type {
+  CashierActivateDto,
+  CashierSessionStartDto,
+  CashierStaffAccessDto,
   CashierCustomerResolveDto,
   CashierCustomerResolveRespDto,
 } from '../dto/dto';
@@ -36,7 +39,7 @@ export class LoyaltyCashierUseCase {
   ) {}
 
   async cashierActivate(
-    body: { merchantLogin?: string; activationCode?: string },
+    body: CashierActivateDto,
     req: Request,
     res: Response,
   ) {
@@ -88,7 +91,7 @@ export class LoyaltyCashierUseCase {
   }
 
   async cashierStaffAccess(
-    body: { merchantLogin?: string; pinCode?: string },
+    body: CashierStaffAccessDto,
     req: Request,
     res: Response,
   ) {
@@ -130,7 +133,7 @@ export class LoyaltyCashierUseCase {
   }
 
   async startCashierSession(
-    body: { merchantLogin?: string; pinCode?: string; rememberPin?: boolean },
+    body: CashierSessionStartDto,
     req: Request,
     res: Response,
   ) {

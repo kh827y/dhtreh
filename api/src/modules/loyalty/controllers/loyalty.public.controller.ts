@@ -17,6 +17,7 @@ import { LoyaltyService } from '../services/loyalty.service';
 import { TelegramMiniappGuard } from '../../../core/guards/telegram-miniapp.guard';
 import { LoyaltyEventsService } from '../services/loyalty-events.service';
 import { toLevelRule } from '../utils/tier-defaults.util';
+import { RegistrationBonusDto } from '../dto/dto';
 
 @ApiTags('loyalty-public')
 @Controller('loyalty')
@@ -73,13 +74,7 @@ export class LoyaltyPublicController {
   @Post('mechanics/registration-bonus')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async grantRegistrationBonus(
-    @Body()
-    body: {
-      merchantId?: string;
-      customerId?: string;
-      outletId?: string | null;
-      staffId?: string | null;
-    },
+    @Body() body: RegistrationBonusDto,
   ) {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';

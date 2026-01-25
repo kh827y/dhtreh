@@ -10,10 +10,17 @@ import {
 } from '@nestjs/common';
 import { ApiExtraModels, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { type BroadcastArgs } from '../../notifications/notifications.service';
 import type { PortalRequest } from './portal.controller-helpers';
 import { TransactionItemDto } from '../../loyalty/dto/dto';
 import { PortalCommunicationsUseCase } from '../use-cases/portal-communications.use-case';
+import {
+  NotificationsBroadcastDto,
+  PortalCampaignScheduleDto,
+  PortalPushCampaignDto,
+  PortalTelegramCampaignDto,
+  TelegramNotifyInviteDto,
+  TelegramNotifyPreferencesDto,
+} from '../dto/communications.dto';
 
 @ApiTags('portal')
 @ApiExtraModels(TransactionItemDto)
@@ -36,7 +43,7 @@ export class PortalCommunicationsController {
   })
   notificationsBroadcast(
     @Req() req: PortalRequest,
-    @Body() body: Omit<BroadcastArgs, 'merchantId'>,
+    @Body() body: NotificationsBroadcastDto,
   ) {
     return this.useCase.notificationsBroadcast(req, body);
   }
@@ -57,16 +64,7 @@ export class PortalCommunicationsController {
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   createPushCampaign(
     @Req() req: PortalRequest,
-    @Body()
-    body: {
-      text?: string;
-      audience?: string;
-      audienceId?: string;
-      audienceName?: string;
-      startAt?: string;
-      scheduledAt?: string;
-      timezone?: string;
-    },
+    @Body() body: PortalPushCampaignDto,
   ) {
     return this.useCase.createPushCampaign(req, body);
   }
@@ -94,7 +92,7 @@ export class PortalCommunicationsController {
   duplicatePushCampaign(
     @Req() req: PortalRequest,
     @Param('campaignId') campaignId: string,
-    @Body() body: { scheduledAt?: string; startAt?: string },
+    @Body() body: PortalCampaignScheduleDto,
   ) {
     return this.useCase.duplicatePushCampaign(req, campaignId, body);
   }
@@ -118,16 +116,7 @@ export class PortalCommunicationsController {
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   createTelegramCampaign(
     @Req() req: PortalRequest,
-    @Body()
-    body: {
-      audienceId?: string;
-      audienceName?: string;
-      text?: string;
-      media?: Record<string, unknown> | null;
-      startAt?: string;
-      scheduledAt?: string;
-      timezone?: string;
-    },
+    @Body() body: PortalTelegramCampaignDto,
   ) {
     return this.useCase.createTelegramCampaign(req, body);
   }
@@ -155,7 +144,7 @@ export class PortalCommunicationsController {
   duplicateTelegramCampaign(
     @Req() req: PortalRequest,
     @Param('campaignId') campaignId: string,
-    @Body() body: { scheduledAt?: string; startAt?: string },
+    @Body() body: PortalCampaignScheduleDto,
   ) {
     return this.useCase.duplicateTelegramCampaign(req, campaignId, body);
   }
@@ -190,7 +179,7 @@ export class PortalCommunicationsController {
   })
   telegramNotifyInvite(
     @Req() req: PortalRequest,
-    @Body() body: { forceNew?: boolean },
+    @Body() body: TelegramNotifyInviteDto,
   ) {
     return this.useCase.telegramNotifyInvite(req, body);
   }
@@ -237,14 +226,7 @@ export class PortalCommunicationsController {
   })
   telegramNotifyUpdatePreferences(
     @Req() req: PortalRequest,
-    @Body()
-    body: {
-      notifyOrders?: boolean;
-      notifyReviews?: boolean;
-      notifyReviewThreshold?: number;
-      notifyDailyDigest?: boolean;
-      notifyFraud?: boolean;
-    },
+    @Body() body: TelegramNotifyPreferencesDto,
   ) {
     return this.useCase.telegramNotifyUpdatePreferences(req, body);
   }

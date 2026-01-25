@@ -268,6 +268,177 @@ export class MerchantsSettingsService {
           validateSection(asRecord(af.staff), 'af.staff');
           validateSection(asRecord(af.merchant), 'af.merchant');
         }
+
+        const ensureObject = (value: unknown, label: string) => {
+          if (value == null) return null;
+          const record = asRecord(value);
+          if (!record) {
+            throw new Error(`${label} invalid`);
+          }
+          return record;
+        };
+        const ensureNumber = (value: unknown, label: string) => {
+          if (value == null) return;
+          const num = Number(value);
+          if (!Number.isFinite(num)) {
+            throw new Error(`${label} invalid`);
+          }
+        };
+        const ensureBoolean = (value: unknown, label: string) => {
+          if (value == null) return;
+          if (typeof value === 'boolean') return;
+          if (typeof value === 'number' && (value === 0 || value === 1))
+            return;
+          if (typeof value === 'string') {
+            const lowered = value.trim().toLowerCase();
+            if (['true', 'false', '0', '1'].includes(lowered)) return;
+          }
+          throw new Error(`${label} invalid`);
+        };
+        const ensureString = (value: unknown, label: string) => {
+          if (value == null) return;
+          if (typeof value !== 'string') {
+            throw new Error(`${label} invalid`);
+          }
+        };
+
+        const miniapp = ensureObject(normalizedRecord.miniapp, 'miniapp');
+        if (miniapp) {
+          ensureString(miniapp.supportTelegram, 'miniapp.supportTelegram');
+        }
+        ensureBoolean(
+          normalizedRecord.allowEarnRedeemSameReceipt,
+          'allowEarnRedeemSameReceipt',
+        );
+        ensureNumber(normalizedRecord.levelsPeriodDays, 'levelsPeriodDays');
+
+        const registration = ensureObject(
+          normalizedRecord.registration,
+          'registration',
+        );
+        if (registration) {
+          ensureBoolean(registration.enabled, 'registration.enabled');
+          ensureNumber(registration.points, 'registration.points');
+          ensureNumber(registration.ttlDays, 'registration.ttlDays');
+          ensureNumber(registration.delayDays, 'registration.delayDays');
+          ensureNumber(registration.delayHours, 'registration.delayHours');
+          ensureBoolean(registration.pushEnabled, 'registration.pushEnabled');
+          ensureString(registration.text, 'registration.text');
+        }
+
+        const birthday = ensureObject(normalizedRecord.birthday, 'birthday');
+        if (birthday) {
+          ensureBoolean(birthday.enabled, 'birthday.enabled');
+          ensureNumber(birthday.daysBefore, 'birthday.daysBefore');
+          ensureBoolean(birthday.onlyBuyers, 'birthday.onlyBuyers');
+          ensureString(birthday.text, 'birthday.text');
+          ensureNumber(birthday.giftPoints, 'birthday.giftPoints');
+          ensureNumber(birthday.giftTtlDays, 'birthday.giftTtlDays');
+        }
+
+        const autoReturn = ensureObject(normalizedRecord.autoReturn, 'autoReturn');
+        if (autoReturn) {
+          ensureBoolean(autoReturn.enabled, 'autoReturn.enabled');
+          ensureNumber(autoReturn.days, 'autoReturn.days');
+          ensureString(autoReturn.text, 'autoReturn.text');
+          ensureNumber(autoReturn.giftPoints, 'autoReturn.giftPoints');
+          ensureNumber(autoReturn.giftTtlDays, 'autoReturn.giftTtlDays');
+          ensureBoolean(autoReturn.giftEnabled, 'autoReturn.giftEnabled');
+          ensureBoolean(autoReturn.giftBurnEnabled, 'autoReturn.giftBurnEnabled');
+          const repeat = ensureObject(autoReturn.repeat, 'autoReturn.repeat');
+          if (repeat) {
+            ensureBoolean(repeat.enabled, 'autoReturn.repeat.enabled');
+            ensureNumber(repeat.days, 'autoReturn.repeat.days');
+          }
+        }
+
+        const burnReminder = ensureObject(
+          normalizedRecord.burnReminder,
+          'burnReminder',
+        );
+        if (burnReminder) {
+          ensureBoolean(burnReminder.enabled, 'burnReminder.enabled');
+          ensureNumber(burnReminder.daysBefore, 'burnReminder.daysBefore');
+          ensureString(burnReminder.text, 'burnReminder.text');
+        }
+
+        const reviews = ensureObject(normalizedRecord.reviews, 'reviews');
+        if (reviews) {
+          ensureBoolean(reviews.enabled, 'reviews.enabled');
+        }
+
+        const rfm = ensureObject(normalizedRecord.rfm, 'rfm');
+        if (rfm) {
+          const recency = ensureObject(rfm.recency, 'rfm.recency');
+          if (recency) {
+            if (recency.mode != null) {
+              const mode = String(recency.mode).toLowerCase();
+              if (mode !== 'auto' && mode !== 'manual') {
+                throw new Error('rfm.recency.mode invalid');
+              }
+            }
+            ensureNumber(recency.recencyDays, 'rfm.recency.recencyDays');
+            ensureNumber(recency.days, 'rfm.recency.days');
+            ensureNumber(recency.threshold, 'rfm.recency.threshold');
+          }
+          const frequency = ensureObject(rfm.frequency, 'rfm.frequency');
+          if (frequency) {
+            if (frequency.mode != null) {
+              const mode = String(frequency.mode).toLowerCase();
+              if (mode !== 'auto' && mode !== 'manual') {
+                throw new Error('rfm.frequency.mode invalid');
+              }
+            }
+            ensureNumber(frequency.threshold, 'rfm.frequency.threshold');
+          }
+          const monetary = ensureObject(rfm.monetary, 'rfm.monetary');
+          if (monetary) {
+            if (monetary.mode != null) {
+              const mode = String(monetary.mode).toLowerCase();
+              if (mode !== 'auto' && mode !== 'manual') {
+                throw new Error('rfm.monetary.mode invalid');
+              }
+            }
+            ensureNumber(monetary.threshold, 'rfm.monetary.threshold');
+          }
+        }
+
+        const staffNotify = ensureObject(
+          normalizedRecord.staffNotify,
+          'staffNotify',
+        );
+        if (staffNotify) {
+          for (const [key, value] of Object.entries(staffNotify)) {
+            if (!key) continue;
+            const entry = ensureObject(value, `staffNotify.${key}`);
+            if (!entry) continue;
+            ensureBoolean(entry.notifyOrders, `staffNotify.${key}.notifyOrders`);
+            ensureBoolean(entry.notifyReviews, `staffNotify.${key}.notifyReviews`);
+            ensureBoolean(
+              entry.notifyDailyDigest,
+              `staffNotify.${key}.notifyDailyDigest`,
+            );
+            ensureBoolean(entry.notifyFraud, `staffNotify.${key}.notifyFraud`);
+            ensureNumber(
+              entry.notifyReviewThreshold,
+              `staffNotify.${key}.notifyReviewThreshold`,
+            );
+          }
+        }
+
+        const staffNotifyMeta = ensureObject(
+          normalizedRecord.staffNotifyMeta,
+          'staffNotifyMeta',
+        );
+        if (staffNotifyMeta) {
+          for (const [key, value] of Object.entries(staffNotifyMeta)) {
+            if (!key) continue;
+            const entry = ensureObject(value, `staffNotifyMeta.${key}`);
+            if (!entry) continue;
+            ensureString(entry.updatedAt, `staffNotifyMeta.${key}.updatedAt`);
+          }
+        }
+
         return { ok: true };
       }
     } catch (e: unknown) {

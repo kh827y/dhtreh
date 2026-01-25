@@ -6,8 +6,15 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { EmailService } from './email.service';
-import type { SendEmailDto } from './email.service';
 import { ApiKeyGuard } from '../../../core/guards/api-key.guard';
+import {
+  SendCampaignEmailDto,
+  SendEmailRequestDto,
+  SendReportEmailDto,
+  SendTestEmailDto,
+  SendTransactionEmailDto,
+  SendWelcomeEmailDto,
+} from './email.dto';
 
 @ApiTags('Email Notifications')
 @Controller('email')
@@ -23,7 +30,7 @@ export class EmailController {
   @ApiOperation({ summary: 'Отправить email уведомление' })
   @ApiResponse({ status: 200, description: 'Email отправлен' })
   @ApiResponse({ status: 400, description: 'Ошибка отправки' })
-  async sendEmail(@Body() dto: SendEmailDto) {
+  async sendEmail(@Body() dto: SendEmailRequestDto) {
     const result = await this.emailService.sendEmail(dto);
     return { success: result };
   }
@@ -34,7 +41,7 @@ export class EmailController {
   @Post('welcome')
   @ApiOperation({ summary: 'Отправить приветственное письмо новому клиенту' })
   async sendWelcomeEmail(
-    @Body() dto: { merchantId: string; customerId: string; email: string },
+    @Body() dto: SendWelcomeEmailDto,
   ) {
     await this.emailService.sendWelcomeEmail(
       dto.merchantId,
@@ -51,7 +58,7 @@ export class EmailController {
   @ApiOperation({ summary: 'Отправить email о транзакции' })
   async sendTransactionEmail(
     @Param('transactionId') transactionId: string,
-    @Body() dto: { type: 'earn' | 'redeem' | 'refund' },
+    @Body() dto: SendTransactionEmailDto,
   ) {
     await this.emailService.sendTransactionEmail(transactionId, dto.type);
     return { success: true };
@@ -64,12 +71,7 @@ export class EmailController {
   @ApiOperation({ summary: 'Отправить массовую рассылку по кампании' })
   async sendCampaignEmail(
     @Body()
-    dto: {
-      campaignId: string;
-      customerIds: string[];
-      subject: string;
-      content: string;
-    },
+    dto: SendCampaignEmailDto,
   ) {
     return this.emailService.sendCampaignEmail(
       dto.campaignId,
@@ -86,13 +88,7 @@ export class EmailController {
   @ApiOperation({ summary: 'Отправить отчет на email' })
   async sendReportEmail(
     @Body()
-    dto: {
-      merchantId: string;
-      email: string;
-      reportType: string;
-      reportBuffer: string; // Base64
-      format: 'pdf' | 'excel' | 'csv';
-    },
+    dto: SendReportEmailDto,
   ) {
     const buffer = Buffer.from(dto.reportBuffer, 'base64');
     await this.emailService.sendReportEmail(
@@ -130,7 +126,7 @@ export class EmailController {
    */
   @Post('test')
   @ApiOperation({ summary: 'Отправить тестовое письмо' })
-  async sendTestEmail(@Body() dto: { to: string; template?: string }) {
+  async sendTestEmail(@Body() dto: SendTestEmailDto) {
     const result = await this.emailService.sendEmail({
       to: dto.to,
       subject: 'Тестовое письмо - Система лояльности',

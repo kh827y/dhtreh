@@ -26,6 +26,7 @@ import {
 } from './portal-jwt.util';
 import { StaffStatus } from '@prisma/client';
 import { logIgnoredError } from '../../shared/logging/ignore-error.util';
+import { PortalLoginDto, PortalRefreshDto } from './dto';
 
 const LOGIN_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const LOGIN_ATTEMPT_LIMIT = 10;
@@ -61,12 +62,7 @@ export class PortalAuthController {
   @ApiBadRequestResponse({ description: 'Bad request' })
   async login(
     @Body()
-    body: {
-      email: string;
-      password: string;
-      code?: string;
-      merchantId?: string;
-    },
+    body: PortalLoginDto,
   ) {
     const email = String(body?.email || '')
       .trim()
@@ -208,7 +204,7 @@ export class PortalAuthController {
   })
   @ApiBadRequestResponse({ description: 'Bad request' })
   @ApiUnauthorizedResponse({ description: 'Invalid refresh' })
-  async refresh(@Body() body: { refreshToken?: string }) {
+  async refresh(@Body() body: PortalRefreshDto) {
     const refreshToken = String(body?.refreshToken || '');
     if (!refreshToken) throw new BadRequestException('refreshToken required');
     const claims = await verifyPortalRefreshJwt(refreshToken);

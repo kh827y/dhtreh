@@ -23,6 +23,9 @@ import {
   SubscriptionGuard,
 } from '../../../core/guards/subscription.guard';
 import {
+  CashierActivateDto,
+  CashierSessionStartDto,
+  CashierStaffAccessDto,
   CashierCustomerResolveDto,
   CashierCustomerResolveRespDto,
   CashierOutletTransactionsRespDto,
@@ -53,7 +56,7 @@ export class LoyaltyCashierController {
     },
   })
   async cashierActivate(
-    @Body() body: { merchantLogin?: string; activationCode?: string },
+    @Body() body: CashierActivateDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -110,11 +113,7 @@ export class LoyaltyCashierController {
     },
   })
   async cashierStaffAccess(
-    @Body()
-    body: {
-      merchantLogin?: string;
-      pinCode?: string;
-    },
+    @Body() body: CashierStaffAccessDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -137,12 +136,7 @@ export class LoyaltyCashierController {
     },
   })
   async startCashierSession(
-    @Body()
-    body: {
-      merchantLogin?: string;
-      pinCode?: string;
-      rememberPin?: boolean;
-    },
+    @Body() body: CashierSessionStartDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {

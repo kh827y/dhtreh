@@ -60,6 +60,7 @@ export class PushService {
     const pushLogs: Prisma.PushNotificationCreateManyInput[] = [];
     let sent = 0;
     let failed = 0;
+    let firstError: unknown | null = null;
 
     const payloadData =
       dto.data && Object.keys(dto.data).length
@@ -101,6 +102,19 @@ export class PushService {
               ? err
               : 'Failed to deliver via Telegram';
         failed += 1;
+        if (!firstError) {
+          firstError = err;
+          logIgnoredError(
+            err,
+            'PushService telegram delivery',
+            undefined,
+            'debug',
+            {
+              merchantId: dto.merchantId,
+              customerId: recipient.customerId,
+            },
+          );
+        }
         pushLogs.push({
           merchantId: dto.merchantId,
           customerId: recipient.customerId,

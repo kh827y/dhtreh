@@ -10,6 +10,7 @@ import { LoyaltyService } from '../../loyalty/services/loyalty.service';
 import { planRevoke, planUnconsume } from '../../loyalty/utils/lots.util';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import { asRecord as asRecordShared } from '../../../shared/common/input.util';
+import { getRulesRoot } from '../../../shared/rules-json.util';
 
 export interface OperationsLogFilters {
   from?: string | Date;
@@ -1538,7 +1539,7 @@ export class OperationsLogService {
         where: { merchantId },
         select: { rulesJson: true },
       });
-      const rules = this.asRecord(ms?.rulesJson);
+      const rules = getRulesRoot(ms?.rulesJson);
       const allowEarnRedeemSameReceipt = rules?.allowEarnRedeemSameReceipt;
       if (allowEarnRedeemSameReceipt !== undefined) {
         allowSame = this.normalizeFlag(allowEarnRedeemSameReceipt);

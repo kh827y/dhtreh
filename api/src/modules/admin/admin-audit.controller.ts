@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AdminGuard } from '../../core/guards/admin.guard';
 import { AdminIpGuard } from '../../core/guards/admin-ip.guard';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 @Controller('admin/audit')
 @UseGuards(AdminGuard, AdminIpGuard)
@@ -98,7 +99,12 @@ export class AdminAuditController {
     if (!id) throw new NotFoundException('Запись не найдена');
     const row = await this.prisma.adminAudit
       .findUnique({ where: { id } })
-      .catch(() => null);
+      .catch((err) => {
+        logIgnoredError(err, 'AdminAuditController get one', undefined, 'debug', {
+          id,
+        });
+        return null;
+      });
     if (!row) throw new NotFoundException('Запись не найдена');
     return {
       id: row.id,

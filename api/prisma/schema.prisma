@@ -411,6 +411,7 @@ model Customer {
   @@unique([merchantId, phone])
   @@unique([merchantId, email])
   @@index([merchantId])
+  @@index([merchantId, createdAt])
   @@index([tgId])
   @@index([phone])
 }
@@ -476,6 +477,7 @@ model Hold {
   @@index([merchantId, outletId])
   @@index([merchantId, staffId])
   @@index([merchantId, deviceId])
+  @@index([merchantId, orderId])
   @@index([status, expiresAt])
 }
 
@@ -539,9 +541,13 @@ model Receipt {
 
   @@unique([merchantId, orderId])
   @@index([merchantId, createdAt])
+  @@index([merchantId, customerId, createdAt])
   @@index([merchantId, outletId])
+  @@index([merchantId, outletId, createdAt])
   @@index([merchantId, staffId])
+  @@index([merchantId, staffId, createdAt])
   @@index([merchantId, deviceId])
+  @@index([merchantId, deviceId, createdAt])
   @@index([merchantId, canceledAt])
   @@index([merchantId, receiptNumber])
 }
@@ -607,8 +613,12 @@ model Transaction {
   @@index([customerId, createdAt])
   @@index([merchantId, createdAt])
   @@index([merchantId, outletId])
+  @@index([merchantId, outletId, createdAt])
   @@index([merchantId, staffId])
+  @@index([merchantId, staffId, createdAt])
   @@index([merchantId, deviceId])
+  @@index([merchantId, deviceId, createdAt])
+  @@index([merchantId, customerId, createdAt])
   @@index([merchantId, customerId, type, createdAt])
   @@index([merchantId, type, createdAt])
   @@index([merchantId, orderId])
@@ -672,7 +682,9 @@ model EventOutbox {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  @@index([status, nextRetryAt])
+  @@index([status, nextRetryAt, createdAt])
+  @@index([status, updatedAt])
+  @@index([merchantId, status, createdAt])
   @@index([merchantId, createdAt])
 }
 
@@ -1486,6 +1498,7 @@ model SegmentCustomer {
   customer Customer        @relation(fields: [customerId], references: [id])
 
   @@unique([segmentId, customerId])
+  @@index([customerId])
 }
 
 // Email notifications
@@ -1525,6 +1538,8 @@ model PushDevice {
 
   @@unique([customerId, outletId])
   @@index([customerId])
+  @@index([merchantId, isActive])
+  @@index([outletId])
 }
 
 // Push notifications log
@@ -1544,6 +1559,9 @@ model PushNotification {
   sentAt      DateTime?
   error       String?
   createdAt   DateTime  @default(now())
+
+  @@index([merchantId, createdAt])
+  @@index([merchantId, status, createdAt])
 }
 
 model CommunicationTemplate {
@@ -1608,6 +1626,7 @@ model CommunicationTask {
   @@index([merchantId, status])
   @@index([merchantId, createdAt])
   @@index([channel])
+  @@index([status, channel, scheduledAt, createdAt])
   @@index([status, scheduledAt])
   @@index([status, createdAt])
 }
@@ -1677,6 +1696,7 @@ model CustomerConsent {
   createdAt  DateTime  @default(now())
 
   @@unique([customerId, merchantId, channel])
+  @@index([merchantId, channel, status])
 }
 
 // Merchant stats for notifications
@@ -1821,6 +1841,7 @@ model PromoCodeUsage {
 
   @@index([promoCodeId, usedAt])
   @@index([merchantId, usedAt])
+  @@index([merchantId, customerId, orderId])
   @@index([customerId])
 }
 
@@ -2139,6 +2160,7 @@ model Review {
   reactions   ReviewReaction[]
 
   @@index([merchantId, orderId])
+  @@index([merchantId, customerId, createdAt])
 }
 
 model ReviewResponse {

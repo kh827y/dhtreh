@@ -18,6 +18,10 @@ import { PortalGuard } from '../../portal-auth/portal.guard';
 import type { PortalRequest } from './portal.controller-helpers';
 import { TransactionItemDto, ErrorDto } from '../../loyalty/dto/dto';
 import { PortalIntegrationsUseCase } from '../use-cases/portal-integrations.use-case';
+import {
+  TelegramMiniAppConnectDto,
+  TelegramMiniAppLinkDto,
+} from '../dto/integrations.dto';
 
 @ApiTags('portal')
 @ApiExtraModels(TransactionItemDto)
@@ -150,7 +154,7 @@ export class PortalIntegrationsController {
   @ApiBadRequestResponse({ type: ErrorDto })
   telegramMiniAppConnect(
     @Req() req: PortalRequest,
-    @Body() body: { token?: string },
+    @Body() body: TelegramMiniAppConnectDto,
   ) {
     return this.useCase.telegramMiniAppConnect(req, body);
   }
@@ -175,7 +179,7 @@ export class PortalIntegrationsController {
   @ApiBadRequestResponse({ type: ErrorDto })
   telegramMiniAppLink(
     @Req() req: PortalRequest,
-    @Body() body: { outletId?: string },
+    @Body() body: TelegramMiniAppLinkDto,
   ) {
     return this.useCase.telegramMiniAppLink(req, body);
   }

@@ -164,6 +164,13 @@ export class PortalTelegramIntegrationService {
         await this.setupMenu(merchantId);
         menuMessage = ' Меню‑кнопка установлена автоматически.';
       } catch (error: unknown) {
+        logIgnoredError(
+          error,
+          'PortalTelegramIntegrationService setup menu',
+          this.logger,
+          'debug',
+          { merchantId },
+        );
         const message = this.formatErrorMessage(
           error,
           'Не удалось установить меню‑кнопку',
@@ -323,6 +330,13 @@ export class PortalTelegramIntegrationService {
           });
       }
     } catch (error: unknown) {
+      logIgnoredError(
+        error,
+        'PortalTelegramIntegrationService check connection',
+        this.logger,
+        'debug',
+        { merchantId },
+      );
       healthy = false;
       errorText = this.formatErrorMessage(error, 'Ошибка проверки подключения');
       message = `Подключение к боту не удалось${errorText ? `: ${errorText}` : ''}`;

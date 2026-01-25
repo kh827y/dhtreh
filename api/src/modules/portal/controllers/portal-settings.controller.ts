@@ -27,7 +27,11 @@ import {
   UpdateMerchantNameDto,
   UpdateTimezoneDto,
 } from '../../merchants/dto';
-import { type UpdateStaffMotivationPayload } from '../services/staff-motivation.service';
+import {
+  UpdateReferralProgramDto,
+  UpdateSupportSettingDto,
+  UpdateStaffMotivationDto,
+} from '../dto/settings.dto';
 import type {
   PortalRequest,
   UploadedFile as UploadedFilePayload,
@@ -69,7 +73,7 @@ export class PortalSettingsController {
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   updateStaffMotivation(
     @Req() req: PortalRequest,
-    @Body() body: UpdateStaffMotivationPayload,
+    @Body() body: UpdateStaffMotivationDto,
   ) {
     return this.useCase.updateStaffMotivation(req, body);
   }
@@ -82,7 +86,7 @@ export class PortalSettingsController {
   @Put('referrals/program')
   updateReferralProgramSettings(
     @Req() req: PortalRequest,
-    @Body() body: unknown,
+    @Body() body: UpdateReferralProgramDto,
   ) {
     return this.useCase.updateReferralProgramSettings(req, body);
   }
@@ -176,7 +180,10 @@ export class PortalSettingsController {
   }
 
   @Put('settings/support')
-  async updateSupportSetting(@Req() req: PortalRequest, @Body() body: unknown) {
+  async updateSupportSetting(
+    @Req() req: PortalRequest,
+    @Body() body: UpdateSupportSettingDto,
+  ) {
     return this.useCase.updateSupportSetting(req, body);
   }
 

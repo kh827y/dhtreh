@@ -5,6 +5,7 @@ import {
   type MerchantSettings,
 } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 import {
   STAFF_MOTIVATION_DEFAULT_NEW_POINTS,
   STAFF_MOTIVATION_DEFAULT_EXISTING_POINTS,
@@ -103,9 +104,16 @@ export class StaffMotivationEngine {
 
     const settings =
       params.settings ??
-      (await this.getSettings(tx, params.merchantId).catch(() =>
-        this.getSettings(this.prisma, params.merchantId),
-      ));
+      (await this.getSettings(tx, params.merchantId).catch((err) => {
+        logIgnoredError(
+          err,
+          'StaffMotivationEngine get settings via tx',
+          undefined,
+          'debug',
+          { merchantId: params.merchantId },
+        );
+        return this.getSettings(this.prisma, params.merchantId);
+      }));
     if (!settings.enabled) return { pointsIssued: 0 };
 
     const points = params.isFirstPurchase

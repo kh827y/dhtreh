@@ -16,6 +16,7 @@ import type { StaffMotivationSettingsNormalized } from '../../staff-motivation/s
 import type { StaffNotificationPayload } from '../../telegram/staff-notifications.service';
 import { safeExecAsync } from '../../../shared/safe-exec';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
+import { getRulesRoot } from '../../../shared/rules-json.util';
 import { LoyaltyOpsBase } from './loyalty-ops-base.service';
 import { allocateByWeight, allocateProRata } from './loyalty-ops-math.util';
 import type {
@@ -479,12 +480,7 @@ export class LoyaltyCommitService extends LoyaltyOpsBase {
             { warn: this.logger.debug.bind(this.logger) },
             'commit: load merchant settings for extra earn',
           );
-          const rules =
-            msRules?.rulesJson &&
-            typeof msRules.rulesJson === 'object' &&
-            !Array.isArray(msRules.rulesJson)
-              ? (msRules.rulesJson as Record<string, unknown>)
-              : {};
+          const rules = getRulesRoot(msRules?.rulesJson) ?? {};
           const allowSame = Boolean(rules.allowEarnRedeemSameReceipt);
           if (
             manualEarnOverride == null &&

@@ -12,6 +12,7 @@ import type { Request } from 'express';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { MerchantPanelService } from '../merchant-panel.service';
 import {
+  CashierIdDto,
   CashierCredentialsDto,
   CashierRotationResultDto,
   RotateCashierDto,
@@ -106,7 +107,7 @@ export class CashierController {
   @Post('activation-codes/revoke')
   async revokeActivationCode(
     @Req() req: PortalRequest,
-    @Body() body: { id?: string },
+    @Body() body: CashierIdDto,
   ) {
     return this.service.revokeCashierActivationCode(
       this.getMerchantId(req),
@@ -122,7 +123,7 @@ export class CashierController {
   @Post('device-sessions/revoke')
   async revokeDeviceSession(
     @Req() req: PortalRequest,
-    @Body() body: { id?: string },
+    @Body() body: CashierIdDto,
   ) {
     return this.service.revokeCashierDeviceSession(
       this.getMerchantId(req),

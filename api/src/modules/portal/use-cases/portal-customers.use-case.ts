@@ -8,6 +8,13 @@ import {
   type PortalRequest,
 } from '../controllers/portal.controller-helpers';
 import { normalizeBoolean } from '../../../shared/common/input.util';
+import type {
+  ImportCustomersDto,
+  ManualAccrualDto,
+  ManualComplimentaryDto,
+  ManualRedeemDto,
+  PortalCustomerPayloadDto,
+} from '../dto/customers.dto';
 
 @Injectable()
 export class PortalCustomersUseCase {
@@ -93,12 +100,7 @@ export class PortalCustomersUseCase {
 
   async importCustomers(
     req: PortalRequest,
-    body: {
-      format?: 'csv' | 'excel';
-      data?: string;
-      updateExisting?: boolean | string;
-      sendWelcome?: boolean | string;
-    },
+    body: ImportCustomersDto,
     file?: {
       buffer?: Buffer;
       originalname?: string;
@@ -165,7 +167,7 @@ export class PortalCustomersUseCase {
     );
   }
 
-  createCustomer(req: PortalRequest, body: unknown) {
+  createCustomer(req: PortalRequest, body: PortalCustomerPayloadDto) {
     const payload = this.normalizeCustomerPayload(body);
     return this.customersService.create(
       this.helpers.getMerchantId(req),
@@ -173,7 +175,11 @@ export class PortalCustomersUseCase {
     );
   }
 
-  updateCustomer(req: PortalRequest, customerId: string, body: unknown) {
+  updateCustomer(
+    req: PortalRequest,
+    customerId: string,
+    body: PortalCustomerPayloadDto,
+  ) {
     const payload = this.normalizeCustomerPayload(body);
     return this.customersService.update(
       this.helpers.getMerchantId(req),
@@ -182,8 +188,7 @@ export class PortalCustomersUseCase {
     );
   }
 
-  manualAccrual(req: PortalRequest, customerId: string, body: unknown) {
-    const payload = this.helpers.asRecord(body);
+  manualAccrual(req: PortalRequest, customerId: string, body: ManualAccrualDto) {
     const staffId =
       typeof req.portalStaffId === 'string' && req.portalStaffId.trim()
         ? req.portalStaffId.trim()
@@ -193,17 +198,16 @@ export class PortalCustomersUseCase {
       String(customerId || ''),
       staffId,
       {
-        purchaseAmount: this.helpers.coerceNumber(payload.purchaseAmount) ?? 0,
-        points: this.helpers.coerceNumber(payload.points),
-        receiptNumber: this.helpers.coerceString(payload.receiptNumber),
-        outletId: this.helpers.coerceString(payload.outletId),
-        comment: this.helpers.coerceString(payload.comment),
+        purchaseAmount: this.helpers.coerceNumber(body?.purchaseAmount) ?? 0,
+        points: this.helpers.coerceNumber(body?.points),
+        receiptNumber: this.helpers.coerceString(body?.receiptNumber),
+        outletId: this.helpers.coerceString(body?.outletId),
+        comment: this.helpers.coerceString(body?.comment),
       },
     );
   }
 
-  manualRedeem(req: PortalRequest, customerId: string, body: unknown) {
-    const payload = this.helpers.asRecord(body);
+  manualRedeem(req: PortalRequest, customerId: string, body: ManualRedeemDto) {
     const staffId =
       typeof req.portalStaffId === 'string' && req.portalStaffId.trim()
         ? req.portalStaffId.trim()
@@ -213,15 +217,18 @@ export class PortalCustomersUseCase {
       String(customerId || ''),
       staffId,
       {
-        points: this.helpers.coerceNumber(payload.points) ?? 0,
-        outletId: this.helpers.coerceString(payload.outletId),
-        comment: this.helpers.coerceString(payload.comment),
+        points: this.helpers.coerceNumber(body?.points) ?? 0,
+        outletId: this.helpers.coerceString(body?.outletId),
+        comment: this.helpers.coerceString(body?.comment),
       },
     );
   }
 
-  manualComplimentary(req: PortalRequest, customerId: string, body: unknown) {
-    const payload = this.helpers.asRecord(body);
+  manualComplimentary(
+    req: PortalRequest,
+    customerId: string,
+    body: ManualComplimentaryDto,
+  ) {
     const staffId =
       typeof req.portalStaffId === 'string' && req.portalStaffId.trim()
         ? req.portalStaffId.trim()
@@ -231,10 +238,10 @@ export class PortalCustomersUseCase {
       String(customerId || ''),
       staffId,
       {
-        points: this.helpers.coerceNumber(payload.points) ?? 0,
-        expiresInDays: this.helpers.coerceNumber(payload.expiresInDays),
-        outletId: this.helpers.coerceString(payload.outletId),
-        comment: this.helpers.coerceString(payload.comment),
+        points: this.helpers.coerceNumber(body?.points) ?? 0,
+        expiresInDays: this.helpers.coerceNumber(body?.expiresInDays),
+        outletId: this.helpers.coerceString(body?.outletId),
+        comment: this.helpers.coerceString(body?.comment),
       },
     );
   }
@@ -254,7 +261,7 @@ export class PortalCustomersUseCase {
   }
 
   private normalizeCustomerPayload(
-    body: unknown,
+    body: PortalCustomerPayloadDto,
   ): Partial<PortalCustomerDto> & { firstName?: string; lastName?: string } {
     const payload = this.helpers.asRecord(body);
     const tags = Array.isArray(payload.tags)

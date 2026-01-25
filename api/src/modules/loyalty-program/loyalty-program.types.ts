@@ -1,7 +1,7 @@
 import type { PromotionRewardType, PromotionStatus } from '@prisma/client';
 
 export interface TierPayload {
-  name: string;
+  name?: string;
   description?: string | null;
   thresholdAmount?: number | null;
   earnRatePercent?: number | null;
@@ -49,12 +49,12 @@ export interface TierMembersResponse {
 }
 
 export interface PromotionPayload {
-  name: string;
+  name?: string;
   description?: string | null;
   segmentId?: string | null;
   targetTierId?: string | null;
   status?: PromotionStatus;
-  rewardType: PromotionRewardType;
+  rewardType?: PromotionRewardType;
   rewardValue?: number | null;
   rewardMetadata?: unknown;
   pointsExpireInDays?: number | null;

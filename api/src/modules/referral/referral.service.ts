@@ -12,6 +12,7 @@ import { EmailService } from '../notifications/email/email.service';
 import * as crypto from 'crypto';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { asRecord as asRecordShared } from '../../shared/common/input.util';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 export interface CreateReferralProgramDto {
   merchantId: string;
@@ -173,7 +174,19 @@ export class ReferralService {
 
     const customer = await this.prisma.customer
       .findUnique({ where: { id: raw } })
-      .catch(() => null);
+      .catch((err) => {
+        logIgnoredError(
+          err,
+          'ReferralService resolve customer',
+          undefined,
+          'debug',
+          {
+            customerId: raw,
+            merchantId,
+          },
+        );
+        return null;
+      });
     if (customer) {
       if (merchantId && customer.merchantId !== merchantId) {
         throw new BadRequestException('merchant mismatch for customer');

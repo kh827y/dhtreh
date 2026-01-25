@@ -24,6 +24,13 @@ import type { PortalRequest } from './portal.controller-helpers';
 import { TransactionItemDto } from '../../loyalty/dto/dto';
 import { PortalCustomersUseCase } from '../use-cases/portal-customers.use-case';
 import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ImportCustomersDto,
+  ManualAccrualDto,
+  ManualComplimentaryDto,
+  ManualRedeemDto,
+  PortalCustomerPayloadDto,
+} from '../dto/customers.dto';
 
 @ApiExtraModels(TransactionItemDto)
 @ApiTags('portal')
@@ -98,13 +105,7 @@ export class PortalCustomersController {
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   async importCustomers(
     @Req() req: PortalRequest,
-    @Body()
-    body: {
-      format?: 'csv' | 'excel';
-      data?: string;
-      updateExisting?: boolean | string;
-      sendWelcome?: boolean | string;
-    },
+    @Body() body: ImportCustomersDto,
     @UploadedFile()
     file?: {
       buffer?: Buffer;
@@ -139,7 +140,7 @@ export class PortalCustomersController {
 
   @Post('customers')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  createCustomer(@Req() req: PortalRequest, @Body() body: unknown) {
+  createCustomer(@Req() req: PortalRequest, @Body() body: PortalCustomerPayloadDto) {
     return this.useCase.createCustomer(req, body);
   }
 
@@ -148,7 +149,7 @@ export class PortalCustomersController {
   updateCustomer(
     @Req() req: PortalRequest,
     @Param('customerId') customerId: string,
-    @Body() body: unknown,
+    @Body() body: PortalCustomerPayloadDto,
   ) {
     return this.useCase.updateCustomer(req, customerId, body);
   }
@@ -158,7 +159,7 @@ export class PortalCustomersController {
   async manualAccrual(
     @Req() req: PortalRequest,
     @Param('customerId') customerId: string,
-    @Body() body: unknown,
+    @Body() body: ManualAccrualDto,
   ) {
     return this.useCase.manualAccrual(req, customerId, body);
   }
@@ -168,7 +169,7 @@ export class PortalCustomersController {
   async manualRedeem(
     @Req() req: PortalRequest,
     @Param('customerId') customerId: string,
-    @Body() body: unknown,
+    @Body() body: ManualRedeemDto,
   ) {
     return this.useCase.manualRedeem(req, customerId, body);
   }
@@ -178,7 +179,7 @@ export class PortalCustomersController {
   async manualComplimentary(
     @Req() req: PortalRequest,
     @Param('customerId') customerId: string,
-    @Body() body: unknown,
+    @Body() body: ManualComplimentaryDto,
   ) {
     return this.useCase.manualComplimentary(req, customerId, body);
   }

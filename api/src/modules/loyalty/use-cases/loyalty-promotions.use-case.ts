@@ -19,6 +19,12 @@ import {
   asRecord,
 } from '../controllers/loyalty-controller.utils';
 import { LoyaltyControllerSupportService } from '../services/loyalty-controller-support.service';
+import type {
+  PromoCodeApplyDto,
+  PromotionClaimDto,
+  ReviewDismissDto,
+  ReviewSubmitDto,
+} from '../dto/dto';
 
 @Injectable()
 export class LoyaltyPromotionsUseCase {
@@ -40,13 +46,7 @@ export class LoyaltyPromotionsUseCase {
     return this.support.listPromotionsForCustomer(mid, mcid);
   }
 
-  async claimPromotion(body: {
-    merchantId?: string;
-    customerId?: string;
-    promotionId?: string;
-    outletId?: string | null;
-    staffId?: string | null;
-  }) {
+  async claimPromotion(body: PromotionClaimDto) {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
     const customerId =
@@ -303,19 +303,7 @@ export class LoyaltyPromotionsUseCase {
     });
   }
 
-  async submitReview(body: {
-    merchantId?: string;
-    customerId?: string;
-    orderId?: string | null;
-    rating?: number | string;
-    comment?: string;
-    title?: string;
-    tags?: unknown;
-    photos?: unknown;
-    transactionId?: string;
-    outletId?: string | null;
-    staffId?: string | null;
-  }) {
+  async submitReview(body: ReviewSubmitDto) {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
     if (!merchantId) throw new BadRequestException('merchantId is required');
@@ -467,11 +455,7 @@ export class LoyaltyPromotionsUseCase {
     } as const;
   }
 
-  async dismissReviewPrompt(body: {
-    merchantId?: string;
-    customerId?: string;
-    transactionId?: string;
-  }) {
+  async dismissReviewPrompt(body: ReviewDismissDto) {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
     const customerId =
@@ -547,11 +531,7 @@ export class LoyaltyPromotionsUseCase {
     return { ok: true, dismissedAt: payload.dismissedAt };
   }
 
-  async applyPromoCode(body: {
-    merchantId?: string;
-    customerId?: string;
-    code?: string;
-  }) {
+  async applyPromoCode(body: PromoCodeApplyDto) {
     if (!body?.merchantId || !body?.customerId)
       throw new BadRequestException('merchantId and customerId required');
     const customer = await this.support.ensureCustomer(

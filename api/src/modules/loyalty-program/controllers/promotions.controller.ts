@@ -25,8 +25,12 @@ import {
   LoyaltyProgramService,
   type PromotionPayload,
 } from '../loyalty-program.service';
+import {
+  PromotionBulkStatusDto,
+  PromotionPayloadDto,
+  PromotionStatusDto,
+} from '../dto';
 
-type PortalPromotionPayload = Omit<PromotionPayload, 'actorId'>;
 type PromotionDetail = Awaited<
   ReturnType<LoyaltyProgramService['getPromotion']>
 >;
@@ -55,7 +59,7 @@ function normalizeStatus(value?: string | null): PromotionStatus {
   return PromotionStatus.DRAFT;
 }
 
-function normalizePayload(body: PortalPromotionPayload): PromotionPayload {
+function normalizePayload(body: PromotionPayloadDto): PromotionPayload {
   const segmentId = body.segmentId === '' ? null : body.segmentId;
   const metadata =
     body.metadata === undefined
@@ -167,7 +171,7 @@ export class PromotionsController {
   @PortalPermissionsHandled()
   async create(
     @Req() req: PortalRequest,
-    @Body() body: PortalPromotionPayload,
+    @Body() body: PromotionPayloadDto,
   ) {
     const merchantId = this.merchantId(req);
     const payload = normalizePayload(body);
@@ -182,7 +186,7 @@ export class PromotionsController {
   async update(
     @Req() req: PortalRequest,
     @Param('id') id: string,
-    @Body() body: PortalPromotionPayload,
+    @Body() body: PromotionPayloadDto,
   ) {
     const merchantId = this.merchantId(req);
     const payload = normalizePayload(body);
@@ -207,7 +211,7 @@ export class PromotionsController {
   async changeStatus(
     @Req() req: PortalRequest,
     @Param('id') id: string,
-    @Body() body: { status: PromotionStatus },
+    @Body() body: PromotionStatusDto,
   ) {
     const merchantId = this.merchantId(req);
     const current = await this.service.getPromotion(merchantId, id);
@@ -226,7 +230,7 @@ export class PromotionsController {
   @PortalPermissionsHandled()
   bulkStatus(
     @Req() req: PortalRequest,
-    @Body() body: { ids: string[]; status: PromotionStatus },
+    @Body() body: PromotionBulkStatusDto,
   ) {
     const merchantId = this.merchantId(req);
     return this.service

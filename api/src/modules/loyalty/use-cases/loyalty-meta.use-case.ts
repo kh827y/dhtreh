@@ -3,6 +3,7 @@ import { LoyaltyService } from '../services/loyalty.service';
 import { LevelsService } from '../../levels/levels.service';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
+import type { ConsentSetDto } from '../dto/dto';
 import { LoyaltyControllerSupportService } from '../services/loyalty-controller-support.service';
 import {
   parseBoundedInt,
@@ -96,11 +97,7 @@ export class LoyaltyMetaUseCase {
     };
   }
 
-  async setConsent(body: {
-    merchantId?: string;
-    customerId?: string;
-    granted?: boolean;
-  }) {
+  async setConsent(body: ConsentSetDto) {
     const merchantId = requireTrimmed(
       body?.merchantId,
       'merchantId and customerId required',
