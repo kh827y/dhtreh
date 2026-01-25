@@ -3,10 +3,8 @@ import {
   AnalyticsService,
   type RecencyGrouping,
 } from '../../analytics/analytics.service';
-import {
-  PortalControllerHelpers,
-  type PortalRequest,
-} from '../controllers/portal.controller-helpers';
+import type { PortalRequest } from '../portal.types';
+import { PortalRequestHelper } from '../helpers/portal-request.helper';
 import { UpdateRfmSettingsDto } from '../../analytics/dto/update-rfm-settings.dto';
 import { DEFAULT_TIMEZONE_CODE } from '../../../shared/timezone/russia-timezones';
 
@@ -14,7 +12,7 @@ import { DEFAULT_TIMEZONE_CODE } from '../../../shared/timezone/russia-timezones
 export class PortalAnalyticsUseCase {
   constructor(
     private readonly analytics: AnalyticsService,
-    private readonly helpers: PortalControllerHelpers,
+    private readonly helpers: PortalRequestHelper,
   ) {}
 
   dashboard(req: PortalRequest, period?: string, from?: string, to?: string) {

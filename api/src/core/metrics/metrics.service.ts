@@ -32,6 +32,7 @@ export class MetricsService implements OnModuleDestroy {
   private quoteLatencyHist?: Histogram;
   private httpReqCounter?: Counter<string>;
   private httpReqDuration?: Histogram<string>;
+  private httpSlowRequests?: Counter;
   private ledgerEntries?: Counter<string>;
   private ledgerAmount?: Counter<string>;
   private outboxEvents?: Counter<string>;
@@ -126,6 +127,11 @@ export class MetricsService implements OnModuleDestroy {
       help: 'HTTP request duration seconds',
       labelNames: ['method', 'route', 'status'],
       buckets: [0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 2, 5],
+      registers: [this.registry],
+    });
+    this.httpSlowRequests = new Counter({
+      name: 'http_slow_requests_total',
+      help: 'HTTP requests slower than threshold',
       registers: [this.registry],
     });
     this.ledgerEntries = new Counter({
@@ -304,6 +310,10 @@ export class MetricsService implements OnModuleDestroy {
     lines.push('# TYPE loyalty_jwt_expired_total counter');
     lines.push('# HELP loyalty_hold_gc_canceled_total Holds canceled by GC');
     lines.push('# TYPE loyalty_hold_gc_canceled_total counter');
+    lines.push('# HELP portal_auth_login_total Portal auth login attempts');
+    lines.push('# TYPE portal_auth_login_total counter');
+    lines.push('# HELP portal_auth_refresh_total Portal auth refresh attempts');
+    lines.push('# TYPE portal_auth_refresh_total counter');
 
     // Raw counters/summaries, исключая те, что отражаем через prom-client
     const skip = new Set([
@@ -349,6 +359,14 @@ export class MetricsService implements OnModuleDestroy {
       );
     } catch (err) {
       logIgnoredError(err, 'MetricsService recordHttp', undefined, 'debug');
+    }
+  }
+
+  recordHttpSlow(value = 1) {
+    try {
+      this.httpSlowRequests?.inc(value);
+    } catch (err) {
+      logIgnoredError(err, 'MetricsService recordHttpSlow', undefined, 'debug');
     }
   }
 

@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiExtraModels, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import type { PortalRequest } from './portal.controller-helpers';
+import type { PortalRequest } from '../portal.types';
 import { TransactionItemDto } from '../../loyalty/dto/dto';
 import { PortalCommunicationsUseCase } from '../use-cases/portal-communications.use-case';
 import {

@@ -14,6 +14,8 @@ export class EventOutboxGcWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EventOutboxGcWorker.name);
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  public startedAt: Date | null = null;
+  public lastTickAt: Date | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -44,6 +46,7 @@ export class EventOutboxGcWorker implements OnModuleInit, OnModuleDestroy {
       );
     }
     this.logger.log(`EventOutboxGcWorker started, interval=${intervalMs}ms`);
+    this.startedAt = new Date();
   }
 
   onModuleDestroy() {
@@ -53,6 +56,7 @@ export class EventOutboxGcWorker implements OnModuleInit, OnModuleDestroy {
   private async tick() {
     if (this.running) return;
     this.running = true;
+    this.lastTickAt = new Date();
     const lock = await pgTryAdvisoryLock(this.prisma, 'worker:outbox_gc');
     if (!lock.ok) {
       this.running = false;

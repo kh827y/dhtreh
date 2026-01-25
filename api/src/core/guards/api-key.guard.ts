@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { safeEqual } from '../../shared/security/secret-compare.util';
 
 type RequestLike = {
   headers?: Record<string, string | string[] | undefined>;
@@ -37,23 +38,17 @@ export class ApiKeyGuard implements CanActivate {
           'API key not properly configured for production',
         );
       }
-      if (apiKey === configuredKey) return true;
+      if (safeEqual(apiKey, configuredKey)) return true;
       throw new UnauthorizedException('Invalid API key');
     }
 
     // Non-production: принимаем либо настроенный ключ, либо 'test-key'
-    const allowedKeys = new Set<string>();
-    if (configuredKey) allowedKeys.add(configuredKey);
-    allowedKeys.add('test-key');
-    if (allowedKeys.has(apiKey)) return true;
+    const allowedKeys = ['test-key'];
+    if (configuredKey) allowedKeys.push(configuredKey);
+    if (allowedKeys.some((key) => safeEqual(apiKey, key))) return true;
 
     // Если дошли сюда — ключ не принят
-    const expectedDisplay = configuredKey
-      ? `${configuredKey} or test-key`
-      : 'test-key';
-    throw new UnauthorizedException(
-      `Invalid API key; expected ${expectedDisplay}`,
-    );
+    throw new UnauthorizedException('Invalid API key');
   }
 
   private readApiKey(req: RequestLike): string {

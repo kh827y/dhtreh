@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { AppConfigService } from '../config/app-config.service';
+import { safeEqual } from '../../shared/security/secret-compare.util';
 
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -29,8 +30,11 @@ export class AdminGuard implements CanActivate {
     }
 
     // In tests/dev, allow fallback keys if ADMIN_KEY is not set
+    const matchesAny = (candidates: string[]) =>
+      candidates.some((candidate) => safeEqual(key, candidate));
+
     if (!want && (isTest || nodeEnv !== 'production')) {
-      if (key === 'test-admin-key' || key === 'test_admin_key') return true;
+      if (matchesAny(['test-admin-key', 'test_admin_key'])) return true;
     }
     if (!want) throw new UnauthorizedException('Admin key not configured');
 
@@ -45,12 +49,12 @@ export class AdminGuard implements CanActivate {
     }
 
     // In tests, accept hyphen/underscore variants equivalently to reduce flakiness
-    if (key === want) return true;
+    if (safeEqual(key, want)) return true;
     if (isTest) {
       const norm = (s: string) => s.replace(/_/g, '-').toLowerCase();
-      if (norm(key) === norm(want)) return true;
+      if (safeEqual(norm(key), norm(want))) return true;
       // last resort in tests: accept known test keys regardless of want
-      if (key === 'test-admin-key' || key === 'test_admin_key') return true;
+      if (matchesAny(['test-admin-key', 'test_admin_key'])) return true;
     }
     throw new UnauthorizedException('Missing or invalid admin key');
   }
@@ -79,7 +83,7 @@ function verifyTotp(
   for (let w = -window; w <= window; w++) {
     const counter = Math.floor(now / step) + w;
     const code = hotp(secret, counter);
-    if (code === token.padStart(6, '0')) return true;
+    if (safeEqual(code, token.padStart(6, '0'))) return true;
   }
   return false;
 }

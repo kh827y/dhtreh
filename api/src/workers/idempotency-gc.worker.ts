@@ -14,6 +14,8 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(IdempotencyGcWorker.name);
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  public startedAt: Date | null = null;
+  public lastTickAt: Date | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -49,6 +51,7 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
       );
     }
     this.logger.log(`IdempotencyGcWorker started, interval=${intervalMs}ms`);
+    this.startedAt = new Date();
   }
 
   onModuleDestroy() {
@@ -58,6 +61,7 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
   private async tick() {
     if (this.running) return;
     this.running = true;
+    this.lastTickAt = new Date();
     const lock = await pgTryAdvisoryLock(this.prisma, 'worker:idempotency_gc');
     if (!lock.ok) {
       this.running = false;

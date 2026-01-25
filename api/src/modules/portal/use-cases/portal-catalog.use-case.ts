@@ -19,17 +19,15 @@ import {
 } from '../dto/catalog.dto';
 import { MerchantsService } from '../../merchants/merchants.service';
 import { UpdateOutletStatusDto } from '../../merchants/dto';
-import {
-  PortalControllerHelpers,
-  type PortalRequest,
-} from '../controllers/portal.controller-helpers';
+import type { PortalRequest } from '../portal.types';
+import { PortalRequestHelper } from '../helpers/portal-request.helper';
 
 @Injectable()
 export class PortalCatalogUseCase {
   constructor(
     private readonly catalog: PortalCatalogService,
     private readonly merchants: MerchantsService,
-    private readonly helpers: PortalControllerHelpers,
+    private readonly helpers: PortalRequestHelper,
   ) {}
 
   listCatalogCategories(req: PortalRequest): Promise<CategoryDto[]> {

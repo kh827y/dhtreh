@@ -3,10 +3,9 @@ import { Prisma, CommunicationChannel } from '@prisma/client';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { CommunicationsService } from '../../communications/communications.service';
 import { PortalTelegramNotifyService } from '../services/telegram-notify.service';
-import {
-  PortalControllerHelpers,
-  type PortalRequest,
-} from '../controllers/portal.controller-helpers';
+import type { PortalRequest } from '../portal.types';
+import { PortalRequestHelper } from '../helpers/portal-request.helper';
+import { PortalCommunicationsHelper } from '../helpers/portal-communications.helper';
 import type {
   NotificationsBroadcastDto,
   PortalCampaignScheduleDto,
@@ -22,7 +21,8 @@ export class PortalCommunicationsUseCase {
     private readonly notifications: NotificationsService,
     private readonly communications: CommunicationsService,
     private readonly telegramNotify: PortalTelegramNotifyService,
-    private readonly helpers: PortalControllerHelpers,
+    private readonly helpers: PortalRequestHelper,
+    private readonly commsHelper: PortalCommunicationsHelper,
   ) {}
 
   notificationsBroadcast(req: PortalRequest, body: NotificationsBroadcastDto) {
@@ -36,9 +36,9 @@ export class PortalCommunicationsUseCase {
       .listChannelTasks(
         merchantId,
         CommunicationChannel.PUSH,
-        this.helpers.normalizePushScope(scope),
+        this.commsHelper.normalizePushScope(scope),
       )
-      .then((tasks) => tasks.map((task) => this.helpers.mapPushTask(task)));
+      .then((tasks) => tasks.map((task) => this.commsHelper.mapPushTask(task)));
   }
 
   createPushCampaign(req: PortalRequest, body: PortalPushCampaignDto) {
@@ -66,7 +66,7 @@ export class PortalCommunicationsUseCase {
           audience: audienceCode ?? audienceId ?? null,
         },
       })
-      .then((task) => this.helpers.mapPushTask(task));
+      .then((task) => this.commsHelper.mapPushTask(task));
   }
 
   cancelPushCampaign(req: PortalRequest, campaignId: string) {
@@ -93,7 +93,7 @@ export class PortalCommunicationsUseCase {
       .duplicateTask(merchantId, campaignId, {
         scheduledAt: body?.scheduledAt ?? body?.startAt ?? null,
       })
-      .then((task) => this.helpers.mapPushTask(task));
+      .then((task) => this.commsHelper.mapPushTask(task));
   }
 
   listTelegramCampaigns(req: PortalRequest, scope?: string) {
@@ -102,9 +102,11 @@ export class PortalCommunicationsUseCase {
       .listChannelTasks(
         merchantId,
         CommunicationChannel.TELEGRAM,
-        this.helpers.normalizeTelegramScope(scope),
+        this.commsHelper.normalizeTelegramScope(scope),
       )
-      .then((tasks) => tasks.map((task) => this.helpers.mapTelegramTask(task)));
+      .then((tasks) =>
+        tasks.map((task) => this.commsHelper.mapTelegramTask(task)),
+      );
   }
 
   createTelegramCampaign(req: PortalRequest, body: PortalTelegramCampaignDto) {
@@ -125,7 +127,7 @@ export class PortalCommunicationsUseCase {
         },
         media: (body?.media ?? null) as Prisma.InputJsonValue | null,
       })
-      .then((task) => this.helpers.mapTelegramTask(task));
+      .then((task) => this.commsHelper.mapTelegramTask(task));
   }
 
   cancelTelegramCampaign(req: PortalRequest, campaignId: string) {
@@ -152,7 +154,7 @@ export class PortalCommunicationsUseCase {
       .duplicateTask(merchantId, campaignId, {
         scheduledAt: body?.scheduledAt ?? body?.startAt ?? null,
       })
-      .then((task) => this.helpers.mapTelegramTask(task));
+      .then((task) => this.commsHelper.mapTelegramTask(task));
   }
 
   telegramNotifyState(req: PortalRequest) {
@@ -160,7 +162,7 @@ export class PortalCommunicationsUseCase {
   }
 
   telegramNotifyInvite(req: PortalRequest, body: TelegramNotifyInviteDto) {
-    const actor = this.helpers.resolveTelegramActor(req);
+    const actor = this.commsHelper.resolveTelegramActor(req);
     const staffId = actor.kind === 'STAFF' ? actor.staffId : null;
     return this.telegramNotify.issueInvite(this.helpers.getMerchantId(req), {
       forceNew: !!body?.forceNew,
@@ -173,7 +175,7 @@ export class PortalCommunicationsUseCase {
   }
 
   telegramNotifyPreferences(req: PortalRequest) {
-    const actor = this.helpers.resolveTelegramActor(req);
+    const actor = this.commsHelper.resolveTelegramActor(req);
     return this.telegramNotify.getPreferences(
       this.helpers.getMerchantId(req),
       actor,
@@ -184,7 +186,7 @@ export class PortalCommunicationsUseCase {
     req: PortalRequest,
     body: TelegramNotifyPreferencesDto,
   ) {
-    const actor = this.helpers.resolveTelegramActor(req);
+    const actor = this.commsHelper.resolveTelegramActor(req);
     return this.telegramNotify.updatePreferences(
       this.helpers.getMerchantId(req),
       actor,

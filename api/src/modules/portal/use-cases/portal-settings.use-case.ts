@@ -20,11 +20,12 @@ import {
   getRulesSection,
   setRulesSection,
 } from '../../../shared/rules-json.util';
-import {
-  PortalControllerHelpers,
-  type PortalRequest,
-  type UploadedFile as UploadedFilePayload,
-} from '../controllers/portal.controller-helpers';
+import type {
+  PortalRequest,
+  UploadedFile as UploadedFilePayload,
+} from '../portal.types';
+import { PortalRequestHelper } from '../helpers/portal-request.helper';
+import { PortalSettingsHelper } from '../helpers/portal-settings.helper';
 import type {
   UpdateReferralProgramDto,
   UpdateSupportSettingDto,
@@ -46,11 +47,12 @@ export class PortalSettingsUseCase {
     private readonly prisma: PrismaService,
     private readonly staffMotivation: StaffMotivationService,
     private readonly referrals: ReferralService,
-    private readonly helpers: PortalControllerHelpers,
+    private readonly requestHelper: PortalRequestHelper,
+    private readonly settingsHelper: PortalSettingsHelper,
   ) {}
 
   getStaffMotivation(req: PortalRequest) {
-    return this.staffMotivation.getSettings(this.helpers.getMerchantId(req));
+    return this.staffMotivation.getSettings(this.requestHelper.getMerchantId(req));
   }
 
   updateStaffMotivation(
@@ -58,7 +60,7 @@ export class PortalSettingsUseCase {
     body: UpdateStaffMotivationDto,
   ) {
     return this.staffMotivation.updateSettings(
-      this.helpers.getMerchantId(req),
+      this.requestHelper.getMerchantId(req),
       {
         enabled: !!body?.enabled,
         pointsForNewCustomer: Number(body?.pointsForNewCustomer ?? 0),
@@ -74,21 +76,21 @@ export class PortalSettingsUseCase {
 
   referralProgramSettings(req: PortalRequest) {
     return this.referrals.getProgramSettingsForMerchant(
-      this.helpers.getMerchantId(req),
+      this.requestHelper.getMerchantId(req),
     );
   }
 
   updateReferralProgramSettings(req: PortalRequest, body: UpdateReferralProgramDto) {
-    const payload = this.helpers.normalizeReferralProgramPayload(body);
+    const payload = this.settingsHelper.normalizeReferralProgramPayload(body);
     return this.referrals.updateProgramSettingsFromPortal(
-      this.helpers.getMerchantId(req),
+      this.requestHelper.getMerchantId(req),
       payload,
     );
   }
 
   async ttlReminderForecast(req: PortalRequest, daysBeforeStr?: string) {
     assertPortalPermissions(req, ['mechanic_ttl'], 'read');
-    const merchantId = this.helpers.getMerchantId(req);
+    const merchantId = this.requestHelper.getMerchantId(req);
     const rawDays = Number(daysBeforeStr ?? NaN);
     const daysBefore = Number.isFinite(rawDays)
       ? Math.min(90, Math.max(1, Math.floor(rawDays)))
@@ -193,23 +195,23 @@ export class PortalSettingsUseCase {
   }
 
   getSettings(req: PortalRequest) {
-    this.helpers.assertSettingsReadAccess(req);
+    this.settingsHelper.assertSettingsReadAccess(req);
     return this.service
-      .getSettings(this.helpers.getMerchantId(req))
+      .getSettings(this.requestHelper.getMerchantId(req))
       .then((data) =>
-        this.helpers.filterSettingsByPermissions(
+        this.settingsHelper.filterSettingsByPermissions(
           req,
-          this.helpers.maskSettingsSecrets(req, data),
+          this.settingsHelper.maskSettingsSecrets(req, data),
         ),
       );
   }
 
   async updateSettings(req: PortalRequest, dto: UpdateMerchantSettingsDto) {
-    const id = this.helpers.getMerchantId(req);
+    const id = this.requestHelper.getMerchantId(req);
     const current = await this.prisma.merchantSettings.findUnique({
       where: { merchantId: id },
     });
-    this.helpers.assertSettingsUpdateAccess(req, current, dto);
+    this.settingsHelper.assertSettingsUpdateAccess(req, current, dto);
     const updated = await this.service.updateSettings(
       id,
       dto.earnBps,
@@ -226,26 +228,26 @@ export class PortalSettingsUseCase {
       dto.rulesJson,
       dto,
     );
-    return this.helpers.filterSettingsByPermissions(
+    return this.settingsHelper.filterSettingsByPermissions(
       req,
-      this.helpers.maskSettingsSecrets(req, updated),
+      this.settingsHelper.maskSettingsSecrets(req, updated),
     );
   }
 
   getMerchantName(req: PortalRequest) {
-    return this.service.getMerchantName(this.helpers.getMerchantId(req));
+    return this.service.getMerchantName(this.requestHelper.getMerchantId(req));
   }
 
   async updateMerchantName(req: PortalRequest, dto: UpdateMerchantNameDto) {
     const payload = await this.service.updateMerchantName(
-      this.helpers.getMerchantId(req),
+      this.requestHelper.getMerchantId(req),
       dto.name,
     );
     return { ok: true, ...payload };
   }
 
   async getTimezoneSetting(req: PortalRequest) {
-    const merchantId = this.helpers.getMerchantId(req);
+    const merchantId = this.requestHelper.getMerchantId(req);
     const timezone = await this.service.getTimezone(merchantId);
     return {
       timezone,
@@ -254,7 +256,7 @@ export class PortalSettingsUseCase {
   }
 
   async updateTimezoneSetting(req: PortalRequest, dto: UpdateTimezoneDto) {
-    const merchantId = this.helpers.getMerchantId(req);
+    const merchantId = this.requestHelper.getMerchantId(req);
     const timezone = await this.service.updateTimezone(merchantId, dto.code);
     return {
       ok: true,
@@ -264,7 +266,7 @@ export class PortalSettingsUseCase {
   }
 
   async getSupportSetting(req: PortalRequest) {
-    const merchantId = this.helpers.getMerchantId(req);
+    const merchantId = this.requestHelper.getMerchantId(req);
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
       select: { rulesJson: true },
@@ -280,7 +282,7 @@ export class PortalSettingsUseCase {
   }
 
   async updateSupportSetting(req: PortalRequest, body: UpdateSupportSettingDto) {
-    const merchantId = this.helpers.getMerchantId(req);
+    const merchantId = this.requestHelper.getMerchantId(req);
     const rawValue =
       typeof body?.supportTelegram === 'string' ? body.supportTelegram : '';
     const supportTelegram = rawValue.trim() ? rawValue.trim() : null;
@@ -313,7 +315,7 @@ export class PortalSettingsUseCase {
 
   async getMiniappLogo(req: PortalRequest) {
     assertPortalPermissions(req, ['system_settings'], 'read');
-    const merchantId = this.helpers.getMerchantId(req);
+    const merchantId = this.requestHelper.getMerchantId(req);
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
       select: { miniappLogoUrl: true },
@@ -322,12 +324,12 @@ export class PortalSettingsUseCase {
   }
 
   async uploadMiniappLogo(req: PortalRequest, file: UploadedFilePayload) {
-    const merchantId = this.helpers.getMerchantId(req);
+    const merchantId = this.requestHelper.getMerchantId(req);
     const current = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
       select: { miniappLogoUrl: true },
     });
-    this.helpers.assertSettingsUpdateAccess(req, current, {
+    this.settingsHelper.assertSettingsUpdateAccess(req, current, {
       miniappLogoUrl: 'upload',
     } as UpdateMerchantSettingsDto);
     if (!file || !file.buffer) {
@@ -360,7 +362,7 @@ export class PortalSettingsUseCase {
       },
       select: { id: true },
     });
-    const miniappLogoUrl = this.helpers.buildMiniappLogoPath(
+    const miniappLogoUrl = this.settingsHelper.buildMiniappLogoPath(
       merchantId,
       asset.id,
     );
@@ -369,7 +371,7 @@ export class PortalSettingsUseCase {
       update: { miniappLogoUrl, updatedAt: new Date() },
       create: { merchantId, miniappLogoUrl },
     });
-    const previousAssetId = this.helpers.extractMiniappLogoAssetId(
+    const previousAssetId = this.settingsHelper.extractMiniappLogoAssetId(
       current?.miniappLogoUrl ?? null,
     );
     if (previousAssetId && previousAssetId !== asset.id) {
@@ -385,15 +387,15 @@ export class PortalSettingsUseCase {
   }
 
   async deleteMiniappLogo(req: PortalRequest) {
-    const merchantId = this.helpers.getMerchantId(req);
+    const merchantId = this.requestHelper.getMerchantId(req);
     const current = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
       select: { miniappLogoUrl: true },
     });
-    this.helpers.assertSettingsUpdateAccess(req, current, {
+    this.settingsHelper.assertSettingsUpdateAccess(req, current, {
       miniappLogoUrl: null,
     } as unknown as UpdateMerchantSettingsDto);
-    const previousAssetId = this.helpers.extractMiniappLogoAssetId(
+    const previousAssetId = this.settingsHelper.extractMiniappLogoAssetId(
       current?.miniappLogoUrl ?? null,
     );
     if (previousAssetId) {

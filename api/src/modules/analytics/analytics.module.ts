@@ -14,6 +14,6 @@ import { AnalyticsCacheService } from './analytics-cache.service';
     AnalyticsAggregatorWorker,
     AnalyticsCacheService,
   ],
-  exports: [AnalyticsService],
+  exports: [AnalyticsService, AnalyticsAggregatorWorker],
 })
 export class AnalyticsModule {}

@@ -4,17 +4,15 @@ import {
   type OperationsLogFilters,
 } from '../services/operations-log.service';
 import { MerchantsService } from '../../merchants/merchants.service';
-import {
-  PortalControllerHelpers,
-  type PortalRequest,
-} from '../controllers/portal.controller-helpers';
+import type { PortalRequest } from '../portal.types';
+import { PortalRequestHelper } from '../helpers/portal-request.helper';
 
 @Injectable()
 export class PortalOperationsUseCase {
   constructor(
     private readonly operations: OperationsLogService,
     private readonly merchants: MerchantsService,
-    private readonly helpers: PortalControllerHelpers,
+    private readonly helpers: PortalRequestHelper,
   ) {}
 
   getOperationsLog(

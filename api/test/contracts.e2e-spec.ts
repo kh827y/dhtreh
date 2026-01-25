@@ -6,7 +6,6 @@ import { CashierGuard } from '../src/core/guards/cashier.guard';
 import { SubscriptionGuard } from '../src/core/guards/subscription.guard';
 import { AntiFraudGuard } from '../src/core/guards/antifraud.guard';
 import { PortalGuard } from '../src/modules/portal-auth/portal.guard';
-import { PortalControllerHelpers } from '../src/modules/portal/controllers/portal.controller-helpers';
 import { PortalCustomersController } from '../src/modules/portal/controllers/portal-customers.controller';
 import { PortalPromocodesController } from '../src/modules/portal/controllers/portal-promocodes.controller';
 import { PortalSettingsController } from '../src/modules/portal/controllers/portal-settings.controller';
@@ -168,7 +167,6 @@ describe('Contracts (critical endpoints)', () => {
         LoyaltyTransactionsController,
       ],
       providers: [
-        PortalControllerHelpers,
         { provide: PortalCustomersUseCase, useValue: portalCustomersUseCase },
         { provide: PortalPromocodesUseCase, useValue: portalPromocodesUseCase },
         { provide: PortalSettingsUseCase, useValue: portalSettingsUseCase },

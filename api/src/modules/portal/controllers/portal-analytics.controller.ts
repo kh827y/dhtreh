@@ -8,7 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiExtraModels, ApiQuery, ApiTags } from '@nestjs/swagger';
-import type { PortalRequest } from './portal.controller-helpers';
+import type { PortalRequest } from '../portal.types';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { UpdateRfmSettingsDto } from '../../analytics/dto/update-rfm-settings.dto';
 import { TransactionItemDto } from '../../loyalty/dto/dto';

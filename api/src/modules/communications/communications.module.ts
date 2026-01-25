@@ -21,6 +21,6 @@ import { SubscriptionModule } from '../subscription/subscription.module';
     PortalGuard,
   ],
   controllers: [CommunicationsController],
-  exports: [CommunicationsService],
+  exports: [CommunicationsService, CommunicationsDispatcherWorker],
 })
 export class CommunicationsModule {}

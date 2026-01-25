@@ -59,7 +59,9 @@ export async function verifyPortalJwt(token: string): Promise<PortalJwtClaims> {
   const { jwtVerify } = await getJose();
   const secret = config.getPortalJwtSecret();
   if (!secret) throw new Error('PORTAL_JWT_SECRET not configured');
-  const result = await jwtVerify(token, new TextEncoder().encode(secret));
+  const result = await jwtVerify(token, new TextEncoder().encode(secret), {
+    algorithms: ['HS256'],
+  });
   const payload = result.payload as Record<string, unknown>;
   const sub = typeof payload.sub === 'string' ? payload.sub : '';
   const actorRaw =
@@ -138,7 +140,9 @@ export async function verifyPortalRefreshJwt(
   const { jwtVerify } = await getJose();
   const secret = config.getPortalRefreshSecret();
   if (!secret) throw new Error('PORTAL_REFRESH_SECRET not configured');
-  const result = await jwtVerify(token, new TextEncoder().encode(secret));
+  const result = await jwtVerify(token, new TextEncoder().encode(secret), {
+    algorithms: ['HS256'],
+  });
   const payload = result.payload as Record<string, unknown>;
   const sub = typeof payload.sub === 'string' ? payload.sub : '';
   const actorRaw =

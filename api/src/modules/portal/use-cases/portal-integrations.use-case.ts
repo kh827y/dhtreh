@@ -2,10 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { MerchantsService } from '../../merchants/merchants.service';
 import { PortalRestApiIntegrationService } from '../services/rest-api-integration.service';
 import { PortalTelegramIntegrationService } from '../services/telegram-integration.service';
-import {
-  PortalControllerHelpers,
-  type PortalRequest,
-} from '../controllers/portal.controller-helpers';
+import type { PortalRequest } from '../portal.types';
+import { PortalRequestHelper } from '../helpers/portal-request.helper';
 import type {
   TelegramMiniAppConnectDto,
   TelegramMiniAppLinkDto,
@@ -17,7 +15,7 @@ export class PortalIntegrationsUseCase {
     private readonly merchants: MerchantsService,
     private readonly restApiIntegration: PortalRestApiIntegrationService,
     private readonly telegramIntegration: PortalTelegramIntegrationService,
-    private readonly helpers: PortalControllerHelpers,
+    private readonly helpers: PortalRequestHelper,
   ) {}
 
   integrations(req: PortalRequest) {

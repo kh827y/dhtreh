@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
@@ -40,8 +40,10 @@ const getLocalParts = (value: Date, timeZone: string) => {
 };
 
 @Injectable()
-export class TelegramStaffDigestWorker {
+export class TelegramStaffDigestWorker implements OnModuleInit {
   private readonly logger = new Logger(TelegramStaffDigestWorker.name);
+  public startedAt: Date | null = null;
+  public lastTickAt: Date | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -49,9 +51,14 @@ export class TelegramStaffDigestWorker {
     private readonly config: AppConfigService,
   ) {}
 
+  onModuleInit() {
+    this.startedAt = new Date();
+  }
+
   @Cron('*/15 * * * *')
   async handleDailyDigest() {
     if (!this.config.getBoolean('WORKERS_ENABLED', false)) return;
+    this.lastTickAt = new Date();
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:telegram_staff_digest',

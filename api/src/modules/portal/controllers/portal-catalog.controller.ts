@@ -30,7 +30,7 @@ import {
   ImportCatalogDto,
 } from '../dto/catalog.dto';
 import { UpdateOutletStatusDto } from '../../merchants/dto';
-import type { PortalRequest } from './portal.controller-helpers';
+import type { PortalRequest } from '../portal.types';
 import { TransactionItemDto } from '../../loyalty/dto/dto';
 import { PortalCatalogUseCase } from '../use-cases/portal-catalog.use-case';
 

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { CustomerAudiencesService } from './customer-audiences.service';
@@ -6,8 +6,10 @@ import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../../shared/pg-lock.util';
 import { AppConfigService } from '../../core/config/app-config.service';
 
 @Injectable()
-export class CustomerAudiencesWorker {
+export class CustomerAudiencesWorker implements OnModuleInit {
   private readonly logger = new Logger(CustomerAudiencesWorker.name);
+  public startedAt: Date | null = null;
+  public lastTickAt: Date | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -15,9 +17,14 @@ export class CustomerAudiencesWorker {
     private readonly config: AppConfigService,
   ) {}
 
+  onModuleInit() {
+    this.startedAt = new Date();
+  }
+
   @Cron('0 3 * * *')
   async nightlyRecalculate() {
     if (!this.config.getBoolean('WORKERS_ENABLED', false)) return;
+    this.lastTickAt = new Date();
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:customer_audiences_nightly',

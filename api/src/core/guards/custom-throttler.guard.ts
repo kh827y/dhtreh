@@ -74,7 +74,15 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
           asString(body?.merchantId) || asString(q?.merchantId);
         const outletId = asString(body?.outletId) || asString(q?.outletId);
         const staffId = asString(body?.staffId) || asString(q?.staffId);
-        return [ip, path, merchantId, outletId, staffId]
+        const headerMerchantId = asString(
+          firstHeaderValue(req, ['x-merchant-id', 'X-Merchant-Id']),
+        );
+        const portalMerchantId = asString(req.portalMerchantId);
+        const portalStaffId = asString(req.portalStaffId);
+        const resolvedMerchantId =
+          merchantId || portalMerchantId || headerMerchantId;
+        const resolvedStaffId = staffId || portalStaffId;
+        return [ip, path, resolvedMerchantId, outletId, resolvedStaffId]
           .filter(Boolean)
           .join('|');
       },
@@ -209,6 +217,8 @@ type RequestLike = {
   integrationId?: string;
   integration?: { id?: string };
   integrationRateLimits?: Record<string, unknown>;
+  portalMerchantId?: string;
+  portalStaffId?: string;
   body?: unknown;
   query?: unknown;
 };

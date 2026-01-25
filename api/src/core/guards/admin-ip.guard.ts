@@ -23,13 +23,18 @@ function normalizeIp(ip?: string): string {
 
 type RequestLike = {
   ip?: string;
+  ips?: string[];
   connection?: { remoteAddress?: string };
   socket?: { remoteAddress?: string };
 };
 
 function getClientIp(req: RequestLike): string {
   const cand =
-    req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || '';
+    req.ips?.[0] ||
+    req.ip ||
+    req.connection?.remoteAddress ||
+    req.socket?.remoteAddress ||
+    '';
   return normalizeIp(cand);
 }
 

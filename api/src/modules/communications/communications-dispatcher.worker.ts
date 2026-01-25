@@ -54,6 +54,8 @@ export class CommunicationsDispatcherWorker
   private readonly logger = new Logger(CommunicationsDispatcherWorker.name);
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  public startedAt: Date | null = null;
+  public lastTickAt: Date | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -84,6 +86,7 @@ export class CommunicationsDispatcherWorker
     this.logger.log(
       `CommunicationsDispatcherWorker started, interval=${intervalMs}ms`,
     );
+    this.startedAt = new Date();
   }
 
   onModuleDestroy() {
@@ -93,6 +96,7 @@ export class CommunicationsDispatcherWorker
   private async tick() {
     if (this.running) return;
     this.running = true;
+    this.lastTickAt = new Date();
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'worker:communications_dispatcher',
@@ -102,6 +106,8 @@ export class CommunicationsDispatcherWorker
       return;
     }
     try {
+      await this.recoverStaleTasks();
+      await this.requeueFailedTasks();
       const due = await this.prisma.communicationTask.findMany({
         where: {
           status: 'SCHEDULED',
@@ -158,6 +164,150 @@ export class CommunicationsDispatcherWorker
     return Object.fromEntries(entries);
   }
 
+  private toNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  }
+
+  private toStatsRecord(
+    value: Prisma.JsonValue | null | undefined,
+  ): Record<string, unknown> {
+    return isRecord(value) ? { ...value } : {};
+  }
+
+  private buildStats(
+    current: Prisma.JsonValue | null | undefined,
+    patch: Record<string, unknown>,
+  ): Prisma.JsonObject {
+    return { ...this.toStatsRecord(current), ...patch } as Prisma.JsonObject;
+  }
+
+  private getAttempts(value: Prisma.JsonValue | null | undefined): number {
+    const stats = this.toStatsRecord(value);
+    const raw = this.toNumber(stats.attempts);
+    return raw && raw > 0 ? Math.floor(raw) : 0;
+  }
+
+  private async markTaskRunning(task: CommunicationTask) {
+    const now = new Date();
+    const attempts = this.getAttempts(task.stats) + 1;
+    const stats = this.buildStats(task.stats, {
+      attempts,
+      lastRunAt: now.toISOString(),
+      lastError: null,
+      lastErrorAt: null,
+    });
+    await this.prisma.communicationTask.update({
+      where: { id: task.id },
+      data: { status: 'RUNNING', startedAt: now, stats },
+    });
+    return { now, attempts, stats };
+  }
+
+  private async recoverStaleTasks() {
+    const staleMs = Math.max(
+      60_000,
+      this.config.getNumber('COMM_TASK_STALE_MS', 20 * 60 * 1000) ??
+        20 * 60 * 1000,
+    );
+    const maxRetries = Math.max(
+      0,
+      this.config.getNumber('COMM_TASK_MAX_RETRIES', 2) ?? 2,
+    );
+    if (!Number.isFinite(staleMs) || staleMs <= 0) return;
+    const staleBefore = new Date(Date.now() - staleMs);
+    const staleTasks = await this.prisma.communicationTask.findMany({
+      where: {
+        status: 'RUNNING',
+        archivedAt: null,
+        startedAt: { lt: staleBefore },
+      },
+      select: { id: true, stats: true },
+      take: 50,
+    });
+    if (!staleTasks.length) return;
+    const retryDelayMs = Math.max(
+      60_000,
+      this.config.getNumber('COMM_TASK_RETRY_DELAY_MS', 5 * 60 * 1000) ??
+        5 * 60 * 1000,
+    );
+    for (const task of staleTasks) {
+      const attempts = this.getAttempts(task.stats);
+      const canRetry = maxRetries > 0 && attempts < maxRetries;
+      const now = new Date();
+      const stats = this.buildStats(task.stats, {
+        lastError: 'stale task detected',
+        lastErrorAt: now.toISOString(),
+      });
+      await this.prisma.communicationTask.update({
+        where: { id: task.id },
+        data: canRetry
+          ? {
+              status: 'SCHEDULED',
+              scheduledAt: new Date(now.getTime() + retryDelayMs),
+              startedAt: null,
+              stats,
+            }
+          : {
+              status: 'FAILED',
+              completedAt: now,
+              failedAt: now,
+              startedAt: null,
+              stats,
+            },
+      });
+    }
+  }
+
+  private async requeueFailedTasks() {
+    const maxRetries = Math.max(
+      0,
+      this.config.getNumber('COMM_TASK_MAX_RETRIES', 2) ?? 2,
+    );
+    if (maxRetries <= 0) return;
+    const retryDelayMs = Math.max(
+      60_000,
+      this.config.getNumber('COMM_TASK_RETRY_DELAY_MS', 5 * 60 * 1000) ??
+        5 * 60 * 1000,
+    );
+    const retryBatch = Math.max(
+      1,
+      this.config.getNumber('COMM_TASK_RETRY_BATCH', 20) ?? 20,
+    );
+    const retryBefore = new Date(Date.now() - retryDelayMs);
+    const failedTasks = await this.prisma.communicationTask.findMany({
+      where: {
+        status: 'FAILED',
+        archivedAt: null,
+        failedAt: { lt: retryBefore },
+      },
+      select: { id: true, stats: true },
+      orderBy: { failedAt: 'asc' },
+      take: retryBatch,
+    });
+    if (!failedTasks.length) return;
+    for (const task of failedTasks) {
+      const attempts = this.getAttempts(task.stats);
+      if (attempts >= maxRetries) continue;
+      const stats = this.buildStats(task.stats, {
+        lastRetryAt: new Date().toISOString(),
+      });
+      await this.prisma.communicationTask.update({
+        where: { id: task.id },
+        data: {
+          status: 'SCHEDULED',
+          scheduledAt: new Date(),
+          startedAt: null,
+          stats,
+        },
+      });
+    }
+  }
+
   triggerImmediate(taskId: string) {
     setTimeout(() => {
       this.runTaskById(taskId).catch((err) =>
@@ -184,11 +334,7 @@ export class CommunicationsDispatcherWorker
   }
 
   private async processTelegramTask(task: CommunicationTask) {
-    const now = new Date();
-    await this.prisma.communicationTask.update({
-      where: { id: task.id },
-      data: { status: 'RUNNING', startedAt: now },
-    });
+    const { stats: runningStats } = await this.markTaskRunning(task);
 
     const payload = this.asRecord(task.payload);
     const text = (readString(payload.text) ?? '').trim();
@@ -226,7 +372,7 @@ export class CommunicationsDispatcherWorker
         sent: 0,
         failed: 0,
         error: 'Пустой текст сообщения',
-      });
+      }, runningStats);
       return;
     }
 
@@ -238,13 +384,30 @@ export class CommunicationsDispatcherWorker
         sent: 0,
         failed: 0,
         error: null,
-      });
+      }, runningStats);
       return;
     }
-
-    await this.prisma.communicationTaskRecipient.deleteMany({
+    const recipientMap = new Map(
+      recipients.map((recipient) => [recipient.customerId, recipient]),
+    );
+    const existingCount = await this.prisma.communicationTaskRecipient.count({
       where: { taskId: task.id },
     });
+    if (existingCount === 0) {
+      await this.prisma.communicationTaskRecipient.createMany({
+        data: recipients.map((recipient) => ({
+          taskId: task.id,
+          merchantId: task.merchantId,
+          customerId: recipient.customerId,
+          channel: CommunicationChannel.TELEGRAM,
+          status: 'PENDING',
+          metadata: {
+            tgId: recipient.tgId,
+            name: recipient.name ?? null,
+          } as Prisma.JsonObject,
+        })),
+      });
+    }
 
     const mediaDescriptor = this.asRecord(task.media);
     const assetIdRaw =
@@ -272,7 +435,10 @@ export class CommunicationsDispatcherWorker
       throw new Error('Медиафайл принадлежит другому мерчанту');
     }
 
-    const rows: Prisma.CommunicationTaskRecipientCreateManyInput[] = [];
+    const pendingRecipients = await this.prisma.communicationTaskRecipient.findMany({
+      where: { taskId: task.id, status: { in: ['PENDING', 'FAILED'] } },
+      orderBy: { createdAt: 'asc' },
+    });
     let sent = 0;
     let failed = 0;
     let firstError: unknown | null = null;
@@ -302,19 +468,43 @@ export class CommunicationsDispatcherWorker
       ? Math.max(0, Math.trunc(Number(bonusRaw)))
       : 0;
 
-    for (const recipient of recipients) {
+    for (const row of pendingRecipients) {
+      const meta = this.asRecord(row.metadata) ?? {};
+      const mapped = row.customerId
+        ? recipientMap.get(row.customerId)
+        : undefined;
+      const tgIdRaw = meta.tgId ?? mapped?.tgId ?? null;
+      const tgId =
+        typeof tgIdRaw === 'string' || typeof tgIdRaw === 'number'
+          ? String(tgIdRaw)
+          : '';
+      const nameRaw = meta.name ?? mapped?.name ?? null;
+      const name = typeof nameRaw === 'string' ? nameRaw : null;
+      if (!tgId) {
+        failed += 1;
+        await this.prisma.communicationTaskRecipient.update({
+          where: { id: row.id },
+          data: {
+            status: 'FAILED',
+            error: 'missing tgId',
+            sentAt: null,
+            metadata: { ...meta, tgId: null } as Prisma.JsonObject,
+          },
+        });
+        continue;
+      }
       let status = 'SENT';
       let error: string | null = null;
       try {
         const vars: Record<string, string | number> = {
-          client: recipient.name?.trim() || 'клиент',
+          client: name?.trim() || 'клиент',
         };
         if (promotionName) vars.name = promotionName;
         if (hasBonusSource) vars.bonus = bonus;
         const rendered = applyCurlyPlaceholders(text, vars).trim();
         await this.telegramBots.sendCampaignMessage(
           task.merchantId,
-          recipient.tgId,
+          tgId,
           {
             text: rendered || text,
             asset:
@@ -342,40 +532,49 @@ export class CommunicationsDispatcherWorker
             {
               taskId: task.id,
               merchantId: task.merchantId,
-              customerId: recipient.customerId,
+              customerId: row.customerId,
             },
           );
         }
       }
 
-      rows.push({
-        taskId: task.id,
-        merchantId: task.merchantId,
-        customerId: recipient.customerId,
-        channel: CommunicationChannel.TELEGRAM,
-        status,
-        sentAt: status === 'SENT' ? new Date() : null,
-        error,
-        metadata: { tgId: recipient.tgId } as Prisma.JsonObject,
+      await this.prisma.communicationTaskRecipient.update({
+        where: { id: row.id },
+        data: {
+          status,
+          sentAt: status === 'SENT' ? new Date() : null,
+          error,
+          metadata: {
+            ...meta,
+            tgId,
+            name,
+          } as Prisma.JsonObject,
+        },
       });
     }
 
-    if (rows.length) {
-      await this.prisma.communicationTaskRecipient.createMany({ data: rows });
-    }
+    const grouped = await this.prisma.communicationTaskRecipient.groupBy({
+      by: ['status'],
+      where: { taskId: task.id },
+      _count: { _all: true },
+    });
+    const total = grouped.reduce((sum, row) => sum + (row._count._all ?? 0), 0);
+    const sentTotal =
+      grouped.find((row) => row.status === 'SENT')?._count._all ?? 0;
+    const failedTotal = Math.max(0, total - sentTotal);
 
     await this.finishTask(task.id, {
-      status: failed && !sent ? 'FAILED' : 'COMPLETED',
-      total: recipients.length,
-      sent,
-      failed,
-      error: failed ? 'Часть сообщений не доставлена' : null,
-    });
+      status: failedTotal && !sentTotal ? 'FAILED' : 'COMPLETED',
+      total,
+      sent: sentTotal,
+      failed: failedTotal,
+      error: failedTotal ? 'Часть сообщений не доставлена' : null,
+    }, runningStats);
 
     try {
       this.metrics.inc('portal_communications_tasks_processed_total', {
         channel: 'telegram',
-        result: failed ? (sent ? 'partial' : 'failed') : 'ok',
+        result: failedTotal ? (sentTotal ? 'partial' : 'failed') : 'ok',
       });
     } catch (err) {
       logIgnoredError(
@@ -388,11 +587,7 @@ export class CommunicationsDispatcherWorker
   }
 
   private async processPushTask(task: CommunicationTask) {
-    const now = new Date();
-    await this.prisma.communicationTask.update({
-      where: { id: task.id },
-      data: { status: 'RUNNING', startedAt: now },
-    });
+    const { stats: runningStats } = await this.markTaskRunning(task);
 
     const payload = this.asRecord(task.payload);
     const text = (readString(payload.text) ?? '').trim();
@@ -403,7 +598,7 @@ export class CommunicationsDispatcherWorker
         sent: 0,
         failed: 0,
         error: 'Пустой текст push-уведомления',
-      });
+      }, runningStats);
       return;
     }
 
@@ -415,15 +610,36 @@ export class CommunicationsDispatcherWorker
         sent: 0,
         failed: 0,
         error: null,
-      });
+      }, runningStats);
       return;
     }
-
-    await this.prisma.communicationTaskRecipient.deleteMany({
+    const recipientMap = new Map(
+      recipients.map((recipient) => [recipient.customerId, recipient]),
+    );
+    const existingCount = await this.prisma.communicationTaskRecipient.count({
       where: { taskId: task.id },
     });
+    if (existingCount === 0) {
+      await this.prisma.communicationTaskRecipient.createMany({
+        data: recipients.map((recipient) => ({
+          taskId: task.id,
+          merchantId: task.merchantId,
+          customerId: recipient.customerId,
+          channel: CommunicationChannel.PUSH,
+          status: 'PENDING',
+          metadata: {
+            tgId: recipient.tgId,
+            name: recipient.name ?? null,
+          } as Prisma.JsonObject,
+        })),
+      });
+    }
 
-    const rows: Prisma.CommunicationTaskRecipientCreateManyInput[] = [];
+    const pendingRecipients =
+      await this.prisma.communicationTaskRecipient.findMany({
+        where: { taskId: task.id, status: { in: ['PENDING', 'FAILED'] } },
+        orderBy: { createdAt: 'asc' },
+      });
     let sent = 0;
     let failed = 0;
     let firstError: unknown | null = null;
@@ -462,12 +678,36 @@ export class CommunicationsDispatcherWorker
       ? Math.max(0, Math.trunc(Number(bonusRaw)))
       : 0;
 
-    for (const recipient of recipients) {
+    for (const row of pendingRecipients) {
+      const meta = this.asRecord(row.metadata) ?? {};
+      const mapped = row.customerId
+        ? recipientMap.get(row.customerId)
+        : undefined;
+      const tgIdRaw = meta.tgId ?? mapped?.tgId ?? null;
+      const tgId =
+        typeof tgIdRaw === 'string' || typeof tgIdRaw === 'number'
+          ? String(tgIdRaw)
+          : '';
+      const nameRaw = meta.name ?? mapped?.name ?? null;
+      const name = typeof nameRaw === 'string' ? nameRaw : null;
+      if (!tgId) {
+        failed += 1;
+        await this.prisma.communicationTaskRecipient.update({
+          where: { id: row.id },
+          data: {
+            status: 'FAILED',
+            error: 'missing tgId',
+            sentAt: null,
+            metadata: { ...meta, tgId: null } as Prisma.JsonObject,
+          },
+        });
+        continue;
+      }
       let status = 'SENT';
       let error: string | null = null;
       try {
         const vars: Record<string, string | number> = {
-          client: recipient.name?.trim() || 'клиент',
+          client: name?.trim() || 'клиент',
         };
         if (promotionName) vars.name = promotionName;
         if (hasBonusSource) vars.bonus = bonus;
@@ -477,7 +717,7 @@ export class CommunicationsDispatcherWorker
           : undefined;
         await this.telegramBots.sendPushNotification(
           task.merchantId,
-          recipient.tgId,
+          tgId,
           {
             title: renderedTitle || title,
             body: renderedText || text,
@@ -500,40 +740,49 @@ export class CommunicationsDispatcherWorker
             {
               taskId: task.id,
               merchantId: task.merchantId,
-              customerId: recipient.customerId,
+              customerId: row.customerId,
             },
           );
         }
       }
 
-      rows.push({
-        taskId: task.id,
-        merchantId: task.merchantId,
-        customerId: recipient.customerId,
-        channel: CommunicationChannel.PUSH,
-        status,
-        sentAt: status === 'SENT' ? new Date() : null,
-        error,
-        metadata: { tgId: recipient.tgId } as Prisma.JsonObject,
+      await this.prisma.communicationTaskRecipient.update({
+        where: { id: row.id },
+        data: {
+          status,
+          sentAt: status === 'SENT' ? new Date() : null,
+          error,
+          metadata: {
+            ...meta,
+            tgId,
+            name,
+          } as Prisma.JsonObject,
+        },
       });
     }
 
-    if (rows.length) {
-      await this.prisma.communicationTaskRecipient.createMany({ data: rows });
-    }
+    const grouped = await this.prisma.communicationTaskRecipient.groupBy({
+      by: ['status'],
+      where: { taskId: task.id },
+      _count: { _all: true },
+    });
+    const total = grouped.reduce((sum, row) => sum + (row._count._all ?? 0), 0);
+    const sentTotal =
+      grouped.find((row) => row.status === 'SENT')?._count._all ?? 0;
+    const failedTotal = Math.max(0, total - sentTotal);
 
     await this.finishTask(task.id, {
-      status: failed && !sent ? 'FAILED' : 'COMPLETED',
-      total: recipients.length,
-      sent,
-      failed,
-      error: failed ? 'Часть push-уведомлений не доставлена' : null,
-    });
+      status: failedTotal && !sentTotal ? 'FAILED' : 'COMPLETED',
+      total,
+      sent: sentTotal,
+      failed: failedTotal,
+      error: failedTotal ? 'Часть push-уведомлений не доставлена' : null,
+    }, runningStats);
 
     try {
       this.metrics.inc('portal_communications_tasks_processed_total', {
         channel: 'push',
-        result: failed ? (sent ? 'partial' : 'failed') : 'ok',
+        result: failedTotal ? (sentTotal ? 'partial' : 'failed') : 'ok',
       });
     } catch (err) {
       logIgnoredError(
@@ -554,7 +803,16 @@ export class CommunicationsDispatcherWorker
       failed: number;
       error: string | null;
     },
+    baseStats?: Prisma.JsonValue | null,
   ) {
+    const merged = this.buildStats(baseStats, {
+      totalRecipients: stats.total,
+      sent: stats.sent,
+      failed: stats.failed,
+      error: stats.error,
+      lastError: stats.error,
+      lastErrorAt: stats.error ? new Date().toISOString() : null,
+    });
     await this.prisma.communicationTask.update({
       where: { id: taskId },
       data: {
@@ -564,12 +822,7 @@ export class CommunicationsDispatcherWorker
         totalRecipients: stats.total,
         sentCount: stats.sent,
         failedCount: stats.failed,
-        stats: {
-          totalRecipients: stats.total,
-          sent: stats.sent,
-          failed: stats.failed,
-          error: stats.error,
-        } as Prisma.JsonObject,
+        stats: merged,
       },
     });
   }

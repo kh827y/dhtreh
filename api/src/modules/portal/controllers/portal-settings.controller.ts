@@ -35,7 +35,7 @@ import {
 import type {
   PortalRequest,
   UploadedFile as UploadedFilePayload,
-} from './portal.controller-helpers';
+} from '../portal.types';
 import { TransactionItemDto, ErrorDto } from '../../loyalty/dto/dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {

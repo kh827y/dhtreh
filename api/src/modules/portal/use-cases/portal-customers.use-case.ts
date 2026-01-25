@@ -3,10 +3,8 @@ import { MerchantsService } from '../../merchants/merchants.service';
 import { PortalCustomersService } from '../services/customers.service';
 import type { PortalCustomerDto } from '../services/customers.service';
 import { ImportExportService } from '../../import-export/import-export.service';
-import {
-  PortalControllerHelpers,
-  type PortalRequest,
-} from '../controllers/portal.controller-helpers';
+import type { PortalRequest } from '../portal.types';
+import { PortalRequestHelper } from '../helpers/portal-request.helper';
 import { normalizeBoolean } from '../../../shared/common/input.util';
 import type {
   ImportCustomersDto,
@@ -22,7 +20,7 @@ export class PortalCustomersUseCase {
     private readonly merchants: MerchantsService,
     private readonly customersService: PortalCustomersService,
     private readonly importExport: ImportExportService,
-    private readonly helpers: PortalControllerHelpers,
+    private readonly helpers: PortalRequestHelper,
   ) {}
 
   customerSearch(req: PortalRequest, phone: string) {

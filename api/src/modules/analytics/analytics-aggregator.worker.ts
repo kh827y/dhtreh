@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
@@ -34,12 +34,18 @@ function endOfDay(d: Date) {
 }
 
 @Injectable()
-export class AnalyticsAggregatorWorker {
+export class AnalyticsAggregatorWorker implements OnModuleInit {
   private readonly logger = new Logger(AnalyticsAggregatorWorker.name);
+  public startedAt: Date | null = null;
+  public lastTickAt: Date | null = null;
   constructor(
     private prisma: PrismaService,
     private readonly config: AppConfigService,
   ) {}
+
+  onModuleInit() {
+    this.startedAt = new Date();
+  }
 
   private toJsonObject(
     value: Prisma.JsonValue | null | undefined,
@@ -243,6 +249,7 @@ export class AnalyticsAggregatorWorker {
       this.logger.log('WORKERS_ENABLED!=1, skip analytics aggregation');
       return;
     }
+    this.lastTickAt = new Date();
     const lock = await pgTryAdvisoryLock(this.prisma, 'cron:analytics_daily');
     if (!lock.ok) return;
     const today = new Date();

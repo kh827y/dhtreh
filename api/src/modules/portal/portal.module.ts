@@ -30,7 +30,6 @@ import { SubscriptionModule } from '../subscription/subscription.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { PortalRestApiIntegrationService } from './services/rest-api-integration.service';
 import { ImportExportModule } from '../import-export/import-export.module';
-import { PortalControllerHelpers } from './controllers/portal.controller-helpers';
 import { PortalAccountUseCase } from './use-cases/portal-account.use-case';
 import { PortalAnalyticsUseCase } from './use-cases/portal-analytics.use-case';
 import { PortalCatalogUseCase } from './use-cases/portal-catalog.use-case';
@@ -40,6 +39,9 @@ import { PortalIntegrationsUseCase } from './use-cases/portal-integrations.use-c
 import { PortalOperationsUseCase } from './use-cases/portal-operations.use-case';
 import { PortalPromocodesUseCase } from './use-cases/portal-promocodes.use-case';
 import { PortalSettingsUseCase } from './use-cases/portal-settings.use-case';
+import { PortalRequestHelper } from './helpers/portal-request.helper';
+import { PortalSettingsHelper } from './helpers/portal-settings.helper';
+import { PortalCommunicationsHelper } from './helpers/portal-communications.helper';
 
 @Module({
   imports: [
@@ -70,7 +72,9 @@ import { PortalSettingsUseCase } from './use-cases/portal-settings.use-case';
   ],
   providers: [
     PortalGuard,
-    PortalControllerHelpers,
+    PortalRequestHelper,
+    PortalSettingsHelper,
+    PortalCommunicationsHelper,
     PortalAccountUseCase,
     PortalAnalyticsUseCase,
     PortalCatalogUseCase,

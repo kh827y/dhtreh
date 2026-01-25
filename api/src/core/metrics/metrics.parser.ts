@@ -3,6 +3,7 @@ export type MetricsSummary = {
   outboxDead: number;
   http5xx: number;
   http4xx: number;
+  httpSlow: number;
   circuitOpen: number;
   rateLimited: number;
   counters: Record<string, number>;
@@ -18,6 +19,7 @@ export function parsePromMetrics(text: string): MetricsSummary {
   let outboxDead = 0;
   let http5xx = 0;
   let http4xx = 0;
+  let httpSlow = 0;
   let circuitOpen = 0;
   let rateLimited = 0;
   const counters: Record<string, number> = {};
@@ -52,6 +54,14 @@ export function parsePromMetrics(text: string): MetricsSummary {
     if (ln.startsWith('loyalty_outbox_dead_total ')) {
       const v = Number(ln.split(' ')[1] || '0');
       if (!Number.isNaN(v)) outboxDead = v;
+      continue;
+    }
+    if (ln.startsWith('http_slow_requests_total')) {
+      const m = ln.match(/^http_slow_requests_total(?:\{[^}]*\})?\s+(\d+(?:\.\d+)?)/);
+      if (m) {
+        const v = Number(m[1]);
+        if (!Number.isNaN(v)) httpSlow += v;
+      }
       continue;
     }
     let m = ln.match(
@@ -125,6 +135,7 @@ export function parsePromMetrics(text: string): MetricsSummary {
     outboxDead,
     http5xx,
     http4xx,
+    httpSlow,
     circuitOpen,
     rateLimited,
     counters,

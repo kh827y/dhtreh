@@ -43,6 +43,10 @@ export class HttpMetricsInterceptor implements NestInterceptor {
     // Берём паттерн маршрута, чтобы не плодить кардинальности
     const route: string =
       req.route?.path || req.path || req.originalUrl || 'unknown';
+    const slowThresholdMs = Math.max(
+      0,
+      this.config.getNumber('ALERT_HTTP_SLOW_THRESHOLD_MS', 1500) ?? 1500,
+    );
 
     // Устанавливаем X-Trace-Id/X-Span-Id, если доступны
     try {
@@ -62,8 +66,12 @@ export class HttpMetricsInterceptor implements NestInterceptor {
     const record = (status: number) => {
       try {
         const ended = process.hrtime.bigint();
-        const seconds = Number(ended - started) / 1e9;
+        const elapsedMs = Number(ended - started) / 1e6;
+        const seconds = elapsedMs / 1000;
         this.metrics.recordHttp(method, route, status, seconds);
+        if (slowThresholdMs > 0 && elapsedMs >= slowThresholdMs) {
+          this.metrics.recordHttpSlow();
+        }
       } catch (err) {
         logIgnoredError(
           err,

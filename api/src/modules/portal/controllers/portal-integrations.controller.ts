@@ -15,7 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import type { PortalRequest } from './portal.controller-helpers';
+import type { PortalRequest } from '../portal.types';
 import { TransactionItemDto, ErrorDto } from '../../loyalty/dto/dto';
 import { PortalIntegrationsUseCase } from '../use-cases/portal-integrations.use-case';
 import {

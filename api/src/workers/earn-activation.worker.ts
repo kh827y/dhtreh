@@ -16,6 +16,8 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EarnActivationWorker.name);
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  public startedAt: Date | null = null;
+  public lastTickAt: Date | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -50,6 +52,7 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
       );
     }
     this.logger.log(`EarnActivationWorker started, interval=${intervalMs}ms`);
+    this.startedAt = new Date();
   }
 
   onModuleDestroy() {
@@ -59,6 +62,7 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
   private async tick() {
     if (this.running) return;
     this.running = true;
+    this.lastTickAt = new Date();
     const lock = await pgTryAdvisoryLock(this.prisma, 'worker:earn_activation');
     if (!lock.ok) {
       this.running = false;

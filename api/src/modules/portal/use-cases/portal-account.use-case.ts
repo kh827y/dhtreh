@@ -1,17 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { PortalReviewsService } from '../services/reviews.service';
 import { SubscriptionService } from '../../subscription/subscription.service';
-import {
-  PortalControllerHelpers,
-  type PortalRequest,
-} from '../controllers/portal.controller-helpers';
+import type { PortalRequest } from '../portal.types';
+import { PortalRequestHelper } from '../helpers/portal-request.helper';
 
 @Injectable()
 export class PortalAccountUseCase {
   constructor(
     private readonly reviews: PortalReviewsService,
     private readonly subscriptions: SubscriptionService,
-    private readonly helpers: PortalControllerHelpers,
+    private readonly helpers: PortalRequestHelper,
   ) {}
 
   async subscription(req: PortalRequest) {

@@ -75,6 +75,8 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BirthdayWorker.name);
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  public startedAt: Date | null = null;
+  public lastTickAt: Date | null = null;
   private readonly batchLimit: number;
 
   constructor(
@@ -112,6 +114,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `BirthdayWorker started, interval=${Math.round(intervalMs / 1000)}s`,
     );
+    this.startedAt = new Date();
   }
 
   onModuleDestroy() {
@@ -121,6 +124,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
   private async tick() {
     if (this.running) return;
     this.running = true;
+    this.lastTickAt = new Date();
 
     const lock = await pgTryAdvisoryLock(this.prisma, 'worker:birthday');
     if (!lock.ok) {

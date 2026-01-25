@@ -16,6 +16,8 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(HoldGcWorker.name);
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  public startedAt: Date | null = null;
+  public lastTickAt: Date | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -52,6 +54,7 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
       logIgnoredError(err, 'HoldGcWorker timer unref', this.logger, 'debug');
     }
     this.logger.log(`HoldGcWorker started, interval=${intervalMs}ms`);
+    this.startedAt = new Date();
   }
 
   onModuleDestroy() {
@@ -61,6 +64,7 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
   private async tick() {
     if (this.running) return;
     this.running = true;
+    this.lastTickAt = new Date();
     const lock = await pgTryAdvisoryLock(this.prisma, 'worker:hold_gc');
     if (!lock.ok) {
       this.running = false;

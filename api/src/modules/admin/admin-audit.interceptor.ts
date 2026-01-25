@@ -135,6 +135,16 @@ const REDACT_KEYS = [
   'secret',
   'authorization',
   'webhooksecret',
+  'initdata',
+  'email',
+  'phone',
+  'firstname',
+  'lastname',
+  'birthdate',
+  'birthday',
+  'address',
+  'telegram',
+  'tgid',
 ];
 
 function isSensitiveKey(key: string) {

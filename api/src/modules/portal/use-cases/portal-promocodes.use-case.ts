@@ -4,10 +4,8 @@ import {
   PromoCodesService,
   type PortalPromoCodePayload,
 } from '../../promocodes/promocodes.service';
-import {
-  PortalControllerHelpers,
-  type PortalRequest,
-} from '../controllers/portal.controller-helpers';
+import type { PortalRequest } from '../portal.types';
+import { PortalRequestHelper } from '../helpers/portal-request.helper';
 import type {
   PortalPromoCodePayloadDto,
   PortalPromoCodeStatusDto,
@@ -17,7 +15,7 @@ import type {
 export class PortalPromocodesUseCase {
   constructor(
     private readonly promoCodes: PromoCodesService,
-    private readonly helpers: PortalControllerHelpers,
+    private readonly helpers: PortalRequestHelper,
   ) {}
 
   promocodesList(
