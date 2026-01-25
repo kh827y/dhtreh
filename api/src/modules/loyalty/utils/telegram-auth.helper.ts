@@ -23,12 +23,7 @@ export function readTelegramInitDataFromHeader(
     const initData = match[1]?.trim();
     return initData?.length ? initData : null;
   } catch (err) {
-    logIgnoredError(
-      err,
-      'readTelegramInitDataFromHeader',
-      undefined,
-      'debug',
-    );
+    logIgnoredError(err, 'readTelegramInitDataFromHeader', undefined, 'debug');
     return null;
   }
 }

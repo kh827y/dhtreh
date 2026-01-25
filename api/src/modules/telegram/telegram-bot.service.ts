@@ -5,8 +5,14 @@ import * as crypto from 'crypto';
 import { toLevelRule } from '../loyalty/utils/tier-defaults.util';
 import { getRulesRoot, getRulesSection } from '../../shared/rules-json.util';
 import { AppConfigService } from '../../core/config/app-config.service';
+import { MetricsService } from '../../core/metrics/metrics.service';
 import { normalizePhoneE164 } from '../../shared/common/phone.util';
 import { logIgnoredError } from '../../shared/logging/ignore-error.util';
+import {
+  fetchWithTimeout,
+  recordExternalRequest,
+  resultFromStatus,
+} from '../../shared/http/external-http.util';
 
 interface BotConfig {
   token: string;
@@ -40,6 +46,7 @@ export class TelegramBotService {
     private prisma: PrismaService,
     private configService: ConfigService,
     private appConfig: AppConfigService,
+    private metrics: MetricsService,
   ) {
     void this.loadBots();
   }
@@ -72,22 +79,38 @@ export class TelegramBotService {
     return this.appConfig.getTelegramHttpTimeoutMs();
   }
 
+  private getTelegramEndpoint(url: string): string {
+    try {
+      const parsed = new URL(url);
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      return parts[parts.length - 1] || 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  private buildTelegramContext(url: string, label: string) {
+    return {
+      label,
+      url,
+      provider: 'telegram',
+      endpoint: this.getTelegramEndpoint(url),
+    };
+  }
+
   private async fetchTelegram(url: string, init?: RequestInit) {
     const timeoutMs = this.getTelegramTimeoutMs();
-    const Controller = globalThis.AbortController;
-    if (!Controller) return fetch(url, init);
-    const controller = new Controller();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, { ...init, signal: controller.signal });
-    } catch (error: unknown) {
-      if (isAbortError(error)) {
-        throw new Error(`Telegram timeout after ${timeoutMs}ms`);
-      }
-      throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
+    const method = init?.method ? String(init.method) : 'GET';
+    const context = {
+      ...this.buildTelegramContext(url, 'telegram-bot.request'),
+      method,
+    };
+    return fetchWithTimeout(url, init, {
+      timeoutMs,
+      logger: this.logger,
+      context,
+      metrics: this.metrics,
+    });
   }
 
   async loadBots() {
@@ -250,11 +273,18 @@ export class TelegramBotService {
             where: { merchantId },
             data: nextSettings,
           })
-          .catch(() =>
-            this.prisma.merchantSettings.create({
+          .catch((err) => {
+            logIgnoredError(
+              err,
+              'TelegramBotService update merchant settings',
+              this.logger,
+              'debug',
+              { merchantId },
+            );
+            return this.prisma.merchantSettings.create({
               data: { merchantId, ...nextSettings },
-            }),
-          );
+            });
+          });
 
         await this.prisma.merchant.update({
           where: { id: merchantId },
@@ -329,7 +359,16 @@ export class TelegramBotService {
       // Попробуем достать секрет из таблицы TelegramBot; если нет — создадим/обновим с новым секретом
       let botRow = await this.prisma.telegramBot
         .findUnique({ where: { merchantId } })
-        .catch(() => null);
+        .catch((err) => {
+          logIgnoredError(
+            err,
+            'TelegramBotService setupWebhook find bot',
+            this.logger,
+            'debug',
+            { merchantId },
+          );
+          return null;
+        });
       let secret = botRow?.webhookSecret || undefined;
       if (!botRow || !secret) {
         secret = crypto.randomBytes(16).toString('hex');
@@ -359,7 +398,16 @@ export class TelegramBotService {
             where: { merchantId },
             data: { isActive: true },
           })
-          .catch(() => null);
+          .catch((err) => {
+            logIgnoredError(
+              err,
+              'TelegramBotService setupWebhook update bot',
+              this.logger,
+              'debug',
+              { merchantId },
+            );
+            return null;
+          });
       }
       this.logger.log(`Webhook установлен для ${merchantId}`);
     } catch (error: unknown) {
@@ -415,7 +463,7 @@ export class TelegramBotService {
       { command: 'help', description: 'Помощь' },
     ];
 
-    await this.fetchTelegram(
+    const res = await this.fetchTelegram(
       `https://api.telegram.org/bot${token}/setMyCommands`,
       {
         method: 'POST',
@@ -423,6 +471,13 @@ export class TelegramBotService {
         body: JSON.stringify({ commands }),
       },
     );
+    try {
+      await this.assertTelegramResponseOk(res);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Не удалось установить команды бота: ${formatErrorMessage(error)}`,
+      );
+    }
   }
 
   async fetchBotInfo(token: string) {
@@ -1041,6 +1096,14 @@ ${supportLine}
     const data = parseJson(raw);
     const payload = toRecord(data);
     const ok = res.ok && (payload?.ok === undefined || payload.ok === true);
+    const errorCode = asNumber(payload?.error_code);
+    const rateLimited = res.status === 429 || errorCode === 429;
+    recordExternalRequest(
+      this.metrics,
+      this.buildTelegramContext(res.url, 'telegram-bot.response'),
+      rateLimited ? 'rate_limited' : resultFromStatus(res.status, ok),
+      res.status,
+    );
     if (!ok) {
       const description =
         asString(payload?.description) ||
@@ -1077,9 +1140,11 @@ ${supportLine}
         body: JSON.stringify({ drop_pending_updates: true }),
       },
     );
-    if (!response.ok) {
+    try {
+      await this.assertTelegramResponseOk(response);
+    } catch (error: unknown) {
       this.logger.warn(
-        `Ошибка удаления webhook: ${formatErrorMessage(await response.text())}`,
+        `Ошибка удаления webhook: ${formatErrorMessage(error)}`,
       );
     }
   }
@@ -1282,7 +1347,16 @@ ${supportLine}
       // Обновим запись бота, если она есть
       const existing = await this.prisma.telegramBot
         .findUnique({ where: { merchantId } })
-        .catch(() => null);
+        .catch((err) => {
+          logIgnoredError(
+            err,
+            'TelegramBotService rotateWebhookSecret find bot',
+            this.logger,
+            'debug',
+            { merchantId },
+          );
+          return null;
+        });
       if (existing) {
         await this.prisma.telegramBot.update({
           where: { merchantId },
@@ -1342,7 +1416,16 @@ ${supportLine}
     try {
       const existing = await this.prisma.telegramBot
         .findUnique({ where: { merchantId } })
-        .catch(() => null);
+        .catch((err) => {
+          logIgnoredError(
+            err,
+            'TelegramBotService deactivate find bot',
+            this.logger,
+            'debug',
+            { merchantId },
+          );
+          return null;
+        });
       if (existing) {
         await this.deleteWebhook(existing.botToken);
         await this.prisma.telegramBot.update({
@@ -1354,7 +1437,16 @@ ${supportLine}
             where: { merchantId },
             data: { telegramBotToken: null },
           })
-          .catch(() => null);
+          .catch((err) => {
+            logIgnoredError(
+              err,
+              'TelegramBotService deactivate update settings',
+              this.logger,
+              'debug',
+              { merchantId },
+            );
+            return null;
+          });
       } else {
         // Попробуем удалить webhook по токену из настроек мерчанта
         const settings = await this.prisma.merchantSettings.findUnique({
@@ -1369,7 +1461,16 @@ ${supportLine}
               where: { merchantId },
               data: { telegramBotToken: null },
             })
-            .catch(() => null);
+            .catch((err) => {
+              logIgnoredError(
+                err,
+                'TelegramBotService deactivate update settings',
+                this.logger,
+                'debug',
+                { merchantId },
+              );
+              return null;
+            });
         }
       }
       // Локально тоже уберем бота из карты
@@ -1379,7 +1480,16 @@ ${supportLine}
           where: { id: merchantId },
           data: { telegramBotEnabled: false },
         })
-        .catch(() => null);
+        .catch((err) => {
+          logIgnoredError(
+            err,
+            'TelegramBotService deactivate update merchant',
+            this.logger,
+            'debug',
+            { merchantId },
+          );
+          return null;
+        });
     } catch (error) {
       this.logger.error(`Ошибка деактивации бота для ${merchantId}:`, error);
       throw error;
@@ -1441,12 +1551,4 @@ function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'string' && error.trim()) return error;
   return 'unknown_error';
-}
-
-function isAbortError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    typeof error.name === 'string' &&
-    error.name === 'AbortError'
-  );
 }

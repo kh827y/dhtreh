@@ -15,6 +15,7 @@ import {
 } from '../../shared/common/receipt-aggregates.util';
 import { AnalyticsAggregatorWorker } from './analytics-aggregator.worker';
 import { AnalyticsCacheService } from './analytics-cache.service';
+import { asRecord as asRecordShared } from '../../shared/common/input.util';
 
 export interface DashboardPeriod {
   from: Date;
@@ -363,8 +364,10 @@ export class AnalyticsService {
     prefix: string,
     parts: Array<string | number | null | undefined>,
   ) {
-    return [prefix, ...parts.map((part) => (part == null ? '' : String(part)))]
-      .join('|');
+    return [
+      prefix,
+      ...parts.map((part) => (part == null ? '' : String(part))),
+    ].join('|');
   }
 
   private withCache<T>(key: string, compute: () => Promise<T>): Promise<T> {
@@ -372,10 +375,7 @@ export class AnalyticsService {
   }
 
   private asRecord(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-    return value as Record<string, unknown>;
+    return asRecordShared(value);
   }
 
   /**

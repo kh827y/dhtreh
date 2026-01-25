@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { lookup } from 'dns/promises';
 import { isIP } from 'net';
 import { Prisma } from '@prisma/client';
@@ -17,8 +21,11 @@ import {
   findTimezone,
   serializeTimezone,
 } from '../../../shared/timezone/russia-timezones';
-import { withJsonSchemaVersion } from '../../../shared/json-version.util';
-import { migrateRulesJson, RULES_JSON_SCHEMA_VERSION } from '../../../shared/rules-json.util';
+import { setJsonSchemaVersion } from '../../../shared/json-version.util';
+import {
+  RULES_JSON_SCHEMA_VERSION,
+  upgradeRulesJson,
+} from '../../../shared/rules-json.util';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 type AjvInstance = {
@@ -57,7 +64,12 @@ const loadAjvConstructor = (): AjvConstructor | null => {
     const mod = require('ajv') as AjvModule;
     return resolveAjvConstructor(mod);
   } catch (err) {
-    logIgnoredError(err, 'MerchantsSettingsService loadAjv', undefined, 'debug');
+    logIgnoredError(
+      err,
+      'MerchantsSettingsService loadAjv',
+      undefined,
+      'debug',
+    );
     return null;
   }
 };
@@ -141,12 +153,14 @@ export class MerchantsSettingsService {
         } as AjvInstance);
   }
 
-  normalizeRulesJson(rulesJson: unknown) {
-    if (rulesJson == null) return rulesJson;
-    const migrated = migrateRulesJson(rulesJson);
-    if (!migrated) return null;
+  private normalizeRulesJsonWithInfo(rulesJson: unknown) {
+    const upgraded = upgradeRulesJson(rulesJson);
+    if (!upgraded.value) {
+      return { value: null, changed: upgraded.changed };
+    }
 
-    const clone: Record<string, unknown> = { ...migrated };
+    let changed = upgraded.changed;
+    const clone: Record<string, unknown> = { ...upgraded.value };
     const afRecord = asRecord(clone.af);
     if (afRecord) {
       const af: Record<string, unknown> = { ...afRecord };
@@ -154,27 +168,52 @@ export class MerchantsSettingsService {
       const deviceCfg = af.device;
       if (outletCfg !== undefined) {
         const outletRecord = asRecord(outletCfg);
-        af.outlet = outletRecord ? { ...outletRecord } : outletCfg;
+        if (outletRecord) {
+          af.outlet = { ...outletRecord };
+        }
       }
       if (deviceCfg !== undefined) {
         const deviceRecord = asRecord(deviceCfg);
-        af.device = deviceRecord ? { ...deviceRecord } : deviceCfg;
+        if (deviceRecord) {
+          af.device = { ...deviceRecord };
+        }
       } else if (af.device === undefined && af.outlet !== undefined) {
         const outletRecord = asRecord(af.outlet);
         af.device = outletRecord ? { ...outletRecord } : af.outlet;
+        changed = true;
       }
       const blockFactors = af.blockFactors;
       if (Array.isArray(blockFactors)) {
-        af.blockFactors = blockFactors
+        const normalized = blockFactors
           .map((factor) => String(factor ?? '').trim())
           .filter((factor) => factor.length > 0);
+        if (normalized.length !== blockFactors.length) {
+          changed = true;
+        } else {
+          for (let i = 0; i < normalized.length; i += 1) {
+            const original = String(blockFactors[i] ?? '').trim();
+            if (normalized[i] !== original) {
+              changed = true;
+              break;
+            }
+          }
+        }
+        af.blockFactors = normalized;
       }
       clone.af = af;
     }
-    return withJsonSchemaVersion(
-      clone,
-      RULES_JSON_SCHEMA_VERSION,
-    ) as Record<string, unknown>;
+    return {
+      value: setJsonSchemaVersion(clone, RULES_JSON_SCHEMA_VERSION) as Record<
+        string,
+        unknown
+      >,
+      changed,
+    };
+  }
+
+  normalizeRulesJson(rulesJson: unknown) {
+    if (rulesJson == null) return rulesJson;
+    return this.normalizeRulesJsonWithInfo(rulesJson).value;
   }
 
   validateRules(rulesJson: unknown) {
@@ -246,7 +285,27 @@ export class MerchantsSettingsService {
     });
     if (!merchant) throw new NotFoundException('Merchant not found');
     const s = merchant.settings;
-    const normalizedRules = this.normalizeRulesJson(s?.rulesJson ?? null);
+    const normalized = this.normalizeRulesJsonWithInfo(s?.rulesJson ?? null);
+    const normalizedRules = normalized.value ?? null;
+    if (s && normalized.changed && normalizedRules) {
+      this.prisma.merchantSettings
+        .update({
+          where: { merchantId },
+          data: {
+            rulesJson: normalizedRules as Prisma.InputJsonValue,
+            updatedAt: new Date(),
+          },
+        })
+        .catch((err) =>
+          logIgnoredError(
+            err,
+            'MerchantsSettingsService backfill rulesJson',
+            undefined,
+            'debug',
+            { merchantId },
+          ),
+        );
+    }
     return {
       merchantId,
       earnBps: s?.earnBps ?? 300,

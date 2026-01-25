@@ -157,9 +157,7 @@ function createCacheMock(prisma: MockPrisma): CacheStub {
           where: { id: staffId, merchantId },
         })) as StaffStub | null;
         if (!staff) return null;
-        const accesses = Array.isArray(staff.accesses)
-          ? staff.accesses
-          : [];
+        const accesses = Array.isArray(staff.accesses) ? staff.accesses : [];
         return {
           id: staff.id,
           merchantId: staff.merchantId ?? merchantId,

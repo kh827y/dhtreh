@@ -21,8 +21,7 @@ if (enabled) {
     resource: new Resource({
       [SemanticResourceAttributes.SERVICE_NAME]: serviceName,
       [SemanticResourceAttributes.SERVICE_VERSION]: serviceVersion,
-      [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]:
-        config.getNodeEnv(),
+      [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: config.getNodeEnv(),
     }),
     instrumentations: [
       getNodeAutoInstrumentations({

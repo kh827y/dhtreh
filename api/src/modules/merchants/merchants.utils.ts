@@ -1,17 +1,23 @@
-export const asRecord = (value: unknown): Record<string, unknown> | null => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-  return value as Record<string, unknown>;
-};
+import {
+  asRecord as asRecordShared,
+  isNonEmptyString as isNonEmptyStringShared,
+} from '../../shared/common/input.util';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
-export const hasOwn = (value: object | null | undefined, key: string): boolean =>
+export const asRecord = asRecordShared;
+
+export const hasOwn = (
+  value: object | null | undefined,
+  key: string,
+): boolean =>
   !!value && Object.prototype.hasOwnProperty.call(value, key) === true;
 
-export const isNonEmptyString = (value: unknown): value is string =>
-  typeof value === 'string' && value.trim().length > 0;
+export const isNonEmptyString = isNonEmptyStringShared;
 
-export const formatUnknownError = (value: unknown, fallback: string): string => {
+export const formatUnknownError = (
+  value: unknown,
+  fallback: string,
+): string => {
   if (value instanceof Error) return value.message;
   if (typeof value === 'string') return value;
   if (
@@ -30,4 +36,3 @@ export const formatUnknownError = (value: unknown, fallback: string): string => 
     return fallback;
   }
 };
-import { logIgnoredError } from '../../shared/logging/ignore-error.util';

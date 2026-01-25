@@ -488,11 +488,17 @@ export class ConsentGetRespDto {
 
 export class ErrorDto {
   @ApiProperty() error!: string;
+  @ApiProperty() code!: string;
   @ApiProperty() message!: string;
   @ApiProperty() statusCode!: number;
   @ApiPropertyOptional() requestId?: string;
   @ApiPropertyOptional() path?: string;
   @ApiPropertyOptional() timestamp?: string;
+  @ApiPropertyOptional({
+    description: 'Validation details or extra error context',
+    type: Object,
+  })
+  details?: Record<string, unknown> | string[];
 }
 
 export class CustomerProfileDto {

@@ -192,13 +192,15 @@ describe('LoyaltyService redeem caps', () => {
       customerId: 'c-1',
       balance: 1000,
     });
-    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
-      earnBps: 0,
-      redeemLimitBps: 10000,
-      earnPercent: 0,
-      redeemLimitPercent: 100,
-      tierMinPayment: null,
-    });
+    jest
+      .spyOn(getIntegrationService(service), 'getBaseRatesForCustomer')
+      .mockResolvedValue({
+        earnBps: 0,
+        redeemLimitBps: 10000,
+        earnPercent: 0,
+        redeemLimitPercent: 100,
+        tierMinPayment: null,
+      });
 
     const result = await service.calculateBonusPreview({
       merchantId: 'm-1',
@@ -242,13 +244,15 @@ describe('LoyaltyService redeem caps', () => {
       customerId: 'c-2',
       balance: 1000,
     });
-    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
-      earnBps: 0,
-      redeemLimitBps: 10000,
-      earnPercent: 0,
-      redeemLimitPercent: 100,
-      tierMinPayment: null,
-    });
+    jest
+      .spyOn(getIntegrationService(service), 'getBaseRatesForCustomer')
+      .mockResolvedValue({
+        earnBps: 0,
+        redeemLimitBps: 10000,
+        earnPercent: 0,
+        redeemLimitPercent: 100,
+        tierMinPayment: null,
+      });
 
     const result = await service.calculateBonusPreview({
       merchantId: 'm-2',
@@ -292,13 +296,15 @@ describe('LoyaltyService redeem caps', () => {
       customerId: 'c-3',
       balance: 1000,
     });
-    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
-      earnBps: 0,
-      redeemLimitBps: 2500,
-      earnPercent: 0,
-      redeemLimitPercent: 25,
-      tierMinPayment: null,
-    });
+    jest
+      .spyOn(getIntegrationService(service), 'getBaseRatesForCustomer')
+      .mockResolvedValue({
+        earnBps: 0,
+        redeemLimitBps: 2500,
+        earnPercent: 0,
+        redeemLimitPercent: 25,
+        tierMinPayment: null,
+      });
 
     const result = await service.calculateBonusPreview({
       merchantId: 'm-3',
@@ -342,13 +348,15 @@ describe('LoyaltyService redeem caps', () => {
       customerId: 'c-4',
       balance: 1000,
     });
-    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
-      earnBps: 0,
-      redeemLimitBps: 5000,
-      earnPercent: 0,
-      redeemLimitPercent: 50,
-      tierMinPayment: null,
-    });
+    jest
+      .spyOn(getIntegrationService(service), 'getBaseRatesForCustomer')
+      .mockResolvedValue({
+        earnBps: 0,
+        redeemLimitBps: 5000,
+        earnPercent: 0,
+        redeemLimitPercent: 50,
+        tierMinPayment: null,
+      });
 
     const result = await service.calculateBonusPreview({
       merchantId: 'm-4',
@@ -408,13 +416,15 @@ describe('LoyaltyService redeem caps', () => {
       customerId: 'c-5',
       balance: 0,
     });
-    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
-      earnBps: 1000,
-      redeemLimitBps: 0,
-      earnPercent: 10,
-      redeemLimitPercent: 0,
-      tierMinPayment: null,
-    });
+    jest
+      .spyOn(getIntegrationService(service), 'getBaseRatesForCustomer')
+      .mockResolvedValue({
+        earnBps: 1000,
+        redeemLimitBps: 0,
+        earnPercent: 10,
+        redeemLimitPercent: 0,
+        tierMinPayment: null,
+      });
 
     const result = await service.calculateBonusPreview({
       merchantId: 'm-5',
@@ -456,13 +466,15 @@ describe('LoyaltyService redeem caps', () => {
       customerId: 'c-7',
       balance: 0,
     });
-    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
-      earnBps: 1000,
-      redeemLimitBps: 0,
-      earnPercent: 10,
-      redeemLimitPercent: 0,
-      tierMinPayment: null,
-    });
+    jest
+      .spyOn(getIntegrationService(service), 'getBaseRatesForCustomer')
+      .mockResolvedValue({
+        earnBps: 1000,
+        redeemLimitBps: 0,
+        earnPercent: 10,
+        redeemLimitPercent: 0,
+        tierMinPayment: null,
+      });
 
     const result = await service.calculateBonusPreview({
       merchantId: 'm-7',
@@ -524,13 +536,15 @@ describe('LoyaltyService redeem caps', () => {
       customerId: 'c-8',
       balance: 0,
     });
-    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
-      earnBps: 300,
-      redeemLimitBps: 0,
-      earnPercent: 3,
-      redeemLimitPercent: 0,
-      tierMinPayment: null,
-    });
+    jest
+      .spyOn(getIntegrationService(service), 'getBaseRatesForCustomer')
+      .mockResolvedValue({
+        earnBps: 300,
+        redeemLimitBps: 0,
+        earnPercent: 3,
+        redeemLimitPercent: 0,
+        tierMinPayment: null,
+      });
 
     const noActions = await service.calculateBonusPreview({
       merchantId: 'm-8',
@@ -589,13 +603,15 @@ describe('LoyaltyService redeem caps', () => {
       customerId: 'c-6',
       balance: 1000,
     });
-    jest.spyOn(getIntegrationService(service), 'getBaseRatesForCustomer').mockResolvedValue({
-      earnBps: 500,
-      redeemLimitBps: 10000,
-      earnPercent: 5,
-      redeemLimitPercent: 100,
-      tierMinPayment: null,
-    });
+    jest
+      .spyOn(getIntegrationService(service), 'getBaseRatesForCustomer')
+      .mockResolvedValue({
+        earnBps: 500,
+        redeemLimitBps: 10000,
+        earnPercent: 5,
+        redeemLimitPercent: 100,
+        tierMinPayment: null,
+      });
 
     const result = await service.calculateBonusPreview({
       merchantId: 'm-6',

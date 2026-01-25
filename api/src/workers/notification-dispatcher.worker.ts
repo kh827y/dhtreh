@@ -80,7 +80,11 @@ export class NotificationDispatcherWorker
     this.timer = setInterval(
       () =>
         this.tick().catch((err) =>
-          logIgnoredError(err, 'NotificationDispatcherWorker tick', this.logger),
+          logIgnoredError(
+            err,
+            'NotificationDispatcherWorker tick',
+            this.logger,
+          ),
         ),
       intervalMs,
     );
@@ -124,8 +128,10 @@ export class NotificationDispatcherWorker
   }
 
   private backoffMs(retries: number): number {
-    const base = this.config.getNumber('NOTIFY_BACKOFF_BASE_MS', 60000) ?? 60000;
-    const cap = this.config.getNumber('NOTIFY_BACKOFF_CAP_MS', 3600000) ?? 3600000;
+    const base =
+      this.config.getNumber('NOTIFY_BACKOFF_BASE_MS', 60000) ?? 60000;
+    const cap =
+      this.config.getNumber('NOTIFY_BACKOFF_CAP_MS', 3600000) ?? 3600000;
     const exp = Math.min(cap, base * Math.pow(2, Math.max(0, retries)));
     const jitter = exp * (0.9 + Math.random() * 0.2);
     return Math.floor(jitter);
@@ -727,8 +733,7 @@ export class NotificationDispatcherWorker
       });
     } catch (error: unknown) {
       const retries = row.retries + 1;
-      const maxRetries =
-        this.config.getNumber('NOTIFY_MAX_RETRIES', 8) ?? 8;
+      const maxRetries = this.config.getNumber('NOTIFY_MAX_RETRIES', 8) ?? 8;
       if (retries >= maxRetries) {
         await this.prisma.eventOutbox.update({
           where: { id: row.id },
@@ -817,8 +822,7 @@ export class NotificationDispatcherWorker
           },
         });
       }
-      const batch =
-        this.config.getNumber('NOTIFY_WORKER_BATCH', 10) ?? 10;
+      const batch = this.config.getNumber('NOTIFY_WORKER_BATCH', 10) ?? 10;
       const items = await this.prisma.eventOutbox.findMany({
         where: {
           status: 'PENDING',

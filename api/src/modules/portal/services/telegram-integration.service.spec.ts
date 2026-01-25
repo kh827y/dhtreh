@@ -2,6 +2,8 @@ import { BadRequestException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { PortalTelegramIntegrationService } from './telegram-integration.service';
 import type { PrismaService } from '../../../core/prisma/prisma.service';
+import type { AppConfigService } from '../../../core/config/app-config.service';
+import type { MetricsService } from '../../../core/metrics/metrics.service';
 import type { TelegramBotService } from '../../telegram/telegram-bot.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
@@ -35,6 +37,8 @@ type TelegramBotsStub = {
   fetchWebhookInfo: MockFn<Promise<unknown>, [string]>;
 };
 type ConfigStub = { get: MockFn };
+type AppConfigStub = { getTelegramHttpTimeoutMs: MockFn<number, []> };
+type MetricsStub = { inc: MockFn };
 type ServicePrivate = {
   touchIntegration: (merchantId: string, payload?: unknown) => Promise<string>;
 };
@@ -45,6 +49,10 @@ const asPrismaService = (stub: PrismaStub) => stub as unknown as PrismaService;
 const asTelegramBotService = (stub: TelegramBotsStub) =>
   stub as unknown as TelegramBotService;
 const asConfigService = (stub: ConfigStub) => stub as unknown as ConfigService;
+const asAppConfigService = (stub: AppConfigStub) =>
+  stub as unknown as AppConfigService;
+const asMetricsService = (stub: MetricsStub) =>
+  stub as unknown as MetricsService;
 const asPrivateService = (service: PortalTelegramIntegrationService) =>
   service as unknown as ServicePrivate;
 
@@ -78,12 +86,20 @@ function createMocks() {
   const config: ConfigStub = {
     get: mockFn(),
   };
+  const appConfig: AppConfigStub = {
+    getTelegramHttpTimeoutMs: mockFn<number, []>().mockReturnValue(15000),
+  };
+  const metrics: MetricsStub = {
+    inc: mockFn(),
+  };
   const service = new PortalTelegramIntegrationService(
     asPrismaService(prisma),
     asTelegramBotService(telegramBots),
     asConfigService(config),
+    asAppConfigService(appConfig),
+    asMetricsService(metrics),
   );
-  return { prisma, telegramBots, config, service };
+  return { prisma, telegramBots, config, appConfig, metrics, service };
 }
 
 describe('PortalTelegramIntegrationService', () => {

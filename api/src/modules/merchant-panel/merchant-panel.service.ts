@@ -139,16 +139,18 @@ export class MerchantPanelService {
     private readonly cache: LookupCacheService,
   ) {}
 
-  private logPortalEventFailure(event: string, err: unknown) {
-    const detail =
-      err instanceof Error
-        ? err.message
-        : typeof err === 'string'
-          ? err
-          : err == null
-            ? 'unknown error'
-            : String(err);
-    this.logger.debug(`portal event failed (${event}): ${detail}`);
+  private logPortalEventFailure(
+    event: string,
+    err: unknown,
+    context?: Record<string, unknown>,
+  ) {
+    logIgnoredError(
+      err,
+      `portal event failed (${event})`,
+      this.logger,
+      'debug',
+      context,
+    );
   }
 
   private normalizePagination(
@@ -306,7 +308,11 @@ export class MerchantPanelService {
           ]),
         );
       } catch (err) {
-        this.logPortalEventFailure('portal.staff.access.groupBy', err);
+        this.logPortalEventFailure('portal.staff.access.groupBy', err, {
+          merchantId,
+          staffId,
+          outletCount: outletIds.length,
+        });
       }
     }
     return accesses.map<StaffAccessView>((access) => ({
@@ -675,7 +681,7 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_staff_list_total');
     } catch (err) {
-      this.logPortalEventFailure('portal.staff.list', err);
+      this.logPortalEventFailure('portal.staff.list', err, { merchantId });
     }
 
     const resolveLastActivity = (
@@ -914,7 +920,10 @@ export class MerchantPanelService {
         );
         this.metrics.inc('portal_staff_changed_total', { action: 'create' });
       } catch (err) {
-        this.logPortalEventFailure('portal.staff.create', err);
+        this.logPortalEventFailure('portal.staff.create', err, {
+          merchantId,
+          staffId: staff.id,
+        });
       }
       return staff.id;
     });
@@ -1150,7 +1159,10 @@ export class MerchantPanelService {
         );
         this.metrics.inc('portal_staff_changed_total', { action: 'update' });
       } catch (err) {
-        this.logPortalEventFailure('portal.staff.update', err);
+        this.logPortalEventFailure('portal.staff.update', err, {
+          merchantId,
+          staffId,
+        });
       }
     });
     this.cache.invalidateStaff(merchantId, staffId);
@@ -1255,7 +1267,11 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_staff_status_changed_total', { status });
     } catch (err) {
-      this.logPortalEventFailure('portal.staff.status', err);
+      this.logPortalEventFailure('portal.staff.status', err, {
+        merchantId,
+        staffId,
+        status,
+      });
     }
     return this.getStaff(merchantId, staffId);
   }
@@ -1317,7 +1333,11 @@ export class MerchantPanelService {
         );
         this.metrics.inc('portal_staff_pin_events_total', { action: 'assign' });
       } catch (err) {
-        this.logPortalEventFailure('portal.staff.access.assign', err);
+        this.logPortalEventFailure('portal.staff.access.assign', err, {
+          merchantId,
+          staffId,
+          outletId,
+        });
       }
 
       const [view] = await this.buildAccessViews(merchantId, staffId, [record]);
@@ -1351,7 +1371,11 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_staff_pin_events_total', { action: 'revoke' });
     } catch (err) {
-      this.logPortalEventFailure('portal.staff.access.revoke', err);
+      this.logPortalEventFailure('portal.staff.access.revoke', err, {
+        merchantId,
+        staffId,
+        outletId,
+      });
     }
     this.cache.invalidateStaff(merchantId, staffId);
     return { ok: true };
@@ -1392,7 +1416,11 @@ export class MerchantPanelService {
         );
         this.metrics.inc('portal_staff_pin_events_total', { action: 'rotate' });
       } catch (err) {
-        this.logPortalEventFailure('portal.staff.pin.rotate', err);
+        this.logPortalEventFailure('portal.staff.pin.rotate', err, {
+          merchantId,
+          staffId,
+          outletId,
+        });
       }
       const [view] = await this.buildAccessViews(merchantId, staffId, [
         updated,
@@ -1432,7 +1460,12 @@ export class MerchantPanelService {
         );
         this.metrics.inc('portal_staff_pin_events_total', { action: 'rotate' });
       } catch (err) {
-        this.logPortalEventFailure('portal.staff.pin.rotate', err);
+        this.logPortalEventFailure('portal.staff.pin.rotate', err, {
+          merchantId,
+          accessId,
+          staffId: updated.staffId,
+          outletId: updated.outletId,
+        });
       }
       const [view] = await this.buildAccessViews(merchantId, updated.staffId, [
         updated,
@@ -1469,7 +1502,10 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_staff_pin_events_total', { action: 'revoke' });
     } catch (err) {
-      this.logPortalEventFailure('portal.staff.pin.revoke', err);
+      this.logPortalEventFailure('portal.staff.pin.revoke', err, {
+        merchantId,
+        accessId,
+      });
     }
     this.cache.invalidateStaff(merchantId, access.staffId);
     return { ok: true };
@@ -1520,7 +1556,9 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_access_group_list_total');
     } catch (err) {
-      this.logPortalEventFailure('portal.access-group.list', err);
+      this.logPortalEventFailure('portal.access-group.list', err, {
+        merchantId,
+      });
     }
 
     return {
@@ -1569,7 +1607,10 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_access_group_write_total', { action: 'create' });
     } catch (err) {
-      this.logPortalEventFailure('portal.access-group.create', err);
+      this.logPortalEventFailure('portal.access-group.create', err, {
+        merchantId,
+        groupId: mapped.id,
+      });
     }
     return mapped;
   }
@@ -1638,7 +1679,10 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_access_group_write_total', { action: 'update' });
     } catch (err) {
-      this.logPortalEventFailure('portal.access-group.update', err);
+      this.logPortalEventFailure('portal.access-group.update', err, {
+        merchantId,
+        groupId: mapped.id,
+      });
     }
     return mapped;
   }
@@ -1680,7 +1724,10 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_access_group_write_total', { action: 'delete' });
     } catch (err) {
-      this.logPortalEventFailure('portal.access-group.delete', err);
+      this.logPortalEventFailure('portal.access-group.delete', err, {
+        merchantId,
+        groupId,
+      });
     }
     return { ok: true };
   }
@@ -1762,7 +1809,11 @@ export class MerchantPanelService {
         action: 'members',
       });
     } catch (err) {
-      this.logPortalEventFailure('portal.access-group.members.set', err);
+      this.logPortalEventFailure('portal.access-group.members.set', err, {
+        merchantId,
+        groupId,
+        memberCount: finalMembers.length,
+      });
     }
     return { ok: true };
   }

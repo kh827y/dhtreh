@@ -16,7 +16,11 @@ import type {
 } from '../loyalty-program.types';
 import { cloneRecord } from '../loyalty-program.utils';
 import { logEvent, safeMetric } from '../../../shared/logging/event-log.util';
-import { ensureMetadataVersion } from '../../../shared/metadata.util';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
+import {
+  ensureMetadataVersion,
+  upgradeMetadata,
+} from '../../../shared/metadata.util';
 
 @Injectable()
 export class LoyaltyProgramTiersService {
@@ -71,12 +75,54 @@ export class LoyaltyProgramTiersService {
     };
   }
 
+  private async backfillTierMetadata(
+    tiers: Array<Prisma.LoyaltyTierGetPayload<object>>,
+  ) {
+    const tasks: Array<Promise<unknown>> = [];
+    for (const tier of tiers) {
+      const upgrade = upgradeMetadata(
+        tier.metadata as Prisma.InputJsonValue | null,
+      );
+      if (!upgrade.changed) continue;
+      tier.metadata = (upgrade.value ?? null) as Prisma.JsonValue | null;
+      tasks.push(
+        this.prisma.loyaltyTier
+          .update({
+            where: { id: tier.id },
+            data: { metadata: upgrade.value as Prisma.InputJsonValue },
+          })
+          .catch((err) =>
+            logIgnoredError(
+              err,
+              'LoyaltyProgramTiersService backfill metadata',
+              this.logger,
+              'debug',
+              { tierId: tier.id, merchantId: tier.merchantId },
+            ),
+          ),
+      );
+    }
+    if (tasks.length) {
+      await Promise.all(tasks);
+    }
+  }
+
   async listTiers(merchantId: string): Promise<TierDto[]> {
-    await ensureBaseTier(this.prisma, merchantId).catch(() => null);
+    await ensureBaseTier(this.prisma, merchantId).catch((err) => {
+      logIgnoredError(
+        err,
+        'LoyaltyProgramTiersService ensureBaseTier',
+        this.logger,
+        'debug',
+        { merchantId },
+      );
+      return null;
+    });
     const tiers = await this.prisma.loyaltyTier.findMany({
       where: { merchantId },
       orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
     });
+    await this.backfillTierMetadata(tiers);
     const assignmentGroups = await this.prisma.loyaltyTierAssignment.groupBy({
       by: ['tierId'],
       where: {
@@ -99,11 +145,21 @@ export class LoyaltyProgramTiersService {
   }
 
   async getTier(merchantId: string, tierId: string): Promise<TierDto> {
-    await ensureBaseTier(this.prisma, merchantId).catch(() => null);
+    await ensureBaseTier(this.prisma, merchantId).catch((err) => {
+      logIgnoredError(
+        err,
+        'LoyaltyProgramTiersService ensureBaseTier',
+        this.logger,
+        'debug',
+        { merchantId },
+      );
+      return null;
+    });
     const tier = await this.prisma.loyaltyTier.findFirst({
       where: { merchantId, id: tierId },
     });
     if (!tier) throw new NotFoundException('Уровень не найден');
+    await this.backfillTierMetadata([tier]);
     const customersCount = await this.prisma.loyaltyTierAssignment.count({
       where: {
         merchantId,
@@ -378,7 +434,9 @@ export class LoyaltyProgramTiersService {
       delete metadata.minPaymentAmount;
     const hasMetadata = Object.keys(metadata).length > 0;
     const nextMetadata = hasMetadata
-      ? (ensureMetadataVersion(metadata as Prisma.InputJsonValue) as Prisma.InputJsonValue)
+      ? (ensureMetadataVersion(
+          metadata as Prisma.InputJsonValue,
+        ) as Prisma.InputJsonValue)
       : Prisma.JsonNull;
 
     const isInitial =

@@ -1,81 +1,51 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import type { LoyaltyService } from '../services/loyalty.service';
-import { CustomerProfileDto } from '../dto/dto';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { createHash, randomInt } from 'crypto';
-import { looksLikeJwt, verifyQrToken } from '../utils/token.util';
+import {
+  Prisma,
+  PromotionRewardType,
+  PromotionStatus,
+  WalletType,
+} from '@prisma/client';
+import type { Customer, MerchantSettings } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
-import type { Request, Response } from 'express';
-import { getRulesRoot, getRulesSection } from '../../../shared/rules-json.util';
-import type { MerchantSettings, Customer } from '@prisma/client';
-import { Prisma } from '@prisma/client';
-import {
-  WalletType,
-  PromotionStatus,
-  PromotionRewardType,
-} from '@prisma/client';
 import { AppConfigService } from '../../../core/config/app-config.service';
 import { normalizePhoneE164 } from '../../../shared/common/phone.util';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
+import { getRulesRoot, getRulesSection } from '../../../shared/rules-json.util';
+import { looksLikeJwt, verifyQrToken } from '../utils/token.util';
+import { CustomerProfileDto } from '../dto/dto';
+import {
+  asRecord,
+  readErrorCode,
+  readErrorMessage,
+  readString,
+} from '../controllers/loyalty-controller.utils';
 
 // После рефакторинга Customer = per-merchant (бывший Customer)
-export type CustomerRecord = Customer & {
+type CustomerRecord = Customer & {
   profileName?: string | null;
   profileGender?: string | null;
   profileBirthDate?: Date | null;
   profileCompletedAt?: Date | null;
 };
 
-export const ALL_CUSTOMERS_SEGMENT_KEY = 'all-customers';
+type EarnLotClient = { earnLot?: PrismaService['earnLot'] };
 
-export type CommitOptions = NonNullable<Parameters<LoyaltyService['commit']>[4]>;
-export type CashierSessionInfo = {
-  merchantId?: string | null;
-  outletId?: string | null;
-  staffId?: string | null;
-};
-export type CashierRequest = Request & { cashierSession?: CashierSessionInfo };
-export type TeleauthRequest = Request & { teleauth?: { customerId?: string | null } };
-export type RequestWithRequestId = Request & { requestId?: string };
-export type OptionalEarnLotClient = { earnLot?: PrismaService['earnLot'] };
-
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-export const asRecord = (value: unknown): Record<string, unknown> | null =>
-  isRecord(value) ? value : null;
-
-export const readString = (value: unknown): string | null =>
-  typeof value === 'string' ? value : null;
-
-export const readErrorCode = (err: unknown): string => {
-  const record = asRecord(err);
-  const code = record?.code;
-  if (typeof code === 'string') return code;
-  const name = record?.name;
-  return typeof name === 'string' ? name : '';
-};
-
-export const readErrorMessage = (err: unknown): string => {
-  if (typeof err === 'string') return err;
-  if (err instanceof Error) return err.message;
-  const record = asRecord(err);
-  const message = record?.message;
-  if (typeof message === 'string') return message;
-  if (typeof err === 'number' || typeof err === 'boolean' || err == null) {
-    return String(err ?? '');
-  }
-  return '';
-};
-
-export class LoyaltyControllerBase {
+@Injectable()
+export class LoyaltyControllerSupportService {
   constructor(
-    protected readonly prisma: PrismaService,
-    protected readonly cache: LookupCacheService,
-    protected readonly config: AppConfigService,
+    private readonly prisma: PrismaService,
+    private readonly cache: LookupCacheService,
+    private readonly config: AppConfigService,
   ) {}
 
-  protected async resolveOutlet(merchantId?: string, outletId?: string | null) {
+  async resolveOutlet(merchantId?: string, outletId?: string | null) {
     if (!merchantId) return null;
     if (outletId) {
       try {
@@ -84,7 +54,7 @@ export class LoyaltyControllerBase {
       } catch (err) {
         logIgnoredError(
           err,
-          'LoyaltyControllerBase resolve outlet',
+          'LoyaltyControllerSupportService resolve outlet',
           undefined,
           'debug',
         );
@@ -94,7 +64,7 @@ export class LoyaltyControllerBase {
     return null;
   }
 
-  protected readCookie(req: Request, name: string): string | null {
+  readCookie(req: Request, name: string): string | null {
     const header = req?.headers?.cookie;
     if (!header || typeof header !== 'string') return null;
     const parts = header.split(';');
@@ -110,17 +80,7 @@ export class LoyaltyControllerBase {
     return null;
   }
 
-  protected shouldUseSecureCookies(): boolean {
-    const configured = this.config.getCookieSecure();
-    if (configured !== undefined) return configured;
-    return this.config.isProduction();
-  }
-
-  protected writeCashierSessionCookie(
-    res: Response,
-    token: string,
-    maxAgeMs: number,
-  ) {
+  writeCashierSessionCookie(res: Response, token: string, maxAgeMs: number) {
     const secure = this.shouldUseSecureCookies();
     res.cookie('cashier_session', token, {
       httpOnly: true,
@@ -131,33 +91,13 @@ export class LoyaltyControllerBase {
     });
   }
 
-  protected stableIdempotencyStringify(value: unknown): string {
-    if (value === null || value === undefined) return 'null';
-    if (typeof value !== 'object') return JSON.stringify(value);
-    if (Array.isArray(value)) {
-      return `[${value
-        .map((item) => this.stableIdempotencyStringify(item))
-        .join(',')}]`;
-    }
-    const record = asRecord(value) ?? {};
-    const keys = Object.keys(record).sort();
-    return `{${keys
-      .map(
-        (key) =>
-          `${JSON.stringify(key)}:${this.stableIdempotencyStringify(
-            record[key],
-          )}`,
-      )
-      .join(',')}}`;
-  }
-
-  protected hashIdempotencyPayload(payload: Record<string, unknown>): string {
+  hashIdempotencyPayload(payload: Record<string, unknown>): string {
     return createHash('sha256')
       .update(this.stableIdempotencyStringify(payload))
       .digest('hex');
   }
 
-  protected clearCashierSessionCookie(res: Response) {
+  clearCashierSessionCookie(res: Response) {
     const secure = this.shouldUseSecureCookies();
     res.cookie('cashier_session', '', {
       httpOnly: true,
@@ -168,11 +108,7 @@ export class LoyaltyControllerBase {
     });
   }
 
-  protected writeCashierDeviceCookie(
-    res: Response,
-    token: string,
-    maxAgeMs: number,
-  ) {
+  writeCashierDeviceCookie(res: Response, token: string, maxAgeMs: number) {
     const secure = this.shouldUseSecureCookies();
     res.cookie('cashier_device', token, {
       httpOnly: true,
@@ -183,7 +119,7 @@ export class LoyaltyControllerBase {
     });
   }
 
-  protected clearCashierDeviceCookie(res: Response) {
+  clearCashierDeviceCookie(res: Response) {
     const secure = this.shouldUseSecureCookies();
     res.cookie('cashier_device', '', {
       httpOnly: true,
@@ -194,23 +130,7 @@ export class LoyaltyControllerBase {
     });
   }
 
-  protected resolveCashierAllowedOrigins(): string[] {
-    const raw = this.config.getCorsOrigins();
-    if (raw.length) return raw;
-    if (this.config.isProduction()) return [];
-    return [
-      'http://localhost:3001',
-      'http://127.0.0.1:3001',
-      'http://localhost:3002',
-      'http://127.0.0.1:3002',
-      'http://localhost:3003',
-      'http://127.0.0.1:3003',
-      'http://localhost:3004',
-      'http://127.0.0.1:3004',
-    ];
-  }
-
-  protected assertCashierOrigin(req: Request) {
+  assertCashierOrigin(req: Request) {
     const originHeader =
       typeof req?.headers?.origin === 'string' ? req.headers.origin : '';
     const refererHeader =
@@ -223,7 +143,7 @@ export class LoyaltyControllerBase {
       } catch (err) {
         logIgnoredError(
           err,
-          'LoyaltyControllerBase parse referer origin',
+          'LoyaltyControllerSupportService parse referer origin',
           undefined,
           'debug',
         );
@@ -237,7 +157,7 @@ export class LoyaltyControllerBase {
     } catch (err) {
       logIgnoredError(
         err,
-        'LoyaltyControllerBase parse origin host',
+        'LoyaltyControllerSupportService parse origin host',
         undefined,
         'debug',
       );
@@ -250,7 +170,7 @@ export class LoyaltyControllerBase {
     throw new ForbiddenException('Invalid origin');
   }
 
-  protected resolveClientIp(req: Request): string | null {
+  resolveClientIp(req: Request): string | null {
     const ip =
       req.ip ||
       req.ips?.[0] ||
@@ -259,14 +179,14 @@ export class LoyaltyControllerBase {
     return ip ? String(ip) : null;
   }
 
-  protected normalizePhoneStrict(phone?: string): string {
+  normalizePhoneStrict(phone?: string): string {
     if (!phone) throw new BadRequestException('phone required');
     const normalized = normalizePhoneE164(phone);
     if (!normalized) throw new BadRequestException('invalid phone');
     return normalized;
   }
 
-  protected resolvePromotionExpireDays(promo: {
+  resolvePromotionExpireDays(promo: {
     pointsExpireInDays: number | null;
     rewardMetadata?: unknown;
     endAt?: Date | null;
@@ -291,14 +211,12 @@ export class LoyaltyControllerBase {
     return null;
   }
 
-  protected getEarnLotDelegate(
-    client: OptionalEarnLotClient,
-  ): OptionalEarnLotClient['earnLot'] | null {
+  getEarnLotDelegate(client: EarnLotClient): EarnLotClient['earnLot'] | null {
     return client.earnLot ?? null;
   }
 
   // Проверка, что customer принадлежит merchant
-  protected async ensureCustomer(
+  async ensureCustomer(
     merchantId: string,
     customerId: string,
   ): Promise<CustomerRecord> {
@@ -318,7 +236,7 @@ export class LoyaltyControllerBase {
     return customer as CustomerRecord;
   }
 
-  protected async ensureCustomerByTelegram(
+  async ensureCustomerByTelegram(
     merchantId: string,
     tgId: string,
     _initData?: string,
@@ -385,7 +303,7 @@ export class LoyaltyControllerBase {
     });
   }
 
-  protected toProfileDto(customer: CustomerRecord): CustomerProfileDto {
+  toProfileDto(customer: CustomerRecord): CustomerProfileDto {
     const profileName =
       typeof customer.profileName === 'string' && customer.profileName.trim()
         ? customer.profileName.trim()
@@ -404,10 +322,7 @@ export class LoyaltyControllerBase {
     } satisfies CustomerProfileDto;
   }
 
-  protected async listPromotionsForCustomer(
-    merchantId: string,
-    customerId: string,
-  ) {
+  async listPromotionsForCustomer(merchantId: string, customerId: string) {
     await this.ensureCustomer(merchantId, customerId);
 
     const now = new Date();
@@ -546,33 +461,7 @@ export class LoyaltyControllerBase {
     }));
   }
 
-  protected computeProfileFlags(data: {
-    name?: string | null;
-    phone?: string | null;
-    gender?: string | null;
-    birthday?: Date | null;
-    profileCompletedAt?: Date | null;
-  }) {
-    const hasPhone =
-      typeof data.phone === 'string' && data.phone.trim().length > 0;
-    const hasName =
-      typeof data.name === 'string' && data.name.trim().length > 0;
-    const hasBirthDate =
-      data.birthday instanceof Date && !Number.isNaN(data.birthday.getTime());
-    const genderOk = data.gender === 'male' || data.gender === 'female';
-    const completionOk =
-      data.profileCompletedAt === undefined
-        ? true
-        : data.profileCompletedAt instanceof Date &&
-          !Number.isNaN(data.profileCompletedAt.getTime());
-    return {
-      hasPhone,
-      onboarded:
-        hasPhone && hasName && hasBirthDate && genderOk && completionOk,
-    };
-  }
-
-  protected async fetchCustomerProfileFlags(
+  async fetchCustomerProfileFlags(
     customerId: string,
   ): Promise<{ hasPhone: boolean; onboarded: boolean }> {
     try {
@@ -608,7 +497,7 @@ export class LoyaltyControllerBase {
     } catch (err) {
       logIgnoredError(
         err,
-        'LoyaltyControllerBase fetchCustomerProfileFlags',
+        'LoyaltyControllerSupportService fetchCustomerProfileFlags',
         undefined,
         'debug',
       );
@@ -616,7 +505,7 @@ export class LoyaltyControllerBase {
     }
   }
 
-  protected async buildReviewsShareSettings(
+  async buildReviewsShareSettings(
     merchantId: string,
     settingsHint?: Pick<MerchantSettings, 'rulesJson'> | null,
   ): Promise<{
@@ -822,7 +711,7 @@ export class LoyaltyControllerBase {
     };
   }
 
-  protected buildShareOptions(
+  buildShareOptions(
     share: null | {
       enabled: boolean;
       threshold: number;
@@ -858,13 +747,7 @@ export class LoyaltyControllerBase {
     return result;
   }
 
-  protected normalizeShortCode(userToken: string): string | null {
-    if (!userToken) return null;
-    const compact = userToken.replace(/\s+/g, '');
-    return /^\d{9}$/.test(compact) ? compact : null;
-  }
-
-  protected async mintShortCode(
+  async mintShortCode(
     merchantId: string,
     customerId: string,
     ttlSec: number,
@@ -882,7 +765,7 @@ export class LoyaltyControllerBase {
     } catch (err) {
       logIgnoredError(
         err,
-        'LoyaltyControllerBase cleanup nonces',
+        'LoyaltyControllerSupportService cleanup nonces',
         undefined,
         'debug',
       );
@@ -915,8 +798,7 @@ export class LoyaltyControllerBase {
     throw new BadRequestException('Failed to mint short QR code');
   }
 
-  // Plain ID, 9-digit short code, or JWT
-  protected async resolveFromToken(userToken: string) {
+  async resolveFromToken(userToken: string) {
     if (looksLikeJwt(userToken)) {
       const envSecret = this.config.getQrJwtSecret() || '';
       if (
@@ -960,7 +842,7 @@ export class LoyaltyControllerBase {
         } catch (err) {
           logIgnoredError(
             err,
-            'LoyaltyControllerBase delete nonce',
+            'LoyaltyControllerSupportService delete nonce',
             undefined,
             'debug',
           );
@@ -989,7 +871,7 @@ export class LoyaltyControllerBase {
     } as const;
   }
 
-  protected getQrModeError(
+  getQrModeError(
     kind: 'jwt' | 'short' | 'plain',
     requireJwtForQuote: boolean,
   ): {
@@ -1010,5 +892,78 @@ export class LoyaltyControllerBase {
     }
     return null;
   }
+
+  private shouldUseSecureCookies(): boolean {
+    const configured = this.config.getCookieSecure();
+    if (configured !== undefined) return configured;
+    return this.config.isProduction();
+  }
+
+  private resolveCashierAllowedOrigins(): string[] {
+    const raw = this.config.getCorsOrigins();
+    if (raw.length) return raw;
+    if (this.config.isProduction()) return [];
+    return [
+      'http://localhost:3001',
+      'http://127.0.0.1:3001',
+      'http://localhost:3002',
+      'http://127.0.0.1:3002',
+      'http://localhost:3003',
+      'http://127.0.0.1:3003',
+      'http://localhost:3004',
+      'http://127.0.0.1:3004',
+    ];
+  }
+
+  private stableIdempotencyStringify(value: unknown): string {
+    if (value === null || value === undefined) return 'null';
+    if (typeof value !== 'object') return JSON.stringify(value);
+    if (Array.isArray(value)) {
+      return `[${value
+        .map((item) => this.stableIdempotencyStringify(item))
+        .join(',')}]`;
+    }
+    const record = asRecord(value) ?? {};
+    const keys = Object.keys(record).sort();
+    return `{${keys
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${this.stableIdempotencyStringify(
+            record[key],
+          )}`,
+      )
+      .join(',')}}`;
+  }
+
+  private computeProfileFlags(data: {
+    name?: string | null;
+    phone?: string | null;
+    gender?: string | null;
+    birthday?: Date | null;
+    profileCompletedAt?: Date | null;
+  }) {
+    const hasPhone =
+      typeof data.phone === 'string' && data.phone.trim().length > 0;
+    const hasName =
+      typeof data.name === 'string' && data.name.trim().length > 0;
+    const hasBirthDate =
+      data.birthday instanceof Date && !Number.isNaN(data.birthday.getTime());
+    const genderOk = data.gender === 'male' || data.gender === 'female';
+    const completionOk =
+      data.profileCompletedAt === undefined
+        ? true
+        : data.profileCompletedAt instanceof Date &&
+          !Number.isNaN(data.profileCompletedAt.getTime());
+    return {
+      hasPhone,
+      onboarded:
+        hasPhone && hasName && hasBirthDate && genderOk && completionOk,
+    };
+  }
+
+  private normalizeShortCode(userToken: string): string | null {
+    if (!userToken) return null;
+    const compact = userToken.replace(/\s+/g, '');
+    return /^\d{9}$/.test(compact) ? compact : null;
+  }
 }
-  

@@ -369,12 +369,7 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
     try {
       await client.end();
     } catch (err) {
-      logIgnoredError(
-        err,
-        'LoyaltyEventsService pg end',
-        this.logger,
-        'debug',
-      );
+      logIgnoredError(err, 'LoyaltyEventsService pg end', this.logger, 'debug');
     }
   }
 

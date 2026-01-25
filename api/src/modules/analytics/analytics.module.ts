@@ -9,7 +9,11 @@ import { AnalyticsCacheService } from './analytics-cache.service';
 @Module({
   imports: [PrismaModule, ConfigModule],
   controllers: [AnalyticsController],
-  providers: [AnalyticsService, AnalyticsAggregatorWorker, AnalyticsCacheService],
+  providers: [
+    AnalyticsService,
+    AnalyticsAggregatorWorker,
+    AnalyticsCacheService,
+  ],
   exports: [AnalyticsService],
 })
 export class AnalyticsModule {}

@@ -51,7 +51,12 @@ export class HttpMetricsInterceptor implements NestInterceptor {
       if (sc?.traceId) res.setHeader('X-Trace-Id', sc.traceId);
       if (sc?.spanId) res.setHeader('X-Span-Id', sc.spanId);
     } catch (err) {
-      logIgnoredError(err, 'HttpMetricsInterceptor trace headers', undefined, 'debug');
+      logIgnoredError(
+        err,
+        'HttpMetricsInterceptor trace headers',
+        undefined,
+        'debug',
+      );
     }
 
     const record = (status: number) => {
@@ -60,7 +65,12 @@ export class HttpMetricsInterceptor implements NestInterceptor {
         const seconds = Number(ended - started) / 1e9;
         this.metrics.recordHttp(method, route, status, seconds);
       } catch (err) {
-        logIgnoredError(err, 'HttpMetricsInterceptor record', undefined, 'debug');
+        logIgnoredError(
+          err,
+          'HttpMetricsInterceptor record',
+          undefined,
+          'debug',
+        );
       }
     };
 
@@ -111,7 +121,12 @@ export class HttpMetricsInterceptor implements NestInterceptor {
           }
         }
       } catch (err) {
-        logIgnoredError(err, 'HttpMetricsInterceptor alert flow', undefined, 'debug');
+        logIgnoredError(
+          err,
+          'HttpMetricsInterceptor alert flow',
+          undefined,
+          'debug',
+        );
       }
     };
 
@@ -133,7 +148,12 @@ export class HttpMetricsInterceptor implements NestInterceptor {
             status = (err as { getStatus: () => number }).getStatus();
           }
         } catch (err) {
-          logIgnoredError(err, 'HttpMetricsInterceptor status', undefined, 'debug');
+          logIgnoredError(
+            err,
+            'HttpMetricsInterceptor status',
+            undefined,
+            'debug',
+          );
         }
         record(status);
         maybeAlert(status, err);

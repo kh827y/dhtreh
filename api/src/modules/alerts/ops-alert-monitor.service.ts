@@ -109,7 +109,8 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
     const metrics = parsePromMetrics(metricsText);
     const workers = this.collectWorkers();
     const env = {
-      nodeEnv: this.config.getString('NODE_ENV', 'development') ?? 'development',
+      nodeEnv:
+        this.config.getString('NODE_ENV', 'development') ?? 'development',
       appVersion: this.config.getString('APP_VERSION', 'dev') ?? 'dev',
     };
     return {
@@ -185,8 +186,10 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
       name: 'points_ttl_burn',
       worker: this.ttlBurn,
       intervalMs:
-        this.config.getNumber('POINTS_TTL_BURN_INTERVAL_MS', 6 * 60 * 60 * 1000) ??
-        6 * 60 * 60 * 1000,
+        this.config.getNumber(
+          'POINTS_TTL_BURN_INTERVAL_MS',
+          6 * 60 * 60 * 1000,
+        ) ?? 6 * 60 * 60 * 1000,
       expected: ttlBurnEnabled,
       reason: ttlBurnEnabled ? undefined : 'POINTS_TTL_BURN=0',
     });

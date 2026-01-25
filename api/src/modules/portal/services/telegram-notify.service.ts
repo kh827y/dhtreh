@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
@@ -16,9 +17,12 @@ import {
   TelegramStaffActorType,
   type TelegramStaffInvite,
 } from '@prisma/client';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 @Injectable()
 export class PortalTelegramNotifyService {
+  private readonly logger = new Logger(PortalTelegramNotifyService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notify: TelegramNotifyService,
@@ -81,7 +85,16 @@ export class PortalTelegramNotifyService {
           },
           orderBy: { createdAt: 'desc' },
         })
-        .catch(() => null);
+        .catch((err) => {
+          logIgnoredError(
+            err,
+            'PortalTelegramNotifyService find invite',
+            this.logger,
+            'debug',
+            { merchantId, staffId },
+          );
+          return null;
+        });
     }
 
     if (!invite) {
@@ -104,7 +117,16 @@ export class PortalTelegramNotifyService {
           },
           data: { expiresAt: now },
         })
-        .catch(() => null);
+        .catch((err) => {
+          logIgnoredError(
+            err,
+            'PortalTelegramNotifyService expire invites',
+            this.logger,
+            'debug',
+            { merchantId, staffId, inviteId: invite?.id ?? null },
+          );
+          return null;
+        });
     } else {
       const needsUpdate =
         (invite.staffId ?? null) !== (staffId ?? null) ||
@@ -202,7 +224,16 @@ export class PortalTelegramNotifyService {
     if (!subscriberId) throw new BadRequestException('subscriberId required');
     const existing = await this.prisma.telegramStaffSubscriber
       .findUnique({ where: { id: subscriberId } })
-      .catch(() => null);
+      .catch((err) => {
+        logIgnoredError(
+          err,
+          'PortalTelegramNotifyService find subscriber',
+          this.logger,
+          'debug',
+          { merchantId, subscriberId },
+        );
+        return null;
+      });
     if (!existing || existing.merchantId !== merchantId)
       throw new NotFoundException('subscriber not found');
     await this.prisma.telegramStaffSubscriber.update({

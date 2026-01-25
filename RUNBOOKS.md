@@ -70,6 +70,16 @@ docker compose --env-file .env.production -f docker-compose.production.yml logs 
 - проверьте `TELEGRAM_NOTIFY_BOT_TOKEN` и `TELEGRAM_NOTIFY_WEBHOOK_SECRET`;
 - убедитесь, что заданы `API_BASE_URL` и публичный домен (для webhook).
 
+## Симптом: ошибки внешних интеграций (Telegram/webhooks)
+Что смотреть:
+- метрика `external_requests_total` с фильтрами `provider="telegram"` или `provider="merchant_webhook"`;
+- рост `result="rate_limited"` и `status="429"` указывает на лимиты провайдера;
+- рост `result="http_error"` или `result="error"` — проблемы сети, неверные URL/токены или сбои у провайдера.
+Что делать:
+- проверьте токены/URL в настройках мерчанта, доступность домена и SSL;
+- при массовых 429 увеличьте интервалы или включите паузу доставки (Outbox);
+- при ошибках вебхуков проверьте логи обработчиков на стороне мерчанта.
+
 ## Миграции и схема
 ```bash
 # Статус миграций

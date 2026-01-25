@@ -38,6 +38,7 @@ export class MetricsService implements OnModuleDestroy {
   private posRequests?: Counter<string>;
   private posErrors?: Counter<string>;
   private posWebhooks?: Counter<string>;
+  private externalRequests?: Counter<string>;
 
   private stopDefaultMetrics?: () => void;
 
@@ -164,6 +165,12 @@ export class MetricsService implements OnModuleDestroy {
       labelNames: ['provider'],
       registers: [this.registry],
     });
+    this.externalRequests = new Counter({
+      name: 'external_requests_total',
+      help: 'External HTTP requests',
+      labelNames: ['provider', 'endpoint', 'result', 'status'],
+      registers: [this.registry],
+    });
   }
 
   // Алиас для совместимости с вызовами в коде (increment -> inc)
@@ -210,6 +217,24 @@ export class MetricsService implements OnModuleDestroy {
     }
     if (name === 'pos_webhooks_total' && labels?.provider) {
       this.posWebhooks?.inc({ provider: labels.provider }, value);
+      return;
+    }
+    if (
+      name === 'external_requests_total' &&
+      labels?.provider &&
+      labels?.endpoint &&
+      labels?.result &&
+      labels?.status
+    ) {
+      this.externalRequests?.inc(
+        {
+          provider: labels.provider,
+          endpoint: labels.endpoint,
+          result: labels.result,
+          status: labels.status,
+        },
+        value,
+      );
       return;
     }
     const key = this.key(name, labels);

@@ -7,6 +7,7 @@ import {
   PortalControllerHelpers,
   type PortalRequest,
 } from '../controllers/portal.controller-helpers';
+import { normalizeBoolean } from '../../../shared/common/input.util';
 
 @Injectable()
 export class PortalCustomersUseCase {
@@ -33,10 +34,11 @@ export class PortalCustomersUseCase {
     registeredOnlyStr?: string,
     excludeMiniappStr?: string,
   ) {
-    const limit = limitStr
-      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
-      : 50;
-    const offset = offsetStr ? Math.max(parseInt(offsetStr, 10) || 0, 0) : 0;
+    const limit = this.helpers.parseLimit(limitStr, {
+      defaultValue: 50,
+      max: 200,
+    });
+    const offset = this.helpers.parseOffset(offsetStr);
     let registeredOnly: boolean | undefined;
     if (typeof registeredOnlyStr === 'string') {
       registeredOnly = !['0', 'false', 'no'].includes(
@@ -66,17 +68,6 @@ export class PortalCustomersUseCase {
     );
   }
 
-  private normalizeBoolean(value: unknown): boolean | undefined {
-    if (value === undefined || value === null) return undefined;
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'string') {
-      const normalized = value.trim().toLowerCase();
-      if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
-      if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
-    }
-    return undefined;
-  }
-
   private resolveImportFormat(
     bodyFormat: unknown,
     fileName?: string | null,
@@ -87,7 +78,8 @@ export class PortalCustomersUseCase {
     }
     const lowerName = (fileName || '').toLowerCase();
     if (lowerName.endsWith('.csv')) return 'csv';
-    if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) return 'excel';
+    if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls'))
+      return 'excel';
     const normalizedMime = (mimeType || '').toLowerCase();
     if (normalizedMime.includes('csv')) return 'csv';
     if (
@@ -114,8 +106,8 @@ export class PortalCustomersUseCase {
       size?: number;
     } | null,
   ) {
-    const updateExisting = this.normalizeBoolean(body?.updateExisting);
-    const sendWelcome = this.normalizeBoolean(body?.sendWelcome);
+    const updateExisting = normalizeBoolean(body?.updateExisting);
+    const sendWelcome = normalizeBoolean(body?.sendWelcome);
     const format = this.resolveImportFormat(
       body?.format,
       file?.originalname,
@@ -161,8 +153,11 @@ export class PortalCustomersUseCase {
   }
 
   listImportJobs(req: PortalRequest, limitStr?: string, offsetStr?: string) {
-    const limit = limitStr ? parseInt(limitStr, 10) : 20;
-    const offset = offsetStr ? parseInt(offsetStr, 10) : 0;
+    const limit = this.helpers.parseLimit(limitStr, {
+      defaultValue: 20,
+      max: 200,
+    });
+    const offset = this.helpers.parseOffset(offsetStr);
     return this.importExport.listImportJobs(
       this.helpers.getMerchantId(req),
       limit,
@@ -172,7 +167,10 @@ export class PortalCustomersUseCase {
 
   createCustomer(req: PortalRequest, body: unknown) {
     const payload = this.normalizeCustomerPayload(body);
-    return this.customersService.create(this.helpers.getMerchantId(req), payload);
+    return this.customersService.create(
+      this.helpers.getMerchantId(req),
+      payload,
+    );
   }
 
   updateCustomer(req: PortalRequest, customerId: string, body: unknown) {

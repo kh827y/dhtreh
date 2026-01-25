@@ -66,7 +66,10 @@ export class PortalCatalogUseCase {
     req: PortalRequest,
     categoryId: string,
   ): Promise<{ ok: boolean }> {
-    return this.catalog.deleteCategory(this.helpers.getMerchantId(req), categoryId);
+    return this.catalog.deleteCategory(
+      this.helpers.getMerchantId(req),
+      categoryId,
+    );
   }
 
   listCatalogProducts(
@@ -106,7 +109,10 @@ export class PortalCatalogUseCase {
     req: PortalRequest,
     productId: string,
   ): Promise<{ ok: boolean }> {
-    return this.catalog.deleteProduct(this.helpers.getMerchantId(req), productId);
+    return this.catalog.deleteProduct(
+      this.helpers.getMerchantId(req),
+      productId,
+    );
   }
 
   bulkCatalogProducts(
@@ -176,7 +182,10 @@ export class PortalCatalogUseCase {
   }
 
   deleteOutlet(req: PortalRequest, outletId: string) {
-    return this.merchants.deleteOutlet(this.helpers.getMerchantId(req), outletId);
+    return this.merchants.deleteOutlet(
+      this.helpers.getMerchantId(req),
+      outletId,
+    );
   }
 
   updateOutletStatus(

@@ -11,6 +11,7 @@ import { LoyaltyService } from '../loyalty/services/loyalty.service';
 import { EmailService } from '../notifications/email/email.service';
 import * as crypto from 'crypto';
 import { AppConfigService } from '../../core/config/app-config.service';
+import { asRecord as asRecordShared } from '../../shared/common/input.util';
 
 export interface CreateReferralProgramDto {
   merchantId: string;
@@ -783,10 +784,7 @@ export class ReferralService {
   }
 
   private asRecord(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-    return value as Record<string, unknown>;
+    return asRecordShared(value);
   }
 
   private normalizeLevels(

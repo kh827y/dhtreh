@@ -14,10 +14,7 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import {
-  LedgerEntryDto,
-  ReceiptDto,
-} from '../../merchants/dto';
+import { LedgerEntryDto, ReceiptDto } from '../../merchants/dto';
 import { TransactionItemDto } from '../../loyalty/dto/dto';
 import type { PortalRequest } from './portal.controller-helpers';
 import { PortalOperationsUseCase } from '../use-cases/portal-operations.use-case';

@@ -9,10 +9,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
-import {
-  Prisma,
-  type Customer,
-} from '@prisma/client';
+import { Prisma, type Customer } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../core/cache/lookup-cache.service';
 import { LoyaltyService } from '../loyalty/services/loyalty.service';

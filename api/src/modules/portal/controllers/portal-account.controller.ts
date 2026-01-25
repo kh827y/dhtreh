@@ -1,9 +1,5 @@
 import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
-import {
-  ApiExtraModels,
-  ApiOkResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiExtraModels, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { PortalPermissionsHandled } from '../../portal-auth/portal-permissions.util';
 import type { PortalRequest } from './portal.controller-helpers';

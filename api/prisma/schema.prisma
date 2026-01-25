@@ -610,6 +610,7 @@ model Transaction {
   @@index([merchantId, staffId])
   @@index([merchantId, deviceId])
   @@index([merchantId, customerId, type, createdAt])
+  @@index([merchantId, type, createdAt])
   @@index([merchantId, orderId])
 }
 
@@ -2335,6 +2336,7 @@ model DataImportJob {
 
   @@index([merchantId, type])
   @@index([status])
+  @@index([status, type, createdAt])
 }
 
 model DataImportRow {

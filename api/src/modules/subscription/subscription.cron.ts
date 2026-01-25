@@ -148,9 +148,7 @@ export class SubscriptionCronService {
       });
 
       if (expired.count > 0) {
-        this.logger.log(
-          `Deactivated ${expired.count} expired subscriptions`,
-        );
+        this.logger.log(`Deactivated ${expired.count} expired subscriptions`);
         this.metrics.increment('subscriptions_expired', expired.count);
       }
 

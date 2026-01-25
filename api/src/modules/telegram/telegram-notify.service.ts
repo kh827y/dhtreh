@@ -7,9 +7,18 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
+import { AppConfigService } from '../../core/config/app-config.service';
+import { MetricsService } from '../../core/metrics/metrics.service';
 import { TelegramStaffNotificationsService } from './staff-notifications.service';
 import { TelegramStaffActorType } from '@prisma/client';
 import { logIgnoredError } from '../../shared/logging/ignore-error.util';
+import {
+  fetchWithTimeout,
+  recordExternalRequest,
+  readResponseJsonSafe,
+  readResponseTextSafe,
+  resultFromStatus,
+} from '../../shared/http/external-http.util';
 
 interface TgChat {
   id: number;
@@ -64,6 +73,7 @@ function formatErrorMessage(error: unknown): string {
   return 'unknown_error';
 }
 
+
 class TelegramSendError extends Error {
   status?: number;
   constructor(message: string, status?: number) {
@@ -100,6 +110,8 @@ export class TelegramNotifyService implements OnModuleInit {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private appConfig: AppConfigService,
+    private metrics: MetricsService,
     @Inject(forwardRef(() => TelegramStaffNotificationsService))
     private staffNotifications: TelegramStaffNotificationsService,
   ) {}
@@ -134,13 +146,48 @@ export class TelegramNotifyService implements OnModuleInit {
   } | null> {
     try {
       if (!this.token) return null;
-      const res = await fetch(
+      const context = {
+        label: 'telegram-notify.getWebhookInfo',
+        provider: 'telegram',
+        endpoint: 'getWebhookInfo',
+      };
+      const res = await fetchWithTimeout(
         `https://api.telegram.org/bot${this.token}/getWebhookInfo`,
+        undefined,
+        {
+          timeoutMs: this.getTelegramTimeoutMs(),
+          logger: this.logger,
+          context,
+          metrics: this.metrics,
+        },
       );
-      if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json().catch(() => null)) as unknown;
+      if (!res.ok) {
+        recordExternalRequest(
+          this.metrics,
+          context,
+          resultFromStatus(res.status, false),
+          res.status,
+        );
+        throw new Error(
+          await readResponseTextSafe(res, {
+            logger: this.logger,
+            context,
+          }),
+        );
+      }
+      const data = (await readResponseJsonSafe(res, {
+        logger: this.logger,
+        context,
+      })) as unknown;
       const payload = toRecord(data);
-      if (!payload || payload.ok !== true) return null;
+      const ok = res.ok && payload?.ok === true;
+      recordExternalRequest(
+        this.metrics,
+        context,
+        resultFromStatus(res.status, ok),
+        res.status,
+      );
+      if (!ok) return null;
       const info = toRecord(payload.result);
       return {
         url: asString(info?.url),
@@ -156,6 +203,10 @@ export class TelegramNotifyService implements OnModuleInit {
   private get webhookSecret(): string | undefined {
     const v = this.config.get<string>('TELEGRAM_NOTIFY_WEBHOOK_SECRET');
     return v && v.trim() ? v.trim() : undefined;
+  }
+
+  private getTelegramTimeoutMs(): number {
+    return this.appConfig.getTelegramHttpTimeoutMs();
   }
 
   isConfigured(): boolean {
@@ -245,15 +296,42 @@ export class TelegramNotifyService implements OnModuleInit {
   private async sendMessageDirect(chatId: number | string, text: string) {
     if (!this.token) throw new Error('Notify bot token not configured');
     const url = `https://api.telegram.org/bot${this.token}/sendMessage`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text }),
+    const context = {
+      label: 'telegram-notify.sendMessage',
+      chatId,
+      provider: 'telegram',
+      endpoint: 'sendMessage',
+    };
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text }),
+      },
+      {
+        timeoutMs: this.getTelegramTimeoutMs(),
+        logger: this.logger,
+        context,
+        metrics: this.metrics,
+      },
+    );
+    const raw = await readResponseTextSafe(res, {
+      logger: this.logger,
+      context,
+      fallback: 'Telegram API error',
     });
-    const raw = await res.text();
     const data = parseJson(raw);
     const payload = toRecord(data);
     const ok = res.ok && payload?.ok === true;
+    const errorCode = asNumber(payload?.error_code);
+    const rateLimited = res.status === 429 || errorCode === 429;
+    recordExternalRequest(
+      this.metrics,
+      context,
+      rateLimited ? 'rate_limited' : resultFromStatus(res.status, ok),
+      res.status,
+    );
     if (!ok) {
       const params = toRecord(payload?.parameters);
       const retryAfter = Number(
@@ -261,7 +339,6 @@ export class TelegramNotifyService implements OnModuleInit {
       );
       const description =
         asString(payload?.description) || raw || 'Telegram API error';
-      const errorCode = asNumber(payload?.error_code);
       if (res.status === 429 || errorCode === 429) {
         const delaySec =
           Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 1;
@@ -274,18 +351,62 @@ export class TelegramNotifyService implements OnModuleInit {
   private async api<T>(method: string, body: Record<string, unknown>) {
     if (!this.token) throw new Error('Notify bot token not configured');
     const url = `https://api.telegram.org/bot${this.token}/${method}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    const data = (await res.json().catch(() => null)) as unknown;
+    const context = {
+      label: `telegram-notify.${method}`,
+      provider: 'telegram',
+      endpoint: method,
+    };
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      {
+        timeoutMs: this.getTelegramTimeoutMs(),
+        logger: this.logger,
+        context,
+        metrics: this.metrics,
+      },
+    );
+    if (!res.ok) {
+      recordExternalRequest(
+        this.metrics,
+        context,
+        resultFromStatus(res.status, false),
+        res.status,
+      );
+      throw new Error(
+        await readResponseTextSafe(res, {
+          logger: this.logger,
+          context,
+        }),
+      );
+    }
+    const data = (await readResponseJsonSafe(res, {
+      logger: this.logger,
+      context,
+    })) as unknown;
     const payload = toRecord(data);
     if (!payload || payload.ok !== true) {
       const description = asString(payload?.description);
+      const errorCode = asNumber(payload?.error_code);
+      const rateLimited = res.status === 429 || errorCode === 429;
+      recordExternalRequest(
+        this.metrics,
+        context,
+        rateLimited ? 'rate_limited' : resultFromStatus(res.status, false),
+        res.status,
+      );
       throw new Error(description || 'Telegram API error');
     }
+    recordExternalRequest(
+      this.metrics,
+      context,
+      resultFromStatus(res.status, true),
+      res.status,
+    );
     return payload.result as T;
   }
 
@@ -300,13 +421,48 @@ export class TelegramNotifyService implements OnModuleInit {
     }
     try {
       if (!this.token) return null;
-      const res = await fetch(
+      const context = {
+        label: 'telegram-notify.getMe',
+        provider: 'telegram',
+        endpoint: 'getMe',
+      };
+      const res = await fetchWithTimeout(
         `https://api.telegram.org/bot${this.token}/getMe`,
+        undefined,
+        {
+          timeoutMs: this.getTelegramTimeoutMs(),
+          logger: this.logger,
+          context,
+          metrics: this.metrics,
+        },
       );
-      if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json().catch(() => null)) as unknown;
+      if (!res.ok) {
+        recordExternalRequest(
+          this.metrics,
+          context,
+          resultFromStatus(res.status, false),
+          res.status,
+        );
+        throw new Error(
+          await readResponseTextSafe(res, {
+            logger: this.logger,
+            context,
+          }),
+        );
+      }
+      const data = (await readResponseJsonSafe(res, {
+        logger: this.logger,
+        context,
+      })) as unknown;
       const payload = toRecord(data);
-      if (!payload || payload.ok !== true) return null;
+      const ok = res.ok && payload?.ok === true;
+      recordExternalRequest(
+        this.metrics,
+        context,
+        resultFromStatus(res.status, ok),
+        res.status,
+      );
+      if (!ok) return null;
       const result = toRecord(payload.result);
       const id = asNumber(result?.id);
       const username = asString(result?.username);
@@ -429,7 +585,16 @@ export class TelegramNotifyService implements OnModuleInit {
     // Find invite
     const invite = await this.prisma.telegramStaffInvite
       .findFirst({ where: { token } })
-      .catch(() => null);
+      .catch((err) => {
+        logIgnoredError(
+          err,
+          'TelegramNotifyService find invite',
+          this.logger,
+          'debug',
+          { token },
+        );
+        return null;
+      });
     if (!invite) {
       await this.sendMessage(
         chat.id,
@@ -453,7 +618,16 @@ export class TelegramNotifyService implements OnModuleInit {
         },
         data: { expiresAt: now },
       })
-      .catch(() => ({ count: 0 }));
+      .catch((err) => {
+        logIgnoredError(
+          err,
+          'TelegramNotifyService claim invite',
+          this.logger,
+          'debug',
+          { inviteId: invite.id, merchantId: invite.merchantId },
+        );
+        return { count: 0 };
+      });
     if (!claimed?.count) {
       await this.sendMessage(
         chat.id,
@@ -479,7 +653,16 @@ export class TelegramNotifyService implements OnModuleInit {
           merchantId_chatId: { merchantId: invite.merchantId, chatId },
         },
       })
-      .catch(() => null);
+      .catch((err) => {
+        logIgnoredError(
+          err,
+          'TelegramNotifyService find subscriber',
+          this.logger,
+          'debug',
+          { merchantId: invite.merchantId, chatId },
+        );
+        return null;
+      });
     if (existing?.isActive) {
       await this.sendMessage(
         chat.id,

@@ -12,6 +12,7 @@ import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../shared/pg-lock.util';
 import { getRulesSection } from '../shared/rules-json.util';
 import { AppConfigService } from '../core/config/app-config.service';
 import { logIgnoredError } from '../shared/logging/ignore-error.util';
+import { asRecord as asRecordShared } from '../shared/common/input.util';
 
 type ReminderConfig = {
   merchantId: string;
@@ -46,10 +47,7 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   private asRecord(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-    return value as Record<string, unknown>;
+    return asRecordShared(value);
   }
 
   private toBool(value: unknown, fallback = false): boolean {
@@ -378,12 +376,7 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
         year: 'numeric',
       }).format(date);
     } catch (err) {
-      logIgnoredError(
-        err,
-        'points-ttl format burn date',
-        this.logger,
-        'debug',
-      );
+      logIgnoredError(err, 'points-ttl format burn date', this.logger, 'debug');
       return date.toISOString().slice(0, 10);
     }
   }

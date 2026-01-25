@@ -55,16 +55,19 @@ export class PortalSettingsUseCase {
     req: PortalRequest,
     body: UpdateStaffMotivationPayload,
   ) {
-    return this.staffMotivation.updateSettings(this.helpers.getMerchantId(req), {
-      enabled: !!body?.enabled,
-      pointsForNewCustomer: Number(body?.pointsForNewCustomer ?? 0),
-      pointsForExistingCustomer: Number(body?.pointsForExistingCustomer ?? 0),
-      leaderboardPeriod: body?.leaderboardPeriod ?? 'week',
-      customDays:
-        body?.customDays === undefined || body?.customDays === null
-          ? null
-          : Number(body.customDays),
-    });
+    return this.staffMotivation.updateSettings(
+      this.helpers.getMerchantId(req),
+      {
+        enabled: !!body?.enabled,
+        pointsForNewCustomer: Number(body?.pointsForNewCustomer ?? 0),
+        pointsForExistingCustomer: Number(body?.pointsForExistingCustomer ?? 0),
+        leaderboardPeriod: body?.leaderboardPeriod ?? 'week',
+        customDays:
+          body?.customDays === undefined || body?.customDays === null
+            ? null
+            : Number(body.customDays),
+      },
+    );
   }
 
   referralProgramSettings(req: PortalRequest) {

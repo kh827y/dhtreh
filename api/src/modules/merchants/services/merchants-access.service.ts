@@ -4,7 +4,12 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Prisma, Staff, StaffOutletAccessStatus, StaffStatus } from '@prisma/client';
+import {
+  Prisma,
+  Staff,
+  StaffOutletAccessStatus,
+  StaffStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
@@ -29,7 +34,12 @@ export class MerchantsAccessService {
   ) {}
 
   private logIgnored(err: unknown, context: string) {
-    logIgnoredError(err, `MerchantsAccessService ${context}`, undefined, 'debug');
+    logIgnoredError(
+      err,
+      `MerchantsAccessService ${context}`,
+      undefined,
+      'debug',
+    );
   }
 
   async getCashierCredentials(merchantId: string) {
@@ -970,9 +980,7 @@ export class MerchantsAccessService {
     const token = randomSessionToken();
     const hash = sha256(token);
     const now = new Date();
-    const ttlMs = rememberPin
-      ? 1000 * 60 * 60 * 24 * 180
-      : 1000 * 60 * 60 * 12;
+    const ttlMs = rememberPin ? 1000 * 60 * 60 * 24 * 180 : 1000 * 60 * 60 * 12;
     const [session] = await this.prisma.$transaction([
       this.prisma.cashierSession.create({
         data: {

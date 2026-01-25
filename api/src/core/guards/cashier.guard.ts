@@ -217,7 +217,12 @@ export class CashierGuard implements CanActivate {
             data: { revokedAt: now },
           });
         } catch (err) {
-          logIgnoredError(err, 'CashierGuard revoke device', undefined, 'debug');
+          logIgnoredError(
+            err,
+            'CashierGuard revoke device',
+            undefined,
+            'debug',
+          );
         }
         return null;
       }
@@ -293,12 +298,7 @@ export class CashierGuard implements CanActivate {
         merchantIdFromRequest,
       );
     } catch (err) {
-      logIgnoredError(
-        err,
-        'CashierGuard resolve session',
-        undefined,
-        'debug',
-      );
+      logIgnoredError(err, 'CashierGuard resolve session', undefined, 'debug');
       sessionContext = null;
     }
     if (!merchantIdFromRequest && sessionContext) {

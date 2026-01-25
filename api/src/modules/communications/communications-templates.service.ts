@@ -60,11 +60,9 @@ export class CommunicationsTemplatesService {
       templateId: template.id,
       channel: template.channel,
     });
-    safeMetric(
-      this.metrics,
-      'portal_communications_templates_changed_total',
-      { action: 'create' },
-    );
+    safeMetric(this.metrics, 'portal_communications_templates_changed_total', {
+      action: 'create',
+    });
     return template;
   }
 
@@ -102,11 +100,9 @@ export class CommunicationsTemplatesService {
       templateId,
       channel: updated.channel,
     });
-    safeMetric(
-      this.metrics,
-      'portal_communications_templates_changed_total',
-      { action: 'update' },
-    );
+    safeMetric(this.metrics, 'portal_communications_templates_changed_total', {
+      action: 'update',
+    });
     return updated;
   }
 
@@ -124,11 +120,9 @@ export class CommunicationsTemplatesService {
       merchantId,
       templateId,
     });
-    safeMetric(
-      this.metrics,
-      'portal_communications_templates_changed_total',
-      { action: 'archive' },
-    );
+    safeMetric(this.metrics, 'portal_communications_templates_changed_total', {
+      action: 'archive',
+    });
     return archived;
   }
 }

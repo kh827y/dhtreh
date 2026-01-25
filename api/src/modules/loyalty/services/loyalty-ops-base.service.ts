@@ -3,9 +3,7 @@ import { PrismaService } from '../../../core/prisma/prisma.service';
 import { MetricsService } from '../../../core/metrics/metrics.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
 import { TelegramStaffNotificationsService } from '../../telegram/staff-notifications.service';
-import {
-  PromoCodesService,
-} from '../../promocodes/promocodes.service';
+import { PromoCodesService } from '../../promocodes/promocodes.service';
 import { StaffMotivationEngine } from '../../staff-motivation/staff-motivation.engine';
 import { LoyaltyContextService } from './loyalty-context.service';
 import { LoyaltyTierService } from './loyalty-tier.service';
@@ -13,6 +11,10 @@ import { LoyaltyLotsService } from './loyalty-lots.service';
 import { LoyaltyQueriesService } from './loyalty-queries.service';
 import { LoyaltyReferralService } from './loyalty-referrals.service';
 import { LoyaltyRegistrationService } from './loyalty-registration.service';
+import {
+  allocateProRataWithCaps,
+  computeRedeemCaps,
+} from './loyalty-ops-math.util';
 import type {
   ActivePromotionRule,
   OptionalModelsClient,
@@ -22,6 +24,7 @@ import type {
   ResolvedPosition,
 } from './loyalty-ops.types';
 import { safeExecAsync } from '../../../shared/safe-exec';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import {
   HoldStatus,
   TxnType,
@@ -78,7 +81,10 @@ export class LoyaltyOpsBase {
   }) {
     const { customerId, merchantId, amount, orderId } = params;
     if (amount <= 0) throw new BadRequestException('Amount must be > 0');
-    const context = await this.context.ensureCustomerContext(merchantId, customerId);
+    const context = await this.context.ensureCustomerContext(
+      merchantId,
+      customerId,
+    );
     if (context.accrualsBlocked) {
       throw new BadRequestException('Начисления заблокированы администратором');
     }
@@ -258,7 +264,16 @@ export class LoyaltyOpsBase {
               where: { merchantId, externalId: { in: externalIds } },
               select: { externalId: true, productId: true },
             })
-            .catch(() => [])
+            .catch((err) => {
+              logIgnoredError(
+                err,
+                'LoyaltyOpsBase resolvePositions external mappings',
+                this.logger,
+                'debug',
+                { merchantId },
+              );
+              return [];
+            })
         : [];
     const mappedProductIds = externalMappings
       .map((item) => item.productId)
@@ -284,7 +299,16 @@ export class LoyaltyOpsBase {
                 redeemPercent: true,
               },
             })
-            .catch(() => [] as ProductLookup[])
+            .catch((err) => {
+              logIgnoredError(
+                err,
+                'LoyaltyOpsBase resolvePositions products by id',
+                this.logger,
+                'debug',
+                { merchantId },
+              );
+              return [] as ProductLookup[];
+            })
         : Promise.resolve([] as ProductLookup[]);
     const productsByExternalIdPromise: Promise<ProductExternalLookup[]> =
       externalIds.length
@@ -305,7 +329,16 @@ export class LoyaltyOpsBase {
                 externalId: true,
               },
             })
-            .catch(() => [] as ProductExternalLookup[])
+            .catch((err) => {
+              logIgnoredError(
+                err,
+                'LoyaltyOpsBase resolvePositions products by external id',
+                this.logger,
+                'debug',
+                { merchantId },
+              );
+              return [] as ProductExternalLookup[];
+            })
         : Promise.resolve([] as ProductExternalLookup[]);
     const promotionsPromise = this.loadActivePromotionRules(
       merchantId,
@@ -595,7 +628,16 @@ export class LoyaltyOpsBase {
           AND: [{ OR: [{ endAt: null }, { endAt: { gte: now } }] }],
         },
       })
-      .catch(() => []);
+      .catch((err) => {
+        logIgnoredError(
+          err,
+          'LoyaltyOpsBase loadActivePromotionRules',
+          this.logger,
+          'debug',
+          { merchantId },
+        );
+        return [];
+      });
     const rules: ActivePromotionRule[] = [];
     const toRecord = (value: unknown): Record<string, unknown> =>
       value && typeof value === 'object' && !Array.isArray(value)
@@ -752,7 +794,16 @@ export class LoyaltyOpsBase {
               rules: true,
             },
           })
-          .catch(() => [] as SegmentRow[])
+          .catch((err) => {
+            logIgnoredError(
+              err,
+              'LoyaltyOpsBase filterPromotions segments',
+              this.logger,
+              'debug',
+              { merchantId },
+            );
+            return [] as SegmentRow[];
+          })
       : Promise.resolve([] as SegmentRow[]);
     const membershipsPromise: Promise<MembershipRow[]> = segmentIds.length
       ? this.prisma.segmentCustomer
@@ -760,7 +811,16 @@ export class LoyaltyOpsBase {
             where: { segmentId: { in: segmentIds }, customerId },
             select: { segmentId: true },
           })
-          .catch(() => [] as MembershipRow[])
+          .catch((err) => {
+            logIgnoredError(
+              err,
+              'LoyaltyOpsBase filterPromotions memberships',
+              this.logger,
+              'debug',
+              { merchantId, customerId },
+            );
+            return [] as MembershipRow[];
+          })
       : Promise.resolve([] as MembershipRow[]);
     const usageStatsPromise: Promise<UsageRow[]> = usagePromoIds.length
       ? this.prisma.promotionParticipant
@@ -776,7 +836,16 @@ export class LoyaltyOpsBase {
               lastPurchaseAt: true,
             },
           })
-          .catch(() => [] as UsageRow[])
+          .catch((err) => {
+            logIgnoredError(
+              err,
+              'LoyaltyOpsBase filterPromotions usage stats',
+              this.logger,
+              'debug',
+              { merchantId, customerId },
+            );
+            return [] as UsageRow[];
+          })
       : Promise.resolve([] as UsageRow[]);
     const [segments, memberships, usageStats] = await Promise.all([
       segmentsPromise,
@@ -1060,112 +1129,6 @@ export class LoyaltyOpsBase {
     return { positions, info: Array.from(infoSet) };
   }
 
-  protected allocateProRata(amounts: number[], target: number): number[] {
-    const normalizedTarget = Math.max(0, Math.floor(Number(target) || 0));
-    const total = amounts.reduce(
-      (sum, v) => sum + Math.max(0, Math.floor(v)),
-      0,
-    );
-    if (total <= 0 || normalizedTarget <= 0) return amounts.map(() => 0);
-    const targetClamped = Math.min(normalizedTarget, total);
-    const shares = amounts.map((amount) =>
-      Math.floor((Math.max(0, Math.floor(amount)) * targetClamped) / total),
-    );
-    let distributed = shares.reduce((sum, v) => sum + v, 0);
-    let idx = 0;
-    while (distributed < targetClamped && idx < shares.length) {
-      const canAdd = Math.max(0, Math.floor(amounts[idx])) > 0;
-      if (canAdd) {
-        shares[idx] += 1;
-        distributed += 1;
-      }
-      idx = (idx + 1) % shares.length;
-    }
-    return shares;
-  }
-
-  protected allocateByWeight(weights: number[], total: number) {
-    const sanitizedWeights = weights.map((w) =>
-      Math.max(0, Math.floor(Number.isFinite(w) ? w : 0)),
-    );
-    const sum = sanitizedWeights.reduce((acc, v) => acc + v, 0);
-    if (sum <= 0 || total <= 0) return sanitizedWeights.map(() => 0);
-    const target = Math.max(0, Math.floor(total));
-    const shares = sanitizedWeights.map((w) => Math.floor((w * target) / sum));
-    let distributed = shares.reduce((acc, v) => acc + v, 0);
-    let idx = 0;
-    while (distributed < target && idx < shares.length) {
-      if (sanitizedWeights[idx] > 0) {
-        shares[idx] += 1;
-        distributed += 1;
-      }
-      idx = (idx + 1) % shares.length;
-    }
-    return shares;
-  }
-
-  protected normalizePercent(value: unknown, fallback = 100) {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return fallback;
-    return Math.min(100, Math.max(0, Math.round(num)));
-  }
-
-  protected computeRedeemCaps(items: ResolvedPosition[]) {
-    return items.map((item) => {
-      if (item.allowEarnAndPay === false) return 0;
-      const amount = Math.max(0, Math.floor(Number(item.amount || 0)));
-      if (amount <= 0) return 0;
-      const percent = this.normalizePercent(item.redeemPercent, 100);
-      return Math.floor((amount * percent) / 100);
-    });
-  }
-
-  protected allocateProRataWithCaps(
-    weights: number[],
-    caps: number[],
-    total: number,
-  ) {
-    const length = Math.min(weights.length, caps.length);
-    if (length <= 0) return [];
-    const shares = new Array<number>(length).fill(0);
-    const remainingCaps = caps
-      .slice(0, length)
-      .map((cap) => Math.max(0, Math.floor(Number(cap) || 0)));
-    let remaining = Math.max(0, Math.floor(Number(total) || 0));
-    if (!remaining) return shares;
-    const active = new Set<number>();
-    for (let i = 0; i < length; i += 1) {
-      const weight = Math.max(0, Math.floor(Number(weights[i]) || 0));
-      if (weight > 0 && remainingCaps[i] > 0) active.add(i);
-    }
-    while (remaining > 0 && active.size > 0) {
-      const activeIndices = Array.from(active);
-      const activeWeights = activeIndices.map((idx) =>
-        Math.max(0, Math.floor(Number(weights[idx]) || 0)),
-      );
-      const sumWeights = activeWeights.reduce((acc, v) => acc + v, 0);
-      if (sumWeights <= 0) break;
-      const provisional = this.allocateProRata(activeWeights, remaining);
-      let capped = false;
-      activeIndices.forEach((idx, pos) => {
-        const cap = remainingCaps[idx];
-        if (cap <= 0) {
-          active.delete(idx);
-          return;
-        }
-        const desired = provisional[pos] ?? 0;
-        const applied = Math.min(desired, cap);
-        if (desired > cap) capped = true;
-        shares[idx] += applied;
-        remainingCaps[idx] -= applied;
-        remaining -= applied;
-        if (remainingCaps[idx] <= 0) active.delete(idx);
-      });
-      if (!capped) break;
-    }
-    return shares;
-  }
-
   protected applyEarnAndRedeemToItems(
     items: ResolvedPosition[],
     earnBps: number,
@@ -1175,13 +1138,13 @@ export class LoyaltyOpsBase {
     if (!items.length) return 0;
     const allowEarn = opts?.allowEarn !== false;
     const amounts = items.map((i) => Math.max(0, i.amount || 0));
-    const caps = this.computeRedeemCaps(items);
+    const caps = computeRedeemCaps(items);
     const capsTotal = caps.reduce((sum, cap) => sum + cap, 0);
     const redeemTarget = Math.min(
       Math.max(0, Math.floor(Number(discountToApply) || 0)),
       capsTotal,
     );
-    const shares = this.allocateProRataWithCaps(amounts, caps, redeemTarget);
+    const shares = allocateProRataWithCaps(amounts, caps, redeemTarget);
     let totalEarn = 0;
     items.forEach((item, idx) => {
       const redeemShare = shares[idx] ?? 0;
@@ -1382,7 +1345,10 @@ export class LoyaltyOpsBase {
   }) {
     const { customerId, merchantId, amount, orderId } = params;
     if (amount <= 0) throw new BadRequestException('Amount must be > 0');
-    const context = await this.context.ensureCustomerContext(merchantId, customerId);
+    const context = await this.context.ensureCustomerContext(
+      merchantId,
+      customerId,
+    );
     if (context.redemptionsBlocked) {
       throw new BadRequestException('Списания заблокированы администратором');
     }
@@ -1439,7 +1405,10 @@ export class LoyaltyOpsBase {
     if (!customerId) throw new BadRequestException('customerId required');
     if (!code) throw new BadRequestException('code required');
 
-    const context = await this.context.ensureCustomerContext(merchantId, customerId);
+    const context = await this.context.ensureCustomerContext(
+      merchantId,
+      customerId,
+    );
     if (context.accrualsBlocked) {
       throw new BadRequestException('Начисления заблокированы администратором');
     }
@@ -1459,7 +1428,11 @@ export class LoyaltyOpsBase {
       }
 
       // Если старое назначение уровня истекло, пересчитываем актуальный уровень по сумме покупок
-      await this.tiers.refreshTierAssignmentIfExpired(tx, merchantId, customerId);
+      await this.tiers.refreshTierAssignmentIfExpired(
+        tx,
+        merchantId,
+        customerId,
+      );
 
       const promo = await this.promoCodes.requireActiveByCode(merchantId, code);
 
@@ -1783,5 +1756,4 @@ export class LoyaltyOpsBase {
       filters,
     );
   }
-
 }

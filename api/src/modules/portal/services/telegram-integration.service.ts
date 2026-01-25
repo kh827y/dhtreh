@@ -1,13 +1,23 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
+import { AppConfigService } from '../../../core/config/app-config.service';
+import { MetricsService } from '../../../core/metrics/metrics.service';
 import { TelegramBotService } from '../../telegram/telegram-bot.service';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
+import {
+  fetchWithTimeout,
+  recordExternalRequest,
+  readResponseJsonSafe,
+  readResponseTextSafe,
+  resultFromStatus,
+} from '../../../shared/http/external-http.util';
 
 export interface TelegramIntegrationState {
   enabled: boolean;
@@ -35,11 +45,14 @@ interface IntegrationTouchPayload {
 @Injectable()
 export class PortalTelegramIntegrationService {
   private readonly provider = 'TELEGRAM_MINI_APP';
+  private readonly logger = new Logger(PortalTelegramIntegrationService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegramBots: TelegramBotService,
     private readonly config: ConfigService,
+    private readonly appConfig: AppConfigService,
+    private readonly metrics: MetricsService,
   ) {}
 
   async getState(merchantId: string): Promise<TelegramIntegrationState> {
@@ -182,7 +195,16 @@ export class PortalTelegramIntegrationService {
         where: { id: merchantId },
         data: { telegramBotEnabled: false, telegramBotToken: null },
       })
-      .catch(() => null);
+      .catch((err) => {
+        logIgnoredError(
+          err,
+          'PortalTelegramIntegrationService disconnect merchant update',
+          this.logger,
+          'debug',
+          { merchantId },
+        );
+        return null;
+      });
     await this.prisma.merchantSettings
       .update({
         where: { merchantId },
@@ -192,7 +214,16 @@ export class PortalTelegramIntegrationService {
           miniappBaseUrl: null,
         },
       })
-      .catch(() => null);
+      .catch((err) => {
+        logIgnoredError(
+          err,
+          'PortalTelegramIntegrationService disconnect settings update',
+          this.logger,
+          'debug',
+          { merchantId },
+        );
+        return null;
+      });
     await this.touchIntegration(merchantId, {
       isActive: false,
       tokenMask: null,
@@ -234,7 +265,16 @@ export class PortalTelegramIntegrationService {
         merchant.telegramBot ||
         (await this.prisma.telegramBot
           .findUnique({ where: { merchantId } })
-          .catch(() => null));
+          .catch((err) => {
+            logIgnoredError(
+              err,
+              'PortalTelegramIntegrationService check bot row',
+              this.logger,
+              'debug',
+              { merchantId },
+            );
+            return null;
+          }));
       const expectedUrl =
         botRow?.webhookUrl || this.buildWebhookUrl(merchantId);
       healthy = Boolean(
@@ -251,7 +291,16 @@ export class PortalTelegramIntegrationService {
           where: { merchantId },
           data: { telegramBotUsername: username ?? null },
         })
-        .catch(() => null);
+        .catch((err) => {
+          logIgnoredError(
+            err,
+            'PortalTelegramIntegrationService check settings update',
+            this.logger,
+            'debug',
+            { merchantId },
+          );
+          return null;
+        });
       if (botRow) {
         await this.prisma.telegramBot
           .update({
@@ -262,7 +311,16 @@ export class PortalTelegramIntegrationService {
               webhookUrl: botRow.webhookUrl ?? expectedUrl ?? undefined,
             },
           })
-          .catch(() => null);
+          .catch((err) => {
+            logIgnoredError(
+              err,
+              'PortalTelegramIntegrationService check bot update',
+              this.logger,
+              'debug',
+              { merchantId },
+            );
+            return null;
+          });
       }
     } catch (error: unknown) {
       healthy = false;
@@ -321,7 +379,13 @@ export class PortalTelegramIntegrationService {
       url = url.replace('?merchant=', '/?merchant=');
     }
     const token = settings.telegramBotToken;
-    const res = await fetch(
+    const context = {
+      label: 'portal-telegram.setChatMenuButton',
+      merchantId,
+      provider: 'telegram',
+      endpoint: 'setChatMenuButton',
+    };
+    const res = await fetchWithTimeout(
       `https://api.telegram.org/bot${token}/setChatMenuButton`,
       {
         method: 'POST',
@@ -334,18 +398,43 @@ export class PortalTelegramIntegrationService {
           },
         }),
       },
+      {
+        timeoutMs: this.appConfig.getTelegramHttpTimeoutMs(),
+        logger: this.logger,
+        context,
+        metrics: this.metrics,
+      },
     );
     if (!res.ok) {
-      const txt = await res.text().catch(() => 'Telegram API error');
+      recordExternalRequest(
+        this.metrics,
+        context,
+        resultFromStatus(res.status, false),
+        res.status,
+      );
+      const txt = await readResponseTextSafe(res, {
+        logger: this.logger,
+        context,
+        fallback: 'Telegram API error',
+      });
       throw new BadRequestException(
         `Не удалось установить кнопку меню: ${txt}`,
       );
     }
-    const data: unknown = await res.json().catch(() => null);
+    const data: unknown = await readResponseJsonSafe(res, {
+      logger: this.logger,
+      context,
+    });
     const ok =
       data && typeof data === 'object' && 'ok' in data
         ? (data as { ok?: unknown }).ok
         : null;
+    recordExternalRequest(
+      this.metrics,
+      context,
+      resultFromStatus(res.status, ok === true),
+      res.status,
+    );
     if (ok !== true)
       throw new BadRequestException('Telegram API: setChatMenuButton failed');
     return { ok: true as const };

@@ -51,7 +51,8 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
     private readonly push: PushService,
     private readonly config: AppConfigService,
   ) {
-    const batchRaw = this.config.getNumber('AUTO_RETURN_BATCH_SIZE', 200) ?? 200;
+    const batchRaw =
+      this.config.getNumber('AUTO_RETURN_BATCH_SIZE', 200) ?? 200;
     this.batchLimit = Math.max(1, Math.floor(batchRaw));
   }
 

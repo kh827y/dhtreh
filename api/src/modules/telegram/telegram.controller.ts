@@ -34,7 +34,16 @@ export class TelegramController {
   ) {
     const bot = await this.prisma.telegramBot
       .findUnique({ where: { merchantId } })
-      .catch(() => null);
+      .catch((err) => {
+        logIgnoredError(
+          err,
+          'TelegramController webhook find bot',
+          undefined,
+          'debug',
+          { merchantId },
+        );
+        return null;
+      });
     if (!bot || !bot.isActive) return { ok: true };
     if (
       !bot.webhookSecret ||
@@ -53,12 +62,7 @@ export class TelegramController {
       try {
         this.metrics.inc('telegram_updates_failed_total');
       } catch (err) {
-        logIgnoredError(
-          err,
-          'TelegramController metrics',
-          undefined,
-          'debug',
-        );
+        logIgnoredError(err, 'TelegramController metrics', undefined, 'debug');
       }
       return { ok: true };
     }

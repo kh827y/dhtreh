@@ -35,8 +35,10 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
     const intervalMs =
-      this.config.getNumber('POINTS_TTL_BURN_INTERVAL_MS', 6 * 60 * 60 * 1000) ??
-      6 * 60 * 60 * 1000;
+      this.config.getNumber(
+        'POINTS_TTL_BURN_INTERVAL_MS',
+        6 * 60 * 60 * 1000,
+      ) ?? 6 * 60 * 60 * 1000;
     this.timer = setInterval(
       () =>
         this.tick().catch((err) =>

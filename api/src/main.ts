@@ -18,6 +18,7 @@ import { context as otelContext, trace as otelTrace } from '@opentelemetry/api';
 import { HttpErrorFilter } from './core/filters/http-error.filter';
 import { AppConfigService } from './core/config/app-config.service';
 import { logIgnoredError } from './shared/logging/ignore-error.util';
+import { asRecord } from './shared/common/input.util';
 
 type RequestLike = {
   headers?: Record<string, string | string[] | undefined>;
@@ -28,11 +29,6 @@ type RequestLike = {
 };
 
 type ExpressMiddleware = (req: unknown, res: unknown, next: () => void) => void;
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
 
 function readString(
   source: Record<string, unknown> | null,
@@ -282,7 +278,8 @@ async function bootstrap() {
   const rawPort =
     process.env.PORT ?? process.env.APP_PORT ?? process.env.API_PORT ?? '3000';
   const parsedPort = Number(rawPort);
-  const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3000;
+  const port =
+    Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3000;
   await app.listen(port);
   logger.log(`API on http://localhost:${port}`);
 }

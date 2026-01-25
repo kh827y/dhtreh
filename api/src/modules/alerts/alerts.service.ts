@@ -59,8 +59,7 @@ export class AlertsService {
   }
 
   getStatus() {
-    const sampleRate =
-      this.config.getNumber('ALERTS_5XX_SAMPLE_RATE', 0) ?? 0;
+    const sampleRate = this.config.getNumber('ALERTS_5XX_SAMPLE_RATE', 0) ?? 0;
     const chatMask = this.tgChatId
       ? `***${String(this.tgChatId).slice(-4)}`
       : null;
@@ -138,7 +137,8 @@ export class AlertsService {
     throttleMinutes?: number;
     force?: boolean;
   }): Promise<void> {
-    const env = this.config.getString('NODE_ENV', 'development') ?? 'development';
+    const env =
+      this.config.getString('NODE_ENV', 'development') ?? 'development';
     const version = this.config.getString('APP_VERSION', 'dev') ?? 'dev';
     const header = [`[${env}] ${params.title}`, `version: ${version}`];
     const text = [...header, ...params.lines.filter(Boolean)].join('\n');

@@ -23,6 +23,14 @@ import { LevelsModule } from '../levels/levels.module';
 import { LoyaltyEventsService } from './services/loyalty-events.service';
 import { LoyaltyContextService } from './services/loyalty-context.service';
 import { LoyaltyTierService } from './services/loyalty-tier.service';
+import { LoyaltyControllerSupportService } from './services/loyalty-controller-support.service';
+import { LoyaltyIdempotencyService } from './services/loyalty-idempotency.service';
+import { LoyaltyWebhookService } from './services/loyalty-webhook.service';
+import { LoyaltyCashierUseCase } from './use-cases/loyalty-cashier.use-case';
+import { LoyaltyMetaUseCase } from './use-cases/loyalty-meta.use-case';
+import { LoyaltyProfileUseCase } from './use-cases/loyalty-profile.use-case';
+import { LoyaltyTransactionsUseCase } from './use-cases/loyalty-transactions.use-case';
+import { LoyaltyPromotionsUseCase } from './use-cases/loyalty-promotions.use-case';
 
 @Module({
   imports: [
@@ -46,6 +54,14 @@ import { LoyaltyTierService } from './services/loyalty-tier.service';
     LoyaltyEventsService,
     LoyaltyContextService,
     LoyaltyTierService,
+    LoyaltyControllerSupportService,
+    LoyaltyIdempotencyService,
+    LoyaltyWebhookService,
+    LoyaltyCashierUseCase,
+    LoyaltyMetaUseCase,
+    LoyaltyProfileUseCase,
+    LoyaltyTransactionsUseCase,
+    LoyaltyPromotionsUseCase,
   ],
   controllers: [
     LoyaltyCashierController,

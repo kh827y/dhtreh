@@ -5,9 +5,7 @@ import type {
   TimeGrouping,
 } from '../../analytics/analytics.service';
 import type { OperationsLogFilters } from '../services/operations-log.service';
-import type {
-  ReferralProgramSettingsDto,
-} from '../../referral/referral.service';
+import type { ReferralProgramSettingsDto } from '../../referral/referral.service';
 import type { StaffNotifyActor } from '../../telegram/staff-notifications.service';
 import {
   assertPortalPermissions,
@@ -15,6 +13,12 @@ import {
 } from '../../portal-auth/portal-permissions.util';
 import { getRulesRoot } from '../../../shared/rules-json.util';
 import type { UpdateMerchantSettingsDto } from '../../merchants/dto';
+import {
+  asRecord as asRecordShared,
+  coerceCount as coerceCountShared,
+  coerceNumber as coerceNumberShared,
+  coerceString as coerceStringShared,
+} from '../../../shared/common/input.util';
 
 export type PortalPermissionsState = {
   allowAll?: boolean;
@@ -119,6 +123,32 @@ export class PortalControllerHelpers {
       throw new BadRequestException('Некорректный формат даты');
     }
     return parsed;
+  }
+
+  parseLimit(
+    value: string | number | undefined,
+    options?: { defaultValue?: number; min?: number; max?: number },
+  ): number {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    const fallback = options?.defaultValue ?? 50;
+    const min = options?.min ?? 1;
+    const max = options?.max ?? 200;
+    const resolved = Number.isFinite(parsed) ? parsed : fallback;
+    return Math.min(Math.max(resolved, min), max);
+  }
+
+  parseOptionalLimit(
+    value: string | number | undefined,
+    options?: { defaultValue?: number; min?: number; max?: number },
+  ): number | undefined {
+    if (value === undefined || value === null || value === '') return undefined;
+    return this.parseLimit(value, options);
+  }
+
+  parseOffset(value: string | number | undefined, defaultValue = 0): number {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    const resolved = Number.isFinite(parsed) ? parsed : defaultValue;
+    return Math.max(0, resolved);
   }
 
   normalizePromocodePayload(
@@ -276,17 +306,13 @@ export class PortalControllerHelpers {
     return { kind: 'MERCHANT' };
   }
 
-  normalizeDirection(
-    direction?: string,
-  ): OperationsLogFilters['direction'] {
+  normalizeDirection(direction?: string): OperationsLogFilters['direction'] {
     const upper = String(direction || '').toUpperCase();
     if (upper === 'EARN' || upper === 'REDEEM') return upper;
     return 'ALL';
   }
 
-  normalizeStaffStatus(
-    status?: string,
-  ): OperationsLogFilters['staffStatus'] {
+  normalizeStaffStatus(status?: string): OperationsLogFilters['staffStatus'] {
     const value = String(status || '').toLowerCase();
     if (value === 'current' || value === 'active') return 'current';
     if (value === 'former' || value === 'fired' || value === 'archived')
@@ -295,39 +321,22 @@ export class PortalControllerHelpers {
   }
 
   asRecord(value: unknown): Record<string, unknown> {
-    if (value && typeof value === 'object')
-      return value as Record<string, unknown>;
-    return {};
+    return asRecordShared(value) ?? {};
   }
 
   coerceCount(value: unknown): number {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return 0;
-    return Math.max(0, Math.round(num));
+    return coerceCountShared(value);
   }
 
   coerceNumber(value: unknown): number | null {
-    if (value === null || value === undefined || value === '') return null;
-    const num = Number(value);
-    if (!Number.isFinite(num)) return null;
-    return Math.round(num);
+    return coerceNumberShared(value);
   }
 
   coerceString(value: unknown): string | null {
-    if (value === null || value === undefined) return null;
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      return trimmed ? trimmed : null;
-    }
-    if (typeof value === 'number' || typeof value === 'bigint') {
-      return String(value);
-    }
-    return null;
+    return coerceStringShared(value);
   }
 
-  normalizeReferralProgramPayload(
-    body: unknown,
-  ): ReferralProgramSettingsDto {
+  normalizeReferralProgramPayload(body: unknown): ReferralProgramSettingsDto {
     const data = this.asRecord(body);
     const rewardTrigger: ReferralProgramSettingsDto['rewardTrigger'] =
       data.rewardTrigger === 'all' ? 'all' : 'first';
@@ -741,8 +750,7 @@ export class PortalControllerHelpers {
         getRulesRoot(currentSettings.rulesJson) ??
         (Array.isArray(currentSettings.rulesJson) ? {} : null);
       const nextRules =
-        getRulesRoot(dtoRulesJson) ??
-        (Array.isArray(dtoRulesJson) ? {} : null);
+        getRulesRoot(dtoRulesJson) ?? (Array.isArray(dtoRulesJson) ? {} : null);
       if (!currentRules || !nextRules) {
         if (
           this.stableStringify(currentSettings.rulesJson) !==

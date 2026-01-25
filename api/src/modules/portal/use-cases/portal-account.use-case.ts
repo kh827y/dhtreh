@@ -77,7 +77,9 @@ export class PortalAccountUseCase {
       actor,
       adminImpersonation: !!req.portalAdminImpersonation,
       staff,
-      permissions: this.helpers.normalizePortalPermissions(req.portalPermissions),
+      permissions: this.helpers.normalizePortalPermissions(
+        req.portalPermissions,
+      ),
     };
   }
 }

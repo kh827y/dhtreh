@@ -139,11 +139,9 @@ export class CommunicationsTasksService {
       channel: task.channel,
       scheduledAt: task.scheduledAt ?? null,
     });
-    safeMetric(
-      this.metrics,
-      'portal_communications_tasks_changed_total',
-      { action: 'duplicate' },
-    );
+    safeMetric(this.metrics, 'portal_communications_tasks_changed_total', {
+      action: 'duplicate',
+    });
     return task;
   }
 
@@ -172,11 +170,9 @@ export class CommunicationsTasksService {
       taskId,
       status: normalized,
     });
-    safeMetric(
-      this.metrics,
-      'portal_communications_tasks_changed_total',
-      { action: 'status' },
-    );
+    safeMetric(this.metrics, 'portal_communications_tasks_changed_total', {
+      action: 'status',
+    });
     return updated;
   }
 
@@ -187,11 +183,9 @@ export class CommunicationsTasksService {
       merchantId,
       taskId,
     });
-    safeMetric(
-      this.metrics,
-      'portal_communications_tasks_changed_total',
-      { action: 'delete' },
-    );
+    safeMetric(this.metrics, 'portal_communications_tasks_changed_total', {
+      action: 'delete',
+    });
     return { ok: true };
   }
 
@@ -340,11 +334,9 @@ export class CommunicationsTasksService {
       channel: task.channel,
       scheduledAt: task.scheduledAt ?? null,
     });
-    safeMetric(
-      this.metrics,
-      'portal_communications_tasks_changed_total',
-      { action: 'create' },
-    );
+    safeMetric(this.metrics, 'portal_communications_tasks_changed_total', {
+      action: 'create',
+    });
     return task;
   }
 

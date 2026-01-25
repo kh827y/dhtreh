@@ -3,18 +3,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  Prisma,
-  StaffStatus,
-  Transaction,
-  TxnType,
-  WalletType,
-} from '@prisma/client';
+import { Prisma, StaffStatus, TxnType, WalletType } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
 import { LoyaltyService } from '../../loyalty/services/loyalty.service';
 import { planRevoke, planUnconsume } from '../../loyalty/utils/lots.util';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
+import { asRecord as asRecordShared } from '../../../shared/common/input.util';
 
 export interface OperationsLogFilters {
   from?: string | Date;
@@ -75,6 +70,86 @@ export interface OperationDetailsDto {
   canCancel: boolean;
 }
 
+const receiptSelect = {
+  id: true,
+  merchantId: true,
+  createdAt: true,
+  orderId: true,
+  receiptNumber: true,
+  total: true,
+  redeemApplied: true,
+  earnApplied: true,
+  canceledAt: true,
+  customer: {
+    select: { id: true, name: true, phone: true },
+  },
+  staff: {
+    select: { id: true, firstName: true, lastName: true, status: true },
+  },
+  outlet: {
+    select: { id: true, name: true },
+  },
+  device: {
+    select: { id: true, code: true },
+  },
+  canceledBy: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      login: true,
+      email: true,
+    },
+  },
+} satisfies Prisma.ReceiptSelect;
+
+const transactionSelect = {
+  id: true,
+  merchantId: true,
+  customerId: true,
+  createdAt: true,
+  orderId: true,
+  type: true,
+  amount: true,
+  metadata: true,
+  canceledAt: true,
+  customer: {
+    select: { id: true, name: true, phone: true },
+  },
+  staff: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      login: true,
+      email: true,
+      status: true,
+    },
+  },
+  outlet: {
+    select: { id: true, name: true },
+  },
+  device: {
+    select: { id: true, code: true },
+  },
+  canceledBy: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      login: true,
+      email: true,
+    },
+  },
+} satisfies Prisma.TransactionSelect;
+
+type ReceiptListItem = Prisma.ReceiptGetPayload<{
+  select: typeof receiptSelect;
+}>;
+type TransactionListItem = Prisma.TransactionGetPayload<{
+  select: typeof transactionSelect;
+}>;
+
 @Injectable()
 export class OperationsLogService {
   constructor(
@@ -132,6 +207,7 @@ export class OperationsLogService {
         ? await this.prisma.receipt.findMany({
             where: receiptWhere,
             select: { orderId: true },
+            distinct: ['orderId'],
           })
         : [];
     const receiptOrderIdSet = new Set(
@@ -157,65 +233,17 @@ export class OperationsLogService {
             where: receiptWhere,
             orderBy: { createdAt: 'desc' },
             take: fetchLimit,
-            include: {
-              customer: true,
-              staff: true,
-              outlet: true,
-              device: true,
-              canceledBy: true,
-            },
+            select: receiptSelect,
           })
-        : Promise.resolve(
-            [] as Prisma.ReceiptGetPayload<{
-              include: {
-                customer: true;
-                staff: true;
-                outlet: true;
-                device: true;
-                canceledBy: true;
-              };
-            }>[],
-          ),
+        : Promise.resolve([] as ReceiptListItem[]),
       includeTransactions
         ? this.prisma.transaction.findMany({
             where: transactionWhere,
             orderBy: { createdAt: 'desc' },
             take: fetchLimit,
-            include: {
-              customer: true,
-              staff: true,
-              outlet: true,
-              device: true,
-              canceledBy: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  login: true,
-                  email: true,
-                },
-              },
-            },
+            select: transactionSelect,
           })
-        : Promise.resolve(
-            [] as Prisma.TransactionGetPayload<{
-              include: {
-                customer: true;
-                staff: true;
-                outlet: true;
-                device: true;
-                canceledBy: {
-                  select: {
-                    id: true;
-                    firstName: true;
-                    lastName: true;
-                    login: true;
-                    email: true;
-                  };
-                };
-              };
-            }>[],
-          ),
+        : Promise.resolve([] as TransactionListItem[]),
     ]);
 
     const ratingOrderIds = Array.from(
@@ -620,23 +648,7 @@ export class OperationsLogService {
   }
 
   private mapTransaction(
-    tx: Prisma.TransactionGetPayload<{
-      include: {
-        customer: true;
-        staff: true;
-        outlet: true;
-        device: true;
-        canceledBy: {
-          select: {
-            id: true;
-            firstName: true;
-            lastName: true;
-            login: true;
-            email: true;
-          };
-        };
-      };
-    }>,
+    tx: TransactionListItem,
     rating: number | null,
   ): OperationsLogItemDto | null {
     const amount = Number(tx.amount ?? 0);
@@ -732,11 +744,7 @@ export class OperationsLogService {
   }
 
   private describeTransaction(
-    tx:
-      | Prisma.TransactionGetPayload<{
-          include: { customer: true; staff: true; outlet: true };
-        }>
-      | Transaction,
+    tx: Pick<TransactionListItem, 'amount' | 'type' | 'orderId'>,
     metadata: Record<string, unknown> | null,
   ): {
     details: string;
@@ -859,11 +867,7 @@ export class OperationsLogService {
   }
 
   private asRecord(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object') {
-      return null;
-    }
-    if (Array.isArray(value)) return null;
-    return value as Record<string, unknown>;
+    return asRecordShared(value);
   }
 
   private parseAmount(value: unknown): number | null {
@@ -879,13 +883,7 @@ export class OperationsLogService {
   ): Promise<OperationDetailsDto> {
     const receipt = await this.prisma.receipt.findUnique({
       where: { id: operationId },
-      include: {
-        customer: true,
-        staff: true,
-        outlet: true,
-        device: true,
-        canceledBy: true,
-      },
+      select: receiptSelect,
     });
 
     if (receipt && receipt.merchantId === merchantId) {
@@ -920,21 +918,7 @@ export class OperationsLogService {
 
     const transaction = await this.prisma.transaction.findUnique({
       where: { id: operationId },
-      include: {
-        customer: true,
-        staff: true,
-        outlet: true,
-        device: true,
-        canceledBy: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            login: true,
-            email: true,
-          },
-        },
-      },
+      select: transactionSelect,
     });
 
     if (!transaction || transaction.merchantId !== merchantId) {
@@ -976,13 +960,7 @@ export class OperationsLogService {
   ): Promise<OperationsLogItemDto> {
     const receipt = await this.prisma.receipt.findUnique({
       where: { id: operationId },
-      include: {
-        customer: true,
-        staff: true,
-        outlet: true,
-        device: true,
-        canceledBy: true,
-      },
+      select: receiptSelect,
     });
 
     if (receipt && receipt.merchantId === merchantId) {
@@ -994,15 +972,7 @@ export class OperationsLogService {
 
   private async cancelReceiptInternal(
     merchantId: string,
-    receipt: Prisma.ReceiptGetPayload<{
-      include: {
-        customer: true;
-        staff: true;
-        outlet: true;
-        device: true;
-        canceledBy: true;
-      };
-    }>,
+    receipt: ReceiptListItem,
     staffId?: string | null,
   ): Promise<OperationsLogItemDto> {
     if (receipt.canceledAt) {
@@ -1038,13 +1008,7 @@ export class OperationsLogService {
         canceledAt: new Date(),
         canceledByStaffId: staffId ?? null,
       },
-      include: {
-        customer: true,
-        staff: true,
-        outlet: true,
-        device: true,
-        canceledBy: true,
-      },
+      select: receiptSelect,
     });
 
     const ratings = await this.fetchRatings(
@@ -1062,21 +1026,7 @@ export class OperationsLogService {
   ): Promise<OperationsLogItemDto> {
     const existing = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
-      include: {
-        customer: true,
-        staff: true,
-        outlet: true,
-        device: true,
-        canceledBy: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            login: true,
-            email: true,
-          },
-        },
-      },
+      select: transactionSelect,
     });
 
     if (!existing || existing.merchantId !== merchantId) {
@@ -1329,15 +1279,7 @@ export class OperationsLogService {
   }
 
   private mapReceipt(
-    receipt: Prisma.ReceiptGetPayload<{
-      include: {
-        customer: true;
-        staff: true;
-        outlet: true;
-        device: true;
-        canceledBy: true;
-      };
-    }>,
+    receipt: ReceiptListItem,
     rating: number | null,
   ): OperationsLogItemDto {
     const staffName = receipt.staff
@@ -1407,9 +1349,7 @@ export class OperationsLogService {
   }
 
   private buildCarrier(
-    receipt: Prisma.ReceiptGetPayload<{
-      include: { customer: true; outlet: true; device: true; canceledBy: true };
-    }>,
+    receipt: ReceiptListItem,
   ): OperationsLogItemDto['carrier'] {
     const devCode = receipt.device?.code ? String(receipt.device.code) : null;
     if (devCode) {

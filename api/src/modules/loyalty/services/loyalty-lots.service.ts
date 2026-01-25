@@ -1,10 +1,7 @@
 import { Prisma, WalletType } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { planConsume, planRevoke, planUnconsume } from '../utils/lots.util';
-import type {
-  OptionalModelsClient,
-  PrismaTx,
-} from './loyalty-ops.types';
+import type { OptionalModelsClient, PrismaTx } from './loyalty-ops.types';
 
 export class LoyaltyLotsService {
   constructor(private readonly prisma: PrismaService) {}

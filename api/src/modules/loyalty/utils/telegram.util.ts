@@ -51,7 +51,12 @@ export function validateTelegramInitData(
     }
     return { ok: false };
   } catch (err) {
-    logIgnoredError(err, 'telegram util validate init data', undefined, 'debug');
+    logIgnoredError(
+      err,
+      'telegram util validate init data',
+      undefined,
+      'debug',
+    );
     return { ok: false };
   }
 }

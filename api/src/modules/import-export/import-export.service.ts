@@ -118,7 +118,8 @@ export class ImportExportService {
     const data = settings as Record<string, unknown>;
     const format =
       data.format === 'csv' || data.format === 'excel' ? data.format : null;
-    const rawBase64 = typeof data.dataBase64 === 'string' ? data.dataBase64 : '';
+    const rawBase64 =
+      typeof data.dataBase64 === 'string' ? data.dataBase64 : '';
     if (!format || !rawBase64) {
       throw new BadRequestException('Import settings are invalid');
     }
@@ -205,7 +206,9 @@ export class ImportExportService {
         ? (job.errorSummary as Array<{ row: number; error: string }>)
         : [];
       const stats =
-        job.metrics && job.metrics.stats && typeof job.metrics.stats === 'object'
+        job.metrics &&
+        job.metrics.stats &&
+        typeof job.metrics.stats === 'object'
           ? (job.metrics.stats as Record<string, unknown>)
           : null;
       return {
@@ -1389,12 +1392,7 @@ export class ImportExportService {
         },
       });
     } catch (err) {
-      logIgnoredError(
-        err,
-        'ImportExportService sync log',
-        undefined,
-        'debug',
-      );
+      logIgnoredError(err, 'ImportExportService sync log', undefined, 'debug');
     }
   }
 
@@ -1431,7 +1429,12 @@ export class ImportExportService {
     try {
       return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
     } catch (err) {
-      logIgnoredError(err, 'ImportExportService toJsonValue', undefined, 'debug');
+      logIgnoredError(
+        err,
+        'ImportExportService toJsonValue',
+        undefined,
+        'debug',
+      );
       if (
         typeof value === 'string' ||
         typeof value === 'number' ||

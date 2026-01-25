@@ -22,10 +22,11 @@ export class PortalPromocodesUseCase {
     limitStr?: string,
     offsetStr?: string,
   ) {
-    const limit = limitStr
-      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
-      : 50;
-    const offset = offsetStr ? Math.max(parseInt(offsetStr, 10) || 0, 0) : 0;
+    const limit = this.helpers.parseLimit(limitStr, {
+      defaultValue: 50,
+      max: 200,
+    });
+    const offset = this.helpers.parseOffset(offsetStr);
     return this.promoCodes.listForPortal(
       this.helpers.getMerchantId(req),
       status,

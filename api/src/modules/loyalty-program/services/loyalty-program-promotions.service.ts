@@ -23,7 +23,10 @@ import {
   readString,
 } from '../loyalty-program.utils';
 import { logEvent, safeMetric } from '../../../shared/logging/event-log.util';
-import { ensureMetadataVersion } from '../../../shared/metadata.util';
+import {
+  ensureMetadataVersion,
+  upgradeMetadata,
+} from '../../../shared/metadata.util';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 
 type PromotionRecord = Prisma.LoyaltyPromotionGetPayload<object>;
@@ -59,7 +62,9 @@ const toCreateJson = (
   value: unknown,
 ): Prisma.InputJsonValue | Prisma.NullTypes.JsonNull => {
   if (value === null || value === undefined) return Prisma.JsonNull;
-  return ensureMetadataVersion(value as Prisma.InputJsonValue) as Prisma.InputJsonValue;
+  return ensureMetadataVersion(
+    value as Prisma.InputJsonValue,
+  ) as Prisma.InputJsonValue;
 };
 
 const toUpdateJson = (
@@ -67,7 +72,9 @@ const toUpdateJson = (
 ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined => {
   if (value === undefined) return undefined;
   if (value === null) return Prisma.DbNull;
-  return ensureMetadataVersion(value as Prisma.InputJsonValue) as Prisma.InputJsonValue;
+  return ensureMetadataVersion(
+    value as Prisma.InputJsonValue,
+  ) as Prisma.InputJsonValue;
 };
 
 @Injectable()
@@ -117,6 +124,36 @@ export class LoyaltyProgramPromotionsService {
     }
   }
 
+  private async backfillPromotionMetadata(promotions: PromotionRecord[]) {
+    const tasks: Array<Promise<unknown>> = [];
+    for (const promotion of promotions) {
+      const upgrade = upgradeMetadata(
+        promotion.metadata as Prisma.InputJsonValue | null,
+      );
+      if (!upgrade.changed) continue;
+      promotion.metadata = (upgrade.value ?? null) as Prisma.JsonValue | null;
+      tasks.push(
+        this.prisma.loyaltyPromotion
+          .update({
+            where: { id: promotion.id },
+            data: { metadata: upgrade.value as Prisma.InputJsonValue },
+          })
+          .catch((err) =>
+            logIgnoredError(
+              err,
+              'LoyaltyProgramPromotionsService backfill metadata',
+              this.logger,
+              'debug',
+              { promotionId: promotion.id, merchantId: promotion.merchantId },
+            ),
+          ),
+      );
+    }
+    if (tasks.length) {
+      await Promise.all(tasks);
+    }
+  }
+
   private async refreshPromotionNotifications(
     merchantId: string,
     promotion: PromotionRecord,
@@ -153,7 +190,10 @@ export class LoyaltyProgramPromotionsService {
         }
       }
       if (when !== undefined) {
-        const text = this.promotionRules.resolvePromotionText(promotion, 'start');
+        const text = this.promotionRules.resolvePromotionText(
+          promotion,
+          'start',
+        );
         // PUSH — шедулим даже без шаблона, текст берём из payload
         if (
           !(await this.promotionRules.taskExists({
@@ -279,6 +319,7 @@ export class LoyaltyProgramPromotionsService {
         },
       },
     });
+    await this.backfillPromotionMetadata(promotions);
 
     const revenueMap = await this.computePromotionRedeemRevenue(
       merchantId,
@@ -729,6 +770,7 @@ export class LoyaltyProgramPromotionsService {
       },
     });
     if (!promotion) throw new NotFoundException('Акция не найдена');
+    await this.backfillPromotionMetadata([promotion]);
 
     if (promotion.rewardType === PromotionRewardType.POINTS) {
       const revenueMap = await this.computePromotionRedeemRevenue(merchantId, [
@@ -821,10 +863,8 @@ export class LoyaltyProgramPromotionsService {
       where: { merchantId, id: { in: list } },
       data: {
         status: normalized,
-        launchedAt:
-          normalized === PromotionStatus.ACTIVE ? now : undefined,
-        archivedAt:
-          normalized === PromotionStatus.ARCHIVED ? now : undefined,
+        launchedAt: normalized === PromotionStatus.ACTIVE ? now : undefined,
+        archivedAt: normalized === PromotionStatus.ARCHIVED ? now : undefined,
         updatedById: actorId ?? undefined,
       },
     });

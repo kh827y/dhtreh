@@ -26,6 +26,15 @@ const formatError = (err: unknown): string => {
   }
 };
 
+const formatContext = (context?: Record<string, unknown>): string | null => {
+  if (!context) return null;
+  try {
+    return JSON.stringify(context);
+  } catch (_err) {
+    return null;
+  }
+};
+
 const resolveLogger = (logger?: LoggerLike) => {
   if (logger) return logger;
   return defaultLogger;
@@ -52,9 +61,12 @@ export const logIgnoredError = (
   message?: string,
   logger?: LoggerLike,
   level: 'warn' | 'debug' = 'warn',
+  context?: Record<string, unknown>,
 ) => {
   const prefix = message ? `${message}: ` : '';
-  const line = `${prefix}${formatError(err)}`;
+  const base = `${prefix}${formatError(err)}`;
+  const contextLine = formatContext(context);
+  const line = contextLine ? `${base} | context=${contextLine}` : base;
   try {
     logWithLevel(resolveLogger(logger), level, line);
   } catch (_err) {

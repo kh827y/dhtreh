@@ -33,13 +33,19 @@ export class MerchantsPortalAuthService {
       const generateSecret = (authenticator as { generateSecret?: unknown })
         .generateSecret;
       const verify = (authenticator as { verify?: unknown }).verify;
-      if (typeof generateSecret !== 'function' || typeof verify !== 'function') {
+      if (
+        typeof generateSecret !== 'function' ||
+        typeof verify !== 'function'
+      ) {
         return null;
       }
       return {
         authenticator: {
           generateSecret: generateSecret as () => string,
-          verify: verify as (opts: { token: string; secret: string }) => boolean,
+          verify: verify as (opts: {
+            token: string;
+            secret: string;
+          }) => boolean,
         },
       };
     } catch (err) {

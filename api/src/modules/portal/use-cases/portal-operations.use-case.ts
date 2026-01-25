@@ -33,15 +33,22 @@ export class PortalOperationsUseCase {
     offsetStr?: string,
     before?: string,
   ) {
-    const offset = this.helpers.getTimezoneOffsetMinutes(req);
+    const tzOffset = this.helpers.getTimezoneOffsetMinutes(req);
     const fromDate = from
-      ? this.helpers.parseLocalDate(from, offset, false)
+      ? this.helpers.parseLocalDate(from, tzOffset, false)
       : undefined;
-    const toDate = to ? this.helpers.parseLocalDate(to, offset, true) : undefined;
+    const toDate = to
+      ? this.helpers.parseLocalDate(to, tzOffset, true)
+      : undefined;
     const beforeDate = before ? new Date(before) : undefined;
     if (before && Number.isNaN(beforeDate?.getTime() ?? NaN)) {
       throw new BadRequestException('before is invalid');
     }
+    const limit = this.helpers.parseLimit(limitStr, {
+      defaultValue: 25,
+      max: 200,
+    });
+    const offset = this.helpers.parseOffset(offsetStr);
     const filters: OperationsLogFilters = {
       from: fromDate || undefined,
       to: toDate || undefined,
@@ -54,14 +61,17 @@ export class PortalOperationsUseCase {
       receiptNumber: receiptNumber || undefined,
       operationType: operationType || undefined,
       carrier: carrier || undefined,
-      limit: limitStr ? parseInt(limitStr, 10) : undefined,
-      offset: offsetStr ? parseInt(offsetStr, 10) : undefined,
+      limit,
+      offset,
     };
     return this.operations.list(this.helpers.getMerchantId(req), filters);
   }
 
   getOperationDetails(req: PortalRequest, receiptId: string) {
-    return this.operations.getDetails(this.helpers.getMerchantId(req), receiptId);
+    return this.operations.getDetails(
+      this.helpers.getMerchantId(req),
+      receiptId,
+    );
   }
 
   cancelOperation(req: PortalRequest, receiptId: string) {
@@ -82,9 +92,10 @@ export class PortalOperationsUseCase {
     staffId?: string,
   ) {
     const id = this.helpers.getMerchantId(req);
-    const limit = limitStr
-      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
-      : 50;
+    const limit = this.helpers.parseLimit(limitStr, {
+      defaultValue: 50,
+      max: 200,
+    });
     const before = this.helpers.parseDateParam(req, beforeStr, true);
     const from = this.helpers.parseDateParam(req, fromStr, false);
     const to = this.helpers.parseDateParam(req, toStr, true);
@@ -108,9 +119,10 @@ export class PortalOperationsUseCase {
     customerId?: string,
   ) {
     const id = this.helpers.getMerchantId(req);
-    const limit = limitStr
-      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
-      : 50;
+    const limit = this.helpers.parseLimit(limitStr, {
+      defaultValue: 50,
+      max: 200,
+    });
     const before = this.helpers.parseDateParam(req, beforeStr, true);
     return this.merchants.listReceipts(id, {
       limit,
@@ -130,9 +142,10 @@ export class PortalOperationsUseCase {
     type?: string,
   ) {
     const id = this.helpers.getMerchantId(req);
-    const limit = limitStr
-      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500)
-      : 50;
+    const limit = this.helpers.parseLimit(limitStr, {
+      defaultValue: 50,
+      max: 500,
+    });
     const before = this.helpers.parseDateParam(req, beforeStr, true);
     const from = this.helpers.parseDateParam(req, fromStr, false);
     const to = this.helpers.parseDateParam(req, toStr, true);

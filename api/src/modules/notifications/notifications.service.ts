@@ -34,7 +34,12 @@ export class NotificationsService {
       if (normalized === null) return Prisma.JsonNull;
       return normalized as Prisma.InputJsonValue;
     } catch (err) {
-      logIgnoredError(err, 'NotificationsService toJsonValue', undefined, 'debug');
+      logIgnoredError(
+        err,
+        'NotificationsService toJsonValue',
+        undefined,
+        'debug',
+      );
       return Prisma.JsonNull;
     }
   }
@@ -79,12 +84,7 @@ export class NotificationsService {
     try {
       this.metrics.inc('notifications_enqueued_total', { type: channel });
     } catch (err) {
-      logIgnoredError(
-        err,
-        'NotificationsService metrics',
-        undefined,
-        'debug',
-      );
+      logIgnoredError(err, 'NotificationsService metrics', undefined, 'debug');
     }
     return { ok: true };
   }
@@ -127,12 +127,7 @@ export class NotificationsService {
     try {
       this.metrics.inc('notifications_enqueued_total', { type: channel });
     } catch (err) {
-      logIgnoredError(
-        err,
-        'NotificationsService metrics',
-        undefined,
-        'debug',
-      );
+      logIgnoredError(err, 'NotificationsService metrics', undefined, 'debug');
     }
     return { ok: true };
   }

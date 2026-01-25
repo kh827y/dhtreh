@@ -20,9 +20,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import {
-  PortalPermissionsHandled,
-} from '../../portal-auth/portal-permissions.util';
+import { PortalPermissionsHandled } from '../../portal-auth/portal-permissions.util';
 import {
   MerchantSettingsRespDto,
   UpdateMerchantSettingsDto,

@@ -154,7 +154,12 @@ export class AntiFraudGuard implements CanActivate {
             resolvedDeviceId = hold.deviceId || resolvedDeviceId;
           }
         } catch (err) {
-          logIgnoredError(err, 'AntiFraudGuard hold lookup', undefined, 'debug');
+          logIgnoredError(
+            err,
+            'AntiFraudGuard hold lookup',
+            undefined,
+            'debug',
+          );
         }
       }
     }
@@ -323,12 +328,7 @@ export class AntiFraudGuard implements CanActivate {
         } as const;
       }
     } catch (err) {
-      logIgnoredError(
-        err,
-        'AntiFraudGuard rules config',
-        undefined,
-        'debug',
-      );
+      logIgnoredError(err, 'AntiFraudGuard rules config', undefined, 'debug');
     }
 
     const now = Date.now();

@@ -23,7 +23,12 @@ export class LoyaltyQueriesService {
         select: { id: true, merchantId: true },
       })
       .catch((err) => {
-        logIgnoredError(err, 'LoyaltyQueriesService balance', this.logger, 'debug');
+        logIgnoredError(
+          err,
+          'LoyaltyQueriesService balance',
+          this.logger,
+          'debug',
+        );
         return null;
       });
     if (!customer || customer.merchantId !== merchantId)

@@ -1,12 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { MetricsService } from '../../../core/metrics/metrics.service';
-import {
-  PromoCodesService,
-} from '../../promocodes/promocodes.service';
-import {
-  TelegramStaffNotificationsService,
-} from '../../telegram/staff-notifications.service';
+import { PromoCodesService } from '../../promocodes/promocodes.service';
+import { TelegramStaffNotificationsService } from '../../telegram/staff-notifications.service';
 import { StaffMotivationEngine } from '../../staff-motivation/staff-motivation.engine';
 import { LoyaltyContextService } from './loyalty-context.service';
 import { LoyaltyTierService } from './loyalty-tier.service';

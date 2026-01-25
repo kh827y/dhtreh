@@ -2,9 +2,11 @@ import { BadRequestException } from '@nestjs/common';
 import { HoldMode, HoldStatus, WalletType } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { safeExecAsync } from '../../../shared/safe-exec';
+import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import { Mode, QuoteDto } from '../dto/dto';
 import { ensureBaseTier } from '../utils/tier-defaults.util';
 import { LoyaltyOpsBase } from './loyalty-ops-base.service';
+import { allocateByWeight } from './loyalty-ops-math.util';
 import type {
   PositionInput,
   QrMeta,
@@ -79,7 +81,16 @@ export class LoyaltyQuoteService extends LoyaltyOpsBase {
       },
       'debug',
     );
-    await ensureBaseTier(this.prisma, dto.merchantId).catch(() => null);
+    await ensureBaseTier(this.prisma, dto.merchantId).catch((err) => {
+      logIgnoredError(
+        err,
+        'LoyaltyQuoteService ensureBaseTier',
+        this.logger,
+        'debug',
+        { merchantId: dto.merchantId },
+      );
+      return null;
+    });
     const {
       redeemCooldownSec,
       earnCooldownSec,
@@ -321,7 +332,16 @@ export class LoyaltyQuoteService extends LoyaltyOpsBase {
                 },
               },
             })
-            .catch(() => null),
+            .catch((err) => {
+              logIgnoredError(
+                err,
+                'LoyaltyQuoteService redeem receipt lookup',
+                this.logger,
+                'debug',
+                { merchantId: dto.merchantId, orderId: dto.orderId },
+              );
+              return null;
+            }),
         ]);
         if (
           existingEarnHold ||
@@ -611,7 +631,16 @@ export class LoyaltyQuoteService extends LoyaltyOpsBase {
               },
             },
           })
-          .catch(() => null),
+          .catch((err) => {
+            logIgnoredError(
+              err,
+              'LoyaltyQuoteService earn receipt lookup',
+              this.logger,
+              'debug',
+              { merchantId: dto.merchantId, orderId: dto.orderId },
+            );
+            return null;
+          }),
       ]);
       if (
         existingRedeemHold ||
@@ -712,7 +741,7 @@ export class LoyaltyQuoteService extends LoyaltyOpsBase {
             ),
           ),
         );
-        const redistributed = this.allocateByWeight(weights, cappedTotal);
+        const redistributed = allocateByWeight(weights, cappedTotal);
         redistributed.forEach((value, idx) => {
           itemsForCalc[idx].earnPoints = value;
         });

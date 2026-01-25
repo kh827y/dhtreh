@@ -17,6 +17,7 @@ import { isSystemAllAudience } from '../customer-audiences/audience.utils';
 import { applyCurlyPlaceholders } from './message-placeholders';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { logIgnoredError } from '../../shared/logging/ignore-error.util';
+import { asRecord as asRecordShared } from '../../shared/common/input.util';
 
 type TelegramRecipient = {
   customerId: string;
@@ -137,7 +138,7 @@ export class CommunicationsDispatcherWorker
   private asRecord(
     value: Prisma.JsonValue | null | undefined,
   ): Record<string, unknown> {
-    return isRecord(value) ? value : {};
+    return asRecordShared(value) ?? {};
   }
 
   private toStringRecord(value: unknown): Record<string, string> | undefined {

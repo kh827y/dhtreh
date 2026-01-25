@@ -49,7 +49,12 @@ export class AppConfigService {
     try {
       return JSON.parse(raw) as T;
     } catch (err) {
-      logIgnoredError(err, `AppConfigService getJson(${key})`, undefined, 'debug');
+      logIgnoredError(
+        err,
+        `AppConfigService getJson(${key})`,
+        undefined,
+        'debug',
+      );
       return fallback;
     }
   }
@@ -64,7 +69,8 @@ export class AppConfigService {
 
   getOtelEnabled(): boolean {
     return (
-      this.getBoolean('OTEL_ENABLED') || Boolean(this.getString('OTEL_EXPORTER_OTLP_ENDPOINT'))
+      this.getBoolean('OTEL_ENABLED') ||
+      Boolean(this.getString('OTEL_EXPORTER_OTLP_ENDPOINT'))
     );
   }
 
@@ -122,8 +128,7 @@ export class AppConfigService {
 
   getLogLevel(): string {
     return (
-      this.getString('LOG_LEVEL') ||
-      (this.isProduction() ? 'info' : 'debug')
+      this.getString('LOG_LEVEL') || (this.isProduction() ? 'info' : 'debug')
     );
   }
 

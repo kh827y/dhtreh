@@ -8,7 +8,12 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBadRequestResponse, ApiExtraModels, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import type { PortalRequest } from './portal.controller-helpers';
 import { TransactionItemDto, ErrorDto } from '../../loyalty/dto/dto';

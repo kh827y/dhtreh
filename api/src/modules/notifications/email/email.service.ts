@@ -313,12 +313,7 @@ export class EmailService {
         allowedCustomerIds = consentRows.map((row) => row.customerId);
       }
     } catch (err) {
-      logIgnoredError(
-        err,
-        'EmailService consent lookup',
-        this.logger,
-        'debug',
-      );
+      logIgnoredError(err, 'EmailService consent lookup', this.logger, 'debug');
     }
 
     if (!allowedCustomerIds.length) {

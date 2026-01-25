@@ -6,16 +6,10 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { logIgnoredError } from '../../shared/logging/ignore-error.util';
+import { asRecord } from '../../shared/common/input.util';
 
 @Catch()
 export class HttpErrorFilter implements ExceptionFilter {
-  private asRecord(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-    return value as Record<string, unknown>;
-  }
-
   private statusToCode(status: number): string {
     switch (status) {
       case HttpStatus.BAD_REQUEST:
@@ -64,7 +58,12 @@ export class HttpErrorFilter implements ExceptionFilter {
       try {
         return JSON.stringify(message);
       } catch (err) {
-        logIgnoredError(err, 'HttpErrorFilter formatMessage', undefined, 'debug');
+        logIgnoredError(
+          err,
+          'HttpErrorFilter formatMessage',
+          undefined,
+          'debug',
+        );
         return 'Internal Server Error';
       }
     }
@@ -73,7 +72,12 @@ export class HttpErrorFilter implements ExceptionFilter {
       try {
         return JSON.stringify(message);
       } catch (err) {
-        logIgnoredError(err, 'HttpErrorFilter formatMessage', undefined, 'debug');
+        logIgnoredError(
+          err,
+          'HttpErrorFilter formatMessage',
+          undefined,
+          'debug',
+        );
         return 'Internal Server Error';
       }
     }
@@ -97,6 +101,7 @@ export class HttpErrorFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: unknown = 'Internal Server Error';
     let code = 'InternalError';
+    let details: unknown = undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -104,9 +109,18 @@ export class HttpErrorFilter implements ExceptionFilter {
       if (typeof response === 'string') {
         message = response;
       } else if (response && typeof response === 'object') {
-        const responseObj = this.asRecord(response);
+        const responseObj = asRecord(response);
         message =
           responseObj?.message ?? responseObj?.error ?? response ?? message;
+        if (details === undefined) {
+          if (responseObj?.details !== undefined) {
+            details = responseObj.details;
+          } else if (responseObj?.errors !== undefined) {
+            details = responseObj.errors;
+          } else if (Array.isArray(responseObj?.message)) {
+            details = responseObj.message;
+          }
+        }
         const responseError = responseObj?.error;
         if (typeof responseError === 'string') {
           code = this.normalizeErrorCode(responseError, status);
@@ -131,11 +145,13 @@ export class HttpErrorFilter implements ExceptionFilter {
 
     const body = {
       error: code,
+      code,
       message: this.formatMessage(message),
       statusCode: status,
       requestId: req?.requestId || req?.headers?.['x-request-id'] || undefined,
       path: req?.originalUrl || req?.url,
       timestamp: new Date().toISOString(),
+      ...(details !== undefined ? { details } : {}),
     };
 
     res.status(status).json(body);

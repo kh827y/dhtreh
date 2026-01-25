@@ -68,7 +68,12 @@ export class AnalyticsCacheService {
       })
       .catch((err) => {
         this.cache.delete(key);
-        logIgnoredError(err, 'Analytics cache compute failed', this.logger, 'debug');
+        logIgnoredError(
+          err,
+          'Analytics cache compute failed',
+          this.logger,
+          'debug',
+        );
         throw err;
       });
     this.cache.set(key, {

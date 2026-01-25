@@ -25,7 +25,11 @@ export class CommunicationsService {
     return this.templates.createTemplate(merchantId, payload);
   }
 
-  updateTemplate(merchantId: string, templateId: string, payload: TemplatePayload) {
+  updateTemplate(
+    merchantId: string,
+    templateId: string,
+    payload: TemplatePayload,
+  ) {
     return this.templates.updateTemplate(merchantId, templateId, payload);
   }
 

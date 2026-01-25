@@ -70,7 +70,8 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
         }
         const body = toRecord(req.body);
         const q = toRecord(req.query);
-        const merchantId = asString(body?.merchantId) || asString(q?.merchantId);
+        const merchantId =
+          asString(body?.merchantId) || asString(q?.merchantId);
         const outletId = asString(body?.outletId) || asString(q?.outletId);
         const staffId = asString(body?.staffId) || asString(q?.staffId);
         return [ip, path, merchantId, outletId, staffId]
@@ -161,8 +162,9 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
         // Per-merchant multiplier
         const mult = safeExec(
           () => {
-            const raw =
-              (this.config.getString('RL_MERCHANT_MULTIPLIERS') || '').trim();
+            const raw = (
+              this.config.getString('RL_MERCHANT_MULTIPLIERS') || ''
+            ).trim();
             if (raw && merchantId) {
               const parsed = JSON.parse(raw) as unknown;
               const map = toRecord(parsed);

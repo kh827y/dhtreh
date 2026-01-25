@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma, StaffOutletAccessStatus, StaffStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppConfigService } from '../config/app-config.service';
+import { upgradeRulesJson } from '../../shared/rules-json.util';
+import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 
 type CacheEntry<T> = {
   value: T | null;
@@ -173,10 +175,32 @@ export class LookupCacheService {
         webhookKeyIdNext: true,
       },
     });
+    const rulesUpgrade = upgradeRulesJson(settings?.rulesJson ?? null);
+    const normalizedRules = (rulesUpgrade.value ??
+      null) as Prisma.JsonValue | null;
+    if (settings && rulesUpgrade.changed && rulesUpgrade.value) {
+      this.prisma.merchantSettings
+        .update({
+          where: { merchantId },
+          data: {
+            rulesJson: rulesUpgrade.value as Prisma.InputJsonValue,
+            updatedAt: new Date(),
+          },
+        })
+        .catch((err) =>
+          logIgnoredError(
+            err,
+            'LookupCacheService backfill rulesJson',
+            this.logger,
+            'debug',
+            { merchantId },
+          ),
+        );
+    }
     const value: MerchantSettingsSnapshot | null = settings
       ? {
           merchantId,
-          rulesJson: settings.rulesJson ?? null,
+          rulesJson: normalizedRules,
           requireJwtForQuote: Boolean(settings.requireJwtForQuote),
           telegramBotToken: settings.telegramBotToken ?? null,
           telegramStartParamRequired: Boolean(

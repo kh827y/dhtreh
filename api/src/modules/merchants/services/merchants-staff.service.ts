@@ -33,7 +33,12 @@ export class MerchantsStaffService {
         acc.map((row) => [row.staffId, row._count?._all ?? 0]),
       );
     } catch (err) {
-      logIgnoredError(err, 'MerchantsStaffService access map', undefined, 'debug');
+      logIgnoredError(
+        err,
+        'MerchantsStaffService access map',
+        undefined,
+        'debug',
+      );
     }
     let lastMap = new Map<string, Date | null>();
     try {
@@ -48,7 +53,12 @@ export class MerchantsStaffService {
           .map((row) => [row.staffId as string, row._max?.createdAt ?? null]),
       );
     } catch (err) {
-      logIgnoredError(err, 'MerchantsStaffService last activity', undefined, 'debug');
+      logIgnoredError(
+        err,
+        'MerchantsStaffService last activity',
+        undefined,
+        'debug',
+      );
     }
     return staff.map((s) => ({
       ...s,

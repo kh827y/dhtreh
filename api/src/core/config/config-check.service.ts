@@ -39,9 +39,7 @@ export class ConfigCheckService implements OnModuleInit {
 
     if (missingRequired.length || missingProd.length) {
       const allMissing = [...missingRequired, ...missingProd];
-      this.logger.warn(
-        `Missing required env vars: ${allMissing.join(', ')}`,
-      );
+      this.logger.warn(`Missing required env vars: ${allMissing.join(', ')}`);
     }
 
     if (missingRecommended.length) {

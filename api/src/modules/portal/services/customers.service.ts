@@ -21,6 +21,7 @@ import { fetchReceiptAggregates } from '../../../shared/common/receipt-aggregate
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import { getRulesRoot } from '../../../shared/rules-json.util';
 import { AppConfigService } from '../../../core/config/app-config.service';
+import { asRecord as asRecordShared } from '../../../shared/common/input.util';
 import {
   normalizePhoneDigits,
   normalizePhoneE164,
@@ -698,12 +699,8 @@ export class PortalCustomersService {
 
   private asRecord(input: unknown): Record<string, unknown> | null {
     if (!input) return null;
-    const normalize = (value: unknown): Record<string, unknown> | null => {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        return null;
-      }
-      return value as Record<string, unknown>;
-    };
+    const normalize = (value: unknown): Record<string, unknown> | null =>
+      asRecordShared(value);
     if (typeof input === 'string') {
       try {
         return normalize(JSON.parse(input) as unknown);
@@ -1113,7 +1110,16 @@ export class PortalCustomersService {
     merchantId: string,
     customerId: string,
   ): Promise<number> {
-    await ensureBaseTier(this.prisma, merchantId).catch(() => null);
+    await ensureBaseTier(this.prisma, merchantId).catch((err) => {
+      logIgnoredError(
+        err,
+        'PortalCustomersService ensureBaseTier',
+        this.logger,
+        'debug',
+        { merchantId },
+      );
+      return null;
+    });
     const assignment = await this.prisma.loyaltyTierAssignment.findFirst({
       where: {
         merchantId,

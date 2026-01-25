@@ -92,7 +92,9 @@ export class PortalCustomersController {
   }
 
   @Post('customers/import')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }),
+  )
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   async importCustomers(
     @Req() req: PortalRequest,
@@ -103,7 +105,13 @@ export class PortalCustomersController {
       updateExisting?: boolean | string;
       sendWelcome?: boolean | string;
     },
-    @UploadedFile() file?: { buffer?: Buffer; originalname?: string; mimetype?: string; size?: number },
+    @UploadedFile()
+    file?: {
+      buffer?: Buffer;
+      originalname?: string;
+      mimetype?: string;
+      size?: number;
+    },
   ) {
     return this.useCase.importCustomers(req, body, file);
   }

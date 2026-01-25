@@ -219,7 +219,12 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
           try {
             this.metrics.inc('loyalty_delayed_earn_activated_total');
           } catch (err) {
-            logIgnoredError(err, 'EarnActivationWorker metrics', this.logger, 'debug');
+            logIgnoredError(
+              err,
+              'EarnActivationWorker metrics',
+              this.logger,
+              'debug',
+            );
           }
         } catch (error: unknown) {
           const message =
@@ -261,7 +266,11 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
               }
             }
           } catch (err) {
-            logIgnoredError(err, 'EarnActivationWorker mark failed', this.logger);
+            logIgnoredError(
+              err,
+              'EarnActivationWorker mark failed',
+              this.logger,
+            );
           }
         }
       }

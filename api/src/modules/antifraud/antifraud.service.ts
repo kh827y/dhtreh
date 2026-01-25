@@ -8,6 +8,7 @@ import {
   findTimezone,
 } from '../../shared/timezone/russia-timezones';
 import { logIgnoredError } from '../../shared/logging/ignore-error.util';
+import { asRecord as asRecordShared } from '../../shared/common/input.util';
 
 export enum RiskLevel {
   LOW = 'LOW',
@@ -59,10 +60,7 @@ export class AntiFraudService {
   ) {}
 
   private asRecord(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-    return value as Record<string, unknown>;
+    return asRecordShared(value);
   }
 
   /**
@@ -681,7 +679,12 @@ export class AntiFraudService {
       });
       return findTimezone(row?.timezone ?? DEFAULT_TIMEZONE_CODE);
     } catch (err) {
-      logIgnoredError(err, 'AntifraudService resolveTimezone', this.logger, 'debug');
+      logIgnoredError(
+        err,
+        'AntifraudService resolveTimezone',
+        this.logger,
+        'debug',
+      );
       return findTimezone(DEFAULT_TIMEZONE_CODE);
     }
   }

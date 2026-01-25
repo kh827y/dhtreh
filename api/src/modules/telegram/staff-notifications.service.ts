@@ -12,6 +12,7 @@ import {
 } from '../../shared/timezone/russia-timezones';
 import { ensureRulesRoot, getRulesSection } from '../../shared/rules-json.util';
 import { logIgnoredError } from '../../shared/logging/ignore-error.util';
+import { asRecord as asRecordShared } from '../../shared/common/input.util';
 
 export type StaffNotifySettings = {
   notifyOrders: boolean;
@@ -177,10 +178,7 @@ export class TelegramStaffNotificationsService {
   }
 
   private asRecord(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-    return value as Record<string, unknown>;
+    return asRecordShared(value);
   }
 
   private async loadNotifyData(
@@ -746,7 +744,7 @@ export class TelegramStaffNotificationsService {
           (customer?.name && customer.name.trim()) ||
           (customer?.phone && customer.phone.trim()) ||
           (customer?.id ? `ID ${customer.id.slice(0, 8)}` : null);
-      if (label) lines.push(`Клиент: ${label}`);
+        if (label) lines.push(`Клиент: ${label}`);
       } catch (err) {
         logIgnoredError(
           err,

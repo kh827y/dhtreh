@@ -194,7 +194,10 @@ export class PortalCommunicationsUseCase {
 
   telegramNotifyPreferences(req: PortalRequest) {
     const actor = this.helpers.resolveTelegramActor(req);
-    return this.telegramNotify.getPreferences(this.helpers.getMerchantId(req), actor);
+    return this.telegramNotify.getPreferences(
+      this.helpers.getMerchantId(req),
+      actor,
+    );
   }
 
   telegramNotifyUpdatePreferences(

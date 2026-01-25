@@ -174,7 +174,12 @@ function sanitizePayload(body: unknown): Prisma.InputJsonValue | null {
       ? ({ truncated: true } as Prisma.InputJsonValue)
       : (clone as Prisma.InputJsonValue);
   } catch (err) {
-    logIgnoredError(err, 'AdminAuditInterceptor sanitize payload', undefined, 'debug');
+    logIgnoredError(
+      err,
+      'AdminAuditInterceptor sanitize payload',
+      undefined,
+      'debug',
+    );
     return null;
   }
 }

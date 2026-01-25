@@ -315,9 +315,7 @@ export class LoyaltyTierService {
         source: 'auto',
         assignedAt: new Date(),
         expiresAt: params.periodDays
-          ? new Date(
-              Date.now() + params.periodDays * 24 * 60 * 60 * 1000,
-            )
+          ? new Date(Date.now() + params.periodDays * 24 * 60 * 60 * 1000)
           : null,
       },
       create: {
@@ -327,9 +325,7 @@ export class LoyaltyTierService {
         source: 'auto',
         assignedAt: new Date(),
         expiresAt: params.periodDays
-          ? new Date(
-              Date.now() + params.periodDays * 24 * 60 * 60 * 1000,
-            )
+          ? new Date(Date.now() + params.periodDays * 24 * 60 * 60 * 1000)
           : null,
       },
     });

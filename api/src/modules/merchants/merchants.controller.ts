@@ -1004,7 +1004,12 @@ export class MerchantsController {
     try {
       return JSON.stringify(value);
     } catch (err) {
-      logIgnoredError(err, 'MerchantsController toCsvString', undefined, 'debug');
+      logIgnoredError(
+        err,
+        'MerchantsController toCsvString',
+        undefined,
+        'debug',
+      );
       return '';
     }
   }

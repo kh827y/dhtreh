@@ -10,6 +10,13 @@ import { isIP } from 'net';
 import { createHmac } from 'crypto';
 import type { EventOutbox } from '@prisma/client';
 import { AppConfigService } from '../core/config/app-config.service';
+import { logIgnoredError } from '../shared/logging/ignore-error.util';
+import {
+  fetchWithTimeout,
+  recordExternalRequest,
+  readResponseTextSafe,
+  resultFromStatus,
+} from '../shared/http/external-http.util';
 
 type OutboxRow = EventOutbox;
 
@@ -35,28 +42,20 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     private readonly config: AppConfigService,
   ) {}
 
-  private logDebug(message: string, err: unknown) {
-    const detail =
-      err instanceof Error
-        ? err.message
-        : typeof err === 'string'
-          ? err
-          : err == null
-            ? 'unknown error'
-            : String(err);
-    this.logger.debug(`${message}: ${detail}`);
+  private logDebug(
+    message: string,
+    err: unknown,
+    context?: Record<string, unknown>,
+  ) {
+    logIgnoredError(err, message, this.logger, 'debug', context);
   }
 
-  private logWarn(message: string, err: unknown) {
-    const detail =
-      err instanceof Error
-        ? err.message
-        : typeof err === 'string'
-          ? err
-          : err == null
-            ? 'unknown error'
-            : String(err);
-    this.logger.warn(`${message}: ${detail}`);
+  private logWarn(
+    message: string,
+    err: unknown,
+    context?: Record<string, unknown>,
+  ) {
+    logIgnoredError(err, message, this.logger, 'warn', context);
   }
 
   onModuleInit() {
@@ -67,9 +66,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     const intervalMs =
       this.config.getNumber('OUTBOX_WORKER_INTERVAL_MS', 15000) ?? 15000;
     this.timer = setInterval(() => {
-      this.tick().catch((err) =>
-        this.logWarn('outbox tick failed', err),
-      );
+      this.tick().catch((err) => this.logWarn('outbox tick failed', err));
     }, intervalMs);
     try {
       if (this.timer && typeof this.timer.unref === 'function')
@@ -132,7 +129,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       s.windowStart = now;
       if (wasClosed) {
         this.onBreakerOpen(merchantId).catch((err) =>
-          this.logWarn('outbox breaker open handler failed', err),
+          this.logWarn('outbox breaker open handler failed', err, {
+            merchantId,
+          }),
         );
       }
     }
@@ -201,7 +200,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     try {
       parsed = new URL(url);
     } catch (err) {
-      this.logDebug('outbox: parse webhook url failed', err);
+      this.logDebug('outbox: parse webhook url failed', err, { url });
       return 'Invalid webhook URL';
     }
     if (parsed.protocol !== 'https:') {
@@ -254,7 +253,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         `Outbox circuit opened for merchant=${merchantId}, auto-paused until ${until.toISOString()}`,
       );
     } catch (err) {
-      this.logWarn('outbox auto-pause failed', err);
+      this.logWarn('outbox auto-pause failed', err, { merchantId });
     }
   }
 
@@ -266,12 +265,21 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       });
       return r.count === 1;
     } catch (err) {
-      this.logDebug('outbox claim failed', err);
+      this.logDebug('outbox claim failed', err, {
+        eventId: row.id,
+        merchantId: row.merchantId,
+        eventType: row.eventType,
+      });
       return false;
     }
   }
 
   private async send(row: OutboxRow) {
+    const context = {
+      merchantId: row.merchantId,
+      eventId: row.id,
+      eventType: row.eventType,
+    };
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId: row.merchantId },
     });
@@ -280,8 +288,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       Boolean(settings?.useWebhookNext) && Boolean(settings?.webhookSecretNext);
     const secret =
       (useNext ? settings?.webhookSecretNext : settings?.webhookSecret) || '';
-    const maxRetries =
-      this.config.getNumber('OUTBOX_MAX_RETRIES', 10) ?? 10;
+    const maxRetries = this.config.getNumber('OUTBOX_MAX_RETRIES', 10) ?? 10;
     const pausedUntil = settings?.outboxPausedUntil ?? null;
     if (pausedUntil && pausedUntil > new Date()) {
       const next = pausedUntil;
@@ -311,7 +318,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           result: 'skipped',
         });
       } catch (err) {
-        this.logDebug('outbox metrics skipped failed', err);
+        this.logDebug('outbox metrics skipped failed', err, context);
       }
       return;
     }
@@ -358,24 +365,38 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     const kid = useNext ? settings?.webhookKeyIdNext : settings?.webhookKeyId;
     if (kid) headers['X-Signature-Key-Id'] = kid as string;
 
-    let to: NodeJS.Timeout | null = null;
-    const ac = new AbortController();
     try {
       const timeoutMs =
         this.config.getNumber('OUTBOX_HTTP_TIMEOUT_MS', 10000) ?? 10000;
-      to = setTimeout(() => ac.abort(), Math.max(1000, timeoutMs));
-      try {
-        if (to && typeof to.unref === 'function') to.unref();
-      } catch (err) {
-        this.logDebug('outbox timeout unref failed', err);
-      }
-      const res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body,
-        redirect: 'manual',
-        signal: ac.signal,
-      });
+      const requestContext = {
+        label: 'outbox.dispatch',
+        merchantId: row.merchantId,
+        eventId: row.id,
+        url,
+        provider: 'merchant_webhook',
+        endpoint: row.eventType,
+      };
+      const res = await fetchWithTimeout(
+        url,
+        {
+          method: 'POST',
+          headers,
+          body,
+          redirect: 'manual',
+        },
+        {
+          timeoutMs: Math.max(1000, timeoutMs),
+          logger: this.logger,
+          context: requestContext,
+          metrics: this.metrics,
+        },
+      );
+      recordExternalRequest(
+        this.metrics,
+        requestContext,
+        resultFromStatus(res.status, res.ok),
+        res.status,
+      );
       if (res.ok) {
         await this.prisma.eventOutbox.update({
           where: { id: row.id },
@@ -388,11 +409,22 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             result: 'sent',
           });
         } catch (err) {
-          this.logDebug('outbox metrics sent failed', err);
+          this.logDebug('outbox metrics sent failed', err, context);
         }
         this.noteSuccess(row.merchantId);
       } else {
-        const text = this.truncateError(await res.text().catch(() => ''));
+        const text = this.truncateError(
+          await readResponseTextSafe(res, {
+            logger: this.logger,
+            context: {
+              label: 'outbox.response',
+              merchantId: row.merchantId,
+              eventId: row.id,
+              url,
+            },
+            fallback: '',
+          }),
+        );
         const retries = row.retries + 1;
         if (retries >= maxRetries) {
           await this.prisma.eventOutbox.update({
@@ -413,7 +445,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
               result: 'dead',
             });
           } catch (err) {
-            this.logDebug('outbox metrics dead failed', err);
+            this.logDebug('outbox metrics dead failed', err, context);
           }
         } else {
           let nextTime = Date.now() + this.backoffMs(row.retries);
@@ -442,7 +474,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             result: 'failed',
           });
         } catch (err) {
-          this.logDebug('outbox metrics failed failed', err);
+          this.logDebug('outbox metrics failed failed', err, context);
         }
       }
     } catch (e: unknown) {
@@ -474,7 +506,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             result: 'dead',
           });
         } catch (err) {
-          this.logDebug('outbox metrics dead failed', err);
+          this.logDebug('outbox metrics dead failed', err, context);
         }
       } else {
         const next = new Date(Date.now() + this.backoffMs(row.retries));
@@ -496,13 +528,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           result: 'failed',
         });
       } catch (err) {
-        this.logDebug('outbox metrics failed failed', err);
-      }
-    } finally {
-      try {
-        if (to) clearTimeout(to);
-      } catch (err) {
-        this.logDebug('outbox clear timeout failed', err);
+        this.logDebug('outbox metrics failed failed', err, context);
       }
     }
   }
@@ -539,7 +565,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           },
         });
       } catch (err) {
-        this.logWarn('outbox stale sending reset failed', err);
+        this.logWarn('outbox stale sending reset failed', err, { staleMs });
       }
       // обновим gauge pending
       try {
@@ -551,8 +577,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         this.logDebug('outbox pending gauge failed', err);
       }
 
-      const batch =
-        this.config.getNumber('OUTBOX_WORKER_BATCH', 10) ?? 10;
+      const batch = this.config.getNumber('OUTBOX_WORKER_BATCH', 10) ?? 10;
       const items = (await this.prisma.eventOutbox.findMany({
         where: {
           status: { in: ['PENDING', 'FAILED'] },
@@ -566,6 +591,11 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       const ready = items.filter((it) => !this.isCircuitOpen(it.merchantId));
       const skipped = items.filter((it) => this.isCircuitOpen(it.merchantId));
       for (const row of skipped) {
+        const rowContext = {
+          merchantId: row.merchantId,
+          eventId: row.id,
+          eventType: row.eventType,
+        };
         try {
           const openUntil =
             this.cb.get(row.merchantId)?.openUntil || Date.now() + 60000;
@@ -583,10 +613,14 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
               result: 'circuit_open',
             });
           } catch (err) {
-            this.logDebug('outbox metrics circuit_open failed', err);
+            this.logDebug(
+              'outbox metrics circuit_open failed',
+              err,
+              rowContext,
+            );
           }
         } catch (err) {
-          this.logWarn('outbox circuit open update failed', err);
+          this.logWarn('outbox circuit open update failed', err, rowContext);
         }
       }
       // Group by eventType and apply per-type concurrency
@@ -602,6 +636,11 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           const slice = arr.slice(i, i + conc);
           await Promise.all(
             slice.map(async (row) => {
+              const rowContext = {
+                merchantId: row.merchantId,
+                eventId: row.id,
+                eventType: row.eventType,
+              };
               // rate-limit per merchant
               if (this.rateLimited(row.merchantId)) {
                 try {
@@ -621,10 +660,18 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
                       result: 'rate_limited',
                     });
                   } catch (err) {
-                    this.logDebug('outbox metrics rate_limited failed', err);
+                    this.logDebug(
+                      'outbox metrics rate_limited failed',
+                      err,
+                      rowContext,
+                    );
                   }
                 } catch (err) {
-                  this.logWarn('outbox rate limit update failed', err);
+                  this.logWarn(
+                    'outbox rate limit update failed',
+                    err,
+                    rowContext,
+                  );
                 }
                 return;
               }
@@ -671,10 +718,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private rpsForMerchant(merchantId: string): number {
     const map = this.parseRpsByMerchant();
     if (map.has(merchantId)) return map.get(merchantId)!;
-    return Math.max(
-      0,
-      this.config.getNumber('OUTBOX_RPS_DEFAULT', 0) ?? 0,
-    ); // 0 = unlimited
+    return Math.max(0, this.config.getNumber('OUTBOX_RPS_DEFAULT', 0) ?? 0); // 0 = unlimited
   }
 
   private rateLimited(merchantId: string): boolean {

@@ -71,11 +71,14 @@ export class PortalAnalyticsUseCase {
 
   birthdays(req: PortalRequest, withinDays?: string, limit?: string) {
     const merchantId = this.helpers.getMerchantId(req);
-    const d = Math.max(
-      1,
-      Math.min(parseInt(withinDays || '30', 10) || 30, 365),
-    );
-    const l = Math.max(1, Math.min(parseInt(limit || '100', 10) || 100, 1000));
+    const d = this.helpers.parseLimit(withinDays, {
+      defaultValue: 30,
+      max: 365,
+    });
+    const l = this.helpers.parseLimit(limit, {
+      defaultValue: 100,
+      max: 1000,
+    });
     return this.analytics.getBirthdays(merchantId, d, l);
   }
 
@@ -99,11 +102,11 @@ export class PortalAnalyticsUseCase {
   ) {
     const merchantId = this.helpers.getMerchantId(req);
     const timezoneCode = String(req.portalTimezone || DEFAULT_TIMEZONE_CODE);
-    const parsedOffset = Math.max(0, Number.parseInt(offset || '0', 10) || 0);
-    const parsedLimit = Math.max(
-      1,
-      Math.min(Number.parseInt(limit || '50', 10) || 50, 200),
-    );
+    const parsedOffset = this.helpers.parseOffset(offset);
+    const parsedLimit = this.helpers.parseLimit(limit, {
+      defaultValue: 50,
+      max: 200,
+    });
     return this.analytics.getReferralLeaderboard(
       merchantId,
       this.helpers.computePeriod(req, period, from, to),
@@ -182,16 +185,14 @@ export class PortalAnalyticsUseCase {
     );
   }
 
-  analyticsTimeRecency(
-    req: PortalRequest,
-    group?: string,
-    limit?: string,
-  ) {
+  analyticsTimeRecency(req: PortalRequest, group?: string, limit?: string) {
     const merchantId = this.helpers.getMerchantId(req);
     const grouping: RecencyGrouping =
       group === 'week' || group === 'month' ? group : 'day';
-    const parsedLimit = Number.parseInt(String(limit ?? ''), 10);
-    const effectiveLimit = Number.isFinite(parsedLimit) ? parsedLimit : undefined;
+    const effectiveLimit = this.helpers.parseOptionalLimit(limit, {
+      min: 1,
+      max: 1000,
+    });
     return this.analytics.getPurchaseRecencyDistribution(
       merchantId,
       grouping,
@@ -233,7 +234,10 @@ export class PortalAnalyticsUseCase {
 
   cohorts(req: PortalRequest, by?: 'month' | 'week', limitStr?: string) {
     const merchantId = this.helpers.getMerchantId(req);
-    const limit = Math.min(Math.max(parseInt(limitStr || '6', 10) || 6, 1), 24);
+    const limit = this.helpers.parseLimit(limitStr, {
+      defaultValue: 6,
+      max: 24,
+    });
     return this.analytics.getRetentionCohorts(
       merchantId,
       by === 'week' ? 'week' : 'month',
@@ -242,10 +246,15 @@ export class PortalAnalyticsUseCase {
   }
 
   rfmAnalytics(req: PortalRequest) {
-    return this.analytics.getRfmGroupsAnalytics(this.helpers.getMerchantId(req));
+    return this.analytics.getRfmGroupsAnalytics(
+      this.helpers.getMerchantId(req),
+    );
   }
 
   updateRfmAnalyticsSettings(req: PortalRequest, dto: UpdateRfmSettingsDto) {
-    return this.analytics.updateRfmSettings(this.helpers.getMerchantId(req), dto);
+    return this.analytics.updateRfmSettings(
+      this.helpers.getMerchantId(req),
+      dto,
+    );
   }
 }

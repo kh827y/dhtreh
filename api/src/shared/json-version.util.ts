@@ -24,3 +24,11 @@ export const withJsonSchemaVersion = <T>(
     [JSON_SCHEMA_VERSION_KEY]: version,
   } as T;
 };
+
+export const setJsonSchemaVersion = <T>(value: T, version: number): T => {
+  if (!isPlainObject(value)) return value;
+  return {
+    ...(value as Record<string, unknown>),
+    [JSON_SCHEMA_VERSION_KEY]: version,
+  } as T;
+};

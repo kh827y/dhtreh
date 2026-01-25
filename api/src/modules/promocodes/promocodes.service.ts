@@ -10,7 +10,11 @@ import { MetricsService } from '../../core/metrics/metrics.service';
 import { DEFAULT_LEVELS_PERIOD_DAYS } from '../loyalty/utils/levels.util';
 import { logEvent, safeMetric } from '../../shared/logging/event-log.util';
 import { logIgnoredError } from '../../shared/logging/ignore-error.util';
-import { ensureMetadataVersion } from '../../shared/metadata.util';
+import {
+  ensureMetadataVersion,
+  upgradeMetadata,
+} from '../../shared/metadata.util';
+import { asRecord as asRecordShared } from '../../shared/common/input.util';
 
 export type PortalPromoCodePayload = {
   code: string;
@@ -93,10 +97,7 @@ export class PromoCodesService {
   }
 
   private asRecord(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-    return value as Record<string, unknown>;
+    return asRecordShared(value);
   }
 
   private toMetadata(payload: PortalPromoCodePayload): Prisma.InputJsonValue {
@@ -212,6 +213,40 @@ export class PromoCodesService {
     };
   }
 
+  private async backfillMetadata(
+    promoCodes: Array<
+      Prisma.PromoCodeGetPayload<{ include: { metrics: true } }>
+    >,
+  ) {
+    const tasks: Array<Promise<unknown>> = [];
+    for (const promo of promoCodes) {
+      const upgrade = upgradeMetadata(
+        promo.metadata as Prisma.InputJsonValue | null,
+      );
+      if (!upgrade.changed) continue;
+      promo.metadata = (upgrade.value ?? null) as Prisma.JsonValue | null;
+      tasks.push(
+        this.prisma.promoCode
+          .update({
+            where: { id: promo.id },
+            data: { metadata: upgrade.value as Prisma.InputJsonValue },
+          })
+          .catch((err) =>
+            logIgnoredError(
+              err,
+              'PromoCodesService backfill metadata',
+              this.logger,
+              'debug',
+              { promoCodeId: promo.id, merchantId: promo.merchantId },
+            ),
+          ),
+      );
+    }
+    if (tasks.length) {
+      await Promise.all(tasks);
+    }
+  }
+
   async listForPortal(
     merchantId: string,
     scope?: string,
@@ -239,7 +274,12 @@ export class PromoCodesService {
         },
       });
     } catch (err) {
-      logIgnoredError(err, 'PromoCodesService archive expired', this.logger, 'debug');
+      logIgnoredError(
+        err,
+        'PromoCodesService archive expired',
+        this.logger,
+        'debug',
+      );
     }
     if (status) {
       if (status === PromoCodeStatus.ARCHIVED) {
@@ -258,6 +298,7 @@ export class PromoCodesService {
       take: limit,
       skip: safeOffset,
     });
+    await this.backfillMetadata(promoCodes);
 
     const statusLabel = scope && scope !== 'ALL' ? scope : 'ALL';
     this.logListEvent(merchantId, statusLabel ?? 'ALL', promoCodes.length);
@@ -662,7 +703,12 @@ export class PromoCodesService {
     try {
       await tx.$executeRaw`SELECT id FROM "PromoCode" WHERE id = ${promo.id} FOR UPDATE`;
     } catch (err) {
-      logIgnoredError(err, 'PromoCodesService lock promocode', this.logger, 'debug');
+      logIgnoredError(
+        err,
+        'PromoCodesService lock promocode',
+        this.logger,
+        'debug',
+      );
     }
 
     if (promo.requireVisit) {

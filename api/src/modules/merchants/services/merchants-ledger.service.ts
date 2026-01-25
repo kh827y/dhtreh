@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, TxnType, WalletType } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { AppConfigService } from '../../../core/config/app-config.service';

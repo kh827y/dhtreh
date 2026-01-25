@@ -40,7 +40,12 @@ export class LevelsService {
     next: LevelRule | null;
     progressToNext: number;
   }> {
-    await ensureBaseTier(this.prisma, merchantId).catch(() => null);
+    await ensureBaseTier(this.prisma, merchantId).catch((err) => {
+      logIgnoredError(err, 'LevelsService ensureBaseTier', undefined, 'debug', {
+        merchantId,
+      });
+      return null;
+    });
     let tiers: LoyaltyTier[] = [];
     try {
       tiers = await this.prisma.loyaltyTier.findMany({

@@ -13,12 +13,11 @@ import {
 } from '@prisma/client';
 import type { PromoCodeApplyResult } from '../../promocodes/promocodes.service';
 import type { StaffMotivationSettingsNormalized } from '../../staff-motivation/staff-motivation.engine';
-import type {
-  StaffNotificationPayload,
-} from '../../telegram/staff-notifications.service';
+import type { StaffNotificationPayload } from '../../telegram/staff-notifications.service';
 import { safeExecAsync } from '../../../shared/safe-exec';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import { LoyaltyOpsBase } from './loyalty-ops-base.service';
+import { allocateByWeight, allocateProRata } from './loyalty-ops-math.util';
 import type {
   OptionalModelsClient,
   PositionInput,
@@ -858,8 +857,8 @@ export class LoyaltyCommitService extends LoyaltyOpsBase {
           );
           redeemShares =
             plannedTotal > 0
-              ? this.allocateProRata(plannedRedeem, targetRedeem)
-              : this.allocateProRata(
+              ? allocateProRata(plannedRedeem, targetRedeem)
+              : allocateProRata(
                   holdItemsResolved.map((item) => item.amount),
                   targetRedeem,
                 );
@@ -883,7 +882,7 @@ export class LoyaltyCommitService extends LoyaltyOpsBase {
             : [];
         const earnShares =
           holdItemsResolved.length > 0
-            ? this.allocateByWeight(earnWeights, appliedEarnTotal)
+            ? allocateByWeight(earnWeights, appliedEarnTotal)
             : [];
 
         const created = await tx.receipt.create({

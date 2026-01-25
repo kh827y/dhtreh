@@ -1,4 +1,8 @@
-import { getJsonSchemaVersion, withJsonSchemaVersion } from './json-version.util';
+import {
+  getJsonSchemaVersion,
+  setJsonSchemaVersion,
+  withJsonSchemaVersion,
+} from './json-version.util';
 
 export type RulesJson = Record<string, unknown>;
 
@@ -21,12 +25,38 @@ export const RULES_JSON_SCHEMA = {
       pointsCap: 'number',
       blockDaily: 'boolean',
     },
-    outlet: { limit: 'number', windowSec: 'number', dailyCap: 'number', weeklyCap: 'number' },
-    device: { limit: 'number', windowSec: 'number', dailyCap: 'number', weeklyCap: 'number' },
-    staff: { limit: 'number', windowSec: 'number', dailyCap: 'number', weeklyCap: 'number' },
-    merchant: { limit: 'number', windowSec: 'number', dailyCap: 'number', weeklyCap: 'number' },
+    outlet: {
+      limit: 'number',
+      windowSec: 'number',
+      dailyCap: 'number',
+      weeklyCap: 'number',
+    },
+    device: {
+      limit: 'number',
+      windowSec: 'number',
+      dailyCap: 'number',
+      weeklyCap: 'number',
+    },
+    staff: {
+      limit: 'number',
+      windowSec: 'number',
+      dailyCap: 'number',
+      weeklyCap: 'number',
+    },
+    merchant: {
+      limit: 'number',
+      windowSec: 'number',
+      dailyCap: 'number',
+      weeklyCap: 'number',
+    },
     blockFactors: ['string'],
-    reset: { merchant: 'iso', outlet: { id: 'iso' }, device: { id: 'iso' }, staff: { id: 'iso' }, customer: { id: 'iso' } },
+    reset: {
+      merchant: 'iso',
+      outlet: { id: 'iso' },
+      device: { id: 'iso' },
+      staff: { id: 'iso' },
+      customer: { id: 'iso' },
+    },
   },
   registration: {
     enabled: 'boolean',
@@ -58,7 +88,11 @@ export const RULES_JSON_SCHEMA = {
   },
   burnReminder: { enabled: 'boolean', daysBefore: 'number', text: 'string' },
   reviews: { enabled: 'boolean' },
-  reviewsShare: { enabled: 'boolean', threshold: 'number', platforms: 'object' },
+  reviewsShare: {
+    enabled: 'boolean',
+    threshold: 'number',
+    platforms: 'object',
+  },
   levelsPeriodDays: 'number',
   allowEarnRedeemSameReceipt: 'boolean',
   disallowEarnRedeemSameReceipt: 'boolean',
@@ -78,33 +112,86 @@ export const RULES_JSON_SCHEMA_VERSION = 2;
 const isPlainObject = (value: unknown): value is RulesJson =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export const migrateRulesJson = (rulesJson: unknown): RulesJson | null => {
-  if (rulesJson == null) return null;
-  if (Array.isArray(rulesJson)) {
-    return withJsonSchemaVersion(
-      { rules: rulesJson },
-      RULES_JSON_SCHEMA_VERSION,
-    ) as RulesJson;
-  }
-  if (!isPlainObject(rulesJson)) return null;
-  const root = { ...(rulesJson as Record<string, unknown>) };
-  return withJsonSchemaVersion(root, RULES_JSON_SCHEMA_VERSION) as RulesJson;
+export type RulesUpgradeResult = {
+  value: RulesJson | null;
+  changed: boolean;
+  fromVersion: number | null;
+  toVersion: number;
 };
 
-export const getRulesRoot = (rulesJson: unknown): RulesJson | null => {
+const normalizeRulesShape = (rulesJson: unknown): RulesJson | null => {
+  if (rulesJson == null) return null;
   if (Array.isArray(rulesJson)) {
     return { rules: rulesJson } as RulesJson;
   }
-  return isPlainObject(rulesJson) ? (rulesJson as RulesJson) : null;
+  if (!isPlainObject(rulesJson)) return null;
+  return { ...(rulesJson as Record<string, unknown>) } as RulesJson;
 };
+
+export const upgradeRulesJson = (
+  rulesJson: unknown,
+  targetVersion: number = RULES_JSON_SCHEMA_VERSION,
+): RulesUpgradeResult => {
+  const normalized = normalizeRulesShape(rulesJson);
+  if (!normalized) {
+    return {
+      value: null,
+      changed: false,
+      fromVersion: null,
+      toVersion: targetVersion,
+    };
+  }
+
+  let changed = false;
+  let root: RulesJson = { ...(normalized as Record<string, unknown>) };
+  const fromVersion = getJsonSchemaVersion(root);
+
+  if (Array.isArray(rulesJson)) {
+    changed = true;
+  }
+
+  if (!fromVersion || fromVersion < 2) {
+    const disallowKey = 'disallowEarnRedeemSameReceipt';
+    if (
+      Object.prototype.hasOwnProperty.call(root, disallowKey) &&
+      root.allowEarnRedeemSameReceipt === undefined
+    ) {
+      const disallow = Boolean(root[disallowKey]);
+      root.allowEarnRedeemSameReceipt = !disallow;
+      changed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(root, disallowKey)) {
+      delete root[disallowKey];
+      changed = true;
+    }
+  }
+
+  if (fromVersion !== targetVersion) {
+    root = setJsonSchemaVersion(
+      root as Record<string, unknown>,
+      targetVersion,
+    ) as RulesJson;
+    changed = true;
+  }
+
+  return {
+    value: root,
+    changed,
+    fromVersion: fromVersion ?? null,
+    toVersion: targetVersion,
+  };
+};
+
+export const migrateRulesJson = (rulesJson: unknown): RulesJson | null =>
+  upgradeRulesJson(rulesJson).value;
+
+export const getRulesRoot = (rulesJson: unknown): RulesJson | null =>
+  upgradeRulesJson(rulesJson).value;
 
 export const ensureRulesRoot = (rulesJson: unknown): RulesJson => {
   const migrated = migrateRulesJson(rulesJson);
   if (migrated) return migrated;
-  return withJsonSchemaVersion(
-    {},
-    RULES_JSON_SCHEMA_VERSION,
-  ) as RulesJson;
+  return withJsonSchemaVersion({}, RULES_JSON_SCHEMA_VERSION) as RulesJson;
 };
 
 export const getRulesSchemaVersion = (rulesJson: unknown): number | null =>

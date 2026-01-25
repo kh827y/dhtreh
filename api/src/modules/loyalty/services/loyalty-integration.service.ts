@@ -3,6 +3,11 @@ import { HoldMode, HoldStatus, Receipt } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { safeExecAsync } from '../../../shared/safe-exec';
 import { LoyaltyOpsBase } from './loyalty-ops-base.service';
+import {
+  allocateByWeight,
+  allocateProRataWithCaps,
+  computeRedeemCaps,
+} from './loyalty-ops-math.util';
 import type {
   IntegrationBonusParams,
   IntegrationBonusResult,
@@ -167,7 +172,7 @@ export class LoyaltyIntegrationService extends LoyaltyOpsBase {
             ),
           ),
         );
-        const earnShares = this.allocateByWeight(earnWeights, earnTarget);
+        const earnShares = allocateByWeight(earnWeights, earnTarget);
         positionsForHold = positionsForHold.map((item, idx) => ({
           ...item,
           earnPoints: earnShares[idx] ?? 0,
@@ -401,7 +406,7 @@ export class LoyaltyIntegrationService extends LoyaltyOpsBase {
     const redeemTarget =
       paidBonus != null ? paidBonus : params.redeemMode === 'exact' ? 0 : null;
     const amounts = resolved.map((item) => Math.max(0, item.amount || 0));
-    const itemCaps = this.computeRedeemCaps(resolved);
+    const itemCaps = computeRedeemCaps(resolved);
     const capsTotal = itemCaps.reduce((sum, cap) => sum + cap, 0);
 
     let redeemAllowed = !redemptionsBlocked;
@@ -466,7 +471,7 @@ export class LoyaltyIntegrationService extends LoyaltyOpsBase {
       }
     }
 
-    const redeemShares = this.allocateProRataWithCaps(
+    const redeemShares = allocateProRataWithCaps(
       amounts,
       itemCaps,
       maxRedeemTotal,
@@ -547,7 +552,7 @@ export class LoyaltyIntegrationService extends LoyaltyOpsBase {
             ),
           ),
         );
-        const redistributed = this.allocateByWeight(weights, left);
+        const redistributed = allocateByWeight(weights, left);
         redistributed.forEach((value, idx) => {
           itemsForCalc[idx].earnPoints = value;
         });

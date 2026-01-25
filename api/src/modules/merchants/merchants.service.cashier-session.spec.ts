@@ -83,7 +83,8 @@ const asOutboxService = (stub: object) => stub as MerchantsOutboxService;
 const asAntifraudService = (stub: object) => stub as MerchantsAntifraudService;
 const asLedgerService = (stub: object) => stub as MerchantsLedgerService;
 const asAdminService = (stub: object) => stub as MerchantsAdminService;
-const asPortalAuthService = (stub: object) => stub as MerchantsPortalAuthService;
+const asPortalAuthService = (stub: object) =>
+  stub as MerchantsPortalAuthService;
 const asIntegrationsService = (stub: object) =>
   stub as MerchantsIntegrationsService;
 const makeAccessService = (prisma: PrismaStub, cache: CacheStub) =>

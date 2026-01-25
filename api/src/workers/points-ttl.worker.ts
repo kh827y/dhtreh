@@ -48,12 +48,7 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
       if (this.timer && typeof this.timer.unref === 'function')
         this.timer.unref();
     } catch (err) {
-      logIgnoredError(
-        err,
-        'PointsTtlWorker timer unref',
-        this.logger,
-        'debug',
-      );
+      logIgnoredError(err, 'PointsTtlWorker timer unref', this.logger, 'debug');
     }
     this.logger.log(`PointsTtlWorker started, interval=${intervalMs}ms`);
     this.startedAt = new Date();
