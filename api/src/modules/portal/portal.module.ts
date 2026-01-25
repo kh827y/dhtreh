@@ -16,6 +16,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { PortalCatalogService } from './services/catalog.service';
 import { PortalCustomersService } from './services/customers.service';
+import { PortalCustomersQueryService } from './services/portal-customers-query.service';
+import { PortalCustomersOperationsService } from './services/portal-customers-operations.service';
+import { PortalCustomersMutationsService } from './services/portal-customers-mutations.service';
 import { StaffMotivationService } from './services/staff-motivation.service';
 import { OperationsLogService } from './services/operations-log.service';
 import { TelegramModule } from '../telegram/telegram.module';
@@ -88,6 +91,9 @@ import { PortalCommunicationsHelper } from './helpers/portal-communications.help
     StaffMotivationService,
     OperationsLogService,
     PortalCustomersService,
+    PortalCustomersQueryService,
+    PortalCustomersOperationsService,
+    PortalCustomersMutationsService,
     PortalTelegramIntegrationService,
     PortalTelegramNotifyService,
     PortalReviewsService,

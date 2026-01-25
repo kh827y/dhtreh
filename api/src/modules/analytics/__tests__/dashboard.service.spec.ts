@@ -1,8 +1,9 @@
-import { ConfigService } from '@nestjs/config';
-import { AnalyticsService } from '../analytics.service';
+import { AnalyticsDashboardService } from '../services/analytics-dashboard.service';
 import type { PrismaService } from '../../../core/prisma/prisma.service';
 import { AnalyticsCacheService } from '../analytics-cache.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
+import { AnalyticsTimezoneService } from '../analytics-timezone.service';
+import { AnalyticsRevenueService } from '../services/analytics-revenue.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -13,8 +14,6 @@ type PrismaStub = {
   merchantSettings: { findUnique: MockFn<Promise<unknown>, [unknown]> };
 };
 type AnalyticsServicePrivate = {
-  getTimezoneInfo: MockFn<Promise<{ utcOffsetMinutes: number; iana: string }>>;
-  resolveGrouping: MockFn<string, [unknown]>;
   getDashboardAggregates: MockFn<
     Promise<{
       revenue: number;
@@ -22,17 +21,6 @@ type AnalyticsServicePrivate = {
       buyers: number;
       pointsRedeemed: number;
     }>
-  >;
-  getDailyRevenue: MockFn<
-    Promise<
-      Array<{
-        date: string;
-        revenue: number;
-        transactions: number;
-        customers: number;
-        averageCheck: number;
-      }>
-    >
   >;
   getRegistrationsByDay: MockFn<Promise<Map<string, number>>>;
   calculateVisitFrequencyDays: MockFn<Promise<number>>;
@@ -47,7 +35,7 @@ type AnalyticsServicePrivate = {
 const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
   jest.fn<Return, Args>();
 const asPrismaService = (stub: PrismaStub) => stub as unknown as PrismaService;
-const asPrivateService = (service: AnalyticsService) =>
+const asPrivateService = (service: AnalyticsDashboardService) =>
   service as unknown as AnalyticsServicePrivate;
 
 describe('AnalyticsService — dashboard summary', () => {
@@ -56,25 +44,42 @@ describe('AnalyticsService — dashboard summary', () => {
       $queryRaw: mockFn(),
       merchantSettings: { findUnique: mockFn() },
     };
-    const service = new AnalyticsService(
+    const cache = new AnalyticsCacheService(new AppConfigService());
+    const timezone = new AnalyticsTimezoneService(asPrismaService(prisma));
+    const revenue = new AnalyticsRevenueService(
       asPrismaService(prisma),
-      {} as ConfigService,
-      new AnalyticsCacheService(new AppConfigService()),
-      undefined,
+      cache,
+      timezone,
+    );
+    jest.spyOn(timezone, 'getTimezoneInfo').mockResolvedValue({
+      code: 'UTC',
+      iana: 'UTC',
+      name: 'UTC',
+      utcOffsetMinutes: 0,
+    });
+    jest.spyOn(revenue, 'getDailyRevenue').mockResolvedValue([
+      {
+        date: '2024-01-01',
+        revenue: 500,
+        transactions: 5,
+        customers: 3,
+        averageCheck: 100,
+      },
+      {
+        date: '2024-01-02',
+        revenue: 500,
+        transactions: 5,
+        customers: 2,
+        averageCheck: 100,
+      },
+    ]);
+    const service = new AnalyticsDashboardService(
+      asPrismaService(prisma),
+      cache,
+      revenue,
+      timezone,
     );
     const servicePrivate = asPrivateService(service);
-
-    servicePrivate.getTimezoneInfo = mockFn<
-      Promise<{ utcOffsetMinutes: number; iana: string }>,
-      [string]
-    >().mockResolvedValue({
-      utcOffsetMinutes: 0,
-      iana: 'UTC',
-    });
-    servicePrivate.resolveGrouping = mockFn<
-      string,
-      [unknown]
-    >().mockReturnValue('day');
     servicePrivate.getDashboardAggregates = mockFn<
       Promise<{
         revenue: number;
@@ -96,35 +101,6 @@ describe('AnalyticsService — dashboard summary', () => {
         buyers: 4,
         pointsRedeemed: 40,
       });
-    servicePrivate.getDailyRevenue = mockFn<
-      Promise<
-        Array<{
-          date: string;
-          revenue: number;
-          transactions: number;
-          customers: number;
-          averageCheck: number;
-        }>
-      >,
-      [unknown, unknown, unknown?]
-    >().mockImplementation(() =>
-      Promise.resolve([
-        {
-          date: '2024-01-01',
-          revenue: 500,
-          transactions: 5,
-          customers: 3,
-          averageCheck: 100,
-        },
-        {
-          date: '2024-01-02',
-          revenue: 500,
-          transactions: 5,
-          customers: 2,
-          averageCheck: 100,
-        },
-      ]),
-    );
     servicePrivate.getRegistrationsByDay = mockFn<
       Promise<Map<string, number>>,
       [unknown, unknown]

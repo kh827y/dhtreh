@@ -1,8 +1,10 @@
-import { ConfigService } from '@nestjs/config';
-import { AnalyticsService, DashboardPeriod } from './analytics.service';
+import { DashboardPeriod } from './analytics.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
 import { AnalyticsCacheService } from './analytics-cache.service';
 import { AppConfigService } from '../../core/config/app-config.service';
+import { AnalyticsOperationsService } from './services/analytics-operations.service';
+import { AnalyticsTimezoneService } from './analytics-timezone.service';
+import { AnalyticsRevenueService } from './services/analytics-revenue.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -44,7 +46,7 @@ type SqlTag = { strings: string[] };
 const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
   jest.fn<Return, Args>();
 const asPrismaService = (stub: PrismaStub) => stub as unknown as PrismaService;
-const asPrivateService = (service: AnalyticsService) =>
+const asPrivateService = (service: AnalyticsOperationsService) =>
   service as unknown as AnalyticsServicePrivate;
 const isSqlTag = (value: unknown): value is SqlTag =>
   typeof value === 'object' &&
@@ -95,11 +97,18 @@ describe('AnalyticsService — operational metrics', () => {
         }),
     };
 
-    const service = new AnalyticsService(
+    const cache = new AnalyticsCacheService(new AppConfigService());
+    const timezone = new AnalyticsTimezoneService(asPrismaService(prisma));
+    const revenue = new AnalyticsRevenueService(
       asPrismaService(prisma),
-      {} as ConfigService,
-      new AnalyticsCacheService(new AppConfigService()),
-      undefined,
+      cache,
+      timezone,
+    );
+    const service = new AnalyticsOperationsService(
+      asPrismaService(prisma),
+      cache,
+      timezone,
+      revenue,
     );
     const metrics = await asPrivateService(service).getOutletMetrics(
       'm-1',
@@ -195,11 +204,18 @@ describe('AnalyticsService — operational metrics', () => {
         }),
     };
 
-    const service = new AnalyticsService(
+    const cache = new AnalyticsCacheService(new AppConfigService());
+    const timezone = new AnalyticsTimezoneService(asPrismaService(prisma));
+    const revenue = new AnalyticsRevenueService(
       asPrismaService(prisma),
-      {} as ConfigService,
-      new AnalyticsCacheService(new AppConfigService()),
-      undefined,
+      cache,
+      timezone,
+    );
+    const service = new AnalyticsOperationsService(
+      asPrismaService(prisma),
+      cache,
+      timezone,
+      revenue,
     );
     const metrics = await asPrivateService(service).getStaffMetrics(
       'm-1',

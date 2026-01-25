@@ -168,6 +168,13 @@ docker compose --env-file .env.production -f docker-compose.production.yml exec 
 docker compose --env-file .env.production -f docker-compose.production.yml exec api pnpm prisma migrate deploy
 ```
 
+## Slow-query аудит БД
+- Включите `PRISMA_SLOW_QUERY_MS` (например, `200`) и перезапустите `api`.
+- При необходимости временно включите лог SQL/параметров:
+  - `PRISMA_SLOW_QUERY_LOG_SQL=1`
+  - `PRISMA_SLOW_QUERY_LOG_PARAMS=1`
+- Соберите логи `api` и используйте медленные запросы как источник для точечных индексов.
+
 ## Бэкапы
 ```bash
 # Создать бэкап
@@ -179,6 +186,7 @@ docker compose --env-file .env.production -f docker-compose.production.yml exec 
 # Восстановить
 ./scripts/restore.sh backup_20240101.sql.gz
 ```
+Примечание: backup‑контейнер собран с aws‑cli, для S3 используйте `S3_*` и `S3_REGION`.
 
 ## Режим обслуживания
 ```bash

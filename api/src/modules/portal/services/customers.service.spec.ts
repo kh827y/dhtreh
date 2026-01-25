@@ -1,4 +1,7 @@
 import { PortalCustomersService } from './customers.service';
+import { PortalCustomersQueryService } from './portal-customers-query.service';
+import { PortalCustomersOperationsService } from './portal-customers-operations.service';
+import { PortalCustomersMutationsService } from './portal-customers-mutations.service';
 import type { CustomerAudiencesService } from '../../customer-audiences/customer-audiences.service';
 import type { PrismaService } from '../../../core/prisma/prisma.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
@@ -44,21 +47,6 @@ type AggregatesStub = {
   firstPurchaseAt: Map<string, Date>;
   lastPurchaseAt: Map<string, Date>;
 };
-type PortalCustomersServicePrivate = {
-  ensureOperationAllowed: (
-    merchantId: string,
-    customerId: string,
-    operation: 'earn' | 'redeem',
-  ) => Promise<void>;
-  computeAggregates: (
-    merchantId: string,
-    ids: string[],
-  ) => Promise<AggregatesStub>;
-  buildBaseDto: (
-    customer: unknown,
-    aggregates: AggregatesStub,
-  ) => Record<string, unknown>;
-};
 type CustomerGetResult = Awaited<ReturnType<PortalCustomersService['get']>>;
 
 const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
@@ -66,8 +54,6 @@ const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
 const asPrismaService = (stub: MockPrisma) => stub as unknown as PrismaService;
 const asAudiencesService = (stub: AudiencesStub) =>
   stub as unknown as CustomerAudiencesService;
-const asPrivateService = (service: PortalCustomersService) =>
-  service as unknown as PortalCustomersServicePrivate;
 const objectContaining = <T extends object>(value: T) =>
   expect.objectContaining(value) as unknown as T;
 const arrayContaining = <T>(value: T[]) =>
@@ -75,6 +61,19 @@ const arrayContaining = <T>(value: T[]) =>
 const buildAudiences = (): AudiencesStub => ({
   evaluateCustomerSegments: mockFn().mockResolvedValue(null),
 });
+const buildServices = (prisma: MockPrisma, audiences: AudiencesStub) => {
+  const config = new AppConfigService();
+  const prismaService = asPrismaService(prisma);
+  const queries = new PortalCustomersQueryService(prismaService, config);
+  const operations = new PortalCustomersOperationsService(prismaService, config);
+  const mutations = new PortalCustomersMutationsService(
+    prismaService,
+    asAudiencesService(audiences),
+    queries,
+  );
+  const service = new PortalCustomersService(queries, operations, mutations);
+  return { service, queries, operations, mutations };
+};
 
 const baseTier = {
   id: 'tier-base',
@@ -139,12 +138,8 @@ describe('PortalCustomersService.create', () => {
     prisma.loyaltyTier.findFirst
       .mockResolvedValueOnce({ ...baseTier })
       .mockResolvedValueOnce({ ...baseTier });
-    const service = new PortalCustomersService(
-      asPrismaService(prisma),
-      asAudiencesService(audiences),
-      new AppConfigService(),
-    );
-    jest.spyOn(service, 'get').mockResolvedValue({} as CustomerGetResult);
+    const { service, queries } = buildServices(prisma, audiences);
+    jest.spyOn(queries, 'get').mockResolvedValue({} as CustomerGetResult);
 
     await service.create('M1', { phone: '+79991234567' });
 
@@ -166,12 +161,8 @@ describe('PortalCustomersService.create', () => {
         return { ...baseTier };
       },
     );
-    const service = new PortalCustomersService(
-      asPrismaService(prisma),
-      asAudiencesService(audiences),
-      new AppConfigService(),
-    );
-    jest.spyOn(service, 'get').mockResolvedValue({} as CustomerGetResult);
+    const { service, queries } = buildServices(prisma, audiences);
+    jest.spyOn(queries, 'get').mockResolvedValue({} as CustomerGetResult);
 
     await service.create('M1', { phone: '+79991234567', levelId: vipTier.id });
 
@@ -192,12 +183,8 @@ describe('PortalCustomersService.create', () => {
       id: 'cust-existing',
       merchantId: 'M1',
     });
-    const service = new PortalCustomersService(
-      asPrismaService(prisma),
-      asAudiencesService(audiences),
-      new AppConfigService(),
-    );
-    const getSpy = jest.spyOn(service, 'get').mockResolvedValue({
+    const { service, queries } = buildServices(prisma, audiences);
+    const getSpy = jest.spyOn(queries, 'get').mockResolvedValue({
       id: 'cust-existing',
     } as CustomerGetResult);
 
@@ -223,15 +210,10 @@ describe('PortalCustomersService.ensureOperationAllowed', () => {
       accrualsBlocked: true,
       redemptionsBlocked: false,
     });
-    const service = new PortalCustomersService(
-      asPrismaService(prisma),
-      asAudiencesService(audiences),
-      new AppConfigService(),
-    );
-    const servicePrivate = asPrivateService(service);
+    const { operations } = buildServices(prisma, audiences);
 
     await expect(
-      servicePrivate.ensureOperationAllowed('M1', 'cust-1', 'earn'),
+      operations.ensureOperationAllowed('M1', 'cust-1', 'earn'),
     ).rejects.toThrow('Начисления заблокированы администратором');
   });
 
@@ -242,15 +224,10 @@ describe('PortalCustomersService.ensureOperationAllowed', () => {
       accrualsBlocked: false,
       redemptionsBlocked: true,
     });
-    const service = new PortalCustomersService(
-      asPrismaService(prisma),
-      asAudiencesService(audiences),
-      new AppConfigService(),
-    );
-    const servicePrivate = asPrivateService(service);
+    const { operations } = buildServices(prisma, audiences);
 
     await expect(
-      servicePrivate.ensureOperationAllowed('M1', 'cust-1', 'redeem'),
+      operations.ensureOperationAllowed('M1', 'cust-1', 'redeem'),
     ).rejects.toThrow('Списания заблокированы администратором');
   });
 });
@@ -266,12 +243,7 @@ describe('PortalCustomersService.list', () => {
         ),
       },
     });
-    const service = new PortalCustomersService(
-      asPrismaService(prisma),
-      asAudiencesService(audiences),
-      new AppConfigService(),
-    );
-    const servicePrivate = asPrivateService(service);
+    const { service, queries } = buildServices(prisma, audiences);
     const emptyAggregates: AggregatesStub = {
       pendingBalance: new Map(),
       spendCurrentMonth: new Map(),
@@ -281,10 +253,8 @@ describe('PortalCustomersService.list', () => {
       firstPurchaseAt: new Map(),
       lastPurchaseAt: new Map(),
     };
-    jest
-      .spyOn(servicePrivate, 'computeAggregates')
-      .mockResolvedValue(emptyAggregates);
-    jest.spyOn(servicePrivate, 'buildBaseDto').mockReturnValue({});
+    jest.spyOn(queries, 'computeAggregates').mockResolvedValue(emptyAggregates);
+    jest.spyOn(queries, 'buildBaseDto').mockReturnValue({});
 
     await service.list('M1', { registeredOnly: false, excludeMiniapp: true });
 

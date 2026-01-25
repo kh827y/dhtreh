@@ -1,5 +1,5 @@
-import { ConfigService } from '@nestjs/config';
-import { AnalyticsService } from './analytics.service';
+import { AnalyticsCustomersService } from './services/analytics-customers.service';
+import { AnalyticsTimezoneService } from './analytics-timezone.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
 import { AnalyticsCacheService } from './analytics-cache.service';
 import { AppConfigService } from '../../core/config/app-config.service';
@@ -35,11 +35,12 @@ describe('AnalyticsService — customer portrait', () => {
       transaction: { findMany: txnFindMany },
     };
 
-    const service = new AnalyticsService(
+    const cache = new AnalyticsCacheService(new AppConfigService());
+    const timezone = new AnalyticsTimezoneService(asPrismaService(prisma));
+    const service = new AnalyticsCustomersService(
       asPrismaService(prisma),
-      {} as ConfigService,
-      new AnalyticsCacheService(new AppConfigService()),
-      undefined,
+      cache,
+      timezone,
     );
 
     const period = {

@@ -1,12 +1,13 @@
-import { AnalyticsService, DashboardPeriod } from '../analytics.service';
+import { DashboardPeriod } from '../analytics.service';
 import { AnalyticsCacheService } from '../analytics-cache.service';
 import {
   DEFAULT_TIMEZONE_CODE,
   findTimezone,
 } from '../../../shared/timezone/russia-timezones';
-import type { ConfigService } from '@nestjs/config';
 import type { PrismaService } from '../../../core/prisma/prisma.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
+import { AnalyticsMechanicsService } from '../services/analytics-mechanics.service';
+import { AnalyticsTimezoneService } from '../analytics-timezone.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -19,7 +20,6 @@ type PrismaStub = {
   autoReturnAttempt: { findMany: MockFn<Promise<unknown[]>, [unknown?]> };
   customerStats: { findMany: MockFn<Promise<unknown[]>, [unknown?]> };
 };
-type ConfigStub = { get: MockFn };
 type AnalyticsServicePrivate = {
   getTimezoneInfo: (merchantId: string) => Promise<unknown>;
 };
@@ -27,8 +27,7 @@ type AnalyticsServicePrivate = {
 const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
   jest.fn<Return, Args>();
 const asPrismaService = (stub: PrismaStub) => stub as unknown as PrismaService;
-const asConfigService = (stub: ConfigStub) => stub as unknown as ConfigService;
-const asPrivateService = (service: AnalyticsService) =>
+const asPrivateService = (service: AnalyticsTimezoneService) =>
   service as unknown as AnalyticsServicePrivate;
 
 describe('AnalyticsService.getAutoReturnMetrics', () => {
@@ -40,26 +39,25 @@ describe('AnalyticsService.getAutoReturnMetrics', () => {
     customerStats: { findMany: mockFn() },
   };
 
-  const config: ConfigStub = { get: mockFn() };
-
   const period: DashboardPeriod = {
     from: new Date('2025-01-01T00:00:00.000Z'),
     to: new Date('2025-01-05T23:59:59.999Z'),
     type: 'custom',
   };
 
-  let service: AnalyticsService;
+  let service: AnalyticsMechanicsService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new AnalyticsService(
+    const cache = new AnalyticsCacheService(new AppConfigService());
+    const timezone = new AnalyticsTimezoneService(asPrismaService(prisma));
+    service = new AnalyticsMechanicsService(
       asPrismaService(prisma),
-      asConfigService(config),
-      new AnalyticsCacheService(new AppConfigService()),
-      undefined,
+      cache,
+      timezone,
     );
     jest
-      .spyOn(asPrivateService(service), 'getTimezoneInfo')
+      .spyOn(asPrivateService(timezone), 'getTimezoneInfo')
       .mockResolvedValue(findTimezone(DEFAULT_TIMEZONE_CODE));
   });
 

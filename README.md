@@ -131,7 +131,7 @@ D. Проверка результатов
 
 - Один VPS/VDS с Docker Compose (Postgres и Redis на старте можно держать на том же хосте).
 - Домен и TLS (Traefik/NGINX), базовый DNS для `api/admin/portal/app`.
-- Бэкапы БД: сервис `backup` в `docker-compose.production.yml` + S3-совместимое хранилище (опционально).
+- Бэкапы БД: сервис `backup` в `docker-compose.production.yml` (с aws‑cli) + S3-совместимое хранилище (опционально, `S3_REGION`).
 - Health endpoints: `/healthz` (DB), `/readyz` (DB + миграции), `/health`, `/ready`, `/live`.
 - Preflight: `scripts/preflight.sh` (проверка окружения/секретов перед деплоем).
 - Smoke-check: `scripts/smoke-check.sh` (проверка health/ready/metrics).

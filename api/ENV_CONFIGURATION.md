@@ -93,6 +93,9 @@
 
 - `LOG_LEVEL` — уровень логов HTTP (`trace|debug|info|warn|error|fatal`).
 - `LOG_HTTP_IGNORE_PATHS` — список путей, которые не логируются (через запятую). Пример: `/healthz,/readyz,/live,/metrics`.
+- `PRISMA_SLOW_QUERY_MS` — порог (мс) для логирования медленных SQL‑запросов Prisma.
+- `PRISMA_SLOW_QUERY_LOG_SQL` — логировать SQL в сообщении (0/1, опционально).
+- `PRISMA_SLOW_QUERY_LOG_PARAMS` — логировать параметры SQL (0/1, опционально, включать на короткое время).
 
 ## Алерты и мониторинг
 

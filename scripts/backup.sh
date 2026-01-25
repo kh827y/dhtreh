@@ -14,4 +14,4 @@ if [ ! -f "$COMPOSE_FILE" ]; then
   exit 1
 fi
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm backup
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm --build backup

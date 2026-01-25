@@ -160,7 +160,6 @@ curl http://localhost:3000/healthz
 
 ### Ресурсы и лимиты контейнеров
 - В `docker-compose.production.yml` добавлены `mem_limit`, `mem_reservation`, `cpus` — они **работают в обычном docker compose**.
-- Блок `deploy.resources` используется только в Swarm и **не применяется** в single‑VPS режиме.
 - Если нужно масштабирование без Swarm — используйте `docker compose up -d --scale api=2`.
 
 ### Healthchecks
@@ -176,11 +175,11 @@ BASE_URL=https://api.example.com METRICS_TOKEN=... ./scripts/smoke-check.sh
   - `max-file: 5`
 
 ### Бэкапы и расписание
-- Бэкапы запускаются через `scripts/backup.sh` (использует backup‑контейнер).
+- Бэкапы запускаются через `scripts/backup.sh` (использует backup‑контейнер с aws-cli).
 - Пример cron‑расписания: `infra/cron/loyalty-cron.example`.
 - Перед установкой cron:
   - создайте `/var/log/loyalty`
-  - проверьте, что в `.env.production` заполнены `S3_*` (если используете S3)
+  - проверьте, что в `.env.production` заполнены `S3_*` (и `S3_REGION`, если используете S3)
 
 ### Базовые алерты
 - Укажите Telegram‑бота для алертов:

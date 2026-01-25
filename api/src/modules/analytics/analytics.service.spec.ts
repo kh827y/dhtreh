@@ -1,5 +1,4 @@
-import { ConfigService } from '@nestjs/config';
-import { AnalyticsService } from './analytics.service';
+import { AnalyticsRfmService } from './services/analytics-rfm.service';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AnalyticsCacheService } from './analytics-cache.service';
 import { AppConfigService } from '../../core/config/app-config.service';
@@ -16,16 +15,14 @@ function createPrismaMock() {
 
 describe('AnalyticsService — RFM segmentation', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
-  let service: AnalyticsService;
+  let service: AnalyticsRfmService;
 
   beforeEach(() => {
     jest.useFakeTimers();
     prisma = createPrismaMock();
-    service = new AnalyticsService(
+    service = new AnalyticsRfmService(
       prisma as unknown as PrismaService,
-      {} as ConfigService,
       new AnalyticsCacheService(new AppConfigService()),
-      undefined,
     );
   });
 

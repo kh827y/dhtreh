@@ -19,6 +19,7 @@ S3_BUCKET=${S3_BUCKET:-""}
 S3_ENDPOINT=${S3_ENDPOINT:-"https://s3.amazonaws.com"}
 S3_ACCESS_KEY=${S3_ACCESS_KEY:-""}
 S3_SECRET_KEY=${S3_SECRET_KEY:-""}
+S3_REGION=${S3_REGION:-${AWS_DEFAULT_REGION:-"us-east-1"}}
 
 # Telegram notification (optional)
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-""}
@@ -74,6 +75,8 @@ if PGPASSWORD="$PGPASSWORD" pg_dump -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" | 
         # Configure AWS CLI
         export AWS_ACCESS_KEY_ID=$S3_ACCESS_KEY
         export AWS_SECRET_ACCESS_KEY=$S3_SECRET_KEY
+        export AWS_DEFAULT_REGION=$S3_REGION
+        export AWS_EC2_METADATA_DISABLED=true
         
         if aws s3 cp "$BACKUP_FILE" "s3://$S3_BUCKET/backups/" --endpoint-url=$S3_ENDPOINT; then
             log "Successfully uploaded to S3"

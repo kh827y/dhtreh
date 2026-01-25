@@ -30,14 +30,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
 
   # Redis для кеширования и rate limiting
   redis:
@@ -57,14 +49,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
 
   # API сервер
   api:
@@ -151,15 +135,6 @@ services:
       - "traefik.http.routers.api.tls=true"
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
       - "traefik.http.services.api.loadbalancer.server.port=3000"
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-        reservations:
-          cpus: '0.5'
-          memory: 256M
 
   # Worker для фоновых задач
   worker:
@@ -242,15 +217,6 @@ services:
       start_period: 20s
     networks:
       - loyalty_network
-    deploy:
-      replicas: 1
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
 
   # Admin панель
   admin:
@@ -287,14 +253,6 @@ services:
       - "traefik.http.services.admin.loadbalancer.server.port=3001"
       - "traefik.http.routers.admin.middlewares=admin-auth"
       - "traefik.http.middlewares.admin-auth.basicauth.users=${ADMIN_BASIC_AUTH}"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.3'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
 
   # Merchant portal
   merchant-portal:
@@ -326,14 +284,6 @@ services:
       - "traefik.http.routers.portal.tls=true"
       - "traefik.http.routers.portal.tls.certresolver=letsencrypt"
       - "traefik.http.services.portal.loadbalancer.server.port=3000"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.3'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
 
   # Cashier виртуальный терминал
   cashier:
@@ -365,14 +315,6 @@ services:
       - "traefik.http.routers.cashier.tls=true"
       - "traefik.http.routers.cashier.tls.certresolver=letsencrypt"
       - "traefik.http.services.cashier.loadbalancer.server.port=3000"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.2'
-          memory: 192M
-        reservations:
-          cpus: '0.1'
-          memory: 96M
 
   # Miniapp для Telegram
   miniapp:
@@ -404,15 +346,6 @@ services:
       - "traefik.http.routers.miniapp.tls=true"
       - "traefik.http.routers.miniapp.tls.certresolver=letsencrypt"
       - "traefik.http.services.miniapp.loadbalancer.server.port=3003"
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.2'
-          memory: 128M
 
   # Traefik reverse proxy
   traefik:
@@ -460,14 +393,6 @@ services:
       - "traefik.http.routers.dashboard.service=api@internal"
       - "traefik.http.routers.dashboard.middlewares=dashboard-auth"
       - "traefik.http.middlewares.dashboard-auth.basicauth.users=${TRAEFIK_BASIC_AUTH}"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.2'
-          memory: 128M
-        reservations:
-          cpus: '0.1'
-          memory: 64M
 
   # Prometheus для метрик
   prometheus:
@@ -504,14 +429,6 @@ services:
       - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
       - "traefik.http.routers.prometheus.middlewares=prometheus-auth"
       - "traefik.http.middlewares.prometheus-auth.basicauth.users=${METRICS_BASIC_AUTH}"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.3'
-          memory: 512M
-        reservations:
-          cpus: '0.1'
-          memory: 256M
 
   # Grafana для визуализации
   grafana:
@@ -541,19 +458,13 @@ services:
       - "traefik.http.routers.grafana.tls=true"
       - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
       - "traefik.http.services.grafana.loadbalancer.server.port=3000"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.3'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
 
   # Backup сервис
   backup:
     <<: *default-logging
-    image: postgres:15-alpine
+    build:
+      context: ./infra/backup
+    image: loyalty-backup:latest
     restart: "no"
     mem_limit: 256m
     mem_reservation: 128m
@@ -564,6 +475,7 @@ services:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION}
       TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN}
       TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID}
     volumes:

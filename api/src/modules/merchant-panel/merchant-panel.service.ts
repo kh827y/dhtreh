@@ -6,79 +6,35 @@ import {
   Logger,
 } from '@nestjs/common';
 import {
-  AccessScope,
   CommunicationChannel,
   Prisma,
   StaffOutletAccessStatus,
   StaffRole,
   StaffStatus,
 } from '@prisma/client';
-import { MerchantsService } from '../merchants/merchants.service';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { MetricsService } from '../../core/metrics/metrics.service';
 import { hashPassword, verifyPassword } from '../../shared/password.util';
 import { LookupCacheService } from '../../core/cache/lookup-cache.service';
 import { logIgnoredError } from '../../shared/logging/ignore-error.util';
-import {
-  normalizeDeviceCode,
-  ensureUniqueDeviceCodes,
-  type NormalizedDeviceCode,
-} from '../../shared/devices/device.util';
+import { MerchantPanelAccessGroupsService } from './merchant-panel-access-groups.service';
+import { MerchantPanelOutletsService } from './merchant-panel-outlets.service';
+import { MerchantPanelCashierService } from './merchant-panel-cashier.service';
 import type {
-  AccessGroupDto as AccessGroupDtoModel,
-  AccessGroupListResponseDto as AccessGroupListResponseDtoModel,
-  AccessGroupPermissionDto as AccessGroupPermissionDtoModel,
-} from './dto/access-group.dto';
+  AccessGroupFilters,
+  AccessGroupPayload,
+  OutletFilters,
+  StaffFilters,
+  UpsertOutletPayload,
+  UpsertStaffPayload,
+} from './merchant-panel.types';
 
-interface PaginationOptions {
+export * from './merchant-panel.types';
+
+type PaginationOptions = {
   page: number;
   pageSize: number;
-}
-
-export interface StaffFilters {
-  search?: string;
-  status?: StaffStatus | 'ALL';
-  outletId?: string;
-  groupId?: string;
-  portalOnly?: boolean;
-}
-
-export interface UpsertStaffPayload {
-  login?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  position?: string | null;
-  comment?: string | null;
-  avatarUrl?: string | null;
-  role?: StaffRole;
-  status?: StaffStatus;
-  canAccessPortal?: boolean;
-  portalAccessEnabled?: boolean;
-  outletIds?: string[];
-  accessGroupIds?: string[];
-  pinStrategy?: 'KEEP' | 'ROTATE';
-  password?: string | null;
-  currentPassword?: string | null;
-}
-
-export interface AccessGroupPayload {
-  name: string;
-  description?: string | null;
-  scope?: AccessScope;
-  permissions: Array<{
-    resource: string;
-    action: string;
-    conditions?: string | null;
-  }>;
-  isDefault?: boolean;
-}
-
-export interface AccessGroupFilters {
-  scope?: AccessScope | 'ALL';
-  search?: string;
-}
+};
 
 type PortalActorContext = {
   actor?: string | null;
@@ -98,18 +54,6 @@ function assertEmailFormat(value: string, message: string) {
   if (!EMAIL_REGEX.test(value)) {
     throw new BadRequestException(message);
   }
-}
-
-export interface OutletFilters {
-  status?: 'ACTIVE' | 'INACTIVE' | 'ALL';
-  search?: string;
-}
-
-export interface UpsertOutletPayload {
-  name?: string;
-  works?: boolean;
-  reviewsShareLinks?: unknown;
-  devices?: Array<{ code?: string | null }> | null;
 }
 
 type StaffAccessView = {
@@ -134,9 +78,11 @@ export class MerchantPanelService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly merchants: MerchantsService,
     private readonly metrics: MetricsService,
     private readonly cache: LookupCacheService,
+    private readonly accessGroups: MerchantPanelAccessGroupsService,
+    private readonly outlets: MerchantPanelOutletsService,
+    private readonly cashiers: MerchantPanelCashierService,
   ) {}
 
   private logPortalEventFailure(
@@ -324,198 +270,6 @@ export class MerchantPanelService {
       lastTxnAt: access.lastTxnAt ? access.lastTxnAt.toISOString() : null,
       transactionsTotal: countMap.get(`${staffId}:${access.outletId}`) ?? 0,
     }));
-  }
-
-  private sanitizeReviewLinksInput(input?: unknown) {
-    if (!input || typeof input !== 'object') return undefined;
-    const result: Record<string, string> = {};
-    for (const [rawKey, rawValue] of Object.entries(
-      input as Record<string, unknown>,
-    )) {
-      const key = String(rawKey || '')
-        .toLowerCase()
-        .trim();
-      if (!key) continue;
-      if (typeof rawValue === 'string') {
-        const trimmed = rawValue.trim();
-        if (trimmed.length) {
-          result[key] = trimmed;
-        }
-      }
-    }
-    return Object.keys(result).length ? result : {};
-  }
-
-  private extractReviewLinks(payload: Prisma.JsonValue | null | undefined) {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload))
-      return {} as Record<string, string>;
-    const result: Record<string, string> = {};
-    for (const [platform, value] of Object.entries(
-      payload as Record<string, unknown>,
-    )) {
-      if (!platform) continue;
-      if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (trimmed) result[platform] = trimmed;
-      }
-    }
-    return result;
-  }
-
-  private mapDevices(devices?: Prisma.DeviceGetPayload<object>[]) {
-    const list = Array.isArray(devices) ? devices : [];
-    return list
-      .filter((device) => !device.archivedAt)
-      .map((device) => ({
-        id: device.id,
-        code: device.code,
-        archivedAt: device.archivedAt ?? null,
-        createdAt: device.createdAt,
-        updatedAt: device.updatedAt,
-      }));
-  }
-
-  private normalizeDevicesInput(
-    devices?: Array<{ code?: string | null }> | null,
-  ): NormalizedDeviceCode[] {
-    if (!devices) return [];
-    const normalized = devices
-      .map((device) => {
-        if (!device) return null;
-        return normalizeDeviceCode(String(device.code ?? ''));
-      })
-      .filter((value): value is NormalizedDeviceCode => value !== null);
-    ensureUniqueDeviceCodes(normalized);
-    return normalized;
-  }
-
-  private async syncDevicesForOutlet(
-    tx: Prisma.TransactionClient,
-    merchantId: string,
-    outletId: string,
-    devices: NormalizedDeviceCode[],
-  ) {
-    ensureUniqueDeviceCodes(devices);
-    const codes = devices.map((device) => device.normalized);
-    if (!devices.length) {
-      await tx.device.updateMany({
-        where: { merchantId, outletId, archivedAt: null },
-        data: { archivedAt: new Date() },
-      });
-      return;
-    }
-    const existing = await tx.device.findMany({
-      where: { merchantId, codeNormalized: { in: codes } },
-    });
-    const conflict = existing.find(
-      (device) => device.outletId !== outletId && !device.archivedAt,
-    );
-    if (conflict) {
-      throw new BadRequestException(
-        'Идентификатор устройства уже привязан к другой торговой точке',
-      );
-    }
-    const now = new Date();
-    for (const device of devices) {
-      const matched = existing.find(
-        (d) => d.codeNormalized === device.normalized,
-      );
-      if (matched) {
-        await tx.device.update({
-          where: { id: matched.id },
-          data: {
-            code: device.code,
-            codeNormalized: device.normalized,
-            archivedAt: null,
-            updatedAt: now,
-          },
-        });
-      } else {
-        await tx.device.create({
-          data: {
-            merchantId,
-            outletId,
-            code: device.code,
-            codeNormalized: device.normalized,
-            createdAt: now,
-            updatedAt: now,
-          },
-        });
-      }
-    }
-    await tx.device.updateMany({
-      where: {
-        merchantId,
-        outletId,
-        codeNormalized: { notIn: codes },
-        archivedAt: null,
-      },
-      data: { archivedAt: now },
-    });
-  }
-
-  private mapOutlet(
-    outlet: Prisma.OutletGetPayload<object> & {
-      devices?: Prisma.DeviceGetPayload<object>[];
-      staffCount?: number;
-    },
-  ) {
-    return {
-      id: outlet.id,
-      name: outlet.name,
-      status: outlet.status,
-      staffCount: typeof outlet.staffCount === 'number' ? outlet.staffCount : 0,
-      devices: this.mapDevices(outlet.devices),
-      reviewsShareLinks: (() => {
-        const links = this.extractReviewLinks(outlet.reviewLinks ?? null);
-        if (!Object.keys(links).length) return null;
-        return {
-          yandex: links.yandex ?? null,
-          twogis: links.twogis ?? null,
-          google: links.google ?? null,
-        };
-      })(),
-    };
-  }
-
-  private mapAccessGroup(
-    group: Prisma.AccessGroupGetPayload<object> & {
-      permissions?: Prisma.AccessGroupPermissionGetPayload<object>[];
-      memberCount?: number;
-    },
-  ): AccessGroupDtoModel {
-    const normalizeConditions = (
-      value: Prisma.JsonValue | null,
-    ): string | null => {
-      if (value == null) return null;
-      if (typeof value === 'string') return value;
-      try {
-        return JSON.stringify(value);
-      } catch (err) {
-        logIgnoredError(
-          err,
-          'MerchantPanelService normalizeConditions',
-          this.logger,
-          'debug',
-        );
-        return null;
-      }
-    };
-    const permissions = (group.permissions ?? []).map((permission) => ({
-      resource: permission.resource,
-      action: permission.action,
-      conditions: normalizeConditions(permission.conditions ?? null),
-    })) as AccessGroupPermissionDtoModel[];
-    return {
-      id: group.id,
-      name: group.name,
-      description: group.description,
-      scope: group.scope,
-      isSystem: group.isSystem,
-      isDefault: group.isDefault,
-      memberCount: group.memberCount ?? 0,
-      permissions,
-    } as AccessGroupDtoModel;
   }
 
   async listStaff(
@@ -1511,528 +1265,105 @@ export class MerchantPanelService {
     return { ok: true };
   }
 
-  async listAccessGroups(
+  listAccessGroups(
     merchantId: string,
     filters: AccessGroupFilters = {},
     pagination?: Partial<PaginationOptions>,
   ) {
-    const paging = this.normalizePagination(pagination);
-    const where: Prisma.AccessGroupWhereInput = { merchantId };
-    if (filters.scope && filters.scope !== 'ALL') {
-      where.scope = filters.scope;
-    }
-    if (filters.search) {
-      const q = filters.search.trim();
-      where.OR = [
-        { name: { contains: q, mode: 'insensitive' } },
-        { description: { contains: q, mode: 'insensitive' } },
-      ];
-    }
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.accessGroup.findMany({
-        where,
-        orderBy: [{ isSystem: 'asc' }, { createdAt: 'desc' }],
-        include: {
-          permissions: true,
-          members: { select: { id: true } },
-        },
-        skip: (paging.page - 1) * paging.pageSize,
-        take: paging.pageSize,
-      }),
-      this.prisma.accessGroup.count({ where }),
-    ]);
-
-    try {
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.access-group.list',
-          merchantId,
-          scope: filters.scope,
-          hasSearch: Boolean(filters.search),
-          page: paging.page,
-          pageSize: paging.pageSize,
-          total,
-        }),
-      );
-      this.metrics.inc('portal_access_group_list_total');
-    } catch (err) {
-      this.logPortalEventFailure('portal.access-group.list', err, {
-        merchantId,
-      });
-    }
-
-    return {
-      items: items.map((group) =>
-        this.mapAccessGroup({ ...group, memberCount: group.members.length }),
-      ),
-      meta: this.buildMeta(paging, total),
-    } as AccessGroupListResponseDtoModel;
+    return this.accessGroups.listAccessGroups(merchantId, filters, pagination);
   }
 
-  async createAccessGroup(
+  createAccessGroup(
     merchantId: string,
     payload: AccessGroupPayload,
     actorId?: string,
   ) {
-    const group = await this.prisma.accessGroup.create({
-      data: {
-        merchantId,
-        name: payload.name.trim(),
-        description: payload.description ?? null,
-        scope: payload.scope ?? AccessScope.PORTAL,
-        isDefault: payload.isDefault ?? false,
-        createdById: actorId,
-        permissions: payload.permissions.length
-          ? {
-              create: payload.permissions.map((permission) => ({
-                resource: permission.resource,
-                action: permission.action,
-                conditions: permission.conditions ?? Prisma.DbNull,
-              })),
-            }
-          : undefined,
-      },
-      include: { permissions: true },
-    });
-    const mapped = this.mapAccessGroup({ ...group, memberCount: 0 });
-    try {
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.access-group.create',
-          merchantId,
-          groupId: mapped.id,
-          permissions: mapped.permissions.length,
-          actorId: actorId ?? null,
-        }),
-      );
-      this.metrics.inc('portal_access_group_write_total', { action: 'create' });
-    } catch (err) {
-      this.logPortalEventFailure('portal.access-group.create', err, {
-        merchantId,
-        groupId: mapped.id,
-      });
-    }
-    return mapped;
+    return this.accessGroups.createAccessGroup(merchantId, payload, actorId);
   }
 
-  async updateAccessGroup(
+  updateAccessGroup(
     merchantId: string,
     groupId: string,
     payload: AccessGroupPayload,
     actorId?: string,
   ) {
-    const group = await this.prisma.accessGroup.findFirst({
-      where: { merchantId, id: groupId },
-    });
-    if (!group) throw new NotFoundException('Группа не найдена');
-    const nameLower = group.name.trim().toLowerCase();
-    const isOwnerGroup =
-      nameLower === 'владелец' ||
-      nameLower === 'owner' ||
-      nameLower === 'merchant';
-    if (isOwnerGroup) {
-      throw new ForbiddenException(
-        'Нельзя редактировать группу доступа владельца',
-      );
-    }
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.accessGroup.update({
-        where: { id: groupId },
-        data: {
-          name: payload.name.trim(),
-          description: payload.description ?? null,
-          scope: payload.scope ?? group.scope,
-          isDefault: payload.isDefault ?? group.isDefault,
-          updatedById: actorId ?? group.updatedById,
-        },
-      });
-      await tx.accessGroupPermission.deleteMany({ where: { groupId } });
-      if (payload.permissions.length) {
-        await tx.accessGroupPermission.createMany({
-          data: payload.permissions.map((permission) => ({
-            groupId,
-            resource: permission.resource,
-            action: permission.action,
-            conditions: permission.conditions ?? Prisma.DbNull,
-          })),
-        });
-      }
-      const reloaded = await tx.accessGroup.findUnique({
-        where: { id: groupId },
-        include: { permissions: true, members: { select: { id: true } } },
-      });
-      return reloaded!;
-    });
-    const mapped = this.mapAccessGroup({
-      ...updated,
-      memberCount: updated.members.length,
-    });
-    try {
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.access-group.update',
-          merchantId,
-          groupId: mapped.id,
-          permissions: mapped.permissions.length,
-          actorId: actorId ?? null,
-        }),
-      );
-      this.metrics.inc('portal_access_group_write_total', { action: 'update' });
-    } catch (err) {
-      this.logPortalEventFailure('portal.access-group.update', err, {
-        merchantId,
-        groupId: mapped.id,
-      });
-    }
-    return mapped;
-  }
-
-  async getAccessGroup(merchantId: string, groupId: string) {
-    const group = await this.prisma.accessGroup.findFirst({
-      where: { merchantId, id: groupId },
-      include: { permissions: true, members: { select: { id: true } } },
-    });
-    if (!group) throw new NotFoundException('Группа не найдена');
-    return this.mapAccessGroup({ ...group, memberCount: group.members.length });
-  }
-
-  async deleteAccessGroup(merchantId: string, groupId: string) {
-    const group = await this.prisma.accessGroup.findFirst({
-      where: { merchantId, id: groupId },
-    });
-    if (!group) throw new NotFoundException('Группа не найдена');
-    const nameLower = group.name.trim().toLowerCase();
-    const isOwnerGroup =
-      nameLower === 'владелец' ||
-      nameLower === 'owner' ||
-      nameLower === 'merchant';
-    if (isOwnerGroup) {
-      throw new ForbiddenException('Нельзя удалить группу доступа владельца');
-    }
-    await this.prisma.$transaction(async (tx) => {
-      await tx.staffAccessGroup.deleteMany({ where: { groupId } });
-      await tx.accessGroupPermission.deleteMany({ where: { groupId } });
-      await tx.accessGroup.delete({ where: { id: groupId } });
-    });
-    try {
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.access-group.delete',
-          merchantId,
-          groupId,
-        }),
-      );
-      this.metrics.inc('portal_access_group_write_total', { action: 'delete' });
-    } catch (err) {
-      this.logPortalEventFailure('portal.access-group.delete', err, {
-        merchantId,
-        groupId,
-      });
-    }
-    return { ok: true };
-  }
-
-  async setGroupMembers(
-    merchantId: string,
-    groupId: string,
-    staffIds: string[],
-  ) {
-    const group = await this.prisma.accessGroup.findFirst({
-      where: { merchantId, id: groupId },
-    });
-    if (!group) throw new NotFoundException('Группа не найдена');
-    const uniqueIds = Array.from(
-      new Set(
-        staffIds
-          .map((id) => String(id || '').trim())
-          .filter((id) => id.length > 0),
-      ),
+    return this.accessGroups.updateAccessGroup(
+      merchantId,
+      groupId,
+      payload,
+      actorId,
     );
-    if (uniqueIds.length) {
-      const staffRows = await this.prisma.staff.findMany({
-        where: { merchantId, id: { in: uniqueIds } },
-        select: { id: true },
-      });
-      const validIds = new Set(
-        staffRows.map((row) => String(row.id)).filter(Boolean),
-      );
-      const invalid = uniqueIds.filter((id) => !validIds.has(id));
-      if (invalid.length) {
-        throw new BadRequestException(
-          'Сотрудники должны принадлежать мерчанту',
-        );
-      }
-    }
-    const ownerRows = await this.prisma.staff.findMany({
-      where: {
-        merchantId,
-        OR: [{ isOwner: true }, { role: StaffRole.MERCHANT }],
-      },
-      select: { id: true },
-    });
-    const ownerIds = ownerRows.map((row) => String(row.id)).filter(Boolean);
-    const ownerIdSet = new Set(ownerIds);
-    const nextMembers = staffIds.filter((id) => !ownerIdSet.has(id));
-    let finalMembers = nextMembers;
-    await this.prisma.$transaction(async (tx) => {
-      if (ownerIds.length) {
-        const existingOwnerMembers = await tx.staffAccessGroup.findMany({
-          where: { groupId, staffId: { in: ownerIds } },
-          select: { staffId: true },
-        });
-        const preserved = existingOwnerMembers
-          .map((row) => String(row.staffId))
-          .filter(Boolean);
-        finalMembers = Array.from(new Set([...nextMembers, ...preserved]));
-      }
-      await tx.staffAccessGroup.deleteMany({ where: { groupId } });
-      if (finalMembers.length) {
-        await tx.staffAccessGroup.createMany({
-          data: finalMembers.map((staffId) => ({
-            merchantId,
-            groupId,
-            staffId,
-          })),
-        });
-      }
-    });
-    try {
-      this.logger.log(
-        JSON.stringify({
-          event: 'portal.access-group.members.set',
-          merchantId,
-          groupId,
-          members: finalMembers.length,
-        }),
-      );
-      this.metrics.inc('portal_access_group_write_total', {
-        action: 'members',
-      });
-    } catch (err) {
-      this.logPortalEventFailure('portal.access-group.members.set', err, {
-        merchantId,
-        groupId,
-        memberCount: finalMembers.length,
-      });
-    }
-    return { ok: true };
   }
 
-  async listOutlets(
+  getAccessGroup(merchantId: string, groupId: string) {
+    return this.accessGroups.getAccessGroup(merchantId, groupId);
+  }
+
+  deleteAccessGroup(merchantId: string, groupId: string) {
+    return this.accessGroups.deleteAccessGroup(merchantId, groupId);
+  }
+
+  setGroupMembers(merchantId: string, groupId: string, staffIds: string[]) {
+    return this.accessGroups.setGroupMembers(merchantId, groupId, staffIds);
+  }
+
+  listOutlets(
     merchantId: string,
     filters: OutletFilters = {},
     pagination?: Partial<PaginationOptions>,
   ) {
-    const paging = this.normalizePagination(pagination);
-    const where: Prisma.OutletWhereInput = { merchantId };
-    if (filters.status && filters.status !== 'ALL') {
-      where.status = filters.status;
-    }
-    if (filters.search) {
-      where.OR = [{ name: { contains: filters.search, mode: 'insensitive' } }];
-    }
-    const [items, total] = await Promise.all([
-      this.prisma.outlet.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (paging.page - 1) * paging.pageSize,
-        take: paging.pageSize,
-        include: {
-          devices: {
-            where: { archivedAt: null },
-            orderBy: { createdAt: 'asc' },
-          },
-        },
-      }),
-      this.prisma.outlet.count({ where }),
-    ]);
-
-    const outletIds = items.map((outlet) => outlet.id);
-    const staffCountMap = new Map<string, number>();
-    if (outletIds.length) {
-      const counts = await this.prisma.staffOutletAccess.groupBy({
-        by: ['outletId'],
-        where: {
-          merchantId,
-          outletId: { in: outletIds },
-          status: StaffOutletAccessStatus.ACTIVE,
-        },
-        _count: { outletId: true },
-      });
-      counts.forEach((row) => {
-        staffCountMap.set(row.outletId, row._count.outletId);
-      });
-    }
-
-    return {
-      items: items.map((outlet) =>
-        this.mapOutlet({
-          ...outlet,
-          staffCount: staffCountMap.get(outlet.id) ?? 0,
-        }),
-      ),
-      meta: this.buildMeta(paging, total),
-    };
+    return this.outlets.listOutlets(merchantId, filters, pagination);
   }
 
-  private async assertOutletLimit(merchantId: string) {
-    const settings = await this.prisma.merchantSettings.findUnique({
-      where: { merchantId },
-      select: { maxOutlets: true },
-    });
-    const limit = settings?.maxOutlets ?? null;
-    if (limit == null || limit <= 0) return;
-    const count = await this.prisma.outlet.count({ where: { merchantId } });
-    if (count >= limit) {
-      throw new BadRequestException('Вы достигли лимита торговых точек.');
-    }
+  createOutlet(merchantId: string, payload: UpsertOutletPayload) {
+    return this.outlets.createOutlet(merchantId, payload);
   }
 
-  async createOutlet(merchantId: string, payload: UpsertOutletPayload) {
-    const outletName = payload.name?.trim();
-    if (!outletName) throw new BadRequestException('Название обязательно');
-    await this.assertOutletLimit(merchantId);
-    const reviewLinksInput = this.sanitizeReviewLinksInput(
-      payload.reviewsShareLinks,
-    );
-    const reviewLinksValue =
-      reviewLinksInput && Object.keys(reviewLinksInput).length
-        ? (reviewLinksInput as Prisma.InputJsonValue)
-        : Prisma.JsonNull;
-    const devices =
-      payload.devices !== undefined
-        ? this.normalizeDevicesInput(payload.devices)
-        : [];
-    const outlet = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.outlet.create({
-        data: {
-          merchantId,
-          name: outletName,
-          status: payload.works === false ? 'INACTIVE' : 'ACTIVE',
-          reviewLinks: reviewLinksValue,
-        },
-      });
-      if (payload.devices !== undefined) {
-        await this.syncDevicesForOutlet(tx, merchantId, created.id, devices);
-      }
-      return created;
-    });
-    return this.mapOutlet(outlet);
-  }
-
-  async updateOutlet(
+  updateOutlet(
     merchantId: string,
     outletId: string,
     payload: UpsertOutletPayload,
   ) {
-    const outlet = await this.prisma.outlet.findFirst({
-      where: { merchantId, id: outletId },
-    });
-    if (!outlet) throw new NotFoundException('Точка не найдена');
-    const reviewLinksInput = this.sanitizeReviewLinksInput(
-      payload.reviewsShareLinks,
-    );
-    const reviewLinksValue =
-      reviewLinksInput !== undefined
-        ? Object.keys(reviewLinksInput).length
-          ? (reviewLinksInput as Prisma.InputJsonValue)
-          : Prisma.JsonNull
-        : undefined;
-    const devices =
-      payload.devices !== undefined
-        ? this.normalizeDevicesInput(payload.devices)
-        : null;
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const updatedOutlet = await tx.outlet.update({
-        where: { id: outletId },
-        data: {
-          name: payload.name?.trim() || outlet.name,
-          status:
-            payload.works === undefined
-              ? outlet.status
-              : payload.works
-                ? 'ACTIVE'
-                : 'INACTIVE',
-          reviewLinks: reviewLinksValue,
-        },
-      });
-      if (devices !== null) {
-        await this.syncDevicesForOutlet(tx, merchantId, outletId, devices);
-      }
-      return updatedOutlet;
-    });
-    return this.mapOutlet(updated);
+    return this.outlets.updateOutlet(merchantId, outletId, payload);
   }
 
-  async getOutlet(merchantId: string, outletId: string) {
-    const outlet = await this.prisma.outlet.findFirst({
-      where: { merchantId, id: outletId },
-      include: {
-        devices: {
-          where: { archivedAt: null },
-          orderBy: { createdAt: 'asc' },
-        },
-      },
-    });
-    if (!outlet) throw new NotFoundException('Точка не найдена');
-    return this.mapOutlet(outlet);
+  getOutlet(merchantId: string, outletId: string) {
+    return this.outlets.getOutlet(merchantId, outletId);
   }
 
-  async deleteOutlet(merchantId: string, outletId: string) {
-    return this.merchants.deleteOutlet(merchantId, outletId);
+  deleteOutlet(merchantId: string, outletId: string) {
+    return this.outlets.deleteOutlet(merchantId, outletId);
   }
 
-  async listCashierPins(merchantId: string) {
-    const accesses = await this.prisma.staffOutletAccess.findMany({
-      where: {
-        merchantId,
-        status: StaffOutletAccessStatus.ACTIVE,
-        staff: { status: StaffStatus.ACTIVE },
-      },
-      include: {
-        staff: true,
-        outlet: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    return accesses.map((access) => ({
-      id: access.id,
-      staffId: access.staffId,
-      staffName:
-        `${access.staff?.firstName ?? ''} ${access.staff?.lastName ?? ''}`.trim(),
-      outletId: access.outletId,
-      outletName: access.outlet?.name ?? null,
-      pinCode: access.pinCode,
-      status: access.status,
-      updatedAt: access.pinUpdatedAt ?? access.createdAt,
-    }));
+  listCashierPins(merchantId: string) {
+    return this.cashiers.listCashierPins(merchantId);
   }
 
   getCashierCredentials(merchantId: string) {
-    return this.merchants.getCashierCredentials(merchantId);
+    return this.cashiers.getCashierCredentials(merchantId);
   }
 
   rotateCashierCredentials(merchantId: string, regenerateLogin?: boolean) {
-    return this.merchants.rotateCashierCredentials(merchantId, regenerateLogin);
+    return this.cashiers.rotateCashierCredentials(merchantId, regenerateLogin);
   }
 
   listCashierActivationCodes(merchantId: string) {
-    return this.merchants.listCashierActivationCodes(merchantId);
+    return this.cashiers.listCashierActivationCodes(merchantId);
   }
 
   issueCashierActivationCodes(merchantId: string, count: number) {
-    return this.merchants.issueCashierActivationCodes(merchantId, count);
+    return this.cashiers.issueCashierActivationCodes(merchantId, count);
   }
 
   revokeCashierActivationCode(merchantId: string, codeId: string) {
-    return this.merchants.revokeCashierActivationCode(merchantId, codeId);
+    return this.cashiers.revokeCashierActivationCode(merchantId, codeId);
   }
 
   listCashierDeviceSessions(merchantId: string) {
-    return this.merchants.listCashierDeviceSessions(merchantId);
+    return this.cashiers.listCashierDeviceSessions(merchantId);
   }
 
   revokeCashierDeviceSession(merchantId: string, sessionId: string) {
-    return this.merchants.revokeCashierDeviceSession(merchantId, sessionId);
+    return this.cashiers.revokeCashierDeviceSession(merchantId, sessionId);
   }
 }

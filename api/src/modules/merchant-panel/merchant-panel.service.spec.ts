@@ -1,5 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { MerchantPanelService } from './merchant-panel.service';
+import { MerchantPanelAccessGroupsService } from './merchant-panel-access-groups.service';
+import { MerchantPanelOutletsService } from './merchant-panel-outlets.service';
+import { MerchantPanelCashierService } from './merchant-panel-cashier.service';
 import type { MerchantsService } from '../merchants/merchants.service';
 import type { MetricsService } from '../../core/metrics/metrics.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
@@ -81,7 +84,6 @@ type OutletPrismaStub = {
   $transaction: MockFn;
 };
 type MetricsStub = { inc: MockFn; observe: MockFn; setGauge: MockFn };
-type MerchantPanelServicePrivate = { logger: { log: MockFn } };
 
 const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
   jest.fn<Return, Args>();
@@ -94,10 +96,44 @@ const asMetricsService = (stub: MetricsStub) =>
   stub as unknown as MetricsService;
 const asCacheService = (stub: Record<string, unknown>) =>
   stub as unknown as LookupCacheService;
-const asPrivateService = (service: MerchantPanelService) =>
-  service as unknown as MerchantPanelServicePrivate;
 const objectContaining = <T extends object>(value: T) =>
   expect.objectContaining(value) as unknown as T;
+const buildService = (
+  prisma: ListStaffPrismaStub | AccessGroupPrismaStub | OutletPrismaStub,
+  metrics: MetricsStub,
+  cache: Record<string, unknown>,
+  merchants: MerchantsService = {} as MerchantsService,
+) => {
+  const prismaService = asPrismaService(prisma);
+  const metricsService = asMetricsService(metrics);
+  const cacheService = asCacheService(cache);
+  const merchantsService = asMerchantsService(merchants);
+  const accessGroups = new MerchantPanelAccessGroupsService(
+    prismaService,
+    metricsService,
+  );
+  const outlets = new MerchantPanelOutletsService(
+    prismaService,
+    merchantsService,
+  );
+  const cashiers = new MerchantPanelCashierService(
+    prismaService,
+    merchantsService,
+  );
+  return {
+    service: new MerchantPanelService(
+      prismaService,
+      metricsService,
+      cacheService,
+      accessGroups,
+      outlets,
+      cashiers,
+    ),
+    accessGroups,
+    outlets,
+    cashiers,
+  };
+};
 
 describe('MerchantPanelService', () => {
   it('listStaff returns mapped payload and records metrics', async () => {
@@ -178,11 +214,11 @@ describe('MerchantPanelService', () => {
       setGauge: mockFn(),
     };
 
-    const service = new MerchantPanelService(
-      asPrismaService(prisma),
-      asMerchantsService(merchants),
-      asMetricsService(metrics),
-      asCacheService({ invalidateStaff: mockFn() }),
+    const { service } = buildService(
+      prisma,
+      metrics,
+      { invalidateStaff: mockFn() },
+      merchants,
     );
     const result = await service.listStaff(
       'mrc_1',
@@ -268,14 +304,12 @@ describe('MerchantPanelService', () => {
       setGauge: mockFn(),
     };
 
-    const service = new MerchantPanelService(
-      asPrismaService(prisma),
-      asMerchantsService(merchants),
-      asMetricsService(metrics),
-      asCacheService({ invalidateStaff: mockFn() }),
+    const { service } = buildService(
+      prisma,
+      metrics,
+      { invalidateStaff: mockFn() },
+      merchants,
     );
-    const servicePrivate = asPrivateService(service);
-    servicePrivate.logger = { log: mockFn() };
     const result = await service.listAccessGroups(
       'mrc_1',
       {},
@@ -312,11 +346,11 @@ describe('MerchantPanelService', () => {
       setGauge: mockFn(),
     };
 
-    const service = new MerchantPanelService(
-      asPrismaService(prisma),
-      asMerchantsService(merchants),
-      asMetricsService(metrics),
-      asCacheService({ invalidateStaff: mockFn() }),
+    const { service } = buildService(
+      prisma,
+      metrics,
+      { invalidateStaff: mockFn() },
+      merchants,
     );
     const payload: UpsertOutletPayload = { name: 'Main' };
     await expect(service.createOutlet('mrc_1', payload)).rejects.toBeInstanceOf(
