@@ -201,10 +201,16 @@ export class CommunicationsDispatcherWorker
       lastError: null,
       lastErrorAt: null,
     });
-    await this.prisma.communicationTask.update({
-      where: { id: task.id },
-      data: { status: 'RUNNING', startedAt: now, stats },
+    const claimed = await this.prisma.communicationTask.updateMany({
+      where: {
+        id: task.id,
+        status: 'SCHEDULED',
+        archivedAt: null,
+        OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
+      },
+      data: { status: 'RUNNING', startedAt: now, scheduledAt: null, stats },
     });
+    if (claimed.count !== 1) return null;
     return { now, attempts, stats };
   }
 
@@ -334,7 +340,9 @@ export class CommunicationsDispatcherWorker
   }
 
   private async processTelegramTask(task: CommunicationTask) {
-    const { stats: runningStats } = await this.markTaskRunning(task);
+    const running = await this.markTaskRunning(task);
+    if (!running) return;
+    const { stats: runningStats } = running;
 
     const payload = this.asRecord(task.payload);
     const text = (readString(payload.text) ?? '').trim();
@@ -366,25 +374,33 @@ export class CommunicationsDispatcherWorker
       }
     }
     if (!text) {
-      await this.finishTask(task.id, {
-        status: 'FAILED',
-        total: 0,
-        sent: 0,
-        failed: 0,
-        error: 'Пустой текст сообщения',
-      }, runningStats);
+      await this.finishTask(
+        task.id,
+        {
+          status: 'FAILED',
+          total: 0,
+          sent: 0,
+          failed: 0,
+          error: 'Пустой текст сообщения',
+        },
+        runningStats,
+      );
       return;
     }
 
     const recipients = await this.resolveTelegramRecipients(task);
     if (!recipients.length) {
-      await this.finishTask(task.id, {
-        status: 'COMPLETED',
-        total: 0,
-        sent: 0,
-        failed: 0,
-        error: null,
-      }, runningStats);
+      await this.finishTask(
+        task.id,
+        {
+          status: 'COMPLETED',
+          total: 0,
+          sent: 0,
+          failed: 0,
+          error: null,
+        },
+        runningStats,
+      );
       return;
     }
     const recipientMap = new Map(
@@ -435,13 +451,12 @@ export class CommunicationsDispatcherWorker
       throw new Error('Медиафайл принадлежит другому мерчанту');
     }
 
-    const pendingRecipients = await this.prisma.communicationTaskRecipient.findMany({
-      where: { taskId: task.id, status: { in: ['PENDING', 'FAILED'] } },
-      orderBy: { createdAt: 'asc' },
-    });
-    let sent = 0;
-    let failed = 0;
-    let firstError: unknown | null = null;
+    const pendingRecipients =
+      await this.prisma.communicationTaskRecipient.findMany({
+        where: { taskId: task.id, status: { in: ['PENDING', 'FAILED'] } },
+        orderBy: { createdAt: 'asc' },
+      });
+    let firstError: unknown = null;
 
     const promotion =
       task.promotionId && typeof task.promotionId === 'string'
@@ -481,7 +496,6 @@ export class CommunicationsDispatcherWorker
       const nameRaw = meta.name ?? mapped?.name ?? null;
       const name = typeof nameRaw === 'string' ? nameRaw : null;
       if (!tgId) {
-        failed += 1;
         await this.prisma.communicationTaskRecipient.update({
           where: { id: row.id },
           data: {
@@ -502,26 +516,20 @@ export class CommunicationsDispatcherWorker
         if (promotionName) vars.name = promotionName;
         if (hasBonusSource) vars.bonus = bonus;
         const rendered = applyCurlyPlaceholders(text, vars).trim();
-        await this.telegramBots.sendCampaignMessage(
-          task.merchantId,
-          tgId,
-          {
-            text: rendered || text,
-            asset:
-              asset && asset.data
-                ? {
-                    buffer: asset.data as Buffer,
-                    mimeType: asset.mimeType ?? undefined,
-                    fileName: asset.fileName ?? undefined,
-                  }
-                : undefined,
-          },
-        );
-        sent += 1;
+        await this.telegramBots.sendCampaignMessage(task.merchantId, tgId, {
+          text: rendered || text,
+          asset:
+            asset && asset.data
+              ? {
+                  buffer: asset.data as Buffer,
+                  mimeType: asset.mimeType ?? undefined,
+                  fileName: asset.fileName ?? undefined,
+                }
+              : undefined,
+        });
       } catch (err: unknown) {
         status = 'FAILED';
         error = readErrorMessage(err);
-        failed += 1;
         if (!firstError) {
           firstError = err;
           logIgnoredError(
@@ -563,13 +571,17 @@ export class CommunicationsDispatcherWorker
       grouped.find((row) => row.status === 'SENT')?._count._all ?? 0;
     const failedTotal = Math.max(0, total - sentTotal);
 
-    await this.finishTask(task.id, {
-      status: failedTotal && !sentTotal ? 'FAILED' : 'COMPLETED',
-      total,
-      sent: sentTotal,
-      failed: failedTotal,
-      error: failedTotal ? 'Часть сообщений не доставлена' : null,
-    }, runningStats);
+    await this.finishTask(
+      task.id,
+      {
+        status: failedTotal && !sentTotal ? 'FAILED' : 'COMPLETED',
+        total,
+        sent: sentTotal,
+        failed: failedTotal,
+        error: failedTotal ? 'Часть сообщений не доставлена' : null,
+      },
+      runningStats,
+    );
 
     try {
       this.metrics.inc('portal_communications_tasks_processed_total', {
@@ -587,30 +599,40 @@ export class CommunicationsDispatcherWorker
   }
 
   private async processPushTask(task: CommunicationTask) {
-    const { stats: runningStats } = await this.markTaskRunning(task);
+    const running = await this.markTaskRunning(task);
+    if (!running) return;
+    const { stats: runningStats } = running;
 
     const payload = this.asRecord(task.payload);
     const text = (readString(payload.text) ?? '').trim();
     if (!text) {
-      await this.finishTask(task.id, {
-        status: 'FAILED',
-        total: 0,
-        sent: 0,
-        failed: 0,
-        error: 'Пустой текст push-уведомления',
-      }, runningStats);
+      await this.finishTask(
+        task.id,
+        {
+          status: 'FAILED',
+          total: 0,
+          sent: 0,
+          failed: 0,
+          error: 'Пустой текст push-уведомления',
+        },
+        runningStats,
+      );
       return;
     }
 
     const recipients = await this.resolveTelegramRecipients(task);
     if (!recipients.length) {
-      await this.finishTask(task.id, {
-        status: 'COMPLETED',
-        total: 0,
-        sent: 0,
-        failed: 0,
-        error: null,
-      }, runningStats);
+      await this.finishTask(
+        task.id,
+        {
+          status: 'COMPLETED',
+          total: 0,
+          sent: 0,
+          failed: 0,
+          error: null,
+        },
+        runningStats,
+      );
       return;
     }
     const recipientMap = new Map(
@@ -640,9 +662,7 @@ export class CommunicationsDispatcherWorker
         where: { taskId: task.id, status: { in: ['PENDING', 'FAILED'] } },
         orderBy: { createdAt: 'asc' },
       });
-    let sent = 0;
-    let failed = 0;
-    let firstError: unknown | null = null;
+    let firstError: unknown = null;
     const title = (() => {
       const raw = readString(payload.title);
       return raw && raw.trim() ? raw.trim() : undefined;
@@ -691,7 +711,6 @@ export class CommunicationsDispatcherWorker
       const nameRaw = meta.name ?? mapped?.name ?? null;
       const name = typeof nameRaw === 'string' ? nameRaw : null;
       if (!tgId) {
-        failed += 1;
         await this.prisma.communicationTaskRecipient.update({
           where: { id: row.id },
           data: {
@@ -715,21 +734,15 @@ export class CommunicationsDispatcherWorker
         const renderedTitle = title
           ? applyCurlyPlaceholders(title, vars).trim()
           : undefined;
-        await this.telegramBots.sendPushNotification(
-          task.merchantId,
-          tgId,
-          {
-            title: renderedTitle || title,
-            body: renderedText || text,
-            data: extra,
-            deepLink,
-          },
-        );
-        sent += 1;
+        await this.telegramBots.sendPushNotification(task.merchantId, tgId, {
+          title: renderedTitle || title,
+          body: renderedText || text,
+          data: extra,
+          deepLink,
+        });
       } catch (err: unknown) {
         status = 'FAILED';
         error = readErrorMessage(err);
-        failed += 1;
         if (!firstError) {
           firstError = err;
           logIgnoredError(
@@ -771,13 +784,17 @@ export class CommunicationsDispatcherWorker
       grouped.find((row) => row.status === 'SENT')?._count._all ?? 0;
     const failedTotal = Math.max(0, total - sentTotal);
 
-    await this.finishTask(task.id, {
-      status: failedTotal && !sentTotal ? 'FAILED' : 'COMPLETED',
-      total,
-      sent: sentTotal,
-      failed: failedTotal,
-      error: failedTotal ? 'Часть push-уведомлений не доставлена' : null,
-    }, runningStats);
+    await this.finishTask(
+      task.id,
+      {
+        status: failedTotal && !sentTotal ? 'FAILED' : 'COMPLETED',
+        total,
+        sent: sentTotal,
+        failed: failedTotal,
+        error: failedTotal ? 'Часть push-уведомлений не доставлена' : null,
+      },
+      runningStats,
+    );
 
     try {
       this.metrics.inc('portal_communications_tasks_processed_total', {

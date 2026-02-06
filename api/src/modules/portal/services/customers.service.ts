@@ -36,12 +36,14 @@ export class PortalCustomersService {
       outletId?: string | null;
       comment?: string | null;
     },
+    idempotencyKey?: string,
   ) {
     return this.operations.accrueManual(
       merchantId,
       customerId,
       staffId,
       payload,
+      idempotencyKey,
     );
   }
 
@@ -54,12 +56,14 @@ export class PortalCustomersService {
       outletId?: string | null;
       comment?: string | null;
     },
+    idempotencyKey?: string,
   ) {
     return this.operations.redeemManual(
       merchantId,
       customerId,
       staffId,
       payload,
+      idempotencyKey,
     );
   }
 
@@ -73,12 +77,14 @@ export class PortalCustomersService {
       outletId?: string | null;
       comment?: string | null;
     },
+    idempotencyKey?: string,
   ) {
     return this.operations.issueComplimentary(
       merchantId,
       customerId,
       staffId,
       payload,
+      idempotencyKey,
     );
   }
 

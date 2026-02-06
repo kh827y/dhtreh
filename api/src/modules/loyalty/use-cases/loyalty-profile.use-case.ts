@@ -69,21 +69,17 @@ export class LoyaltyProfileUseCase {
           onboarded: false,
         };
       }
-      customer = await this.prisma.customer.create({
-        data: { merchantId, tgId },
+      const ensured = await this.support.ensureCustomerByTelegram(
+        merchantId,
+        tgId,
+        initData,
+      );
+      customer = await this.prisma.customer.findUnique({
+        where: { id: ensured.customerId },
       });
-      await this.prisma.customerTelegram
-        .create({
-          data: { merchantId, tgId, customerId: customer.id },
-        })
-        .catch((err) =>
-          logIgnoredError(
-            err,
-            'LoyaltyProfileUseCase create customer telegram',
-            undefined,
-            'debug',
-          ),
-        );
+      if (!customer) {
+        throw new BadRequestException('Не удалось создать профиль клиента');
+      }
     }
 
     const flags = await this.support.fetchCustomerProfileFlags(customer.id);

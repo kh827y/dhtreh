@@ -21,6 +21,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { ACCESS_DENIED_MESSAGE, normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type StaffGroup = { id: string; name: string; scope?: string | null };
 
@@ -219,6 +220,8 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
   const [banner, setBanner] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
   const [error, setError] = React.useState("");
   const [auth, setAuth] = React.useState<{ actor: string; staffId: string | null; role: string | null } | null>(null);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
   React.useEffect(() => {
     let active = true;
@@ -325,6 +328,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
 
   const load = React.useCallback(async () => {
     if (!staffId) return;
+    const requestId = startLoad();
     setError("");
     setBanner(null);
     try {
@@ -341,9 +345,11 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       ]);
       const detail: Staff | null = staffPayload && typeof staffPayload === "object" && staffPayload.id ? staffPayload : null;
       if (!detail) {
+        if (!isLatest(requestId)) return;
         setError("Сотрудник не найден или недоступен");
         setItem(null);
       } else {
+        if (!isLatest(requestId)) return;
         setItem(detail);
         const assignedGroups = Array.isArray(detail.groups) ? detail.groups : [];
         const preferredGroup = assignedGroups.find((group) => {
@@ -359,14 +365,16 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
           password: "",
         });
       }
+      if (!isLatest(requestId)) return;
       setAccesses(mapAccessRows(accessData));
 
       setOutlets(outletsData);
     } catch (e: any) {
+      if (!isLatest(requestId)) return;
       setError(normalizeErrorMessage(e, "Не удалось загрузить данные сотрудника"));
     } finally {
     }
-  }, [fetchAllOutlets, staffId]);
+  }, [fetchAllOutlets, isLatest, staffId, startLoad]);
 
   React.useEffect(() => {
     load();
@@ -518,9 +526,10 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
 
   async function handleSaveAll() {
     if (!item || saving || (!profileChanged && !accessChanged)) return;
-    setSaving(true);
-    setBanner(null);
-    try {
+    await runAction(async () => {
+      setSaving(true);
+      setBanner(null);
+      try {
       const payload: Record<string, any> = {};
       if (profileChanged) {
         payload.firstName = editForm.firstName.trim() || null;
@@ -660,11 +669,12 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
         password: "",
       });
       setBanner({ type: "success", text: "Изменения сохранены" });
-    } catch (e: any) {
-      setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось сохранить изменения") });
-    } finally {
-      setSaving(false);
-    }
+      } catch (e: any) {
+        setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось сохранить изменения") });
+      } finally {
+        setSaving(false);
+      }
+    });
   }
 
   async function handlePasswordSave() {
@@ -686,156 +696,168 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       setPasswordError("Введите текущий пароль");
       return;
     }
-    setPasswordSaving(true);
-    setBanner(null);
-    try {
-      const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          password: next,
-          currentPassword: requiresCurrent ? current : undefined,
-        }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      await res.json();
-      setPasswordForm({ current: "", next: "", confirm: "" });
-      setPasswordOpen(false);
-      setBanner({ type: "success", text: "Пароль обновлён" });
-    } catch (e: any) {
-      const msg = normalizeErrorMessage(e, "Не удалось сменить пароль");
-      setPasswordError(msg);
-    } finally {
-      setPasswordSaving(false);
-    }
+    await runAction(async () => {
+      setPasswordSaving(true);
+      setBanner(null);
+      try {
+        const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            password: next,
+            currentPassword: requiresCurrent ? current : undefined,
+          }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        await res.json();
+        setPasswordForm({ current: "", next: "", confirm: "" });
+        setPasswordOpen(false);
+        setBanner({ type: "success", text: "Пароль обновлён" });
+      } catch (e: any) {
+        const msg = normalizeErrorMessage(e, "Не удалось сменить пароль");
+        setPasswordError(msg);
+      } finally {
+        setPasswordSaving(false);
+      }
+    });
   }
 
   async function handleAddOutlet() {
     if (!item || !newOutletId || addAccessLoading) return;
-    setAddAccessLoading(true);
-    setBanner(null);
-    try {
-      const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outletId: newOutletId }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      await refreshAccesses({ silent: true });
-      setNewOutletId("");
-      setIsAddOutletOpen(false);
-      setBanner({ type: "success", text: "Точка добавлена" });
-    } catch (e: any) {
-      setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось добавить точку") });
-    } finally {
-      setAddAccessLoading(false);
-    }
+    await runAction(async () => {
+      setAddAccessLoading(true);
+      setBanner(null);
+      try {
+        const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ outletId: newOutletId }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        await refreshAccesses({ silent: true });
+        setNewOutletId("");
+        setIsAddOutletOpen(false);
+        setBanner({ type: "success", text: "Точка добавлена" });
+      } catch (e: any) {
+        setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось добавить точку") });
+      } finally {
+        setAddAccessLoading(false);
+      }
+    });
   }
 
   async function handleRegenerate(outletId: string) {
     if (!item || accessActionOutlet) return;
-    setAccessActionOutlet(outletId);
-    setBanner(null);
-    try {
-      const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access/${encodeURIComponent(outletId)}/regenerate-pin`, { method: "POST" });
-      if (!res.ok) throw new Error(await res.text());
-      await refreshAccesses({ silent: true });
-      setBanner({ type: "success", text: "PIN-код обновлён" });
-    } catch (e: any) {
-      setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось обновить PIN") });
-    } finally {
-      setAccessActionOutlet(null);
-    }
+    await runAction(async () => {
+      setAccessActionOutlet(outletId);
+      setBanner(null);
+      try {
+        const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access/${encodeURIComponent(outletId)}/regenerate-pin`, { method: "POST" });
+        if (!res.ok) throw new Error(await res.text());
+        await refreshAccesses({ silent: true });
+        setBanner({ type: "success", text: "PIN-код обновлён" });
+      } catch (e: any) {
+        setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось обновить PIN") });
+      } finally {
+        setAccessActionOutlet(null);
+      }
+    });
   }
 
   async function handleRevoke(outletId: string) {
     if (!item || accessActionOutlet) return;
     if (!window.confirm("Отозвать доступ к выбранной точке?")) return;
-    setAccessActionOutlet(outletId);
-    setBanner(null);
-    try {
-      const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access/${encodeURIComponent(outletId)}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await res.text());
-      await refreshAccesses({ silent: true });
-      setBanner({ type: "success", text: "Доступ отозван" });
-    } catch (e: any) {
-      setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось отозвать доступ") });
-    } finally {
-      setAccessActionOutlet(null);
-    }
+    await runAction(async () => {
+      setAccessActionOutlet(outletId);
+      setBanner(null);
+      try {
+        const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access/${encodeURIComponent(outletId)}`, { method: "DELETE" });
+        if (!res.ok) throw new Error(await res.text());
+        await refreshAccesses({ silent: true });
+        setBanner({ type: "success", text: "Доступ отозван" });
+      } catch (e: any) {
+        setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось отозвать доступ") });
+      } finally {
+        setAccessActionOutlet(null);
+      }
+    });
   }
 
   async function handleFire() {
     if (!item || firing || item.isOwner) return;
     if (!window.confirm("Уволить сотрудника? Он потеряет доступ к панели")) return;
-    setFiring(true);
-    setBanner(null);
-    try {
-      const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "FIRED",
+    await runAction(async () => {
+      setFiring(true);
+      setBanner(null);
+      try {
+        const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: "FIRED",
+            canAccessPortal: false,
+            portalAccessEnabled: false,
+          }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const updated = await res.json();
+        setItem(updated);
+        setPortalSectionOpen(false);
+        setAccessForm((prev) => ({
+          ...prev,
+          email: updated?.email || prev.email,
+          groupId: "",
           canAccessPortal: false,
-          portalAccessEnabled: false,
-        }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const updated = await res.json();
-      setItem(updated);
-      setPortalSectionOpen(false);
-      setAccessForm((prev) => ({
-        ...prev,
-        email: updated?.email || prev.email,
-        groupId: "",
-        canAccessPortal: false,
-        password: "",
-      }));
-      setBanner({ type: "success", text: "Сотрудник помечен как уволенный" });
-    } catch (e: any) {
-      setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось обновить статус") });
-    } finally {
-      setFiring(false);
-    }
+          password: "",
+        }));
+        setBanner({ type: "success", text: "Сотрудник помечен как уволенный" });
+      } catch (e: any) {
+        setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось обновить статус") });
+      } finally {
+        setFiring(false);
+      }
+    });
   }
 
   async function handleRestore() {
     if (!item || restoring) return;
-    setRestoring(true);
-    setBanner(null);
-    try {
-      const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "ACTIVE" }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const updated = await res.json();
-      setItem(updated);
-      const portalEnabled = !!(
-        updated?.isOwner || updated?.portalAccessEnabled || updated?.canAccessPortal
-      );
-      const assignedGroups = Array.isArray(updated?.groups)
-        ? (updated.groups as StaffGroup[])
-        : [];
-      const preferredGroup = assignedGroups.find((group) => {
-        const scope = String(group?.scope ?? "").toUpperCase();
-        return scope === "PORTAL" || scope === "";
-      }) || assignedGroups[0];
-      const nextGroupId = portalEnabled && preferredGroup?.id ? String(preferredGroup.id) : "";
-      setPortalSectionOpen(portalEnabled);
-      setAccessForm({
-        email: updated?.email || "",
-        groupId: portalEnabled ? nextGroupId : "",
-        canAccessPortal: portalEnabled,
-        password: "",
-      });
-      setBanner({ type: "success", text: "Сотрудник восстановлен" });
-    } catch (e: any) {
-      setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось восстановить сотрудника") });
-    } finally {
-      setRestoring(false);
-    }
+    await runAction(async () => {
+      setRestoring(true);
+      setBanner(null);
+      try {
+        const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "ACTIVE" }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const updated = await res.json();
+        setItem(updated);
+        const portalEnabled = !!(
+          updated?.isOwner || updated?.portalAccessEnabled || updated?.canAccessPortal
+        );
+        const assignedGroups = Array.isArray(updated?.groups)
+          ? (updated.groups as StaffGroup[])
+          : [];
+        const preferredGroup = assignedGroups.find((group) => {
+          const scope = String(group?.scope ?? "").toUpperCase();
+          return scope === "PORTAL" || scope === "";
+        }) || assignedGroups[0];
+        const nextGroupId = portalEnabled && preferredGroup?.id ? String(preferredGroup.id) : "";
+        setPortalSectionOpen(portalEnabled);
+        setAccessForm({
+          email: updated?.email || "",
+          groupId: portalEnabled ? nextGroupId : "",
+          canAccessPortal: portalEnabled,
+          password: "",
+        });
+        setBanner({ type: "success", text: "Сотрудник восстановлен" });
+      } catch (e: any) {
+        setBanner({ type: "error", text: normalizeErrorMessage(e, "Не удалось восстановить сотрудника") });
+      } finally {
+        setRestoring(false);
+      }
+    });
   }
 
   const displayName = getDisplayName(item);

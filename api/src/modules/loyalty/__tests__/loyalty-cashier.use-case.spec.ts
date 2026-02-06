@@ -7,12 +7,18 @@ import type { LoyaltyControllerSupportService } from '../services/loyalty-contro
 import type { CashierRequest } from '../controllers/loyalty-controller.types';
 
 type MockedService = {
-  outletTransactions: jest.Mock;
+  outletTransactions: jest.Mock<
+    Promise<unknown>,
+    [string, string, number, Date | undefined]
+  >;
 };
 
 function createUseCase() {
   const service: MockedService = {
-    outletTransactions: jest.fn(),
+    outletTransactions: jest.fn<
+      Promise<unknown>,
+      [string, string, number, Date | undefined]
+    >(),
   };
   const prisma = {} as PrismaService;
   const merchants = {} as MerchantsService;
@@ -66,7 +72,12 @@ describe('LoyaltyCashierUseCase', () => {
       beforeStr,
     );
 
-    const [, , limit, before] = service.outletTransactions.mock.calls[0];
+    const [, , limit, before] = service.outletTransactions.mock.calls[0] as [
+      string,
+      string,
+      number,
+      Date | undefined,
+    ];
     expect(limit).toBe(100);
     expect((before as Date).toISOString()).toBe(
       new Date(beforeStr).toISOString(),

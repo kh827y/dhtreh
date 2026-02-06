@@ -24,6 +24,7 @@ import {
 import { createPortal } from "react-dom";
 import { isAllCustomersAudience } from "../../../lib/audience-utils";
 import { readApiError } from "lib/portal-errors";
+import { useActionGuard } from "lib/async-guards";
 
 type PromotionStatus = "active" | "disabled" | "ended";
 type PromotionType = "double_points" | "buy_x_get_y" | "promo_price";
@@ -176,6 +177,7 @@ const PromotionsPage: React.FC = () => {
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [saving, setSaving] = useState(false);
+  const runAction = useActionGuard();
   const [selectionByTarget, setSelectionByTarget] = useState<{ products: string[]; categories: string[] }>({
     products: [],
     categories: [],
@@ -537,7 +539,6 @@ const PromotionsPage: React.FC = () => {
 
   const handleSave = async () => {
     if (!selectedType) return;
-    if (saving) return;
     const activeSelection = selectionByTarget[formData.targetType] ?? formData.selectedItemIds;
     if (!formData.title.trim()) {
       alert("Введите название акции");
@@ -634,44 +635,50 @@ const PromotionsPage: React.FC = () => {
       },
     };
 
-    setSaving(true);
-    try {
-      await upsertPromotion(payload);
-      await loadPromotions(allAudienceId);
-      setView("list");
-      setActiveTab(formData.isActive ? "active" : "disabled");
-    } catch (e: any) {
-      alert(e?.message || "Не удалось сохранить акцию");
-    } finally {
-      setSaving(false);
-    }
+    await runAction(async () => {
+      setSaving(true);
+      try {
+        await upsertPromotion(payload);
+        await loadPromotions(allAudienceId);
+        setView("list");
+        setActiveTab(formData.isActive ? "active" : "disabled");
+      } catch (e: any) {
+        alert(e?.message || "Не удалось сохранить акцию");
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Вы уверены, что хотите удалить эту акцию?")) return;
-    const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      alert(readApiError(text) || "Не удалось удалить акцию");
-      return;
-    }
-    await loadPromotions(allAudienceId);
+    await runAction(async () => {
+      const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        alert(readApiError(text) || "Не удалось удалить акцию");
+        return;
+      }
+      await loadPromotions(allAudienceId);
+    });
   };
 
   const handleToggleStatus = async (id: string, currentStatus: PromotionStatus) => {
     if (currentStatus === "ended") return;
     const newStatus = currentStatus === "active" ? "PAUSED" : "ACTIVE";
-    const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(id)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
+    await runAction(async () => {
+      const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        alert(readApiError(text) || "Не удалось изменить статус акции");
+        return;
+      }
+      await loadPromotions(allAudienceId);
     });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      alert(readApiError(text) || "Не удалось изменить статус акции");
-      return;
-    }
-    await loadPromotions(allAudienceId);
   };
 
   const toggleSelection = (id: string) => {
@@ -753,10 +760,11 @@ const PromotionsPage: React.FC = () => {
 
             <button
               onClick={handleSave}
-              className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 shadow-sm"
+              disabled={saving}
+              className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 shadow-sm disabled:opacity-60"
             >
               <Save size={18} />
-              <span>Сохранить</span>
+              <span>{saving ? "Сохранение..." : "Сохранить"}</span>
             </button>
           </div>
         </div>

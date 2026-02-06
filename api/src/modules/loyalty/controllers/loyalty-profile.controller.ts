@@ -20,9 +20,7 @@ export class LoyaltyProfileController {
   // Telegram miniapp auth: принимает merchantId + initData, валидирует токеном бота мерчанта и возвращает customerId
   @Post('teleauth')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  async teleauth(
-    @Body() body: TeleauthDto,
-  ) {
+  async teleauth(@Body() body: TeleauthDto) {
     return this.useCase.teleauth(body);
   }
 

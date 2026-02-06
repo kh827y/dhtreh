@@ -14,25 +14,52 @@ import {
   UserPlus,
 } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
+import { readPortalApiCache } from "lib/cache";
 
 export default function RegistrationBonusPage() {
+  const fallbackSettings = React.useMemo(
+    () => ({
+      isEnabled: true,
+      pointsAmount: 500,
+      burningEnabled: true,
+      burningDays: 30,
+      delayEnabled: false,
+      delayHours: 1,
+      pushEnabled: true,
+      pushText: "Добро пожаловать в клуб! Вам начислено %bonus% приветственных баллов.",
+    }),
+    [],
+  );
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
-  const [settings, setSettings] = React.useState({
-    isEnabled: true,
-    pointsAmount: 500,
-    burningEnabled: true,
-    burningDays: 30,
-    delayEnabled: false,
-    delayHours: 1,
-    pushEnabled: true,
-    pushText: "Добро пожаловать в клуб! Вам начислено %bonus% приветственных баллов.",
-  });
+  const [settings, setSettings] = React.useState(fallbackSettings);
+
+  React.useEffect(() => {
+    const cached = readPortalApiCache<Record<string, unknown>>("/api/portal/loyalty/registration-bonus");
+    if (!cached || typeof cached !== "object") return;
+    setSettings((prev) => ({
+      ...prev,
+      isEnabled: Boolean(cached.enabled),
+      pointsAmount: Number(cached.points ?? prev.pointsAmount) || 0,
+      burningEnabled: Boolean(cached.burnEnabled),
+      burningDays: Math.max(1, Math.floor(Number(cached.burnTtlDays ?? prev.burningDays) || 0)),
+      delayEnabled: Boolean(cached.delayEnabled),
+      delayHours: Math.max(1, Math.floor(Number(cached.delayHours ?? prev.delayHours) || 0)),
+      pushEnabled: Object.prototype.hasOwnProperty.call(cached, "pushEnabled")
+        ? Boolean((cached as any).pushEnabled)
+        : prev.pushEnabled,
+      pushText: typeof cached.text === "string" ? cached.text : prev.pushText,
+    }));
+  }, []);
 
   const load = React.useCallback(async (options?: { keepSuccess?: boolean }) => {
+    const requestId = startLoad();
     setLoading(true);
     setError(null);
     if (!options?.keepSuccess) setSuccess(null);
@@ -42,6 +69,7 @@ export default function RegistrationBonusPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.message || "Не удалось загрузить настройки");
+      if (!isLatest(requestId)) return;
       setSettings((prev) => ({
         ...prev,
         isEnabled: Boolean(json?.enabled),
@@ -56,18 +84,18 @@ export default function RegistrationBonusPage() {
         pushText: typeof json?.text === "string" ? json.text : prev.pushText,
       }));
     } catch (e: any) {
+      if (!isLatest(requestId)) return;
       setError(normalizeErrorMessage(e, "Не удалось загрузить настройки"));
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, []);
+  }, [isLatest, startLoad]);
 
   React.useEffect(() => {
     void load();
   }, [load]);
 
   const handleSave = React.useCallback(async () => {
-    if (saving) return;
     setError(null);
     setSuccess(null);
 
@@ -96,32 +124,34 @@ export default function RegistrationBonusPage() {
       return;
     }
 
-    setSaving(true);
-    try {
-      const res = await fetch("/api/portal/loyalty/registration-bonus", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          enabled: settings.isEnabled,
-          points: pointsAmount,
-          burnEnabled: settings.burningEnabled,
-          burnTtlDays: settings.burningEnabled ? burningDays : 0,
-          delayEnabled: settings.delayEnabled,
-          delayHours: settings.delayEnabled ? delayHours : 0,
-          pushEnabled: settings.pushEnabled,
-          text: pushText,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.message || "Не удалось сохранить настройки");
-      setSuccess("Настройки сохранены");
-      await load({ keepSuccess: true });
-    } catch (e: any) {
-      setError(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
-    } finally {
-      setSaving(false);
-    }
-  }, [load, saving, settings]);
+    await runAction(async () => {
+      setSaving(true);
+      try {
+        const res = await fetch("/api/portal/loyalty/registration-bonus", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            enabled: settings.isEnabled,
+            points: pointsAmount,
+            burnEnabled: settings.burningEnabled,
+            burnTtlDays: settings.burningEnabled ? burningDays : 0,
+            delayEnabled: settings.delayEnabled,
+            delayHours: settings.delayEnabled ? delayHours : 0,
+            pushEnabled: settings.pushEnabled,
+            text: pushText,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.message || "Не удалось сохранить настройки");
+        setSuccess("Настройки сохранены");
+        await load({ keepSuccess: true });
+      } catch (e: any) {
+        setError(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
+      } finally {
+        setSaving(false);
+      }
+    });
+  }, [load, runAction, settings]);
 
   return (
     <div className="p-8 max-w-[1600px] mx-auto space-y-8 ">

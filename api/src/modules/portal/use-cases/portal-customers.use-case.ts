@@ -23,6 +23,15 @@ export class PortalCustomersUseCase {
     private readonly helpers: PortalRequestHelper,
   ) {}
 
+  private readIdempotencyKey(req: PortalRequest): string | undefined {
+    const raw =
+      req.headers?.['idempotency-key'] ??
+      req.headers?.['x-idempotency-key'] ??
+      undefined;
+    const key = Array.isArray(raw) ? raw[0] : raw;
+    return typeof key === 'string' && key.trim() ? key.trim() : undefined;
+  }
+
   customerSearch(req: PortalRequest, phone: string) {
     return this.merchants.findCustomerByPhone(
       this.helpers.getMerchantId(req),
@@ -186,11 +195,16 @@ export class PortalCustomersUseCase {
     );
   }
 
-  manualAccrual(req: PortalRequest, customerId: string, body: ManualAccrualDto) {
+  manualAccrual(
+    req: PortalRequest,
+    customerId: string,
+    body: ManualAccrualDto,
+  ) {
     const staffId =
       typeof req.portalStaffId === 'string' && req.portalStaffId.trim()
         ? req.portalStaffId.trim()
         : null;
+    const idempotencyKey = this.readIdempotencyKey(req);
     return this.customersService.accrueManual(
       this.helpers.getMerchantId(req),
       String(customerId || ''),
@@ -202,6 +216,7 @@ export class PortalCustomersUseCase {
         outletId: this.helpers.coerceString(body?.outletId),
         comment: this.helpers.coerceString(body?.comment),
       },
+      idempotencyKey,
     );
   }
 
@@ -210,6 +225,7 @@ export class PortalCustomersUseCase {
       typeof req.portalStaffId === 'string' && req.portalStaffId.trim()
         ? req.portalStaffId.trim()
         : null;
+    const idempotencyKey = this.readIdempotencyKey(req);
     return this.customersService.redeemManual(
       this.helpers.getMerchantId(req),
       String(customerId || ''),
@@ -219,6 +235,7 @@ export class PortalCustomersUseCase {
         outletId: this.helpers.coerceString(body?.outletId),
         comment: this.helpers.coerceString(body?.comment),
       },
+      idempotencyKey,
     );
   }
 
@@ -231,6 +248,7 @@ export class PortalCustomersUseCase {
       typeof req.portalStaffId === 'string' && req.portalStaffId.trim()
         ? req.portalStaffId.trim()
         : null;
+    const idempotencyKey = this.readIdempotencyKey(req);
     return this.customersService.issueComplimentary(
       this.helpers.getMerchantId(req),
       String(customerId || ''),
@@ -241,6 +259,7 @@ export class PortalCustomersUseCase {
         outletId: this.helpers.coerceString(body?.outletId),
         comment: this.helpers.coerceString(body?.comment),
       },
+      idempotencyKey,
     );
   }
 

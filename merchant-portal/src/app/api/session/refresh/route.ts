@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  applyNoStoreHeaders,
+  upstreamFetch,
+  withRequestId,
+} from '../../_shared/upstream';
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
 
@@ -24,6 +29,10 @@ export async function GET(req: NextRequest) {
     const url = new URL('/login', new URL(req.url).origin);
     url.searchParams.set('redirect', redirectPath);
     const r = NextResponse.redirect(url);
+    const noStore = applyNoStoreHeaders();
+    for (const [key, value] of noStore.entries()) {
+      r.headers.set(key, value);
+    }
     const secure = process.env.NODE_ENV === 'production';
     r.cookies.set({ name: 'portal_jwt', value: '', httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 0 });
     r.cookies.set({ name: 'portal_refresh', value: '', httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 0 });
@@ -35,11 +44,11 @@ export async function GET(req: NextRequest) {
     const refresh = req.cookies.get('portal_refresh')?.value || '';
     if (!refresh) return resLogin();
 
-    const r = await fetch(API_BASE + '/portal/auth/refresh', {
+    const r = await upstreamFetch(API_BASE + '/portal/auth/refresh', {
+      req,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withRequestId({ 'Content-Type': 'application/json' }, req),
       body: JSON.stringify({ refreshToken: refresh }),
-      cache: 'no-store',
     });
     if (!r.ok) return resLogin();
     const data = await r.json().catch(() => ({} as any));
@@ -48,6 +57,10 @@ export async function GET(req: NextRequest) {
     if (!token) return resLogin();
 
     const out = NextResponse.redirect(new URL(redirectPath, new URL(req.url).origin));
+    const noStore = applyNoStoreHeaders();
+    for (const [key, value] of noStore.entries()) {
+      out.headers.set(key, value);
+    }
     const secure = process.env.NODE_ENV === 'production';
     out.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60 });
     if (nextRefresh) {

@@ -1,17 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  applyNoStoreHeaders,
+  upstreamFetch,
+  withRequestId,
+} from "../../../../_shared/upstream";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
 
-async function doFetch(access: string, assetId: string) {
-  return fetch(`${API_BASE}/portal/communications/assets/${encodeURIComponent(assetId)}`, {
-    headers: { authorization: `Bearer ${access}` },
+async function doFetch(req: NextRequest, access: string, assetId: string) {
+  return upstreamFetch(`${API_BASE}/portal/communications/assets/${encodeURIComponent(assetId)}`, {
+    req,
+    headers: withRequestId({ authorization: `Bearer ${access}` }, req),
   });
 }
 
-async function refreshTokens(refreshToken: string) {
-  const res = await fetch(`${API_BASE}/portal/auth/refresh`, {
+async function refreshTokens(req: NextRequest, refreshToken: string) {
+  const res = await upstreamFetch(`${API_BASE}/portal/auth/refresh`, {
+    req,
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: withRequestId({ "Content-Type": "application/json" }, req),
     body: JSON.stringify({ refreshToken }),
   });
   if (!res.ok) return null;
@@ -26,26 +33,34 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const access = req.cookies.get("portal_jwt")?.value || "";
   const refresh = req.cookies.get("portal_refresh")?.value || "";
-  if (!access) return new Response("Unauthorized", { status: 401 });
+  if (!access) {
+    return new Response("Unauthorized", {
+      status: 401,
+      headers: applyNoStoreHeaders(),
+    });
+  }
   if (!API_BASE) {
-    return new Response("Server misconfiguration: NEXT_PUBLIC_API_BASE is not set", { status: 500 });
+    return new Response("Server misconfiguration: NEXT_PUBLIC_API_BASE is not set", {
+      status: 500,
+      headers: applyNoStoreHeaders(),
+    });
   }
 
-  let res = await doFetch(access, id);
+  let res = await doFetch(req, access, id);
   let nextTokens: { token: string; refresh: string } | null = null;
   if (res.status === 401 && refresh) {
-    nextTokens = await refreshTokens(refresh);
+    nextTokens = await refreshTokens(req, refresh);
     if (nextTokens?.token) {
-      res = await doFetch(nextTokens.token, id);
+      res = await doFetch(req, nextTokens.token, id);
     }
   }
 
   const buffer = await res.arrayBuffer();
-  const outHeaders: Record<string, string> = {
+  const outHeaders = applyNoStoreHeaders({
     "Content-Type": res.headers.get("content-type") || "application/octet-stream",
-  };
+  });
   const contentLength = res.headers.get("content-length");
-  if (contentLength) outHeaders["Content-Length"] = contentLength;
+  if (contentLength) outHeaders.set("Content-Length", contentLength);
 
   const response = new NextResponse(buffer, { status: res.status, headers: outHeaders });
   if (nextTokens?.token) {

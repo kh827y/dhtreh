@@ -21,11 +21,7 @@ import { AdminGuard } from '../../../core/guards/admin.guard';
 import { AdminIpGuard } from '../../../core/guards/admin-ip.guard';
 import { AdminAuditInterceptor } from '../../admin/admin-audit.interceptor';
 import { ErrorDto, TransactionItemDto } from '../../loyalty/dto/dto';
-import {
-  CustomerSearchRespDto,
-  LedgerEntryDto,
-  ReceiptDto,
-} from '../dto';
+import { CustomerSearchRespDto, LedgerEntryDto, ReceiptDto } from '../dto';
 import { MerchantsLedgerUseCase } from '../use-cases/merchants-ledger.use-case';
 
 @Controller('merchants')

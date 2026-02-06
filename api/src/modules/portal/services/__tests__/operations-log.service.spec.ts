@@ -204,4 +204,59 @@ describe('OperationsLogService', () => {
       }),
     );
   });
+
+  it('caps pagination window to protect database from oversized requests', async () => {
+    prisma.receipt.count.mockResolvedValue(2500);
+    prisma.receipt.findMany.mockResolvedValue([]);
+    prisma.transaction.groupBy
+      .mockResolvedValueOnce([]) // earn/redeem groups
+      .mockResolvedValueOnce([]); // refund groups
+    prisma.transaction.findMany.mockResolvedValue([]);
+
+    await service.list('m1', {
+      direction: 'ALL',
+      limit: 10_000,
+      offset: 5_000,
+    });
+
+    expect(prisma.receipt.findMany).toHaveBeenCalledWith(
+      objectContaining({ take: 500 }),
+    );
+    expect(prisma.transaction.findMany).toHaveBeenCalledWith(
+      objectContaining({ take: 500 }),
+    );
+  });
+
+  it('normalizes too small limit/offset to safe defaults', async () => {
+    prisma.receipt.count.mockResolvedValue(1);
+    prisma.receipt.findMany.mockResolvedValue([
+      {
+        id: 'r-min',
+        merchantId: 'm1',
+        customer: { id: 'c1', name: null, phone: null },
+        staff: null,
+        outlet: null,
+        device: null,
+        canceledBy: null,
+        canceledAt: null,
+        redeemApplied: 0,
+        earnApplied: 0,
+        total: 100,
+        receiptNumber: null,
+        orderId: 'o-min',
+        createdAt: new Date('2025-01-01T00:00:00.000Z'),
+      },
+    ]);
+
+    const result = await service.list('m1', {
+      direction: 'ALL',
+      limit: 0,
+      offset: -10,
+    });
+
+    expect(prisma.receipt.findMany).toHaveBeenCalledWith(
+      objectContaining({ take: 21 }),
+    );
+    expect(result.items.length).toBe(1);
+  });
 });

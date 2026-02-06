@@ -8,6 +8,7 @@ import {
   useTimezoneUpdater,
 } from "../../../components/TimezoneProvider";
 import { readApiError, readErrorMessage } from "lib/portal-errors";
+import { CacheTtl, cacheKey, readCache, writeCache } from "lib/cache";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
 const MAX_LOGO_SIZE = 512 * 1024;
@@ -29,19 +30,57 @@ export default function SettingsSystemPage() {
   const timezone = useTimezone();
   const timezoneOptions = useTimezoneOptions();
   const setTimezone = useTimezoneUpdater();
-  const [companyName, setCompanyName] = React.useState("");
-  const [savedCompanyName, setSavedCompanyName] = React.useState("");
-  const [supportTelegram, setSupportTelegram] = React.useState("");
-  const [savedSupportTelegram, setSavedSupportTelegram] = React.useState("");
+  const systemCacheKey = React.useMemo(
+    () => cacheKey("portal", "settings", "system"),
+    [],
+  );
+  const initialCache = React.useMemo(
+    () =>
+      readCache<{
+        name: string;
+        supportTelegram: string;
+        qrMode: "short" | "jwt";
+        logoUrl: string | null;
+      }>(systemCacheKey, 0),
+    [systemCacheKey],
+  );
+  const [companyName, setCompanyName] = React.useState(initialCache?.name || "");
+  const [savedCompanyName, setSavedCompanyName] = React.useState(initialCache?.name || "");
+  const [supportTelegram, setSupportTelegram] = React.useState(initialCache?.supportTelegram || "");
+  const [savedSupportTelegram, setSavedSupportTelegram] = React.useState(initialCache?.supportTelegram || "");
   const [timezoneCode, setTimezoneCode] = React.useState(timezone.code);
-  const [qrMode, setQrMode] = React.useState<"short" | "jwt">("short");
-  const [savedQrMode, setSavedQrMode] = React.useState<"short" | "jwt">("short");
+  const [qrMode, setQrMode] = React.useState<"short" | "jwt">(initialCache?.qrMode === "jwt" ? "jwt" : "short");
+  const [savedQrMode, setSavedQrMode] = React.useState<"short" | "jwt">(initialCache?.qrMode === "jwt" ? "jwt" : "short");
   const [saving, setSaving] = React.useState(false);
   const [success, setSuccess] = React.useState<string>("");
-  const [logoUrl, setLogoUrl] = React.useState<string | null>(null);
+  const [logoUrl, setLogoUrl] = React.useState<string | null>(initialCache?.logoUrl ?? null);
   const [logoUploading, setLogoUploading] = React.useState(false);
   const [logoError, setLogoError] = React.useState<string>("");
   const logoInputRef = React.useRef<HTMLInputElement | null>(null);
+  const updateSystemCache = React.useCallback(
+    (patch: {
+      name?: string;
+      supportTelegram?: string;
+      qrMode?: "short" | "jwt";
+      logoUrl?: string | null;
+    }) => {
+      const current =
+        readCache<{
+          name: string;
+          supportTelegram: string;
+          qrMode: "short" | "jwt";
+          logoUrl: string | null;
+        }>(systemCacheKey, CacheTtl.long) ?? {
+          name: companyName,
+          supportTelegram,
+          qrMode,
+          logoUrl,
+        };
+      const next = { ...current, ...patch };
+      writeCache(systemCacheKey, next);
+    },
+    [companyName, logoUrl, qrMode, supportTelegram, systemCacheKey],
+  );
   const resolvedTimezones = React.useMemo(() => {
     const list = timezoneOptions.length ? timezoneOptions : [timezone];
     const hasCurrent = list.some((item) => item.code === timezone.code);
@@ -102,6 +141,19 @@ export default function SettingsSystemPage() {
           const nextLogo =
             typeof logoData?.miniappLogoUrl === "string" ? logoData.miniappLogoUrl : "";
           setLogoUrl(nextLogo || null);
+          writeCache(systemCacheKey, {
+            name,
+            supportTelegram: supportValue,
+            qrMode: mode,
+            logoUrl: nextLogo || null,
+          });
+        } else {
+          writeCache(systemCacheKey, {
+            name,
+            supportTelegram: supportValue,
+            qrMode: mode,
+            logoUrl: initialCache?.logoUrl ?? null,
+          });
         }
       } catch (e: any) {
         if (cancelled) return;
@@ -112,7 +164,7 @@ export default function SettingsSystemPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialCache?.logoUrl, systemCacheKey]);
 
   const handleLogoChange = React.useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -144,6 +196,7 @@ export default function SettingsSystemPage() {
         const nextLogo =
           typeof data?.miniappLogoUrl === "string" ? data.miniappLogoUrl : "";
         setLogoUrl(nextLogo || null);
+        updateSystemCache({ logoUrl: nextLogo || null });
       } catch (e: any) {
         setLogoError(readApiError(String(e?.message || e || "")) || "Не удалось загрузить логотип");
       } finally {
@@ -151,7 +204,7 @@ export default function SettingsSystemPage() {
         event.target.value = "";
       }
     },
-    [],
+    [updateSystemCache],
   );
 
   const handleLogoDelete = React.useCallback(async () => {
@@ -166,12 +219,13 @@ export default function SettingsSystemPage() {
         throw new Error(await readErrorMessage(res, "Не удалось удалить логотип"));
       }
       setLogoUrl(null);
+      updateSystemCache({ logoUrl: null });
     } catch (e: any) {
       setLogoError(readApiError(String(e?.message || e || "")) || "Не удалось удалить логотип");
     } finally {
       setLogoUploading(false);
     }
-  }, [logoUploading]);
+  }, [logoUploading, updateSystemCache]);
 
   const handleSave = React.useCallback(async () => {
     if (saving) return;
@@ -207,6 +261,7 @@ export default function SettingsSystemPage() {
           const updatedName = String(data?.name || trimmedName);
           setCompanyName(updatedName);
           setSavedCompanyName(updatedName);
+          updateSystemCache({ name: updatedName });
         })(),
       );
     }
@@ -246,6 +301,7 @@ export default function SettingsSystemPage() {
           const nextSupport = String(data?.supportTelegram || "");
           setSupportTelegram(nextSupport);
           setSavedSupportTelegram(nextSupport);
+          updateSystemCache({ supportTelegram: nextSupport });
         })(),
       );
     }
@@ -265,6 +321,7 @@ export default function SettingsSystemPage() {
           const nextMode = data?.requireJwtForQuote ? "jwt" : "short";
           setQrMode(nextMode);
           setSavedQrMode(nextMode);
+          updateSystemCache({ qrMode: nextMode });
         })(),
       );
     }
@@ -295,6 +352,7 @@ export default function SettingsSystemPage() {
     qrMode,
     savedQrMode,
     setTimezone,
+    updateSystemCache,
   ]);
 
   return (

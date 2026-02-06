@@ -23,7 +23,6 @@ import {
   UpdateProductDto,
   ProductDto,
   ProductListResponseDto,
-  ProductListItemDto,
   ListProductsQueryDto,
   ProductBulkActionDto,
   ProductBulkAction,
@@ -462,37 +461,33 @@ export class PortalCatalogService {
     return this.prisma.$transaction(async (tx) => {
       if (dto.parentId)
         await this.ensureCategoryOwnership(tx, merchantId, dto.parentId);
-      try {
-        const created = await tx.productCategory.create({
-          data: {
-            merchantId,
-            name,
-            description: dto.description?.trim() || null,
-            parentId: dto.parentId ?? null,
-            status: dto.status ?? 'ACTIVE',
-          },
-        });
-        if (assignIds.length) {
-          await tx.product.updateMany({
-            where: {
-              id: { in: assignIds },
-              merchantId,
-              deletedAt: null,
-            },
-            data: { categoryId: created.id },
-          });
-        }
-        logEvent(this.logger, 'portal.catalog.category.create', {
+      const created = await tx.productCategory.create({
+        data: {
           merchantId,
-          categoryId: created.id,
+          name,
+          description: dto.description?.trim() || null,
+          parentId: dto.parentId ?? null,
+          status: dto.status ?? 'ACTIVE',
+        },
+      });
+      if (assignIds.length) {
+        await tx.product.updateMany({
+          where: {
+            id: { in: assignIds },
+            merchantId,
+            deletedAt: null,
+          },
+          data: { categoryId: created.id },
         });
-        this.metrics.inc('portal_catalog_categories_changed_total', {
-          action: 'create',
-        });
-        return this.mapCategory(created);
-      } catch (error: unknown) {
-        throw error;
       }
+      logEvent(this.logger, 'portal.catalog.category.create', {
+        merchantId,
+        categoryId: created.id,
+      });
+      this.metrics.inc('portal_catalog_categories_changed_total', {
+        action: 'create',
+      });
+      return this.mapCategory(created);
     });
   }
 
@@ -566,46 +561,42 @@ export class PortalCatalogService {
         unassignIds.length === 0
       )
         return this.mapCategory(category);
-      try {
-        const updated =
-          Object.keys(data).length > 0
-            ? await tx.productCategory.update({
-                where: { id: categoryId },
-                data,
-              })
-            : category;
-        if (assignIds.length) {
-          await tx.product.updateMany({
-            where: {
-              id: { in: assignIds },
-              merchantId,
-              deletedAt: null,
-            },
-            data: { categoryId },
-          });
-        }
-        if (unassignIds.length) {
-          await tx.product.updateMany({
-            where: {
-              id: { in: unassignIds },
-              merchantId,
-              deletedAt: null,
-              categoryId,
-            },
-            data: { categoryId: null },
-          });
-        }
-        logEvent(this.logger, 'portal.catalog.category.update', {
-          merchantId,
-          categoryId,
+      const updated =
+        Object.keys(data).length > 0
+          ? await tx.productCategory.update({
+              where: { id: categoryId },
+              data,
+            })
+          : category;
+      if (assignIds.length) {
+        await tx.product.updateMany({
+          where: {
+            id: { in: assignIds },
+            merchantId,
+            deletedAt: null,
+          },
+          data: { categoryId },
         });
-        this.metrics.inc('portal_catalog_categories_changed_total', {
-          action: 'update',
-        });
-        return this.mapCategory(updated);
-      } catch (error: unknown) {
-        throw error;
       }
+      if (unassignIds.length) {
+        await tx.product.updateMany({
+          where: {
+            id: { in: unassignIds },
+            merchantId,
+            deletedAt: null,
+            categoryId,
+          },
+          data: { categoryId: null },
+        });
+      }
+      logEvent(this.logger, 'portal.catalog.category.update', {
+        merchantId,
+        categoryId,
+      });
+      this.metrics.inc('portal_catalog_categories_changed_total', {
+        action: 'update',
+      });
+      return this.mapCategory(updated);
     });
   }
 
@@ -776,11 +767,9 @@ export class PortalCatalogService {
           });
         }
       }
-      const data = this.prepareProductCreateData(
-        merchantId,
-        dto,
-        { categoryId: dto.categoryId ?? null },
-      );
+      const data = this.prepareProductCreateData(merchantId, dto, {
+        categoryId: dto.categoryId ?? null,
+      });
       const created = await tx.product.create({
         data,
         include: {
@@ -995,7 +984,7 @@ export class PortalCatalogService {
             });
             summary.updatedProducts += 1;
           } else {
-            const created = await tx.product.create({
+            await tx.product.create({
               data: this.prepareProductCreateData(
                 merchantId,
                 {
@@ -1007,9 +996,6 @@ export class PortalCatalogService {
                 } as CreateProductDto,
                 { categoryId },
               ),
-              include: {
-                category: true,
-              },
             });
             summary.createdProducts += 1;
           }
@@ -1049,6 +1035,7 @@ export class PortalCatalogService {
     merchantId: string,
     status?: 'active' | 'inactive' | 'all',
     search?: string,
+    pagination?: { page?: number; pageSize?: number },
   ): Promise<PortalOutletListResponseDto> {
     const where: Prisma.OutletWhereInput = { merchantId };
     if (status === 'active') where.status = 'ACTIVE';
@@ -1065,10 +1052,23 @@ export class PortalCatalogService {
         where.AND = and;
       }
     }
+    const hasPagination =
+      pagination?.page !== undefined || pagination?.pageSize !== undefined;
+    const page = Math.max(1, Math.floor(pagination?.page ?? 1));
+    const pageSize = Math.max(
+      1,
+      Math.min(200, Math.floor(pagination?.pageSize ?? 20)),
+    );
     const [items, total] = await Promise.all([
       this.prisma.outlet.findMany({
         where,
         orderBy: { createdAt: 'asc' },
+        ...(hasPagination
+          ? {
+              skip: (page - 1) * pageSize,
+              take: pageSize,
+            }
+          : {}),
         include: {
           devices: {
             where: { archivedAt: null },

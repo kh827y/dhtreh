@@ -20,6 +20,7 @@ import {
 import { useTimezone } from "../../../components/TimezoneProvider";
 import { isAllCustomersAudience } from "../../../lib/audience-utils";
 import { readApiError } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type TabKey = "active" | "archived";
 
@@ -144,6 +145,9 @@ export default function TelegramPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { start: startCampaignLoad, isLatest: isLatestCampaign } = useLatestRequest();
+  const { start: startAudienceLoad, isLatest: isLatestAudience } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const defaultDate = useMemo(() => new Date(), []);
 
@@ -160,6 +164,7 @@ export default function TelegramPage() {
   });
 
   const loadCampaigns = useCallback(async () => {
+    const requestId = startCampaignLoad();
     setLoading(true);
     setError(null);
     try {
@@ -167,16 +172,19 @@ export default function TelegramPage() {
         fetchJson<TelegramCampaign[]>("/api/portal/communications/telegram?scope=ACTIVE"),
         fetchJson<TelegramCampaign[]>("/api/portal/communications/telegram?scope=ARCHIVED"),
       ]);
+      if (!isLatestCampaign(requestId)) return;
       setCampaigns({ active, archived });
     } catch (err) {
+      if (!isLatestCampaign(requestId)) return;
       setError(readApiError(err) || "Не удалось загрузить рассылки");
     } finally {
-      setLoading(false);
+      if (isLatestCampaign(requestId)) setLoading(false);
     }
-  }, []);
+  }, [isLatestCampaign, startCampaignLoad]);
 
   const loadAudiences = useCallback(async (force = false) => {
     if (audiencesLoaded && !force) return;
+    const requestId = startAudienceLoad();
     try {
       setAudiencesError(null);
       const list = await fetchJson<any[]>("/api/portal/audiences?includeSystem=1");
@@ -189,13 +197,15 @@ export default function TelegramPage() {
           systemKey: item.systemKey ?? null,
           customerCount: item.customerCount ?? null,
         }));
+      if (!isLatestAudience(requestId)) return;
       setAudiences(mapped);
       setAudiencesLoaded(true);
     } catch {
+      if (!isLatestAudience(requestId)) return;
       setAudiencesLoaded(true);
       setAudiencesError("Не удалось загрузить аудитории");
     }
-  }, [audiencesLoaded]);
+  }, [audiencesLoaded, isLatestAudience, startAudienceLoad]);
 
   useEffect(() => {
     loadCampaigns().catch(() => {});
@@ -291,18 +301,20 @@ export default function TelegramPage() {
   const handleDelete = useCallback(
     async (id: string) => {
       if (!confirm("Вы уверены, что хотите удалить эту рассылку?")) return;
-      setError(null);
-      try {
-        await fetchJson(`/api/portal/communications/telegram/${encodeURIComponent(id)}/cancel`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
-        await loadCampaigns();
-      } catch (err) {
-        setError(readApiError(err) || "Не удалось удалить рассылку");
-      }
+      await runAction(async () => {
+        setError(null);
+        try {
+          await fetchJson(`/api/portal/communications/telegram/${encodeURIComponent(id)}/cancel`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+          await loadCampaigns();
+        } catch (err) {
+          setError(readApiError(err) || "Не удалось удалить рассылку");
+        }
+      });
     },
-    [loadCampaigns],
+    [loadCampaigns, runAction],
   );
 
   const getStatusBadge = useCallback((status: string, failedCount: number) => {
@@ -428,62 +440,64 @@ export default function TelegramPage() {
       }
     }
 
-    setSaving(true);
-    setFormError(null);
-    try {
-      const cancelId = editingId;
-      await fetchJson("/api/portal/communications/telegram", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          audienceId: formData.audience,
-          audienceName: selectedAudience?.label ?? null,
-          text: trimmed,
-          scheduledAt,
-          timezone: timezoneInfo.iana,
-          media,
-        }),
-      });
+    await runAction(async () => {
+      setSaving(true);
+      setFormError(null);
+      try {
+        const cancelId = editingId;
+        await fetchJson("/api/portal/communications/telegram", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            audienceId: formData.audience,
+            audienceName: selectedAudience?.label ?? null,
+            text: trimmed,
+            scheduledAt,
+            timezone: timezoneInfo.iana,
+            media,
+          }),
+        });
 
-      let cancelWarning: string | null = null;
-      if (cancelId) {
-        try {
-          await fetchJson(`/api/portal/communications/telegram/${encodeURIComponent(cancelId)}/cancel`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-          });
-        } catch (cancelError) {
-          cancelWarning =
-            readApiError(cancelError) || "Новая рассылка создана, но старую не удалось отменить";
+        let cancelWarning: string | null = null;
+        if (cancelId) {
+          try {
+            await fetchJson(`/api/portal/communications/telegram/${encodeURIComponent(cancelId)}/cancel`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+            });
+          } catch (cancelError) {
+            cancelWarning =
+              readApiError(cancelError) || "Новая рассылка создана, но старую не удалось отменить";
+          }
         }
-      }
 
-      setEditingId(null);
-      setView("list");
-      setActiveTab("active");
-      setFormData({
-        text: "",
-        imagePreview: "",
-        imageName: "",
-        imageMimeType: "",
-        imageAssetId: null,
-        audience: allAudience?.id || "",
-        sendNow: true,
-        date: toDateInputValue(new Date()),
-        time: "12:00",
-      });
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      await loadCampaigns();
-      if (cancelWarning) {
-        setError(cancelWarning);
-      } else {
-        setError(null);
+        setEditingId(null);
+        setView("list");
+        setActiveTab("active");
+        setFormData({
+          text: "",
+          imagePreview: "",
+          imageName: "",
+          imageMimeType: "",
+          imageAssetId: null,
+          audience: allAudience?.id || "",
+          sendNow: true,
+          date: toDateInputValue(new Date()),
+          time: "12:00",
+        });
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        await loadCampaigns();
+        if (cancelWarning) {
+          setError(cancelWarning);
+        } else {
+          setError(null);
+        }
+      } catch (err) {
+        setFormError(readApiError(err) || "Не удалось сохранить рассылку");
+      } finally {
+        setSaving(false);
       }
-    } catch (err) {
-      setFormError(readApiError(err) || "Не удалось сохранить рассылку");
-    } finally {
-      setSaving(false);
-    }
+    });
   }, [
     audiences,
     editingId,
@@ -491,6 +505,7 @@ export default function TelegramPage() {
     loadCampaigns,
     timezoneInfo.iana,
     allAudience,
+    runAction,
   ]);
 
   if (view === "create") {

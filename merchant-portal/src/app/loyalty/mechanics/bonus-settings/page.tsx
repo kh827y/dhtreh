@@ -4,21 +4,42 @@ import React from "react";
 import Link from "next/link";
 import { ArrowLeft, Ban, CheckCircle2, Clock, Flame, Info, Save, ShieldCheck, Coins } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
+import { readPortalApiCache } from "lib/cache";
 
 export default function RedeemLimitsPage() {
+  const fallbackLimitations = React.useMemo(
+    () => ({
+      isExpirationEnabled: false,
+      expirationDays: 180,
+      allowAccrualOnRedemption: false,
+      activationDelay: 0,
+    }),
+    [],
+  );
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
-  const [limitations, setLimitations] = React.useState({
-    isExpirationEnabled: false,
-    expirationDays: 180,
-    allowAccrualOnRedemption: false,
-    activationDelay: 0,
-  });
+  const [limitations, setLimitations] = React.useState(fallbackLimitations);
+
+  React.useEffect(() => {
+    const cached = readPortalApiCache<Record<string, unknown>>("/api/portal/loyalty/redeem-limits");
+    if (!cached || typeof cached !== "object") return;
+    setLimitations((prev) => ({
+      ...prev,
+      isExpirationEnabled: Boolean(cached.ttlEnabled),
+      expirationDays: Number(cached.ttlDays ?? prev.expirationDays) || prev.expirationDays,
+      allowAccrualOnRedemption: Boolean(cached.allowSameReceipt),
+      activationDelay: Math.max(0, Math.floor(Number(cached.delayDays ?? prev.activationDelay) || 0)),
+    }));
+  }, []);
 
   const load = React.useCallback(async (options?: { keepSuccess?: boolean }) => {
+    const requestId = startLoad();
     setLoading(true);
     setError(null);
     if (!options?.keepSuccess) setSuccess(null);
@@ -27,6 +48,7 @@ export default function RedeemLimitsPage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.message || "Не удалось загрузить настройки");
 
+      if (!isLatest(requestId)) return;
       setLimitations({
         isExpirationEnabled: Boolean(json?.ttlEnabled),
         expirationDays: Number(json?.ttlDays ?? 180) || 180,
@@ -34,18 +56,18 @@ export default function RedeemLimitsPage() {
         activationDelay: Math.max(0, Math.floor(Number(json?.delayDays ?? 0) || 0)),
       });
     } catch (e: any) {
+      if (!isLatest(requestId)) return;
       setError(normalizeErrorMessage(e, "Не удалось загрузить настройки"));
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, []);
+  }, [isLatest, startLoad]);
 
   React.useEffect(() => {
     void load();
   }, [load]);
 
   const handleSave = React.useCallback(async () => {
-    if (saving) return;
     setError(null);
     setSuccess(null);
 
@@ -57,29 +79,31 @@ export default function RedeemLimitsPage() {
       return;
     }
 
-    setSaving(true);
-    try {
-      const res = await fetch("/api/portal/loyalty/redeem-limits", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ttlEnabled: limitations.isExpirationEnabled,
-          ttlDays: limitations.isExpirationEnabled ? expirationDays : 0,
-          allowSameReceipt: limitations.allowAccrualOnRedemption,
-          delayEnabled: activationDelay > 0,
-          delayDays: activationDelay,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.message || "Не удалось сохранить настройки");
-      setSuccess("Настройки сохранены");
-      await load({ keepSuccess: true });
-    } catch (e: any) {
-      setError(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
-    } finally {
-      setSaving(false);
-    }
-  }, [limitations, load, saving]);
+    await runAction(async () => {
+      setSaving(true);
+      try {
+        const res = await fetch("/api/portal/loyalty/redeem-limits", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ttlEnabled: limitations.isExpirationEnabled,
+            ttlDays: limitations.isExpirationEnabled ? expirationDays : 0,
+            allowSameReceipt: limitations.allowAccrualOnRedemption,
+            delayEnabled: activationDelay > 0,
+            delayDays: activationDelay,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.message || "Не удалось сохранить настройки");
+        setSuccess("Настройки сохранены");
+        await load({ keepSuccess: true });
+      } catch (e: any) {
+        setError(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
+      } finally {
+        setSaving(false);
+      }
+    });
+  }, [limitations, load, runAction]);
 
   return (
     <div className="p-8 max-w-[1400px] mx-auto ">

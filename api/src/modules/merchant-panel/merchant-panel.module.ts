@@ -4,6 +4,7 @@ import { MerchantPanelService } from './merchant-panel.service';
 import { MerchantPanelAccessGroupsService } from './merchant-panel-access-groups.service';
 import { MerchantPanelOutletsService } from './merchant-panel-outlets.service';
 import { MerchantPanelCashierService } from './merchant-panel-cashier.service';
+import { MerchantPanelStaffService } from './merchant-panel-staff.service';
 import { StaffController } from './controllers/staff.controller';
 import { AccessGroupsController } from './controllers/access-groups.controller';
 import { CashierController } from './controllers/cashier.controller';
@@ -16,6 +17,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
   imports: [PrismaModule, MerchantsModule, MetricsModule, SubscriptionModule],
   providers: [
     MerchantPanelService,
+    MerchantPanelStaffService,
     MerchantPanelAccessGroupsService,
     MerchantPanelOutletsService,
     MerchantPanelCashierService,

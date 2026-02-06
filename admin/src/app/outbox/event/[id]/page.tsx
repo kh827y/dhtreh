@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from 'react';
 import { usePreferredMerchantId } from '../../../../lib/usePreferredMerchantId';
+import { useActionGuard, useLatestRequest } from '../../../../lib/async-guards';
 
 type OutboxEvent = {
   id?: string;
@@ -21,6 +22,8 @@ export default function OutboxEventPage({ params }: { params: { id: string } }) 
   const [payloadError, setPayloadError] = useState<string>('');
   const [showPayloadFull, setShowPayloadFull] = useState<boolean>(false);
   const [showLastErrorFull, setShowLastErrorFull] = useState<boolean>(false);
+  const { start, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
   const id = params.id;
   const payloadPreviewLimit = 4000;
   const errorPreviewLimit = 500;
@@ -28,11 +31,17 @@ export default function OutboxEventPage({ params }: { params: { id: string } }) 
   const load = useCallback(async () => {
     try {
       if (!merchantId) { setMsg('Укажите merchantId'); setData(null); return; }
+      const requestId = start();
       const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/event/${encodeURIComponent(id)}`);
       if (!r.ok) throw new Error(await r.text());
-      setData(await r.json()); setMsg('');
-    } catch (e: unknown) { setMsg(String(e instanceof Error ? e.message : e)); }
-  }, [id, merchantId]);
+      const payload = await r.json();
+      if (!isLatest(requestId)) return;
+      setData(payload); setMsg('');
+    } catch (e: unknown) {
+      if (!merchantId) return;
+      setMsg(String(e instanceof Error ? e.message : e));
+    }
+  }, [id, merchantId, isLatest, start]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     setPayloadText(null);
@@ -42,21 +51,25 @@ export default function OutboxEventPage({ params }: { params: { id: string } }) 
   }, [data?.id]);
 
   const doRetry = async () => {
-    try {
-      if (!merchantId) return;
-      const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}/retry`, { method: 'POST', headers: { 'x-admin-action': 'ui' } });
-      if (!r.ok) throw new Error(await r.text());
-      await load(); alert('Retry scheduled');
-    } catch (e: unknown) { alert(String(e instanceof Error ? e.message : e)); }
+    await runAction(async () => {
+      try {
+        if (!merchantId) return;
+        const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}/retry`, { method: 'POST', headers: { 'x-admin-action': 'ui' } });
+        if (!r.ok) throw new Error(await r.text());
+        await load(); alert('Retry scheduled');
+      } catch (e: unknown) { alert(String(e instanceof Error ? e.message : e)); }
+    });
   };
   const doDelete = async () => {
     if (!confirm('Удалить событие?')) return;
-    try {
-      if (!merchantId) return;
-      const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'x-admin-action': 'ui' } });
-      if (!r.ok) throw new Error(await r.text());
-      location.href = '/outbox';
-    } catch (e: unknown) { alert(String(e instanceof Error ? e.message : e)); }
+    await runAction(async () => {
+      try {
+        if (!merchantId) return;
+        const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'x-admin-action': 'ui' } });
+        if (!r.ok) throw new Error(await r.text());
+        location.href = '/outbox';
+      } catch (e: unknown) { alert(String(e instanceof Error ? e.message : e)); }
+    });
   };
 
   const showPayload = () => {

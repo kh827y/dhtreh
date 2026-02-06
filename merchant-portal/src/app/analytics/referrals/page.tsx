@@ -15,6 +15,7 @@ import {
   Calendar,
   Crown,
   Gift,
+  Loader2,
   Settings,
   Share2,
   TrendingUp,
@@ -113,12 +114,19 @@ const hasPermission = (
   return actions.includes(action);
 };
 
-const CardSkeleton = () => (
-  <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm h-32 animate-pulse" />
-);
-
-const ChartSkeleton = () => (
-  <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm h-[350px] animate-pulse" />
+const LoadingPanel = ({
+  message,
+  className = "",
+}: {
+  message: string;
+  className?: string;
+}) => (
+  <div
+    className={`bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center justify-center text-sm text-gray-500 ${className}`}
+  >
+    <Loader2 size={16} className="animate-spin mr-2" />
+    <span>{message}</span>
+  </div>
 );
 
 const EmptyState = ({ message }: { message: string }) => (
@@ -360,12 +368,10 @@ export default function AnalyticsReferralsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {loading ? (
-          <>
-            <CardSkeleton />
-            <CardSkeleton />
-            <CardSkeleton />
-            <CardSkeleton />
-          </>
+          <LoadingPanel
+            message="Загружаем сводку по рефералам…"
+            className="h-32 md:col-span-2 lg:col-span-4"
+          />
         ) : (
           <>
             <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between h-32 relative overflow-hidden group">
@@ -446,7 +452,7 @@ export default function AnalyticsReferralsPage() {
           </div>
           <div className="h-[350px]">
             {loading ? (
-              <ChartSkeleton />
+              <LoadingPanel message="Загружаем график…" className="h-full" />
             ) : hasTimelineData(timeline) ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
@@ -526,7 +532,7 @@ export default function AnalyticsReferralsPage() {
           <div className="flex-1 overflow-y-auto custom-scrollbar p-0">
             {loading ? (
               <div className="p-4">
-                <ChartSkeleton />
+                <LoadingPanel message="Загружаем таблицу лидеров…" className="h-40" />
               </div>
             ) : (
               <table className="w-full text-sm text-left">

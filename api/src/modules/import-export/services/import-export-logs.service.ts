@@ -77,7 +77,12 @@ export class ImportExportLogsService {
         },
       });
     } catch (err) {
-      logIgnoredError(err, 'ImportExportLogsService sync log', undefined, 'debug');
+      logIgnoredError(
+        err,
+        'ImportExportLogsService sync log',
+        undefined,
+        'debug',
+      );
     }
   }
 
@@ -114,7 +119,12 @@ export class ImportExportLogsService {
     try {
       return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
     } catch (err) {
-      logIgnoredError(err, 'ImportExportLogsService toJsonValue', undefined, 'debug');
+      logIgnoredError(
+        err,
+        'ImportExportLogsService toJsonValue',
+        undefined,
+        'debug',
+      );
       if (
         typeof value === 'string' ||
         typeof value === 'number' ||

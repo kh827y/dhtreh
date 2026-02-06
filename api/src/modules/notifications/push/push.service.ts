@@ -60,7 +60,7 @@ export class PushService {
     const pushLogs: Prisma.PushNotificationCreateManyInput[] = [];
     let sent = 0;
     let failed = 0;
-    let firstError: unknown | null = null;
+    let firstError: unknown = null;
 
     const payloadData =
       dto.data && Object.keys(dto.data).length

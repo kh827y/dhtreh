@@ -73,9 +73,7 @@ export class LoyaltyPublicController {
   @UseGuards(TelegramMiniappGuard)
   @Post('mechanics/registration-bonus')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  async grantRegistrationBonus(
-    @Body() body: RegistrationBonusDto,
-  ) {
+  async grantRegistrationBonus(@Body() body: RegistrationBonusDto) {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
     const customerId =

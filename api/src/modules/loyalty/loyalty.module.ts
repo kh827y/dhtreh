@@ -71,6 +71,6 @@ import { LoyaltyPromotionsUseCase } from './use-cases/loyalty-promotions.use-cas
     LoyaltyTransactionsController,
     LoyaltyPublicController,
   ],
-  exports: [LoyaltyService, LoyaltyEventsService],
+  exports: [LoyaltyService, LoyaltyEventsService, LoyaltyIdempotencyService],
 })
 export class LoyaltyModule {}

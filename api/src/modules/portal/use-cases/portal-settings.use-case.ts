@@ -52,13 +52,12 @@ export class PortalSettingsUseCase {
   ) {}
 
   getStaffMotivation(req: PortalRequest) {
-    return this.staffMotivation.getSettings(this.requestHelper.getMerchantId(req));
+    return this.staffMotivation.getSettings(
+      this.requestHelper.getMerchantId(req),
+    );
   }
 
-  updateStaffMotivation(
-    req: PortalRequest,
-    body: UpdateStaffMotivationDto,
-  ) {
+  updateStaffMotivation(req: PortalRequest, body: UpdateStaffMotivationDto) {
     return this.staffMotivation.updateSettings(
       this.requestHelper.getMerchantId(req),
       {
@@ -80,7 +79,10 @@ export class PortalSettingsUseCase {
     );
   }
 
-  updateReferralProgramSettings(req: PortalRequest, body: UpdateReferralProgramDto) {
+  updateReferralProgramSettings(
+    req: PortalRequest,
+    body: UpdateReferralProgramDto,
+  ) {
     const payload = this.settingsHelper.normalizeReferralProgramPayload(body);
     return this.referrals.updateProgramSettingsFromPortal(
       this.requestHelper.getMerchantId(req),
@@ -281,7 +283,10 @@ export class PortalSettingsUseCase {
     return { supportTelegram };
   }
 
-  async updateSupportSetting(req: PortalRequest, body: UpdateSupportSettingDto) {
+  async updateSupportSetting(
+    req: PortalRequest,
+    body: UpdateSupportSettingDto,
+  ) {
     const merchantId = this.requestHelper.getMerchantId(req);
     const rawValue =
       typeof body?.supportTelegram === 'string' ? body.supportTelegram : '';

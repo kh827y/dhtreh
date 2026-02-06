@@ -261,7 +261,7 @@ export class LoyaltyQuoteService extends LoyaltyOpsBase {
         }
       } else {
         // 1) «помечаем» QR как использованный ВНЕ транзакции (чтобы метка не откатывалась)
-        const marked = await safeExecAsync(
+        const marked = await safeExecAsync<unknown>(
           () =>
             this.prisma.qrNonce.create({
               data: {
@@ -273,8 +273,8 @@ export class LoyaltyQuoteService extends LoyaltyOpsBase {
                 usedAt: new Date(),
               },
             }),
-          async () => null,
-          { warn: this.logger.debug.bind(this.logger) },
+          () => null,
+          { warn: (msg: string) => this.logger.debug(msg) },
           'quote: mark qr nonce used',
         );
         if (!marked) {
@@ -410,7 +410,9 @@ export class LoyaltyQuoteService extends LoyaltyOpsBase {
       // Проверка: если указан orderId, учитываем уже применённое списание по этому заказу
       let priorRedeemApplied = 0;
       if (dto.orderId) {
-        const rcp = await safeExecAsync(
+        const rcp = await safeExecAsync<{
+          redeemApplied?: number | null;
+        } | null>(
           () =>
             this.prisma.receipt.findUnique({
               where: {
@@ -420,8 +422,8 @@ export class LoyaltyQuoteService extends LoyaltyOpsBase {
                 },
               },
             }),
-          async () => null,
-          { warn: this.logger.debug.bind(this.logger) },
+          () => null,
+          { warn: (msg: string) => this.logger.debug(msg) },
           'quote: load receipt for prior redeem',
         );
         if (rcp) priorRedeemApplied = Math.max(0, rcp.redeemApplied || 0);

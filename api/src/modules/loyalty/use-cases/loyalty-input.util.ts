@@ -52,6 +52,16 @@ export const parseOptionalDate = (
   message: string,
 ): Date | undefined => {
   if (value == null || value === '') return undefined;
+  if (value instanceof Date) {
+    const ts = value.getTime();
+    if (Number.isNaN(ts)) {
+      throw new BadRequestException(message);
+    }
+    return value;
+  }
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    throw new BadRequestException(message);
+  }
   const parsed = new Date(String(value));
   if (Number.isNaN(parsed.getTime())) {
     throw new BadRequestException(message);

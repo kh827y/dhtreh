@@ -16,7 +16,12 @@ import { AdminGuard } from '../../../core/guards/admin.guard';
 import { AdminIpGuard } from '../../../core/guards/admin-ip.guard';
 import { AdminAuditInterceptor } from '../../admin/admin-audit.interceptor';
 import { TransactionItemDto } from '../../loyalty/dto/dto';
-import { OkDto, PortalLoginEnabledDto, PortalTotpVerifyDto, TokenRespDto } from '../dto';
+import {
+  OkDto,
+  PortalLoginEnabledDto,
+  PortalTotpVerifyDto,
+  TokenRespDto,
+} from '../dto';
 import { MerchantsPortalAuthUseCase } from '../use-cases/merchants-portal-auth.use-case';
 
 @Controller('merchants')

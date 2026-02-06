@@ -35,7 +35,9 @@ export class EmailAttachmentDto {
 }
 
 export class SendEmailRequestDto {
-  @ApiProperty({ oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] })
+  @ApiProperty({
+    oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+  })
   @ValidateIf((_, value) => typeof value === 'string')
   @IsString()
   @ValidateIf((_, value) => Array.isArray(value))

@@ -17,6 +17,7 @@ import {
   readResponseTextSafe,
   resultFromStatus,
 } from '../shared/http/external-http.util';
+import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../shared/pg-lock.util';
 
 type OutboxRow = EventOutbox;
 
@@ -536,6 +537,14 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private async tick() {
     if (this.running) return;
     this.running = true;
+    const lock = await pgTryAdvisoryLock(
+      this.prisma,
+      'worker:outbox_dispatcher',
+    );
+    if (!lock.ok) {
+      this.running = false;
+      return;
+    }
     try {
       this.lastTickAt = new Date();
       try {
@@ -693,6 +702,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         this.logDebug('outbox circuit gauge failed', err);
       }
     } finally {
+      await pgAdvisoryUnlock(this.prisma, lock.key);
       this.running = false;
     }
   }

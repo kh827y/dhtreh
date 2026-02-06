@@ -19,14 +19,12 @@ import type {
   ActivePromotionRule,
   OptionalModelsClient,
   PositionInput,
-  PrismaClientLike,
   PrismaTx,
   ResolvedPosition,
 } from './loyalty-ops.types';
 import { safeExecAsync } from '../../../shared/safe-exec';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import {
-  HoldStatus,
   TxnType,
   WalletType,
   LedgerAccount,
@@ -47,11 +45,14 @@ export class LoyaltyOpsBase {
     action: () => Promise<unknown>,
     level: 'warn' | 'debug' = 'warn',
   ) {
-    const logger =
-      level === 'debug'
-        ? { warn: this.logger.debug.bind(this.logger) }
-        : this.logger;
-    await safeExecAsync(action, async () => undefined, logger, message);
+    const warn = (msg: string) => {
+      if (level === 'debug') {
+        this.logger.debug(msg);
+      } else {
+        this.logger.warn(msg);
+      }
+    };
+    await safeExecAsync(action, () => undefined, { warn }, message);
   }
 
   protected async tryUpdateHoldOutlet(
@@ -65,8 +66,8 @@ export class LoyaltyOpsBase {
           where: { id: holdId },
           data: { outletId },
         }),
-      async () => null,
-      { warn: this.logger.debug.bind(this.logger) },
+      () => null,
+      { warn: (msg: string) => this.logger.debug(msg) },
       `quote: ${context} update hold outlet`,
     );
     return !!updated;

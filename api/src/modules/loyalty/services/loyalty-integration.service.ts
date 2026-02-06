@@ -71,7 +71,7 @@ export class LoyaltyIntegrationService extends LoyaltyOpsBase {
         this.prisma.receipt.findUnique({
           where: { merchantId_orderId: { merchantId, orderId } },
         }),
-      async () => null,
+      () => null,
       this.logger,
       'integration-bonus: find existing receipt',
     );
@@ -306,7 +306,7 @@ export class LoyaltyIntegrationService extends LoyaltyOpsBase {
             where: { merchantId_orderId: { merchantId, orderId } },
             select: { id: true },
           }),
-        async () => null,
+        () => null,
         this.logger,
         'integration-bonus: load receipt after commit',
       );

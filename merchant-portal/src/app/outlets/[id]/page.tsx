@@ -4,6 +4,7 @@ import React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Plus, Monitor, Users, Save, ArrowLeft, X } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
 const STAFF_PAGE_SIZE = 100;
@@ -63,6 +64,9 @@ export default function EditOutletPage({ basePath }: EditOutletPageProps) {
   const [deviceError, setDeviceError] = React.useState<string | null>(null);
   const [staff, setStaff] = React.useState<StaffItem[]>([]);
   const [staffTotal, setStaffTotal] = React.useState<number | null>(null);
+  const { start: startOutletLoad, isLatest: isLatestOutlet } = useLatestRequest();
+  const { start: startStaffLoad, isLatest: isLatestStaff } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const validateReviewLinks = () => {
     const invalid: string[] = [];
@@ -79,6 +83,7 @@ export default function EditOutletPage({ basePath }: EditOutletPageProps) {
   };
 
   const loadOutlet = React.useCallback(async () => {
+    const requestId = startOutletLoad();
     setLoading(true);
     setError(null);
     try {
@@ -88,6 +93,7 @@ export default function EditOutletPage({ basePath }: EditOutletPageProps) {
         throw new Error(text || "Не удалось загрузить точку");
       }
       const data = await res.json();
+      if (!isLatestOutlet(requestId)) return;
       setIsActive(Boolean(data?.works));
       setName(String(data?.name || ""));
       const links = data?.reviewsShareLinks && typeof data.reviewsShareLinks === "object" ? data.reviewsShareLinks : {};
@@ -98,13 +104,15 @@ export default function EditOutletPage({ basePath }: EditOutletPageProps) {
       });
       setDevices(Array.isArray(data?.devices) ? data.devices.map((d: any) => ({ id: String(d.id), code: String(d.code) })) : []);
     } catch (e: any) {
+      if (!isLatestOutlet(requestId)) return;
       setError(normalizeErrorMessage(e, "Не удалось загрузить точку"));
     } finally {
-      setLoading(false);
+      if (isLatestOutlet(requestId)) setLoading(false);
     }
-  }, [outletId]);
+  }, [isLatestOutlet, outletId, startOutletLoad]);
 
   const loadStaff = React.useCallback(async () => {
+    const requestId = startStaffLoad();
     try {
       let page = 1;
       let total: number | null = null;
@@ -115,6 +123,7 @@ export default function EditOutletPage({ basePath }: EditOutletPageProps) {
           { cache: "no-store" },
         );
         if (!res.ok) {
+          if (!isLatestStaff(requestId)) return;
           setStaffTotal(null);
           return;
         }
@@ -128,13 +137,15 @@ export default function EditOutletPage({ basePath }: EditOutletPageProps) {
         if (items.length < STAFF_PAGE_SIZE) break;
         page += 1;
       }
+      if (!isLatestStaff(requestId)) return;
       setStaff(allItems);
       setStaffTotal(total ?? allItems.length);
     } catch {
+      if (!isLatestStaff(requestId)) return;
       setStaff([]);
       setStaffTotal(null);
     }
-  }, [outletId]);
+  }, [isLatestStaff, outletId, startStaffLoad]);
 
   React.useEffect(() => {
     if (!outletId) return;
@@ -172,39 +183,41 @@ export default function EditOutletPage({ basePath }: EditOutletPageProps) {
       setError(linkError);
       return;
     }
-    setSaving(true);
-    setError(null);
-    try {
-      const payload = {
-        name: name.trim(),
-        works: isActive,
-        reviewsShareLinks: {
-          yandex: reviewLinks.yandex.trim() || null,
-          twogis: reviewLinks.gis.trim() || null,
-          google: reviewLinks.google.trim() || null,
-        },
-        devices: devices.map((d) => ({ code: d.code })),
-      };
-      const res = await fetch(`/api/portal/outlets/${encodeURIComponent(outletId)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const raw = await res.text().catch(() => "");
-        let message = raw;
-        try {
-          const parsed = JSON.parse(raw);
-          message = parsed?.message || parsed?.error || raw;
-        } catch {}
-        throw new Error(message || "Не удалось сохранить точку");
+    await runAction(async () => {
+      setSaving(true);
+      setError(null);
+      try {
+        const payload = {
+          name: name.trim(),
+          works: isActive,
+          reviewsShareLinks: {
+            yandex: reviewLinks.yandex.trim() || null,
+            twogis: reviewLinks.gis.trim() || null,
+            google: reviewLinks.google.trim() || null,
+          },
+          devices: devices.map((d) => ({ code: d.code })),
+        };
+        const res = await fetch(`/api/portal/outlets/${encodeURIComponent(outletId)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const raw = await res.text().catch(() => "");
+          let message = raw;
+          try {
+            const parsed = JSON.parse(raw);
+            message = parsed?.message || parsed?.error || raw;
+          } catch {}
+          throw new Error(message || "Не удалось сохранить точку");
+        }
+        router.push(listPath);
+      } catch (e: any) {
+        setError(normalizeErrorMessage(e, "Не удалось сохранить точку"));
+      } finally {
+        setSaving(false);
       }
-      router.push(listPath);
-    } catch (e: any) {
-      setError(normalizeErrorMessage(e, "Не удалось сохранить точку"));
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   const staffCount = staffTotal ?? staff.length;

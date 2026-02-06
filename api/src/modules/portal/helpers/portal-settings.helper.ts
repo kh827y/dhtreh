@@ -363,8 +363,7 @@ export class PortalSettingsHelper {
     const entries = Object.keys(record)
       .sort()
       .map(
-        (key) =>
-          `${JSON.stringify(key)}:${this.stableStringify(record[key])}`,
+        (key) => `${JSON.stringify(key)}:${this.stableStringify(record[key])}`,
       );
     return `{${entries.join(',')}}`;
   }

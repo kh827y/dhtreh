@@ -1,20 +1,24 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { useLatestRequest } from '../../../lib/async-guards';
 
 export default function AuditDetailPage() {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [err, setErr] = useState<string>('');
+  const { start, isLatest } = useLatestRequest();
   const params = useParams<{ id?: string | string[] }>();
   const idParam = params?.id;
   const id = Array.isArray(idParam) ? idParam[0] : (idParam || '');
 
   useEffect(() => {
     if (!id) return;
+    const requestId = start();
     (async () => {
       try {
         const r = await fetch(`/api/admin/admin/audit/${encodeURIComponent(id)}`);
         if (r.status === 404) {
+          if (!isLatest(requestId)) return;
           setData(null);
           setErr('Запись не найдена');
           return;
@@ -22,15 +26,20 @@ export default function AuditDetailPage() {
         if (!r.ok) throw new Error(await r.text());
         const payload = await r.json();
         if (!payload) {
+          if (!isLatest(requestId)) return;
           setData(null);
           setErr('Запись не найдена');
           return;
         }
+        if (!isLatest(requestId)) return;
         setData(payload);
         setErr('');
-      } catch (e: unknown) { setErr(String(e instanceof Error ? e.message : e)); }
+      } catch (e: unknown) {
+        if (!isLatest(requestId)) return;
+        setErr(String(e instanceof Error ? e.message : e));
+      }
     })();
-  }, [id]);
+  }, [id, isLatest, start]);
 
   return (
     <div>

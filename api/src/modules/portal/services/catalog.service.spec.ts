@@ -287,4 +287,112 @@ describe('PortalCatalogService', () => {
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+
+  it('applies outlet pagination when page and pageSize are provided', async () => {
+    const now = new Date('2024-01-01T00:00:00Z');
+    const findMany = mockFn().mockResolvedValue([
+      {
+        id: 'out-3',
+        merchantId: 'm-1',
+        name: 'Точка 3',
+        status: 'ACTIVE',
+        reviewLinks: null,
+        createdAt: now,
+        updatedAt: now,
+        devices: [],
+      },
+      {
+        id: 'out-4',
+        merchantId: 'm-1',
+        name: 'Точка 4',
+        status: 'INACTIVE',
+        reviewLinks: null,
+        createdAt: now,
+        updatedAt: now,
+        devices: [],
+      },
+    ]);
+    const count = mockFn().mockResolvedValue(5);
+    const groupBy = mockFn().mockResolvedValue([
+      { outletId: 'out-3', _count: { outletId: 2 } },
+    ]);
+    const prisma: PrismaStub = {
+      outlet: {
+        findMany,
+        count,
+      },
+      staffOutletAccess: {
+        groupBy,
+      },
+    };
+    const service = buildService(prisma, metrics);
+
+    const result = await service.listOutlets('m-1', 'all', undefined, {
+      page: 2,
+      pageSize: 2,
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { merchantId: 'm-1' },
+        skip: 2,
+        take: 2,
+      }),
+    );
+    expect(count).toHaveBeenCalledWith({ where: { merchantId: 'm-1' } });
+    expect(groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          merchantId: 'm-1',
+          outletId: { in: ['out-3', 'out-4'] },
+        }),
+      }),
+    );
+    expect(result.total).toBe(5);
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]).toMatchObject({ id: 'out-3', staffCount: 2 });
+    expect(result.items[1]).toMatchObject({ id: 'out-4', staffCount: 0 });
+  });
+
+  it('returns full outlet list when pagination is not provided', async () => {
+    const now = new Date('2024-01-01T00:00:00Z');
+    const findMany = mockFn().mockResolvedValue([
+      {
+        id: 'out-1',
+        merchantId: 'm-1',
+        name: 'Точка 1',
+        status: 'ACTIVE',
+        reviewLinks: null,
+        createdAt: now,
+        updatedAt: now,
+        devices: [],
+      },
+    ]);
+    const count = mockFn().mockResolvedValue(1);
+    const groupBy = mockFn().mockResolvedValue([]);
+    const prisma: PrismaStub = {
+      outlet: {
+        findMany,
+        count,
+      },
+      staffOutletAccess: {
+        groupBy,
+      },
+    };
+    const service = buildService(prisma, metrics);
+
+    const result = await service.listOutlets('m-1', 'active');
+
+    const args = findMany.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(args).toBeDefined();
+    expect(args.skip).toBeUndefined();
+    expect(args.take).toBeUndefined();
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { merchantId: 'm-1', status: 'ACTIVE' },
+      }),
+    );
+    expect(result.total).toBe(1);
+    expect(result.items).toHaveLength(1);
+  });
 });

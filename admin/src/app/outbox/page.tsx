@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { deleteOutbox, listOutbox, retryAll, retryOutbox, pauseOutbox, resumeOutbox, outboxStats, retrySince, outboxCsvUrl, listOutboxByOrder, type OutboxEvent } from '../../lib/outbox';
 import { getSettings } from '../../lib/admin';
 import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
+import { useActionGuard, useLatestRequest } from '../../lib/async-guards';
 
 export default function OutboxPage() {
   const { merchantId, setMerchantId } = usePreferredMerchantId();
@@ -15,9 +16,18 @@ export default function OutboxPage() {
   const [stats, setStats] = useState<{ counts: Record<string, number>; typeCounts?: Record<string, number>; lastDeadAt: string|null } | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [orderId, setOrderId] = useState<string>('');
+  const { start, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const load = useCallback(async () => {
-    if (!merchantId) { setMsg('Укажите merchantId'); setItems([]); setStats(null); setLoading(false); return; }
+    if (!merchantId) {
+      setMsg('Укажите merchantId');
+      setItems([]);
+      setStats(null);
+      setLoading(false);
+      return;
+    }
+    const requestId = start();
     setLoading(true);
     try {
       const [r, s, st] = await Promise.all([
@@ -25,15 +35,21 @@ export default function OutboxPage() {
         getSettings(merchantId) as Promise<{ outboxPausedUntil?: unknown }>,
         outboxStats(merchantId, since || undefined),
       ]);
+      if (!isLatest(requestId)) return;
       setItems(r);
       if (s.outboxPausedUntil) {
         const pausedAt = new Date(String(s.outboxPausedUntil));
         setMsg(`Outbox paused until ${pausedAt.toLocaleString()}`);
       }
       setStats({ counts: st.counts, typeCounts: st.typeCounts, lastDeadAt: st.lastDeadAt });
-    } catch (e: unknown) { setMsg(String(e instanceof Error ? e.message : e)); }
-    finally { setLoading(false); }
-  }, [limit, merchantId, since, status, type]);
+    } catch (e: unknown) {
+      if (!isLatest(requestId)) return;
+      setMsg(String(e instanceof Error ? e.message : e));
+    }
+    finally {
+      if (isLatest(requestId)) setLoading(false);
+    }
+  }, [limit, merchantId, since, status, type, isLatest, start]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -42,42 +58,93 @@ export default function OutboxPage() {
     setSince(d);
   };
 
-  const onRetry = async (id: string) => { if (!merchantId) return; await retryOutbox(merchantId, id); await load(); };
-  const onDelete = async (id: string) => { if (!merchantId) return; await deleteOutbox(merchantId, id); await load(); };
-  const onRetryAll = async () => { if (!merchantId) return; await retryAll(merchantId, status || undefined); await load(); };
-  const onRetryFailed = async () => { if (!merchantId) return; await retryAll(merchantId, 'FAILED'); await load(); };
-  const onRetryDead = async () => { if (!merchantId) return; await retryAll(merchantId, 'DEAD'); await load(); };
+  const onRetry = async (id: string) => {
+    if (!merchantId) return;
+    await runAction(async () => {
+      await retryOutbox(merchantId, id);
+      await load();
+    });
+  };
+  const onDelete = async (id: string) => {
+    if (!merchantId) return;
+    await runAction(async () => {
+      await deleteOutbox(merchantId, id);
+      await load();
+    });
+  };
+  const onRetryAll = async () => {
+    if (!merchantId) return;
+    await runAction(async () => {
+      await retryAll(merchantId, status || undefined);
+      await load();
+    });
+  };
+  const onRetryFailed = async () => {
+    if (!merchantId) return;
+    await runAction(async () => {
+      await retryAll(merchantId, 'FAILED');
+      await load();
+    });
+  };
+  const onRetryDead = async () => {
+    if (!merchantId) return;
+    await runAction(async () => {
+      await retryAll(merchantId, 'DEAD');
+      await load();
+    });
+  };
   const onRetrySince = async () => {
     if (!merchantId) return;
     const s = prompt('Статус для ретрая с даты (оставьте пустым для любого): PENDING|FAILED|DEAD', status || '');
     const dt = prompt('С даты (ISO, например 2025-09-01T00:00:00Z)', since || '');
     const statusValue = s && s.trim() ? s.trim() : undefined;
-    await retrySince(merchantId, { status: statusValue, since: dt || undefined });
-    await load();
+    await runAction(async () => {
+      await retrySince(merchantId, { status: statusValue, since: dt || undefined });
+      await load();
+    });
   };
   const onPause = async () => {
     if (!merchantId) return;
     const minsStr = prompt('На сколько минут паузу? (по умолчанию 60)');
     const minutes = minsStr ? parseInt(minsStr, 10) : 60;
-    await pauseOutbox(merchantId, { minutes: isNaN(minutes) ? 60 : minutes });
-    await load();
+    await runAction(async () => {
+      await pauseOutbox(merchantId, { minutes: isNaN(minutes) ? 60 : minutes });
+      await load();
+    });
   };
-  const onResume = async () => { if (!merchantId) return; await resumeOutbox(merchantId); await load(); };
+  const onResume = async () => {
+    if (!merchantId) return;
+    await runAction(async () => {
+      await resumeOutbox(merchantId);
+      await load();
+    });
+  };
   const csvHref = merchantId ? outboxCsvUrl(merchantId, { status: status || undefined, type: type || undefined, since: since || undefined, limit }) : '#';
   const onRetrySinceLastDead = async () => {
-    if (!stats?.lastDeadAt) return;
-    await retrySince(merchantId, { since: stats.lastDeadAt, status: 'DEAD' });
-    await load();
+    const merchant = merchantId;
+    const sinceAt = stats?.lastDeadAt;
+    if (!sinceAt || !merchant) return;
+    await runAction(async () => {
+      await retrySince(merchant, { since: sinceAt, status: 'DEAD' });
+      await load();
+    });
   };
   const loadByOrder = async () => {
     if (!orderId.trim()) return;
+    const requestId = start();
     setLoading(true);
     try {
       const r = await listOutboxByOrder(merchantId, orderId.trim(), limit || 100);
+      if (!isLatest(requestId)) return;
       setItems(r);
       setMsg(`Показаны события по orderId=${orderId.trim()}`);
-    } catch (e: unknown) { setMsg(String(e instanceof Error ? e.message : e)); }
-    finally { setLoading(false); }
+    } catch (e: unknown) {
+      if (!isLatest(requestId)) return;
+      setMsg(String(e instanceof Error ? e.message : e));
+    }
+    finally {
+      if (isLatest(requestId)) setLoading(false);
+    }
   };
 
   return (

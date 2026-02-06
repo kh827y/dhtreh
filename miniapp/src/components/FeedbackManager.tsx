@@ -21,6 +21,7 @@ import {
 import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
 import { useDelayedRender } from "../lib/useDelayedRender";
 import { readTxCache, writeTxCache } from "../lib/txCache";
+import { useActionGuard, useLatestRequest } from "../lib/async-guards";
 
 const REVIEW_PLATFORM_LABELS: Record<string, string> = {
   yandex: "Яндекс.Карты",
@@ -260,6 +261,8 @@ export function FeedbackManager() {
   const feedbackPresence = useDelayedRender(feedbackOpen, 320);
   const [preferredTxId, setPreferredTxId] = useState<string | null>(null);
   const [preferredTxAt, setPreferredTxAt] = useState<number | null>(null);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const dismissedReviewKeySet = useMemo(() => new Set(dismissedReviewKeys), [dismissedReviewKeys]);
   const appendDismissedReviewKeys = useCallback((keys: Array<string | null | undefined>) => {
@@ -280,10 +283,12 @@ export function FeedbackManager() {
   const loadTransactions = useCallback(async (opts?: { fresh?: boolean }) => {
     if (!canLoadCustomerData) return;
     if (!merchantId || !customerId) return;
+    const requestId = startLoad();
     try {
       if (!opts?.fresh) {
         const cached = readTxCache(merchantId, customerId);
         if (cached) {
+          if (!isLatest(requestId)) return;
           setTransactionsList(mapTransactions(cached));
           return;
         }
@@ -296,6 +301,7 @@ export function FeedbackManager() {
         await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
         const cachedAfter = readTxCache(merchantId, customerId);
         if (cachedAfter) {
+          if (!isLatest(requestId)) return;
           setTransactionsList(mapTransactions(cachedAfter));
           return;
         }
@@ -303,12 +309,14 @@ export function FeedbackManager() {
       const response = await transactions(merchantId, customerId, 20, undefined, { fresh: opts?.fresh });
       const items = response.items as TransactionItem[];
       const mapped = mapTransactions(items);
+      if (!isLatest(requestId)) return;
       setTransactionsList(mapped);
       writeTxCache(merchantId, customerId, items);
     } catch (error) {
+      if (!isLatest(requestId)) return;
       setToast({ msg: `Не удалось обновить историю: ${resolveErrorMessage(error)}`, type: "error" });
     }
-  }, [merchantId, customerId, canLoadCustomerData]);
+  }, [merchantId, customerId, canLoadCustomerData, isLatest, startLoad]);
 
   const persistDismissedTransaction = useCallback(
     async (transactionId: string) => {
@@ -547,81 +555,83 @@ export function FeedbackManager() {
       const activeTx = feedbackTxId
         ? transactionsList.find((item) => item.id === feedbackTxId) ?? null
         : null;
-      try {
-        setFeedbackSubmitting(true);
-        const response = await submitReview({
-          merchantId,
-          customerId,
-          rating: feedbackRating,
-          comment: feedbackComment,
-          orderId: activeTx?.orderId ?? null,
-          transactionId: feedbackTxId,
-          outletId: activeTx?.outletId ?? null,
-          staffId: activeTx?.staffId ?? null,
-        });
-        if (feedbackTxId) {
-          const group = buildReviewGroup(feedbackTxId, transactionsList);
-          const keys = group.keys.length ? group.keys : [feedbackTxId];
-          appendDismissedReviewKeys(keys);
-          setTransactionsList((prev) =>
-            prev.map((item) =>
-              item.id === feedbackTxId
-                ? {
-                    ...item,
-                    reviewId: response.reviewId,
-                    reviewRating: feedbackRating,
-                    reviewCreatedAt: new Date().toISOString(),
-                  }
-                : item,
-            ),
-          );
-        }
-        void loadTransactions();
-        let resolvedShare: SubmitResponseShare = null;
-        const rawShare = response.share;
-        if (rawShare !== undefined) {
-          if (rawShare && typeof rawShare === "object") {
-            const threshold =
-              typeof rawShare.threshold === "number" && rawShare.threshold >= 1 && rawShare.threshold <= 5
-                ? Math.round(rawShare.threshold)
-                : auth.shareSettings?.threshold ?? 5;
-            const options = Array.isArray(rawShare.options)
-              ? rawShare.options
-                  .filter((opt): opt is SubmitReviewShareOption => {
-                    if (!opt) return false;
-                    if (typeof opt.id !== "string" || typeof opt.url !== "string") return false;
-                    return opt.id.trim().length > 0 && opt.url.trim().length > 0;
-                  })
-                  .map((opt) => ({ id: opt.id.trim(), url: opt.url.trim() }))
-              : [];
-            resolvedShare = {
-              enabled: Boolean(rawShare.enabled),
-              threshold,
-              options,
-            };
-          } else if (rawShare === null) {
-            resolvedShare = {
-              enabled: false,
-              threshold: auth.shareSettings?.threshold ?? 5,
-              options: [],
-            };
+      await runAction(async () => {
+        try {
+          setFeedbackSubmitting(true);
+          const response = await submitReview({
+            merchantId,
+            customerId,
+            rating: feedbackRating,
+            comment: feedbackComment,
+            orderId: activeTx?.orderId ?? null,
+            transactionId: feedbackTxId,
+            outletId: activeTx?.outletId ?? null,
+            staffId: activeTx?.staffId ?? null,
+          });
+          if (feedbackTxId) {
+            const group = buildReviewGroup(feedbackTxId, transactionsList);
+            const keys = group.keys.length ? group.keys : [feedbackTxId];
+            appendDismissedReviewKeys(keys);
+            setTransactionsList((prev) =>
+              prev.map((item) =>
+                item.id === feedbackTxId
+                  ? {
+                      ...item,
+                      reviewId: response.reviewId,
+                      reviewRating: feedbackRating,
+                      reviewCreatedAt: new Date().toISOString(),
+                    }
+                  : item,
+              ),
+            );
           }
+          void loadTransactions();
+          let resolvedShare: SubmitResponseShare = null;
+          const rawShare = response.share;
+          if (rawShare !== undefined) {
+            if (rawShare && typeof rawShare === "object") {
+              const threshold =
+                typeof rawShare.threshold === "number" && rawShare.threshold >= 1 && rawShare.threshold <= 5
+                  ? Math.round(rawShare.threshold)
+                  : auth.shareSettings?.threshold ?? 5;
+              const options = Array.isArray(rawShare.options)
+                ? rawShare.options
+                    .filter((opt): opt is SubmitReviewShareOption => {
+                      if (!opt) return false;
+                      if (typeof opt.id !== "string" || typeof opt.url !== "string") return false;
+                      return opt.id.trim().length > 0 && opt.url.trim().length > 0;
+                    })
+                    .map((opt) => ({ id: opt.id.trim(), url: opt.url.trim() }))
+                : [];
+              resolvedShare = {
+                enabled: Boolean(rawShare.enabled),
+                threshold,
+                options,
+              };
+            } else if (rawShare === null) {
+              resolvedShare = {
+                enabled: false,
+                threshold: auth.shareSettings?.threshold ?? 5,
+                options: [],
+              };
+            }
+          }
+          setSharePrompt(resolvedShare);
+          const fallbackOptions = computeShareOptions(auth.shareSettings, activeOutletId);
+          const effectiveThreshold = resolvedShare?.threshold ?? auth.shareSettings?.threshold ?? 5;
+          const effectiveEnabled = resolvedShare ? resolvedShare.enabled : Boolean(auth.shareSettings?.enabled);
+          const hasOptions = resolvedShare ? resolvedShare.options.length > 0 : fallbackOptions.length > 0;
+          if (effectiveEnabled && feedbackRating >= effectiveThreshold && hasOptions) {
+            setFeedbackStage("share");
+          } else {
+            resetFeedbackState();
+          }
+        } catch (error) {
+          setToast({ msg: resolveErrorMessage(error), type: "error" });
+        } finally {
+          setFeedbackSubmitting(false);
         }
-        setSharePrompt(resolvedShare);
-        const fallbackOptions = computeShareOptions(auth.shareSettings, activeOutletId);
-        const effectiveThreshold = resolvedShare?.threshold ?? auth.shareSettings?.threshold ?? 5;
-        const effectiveEnabled = resolvedShare ? resolvedShare.enabled : Boolean(auth.shareSettings?.enabled);
-        const hasOptions = resolvedShare ? resolvedShare.options.length > 0 : fallbackOptions.length > 0;
-        if (effectiveEnabled && feedbackRating >= effectiveThreshold && hasOptions) {
-          setFeedbackStage("share");
-        } else {
-          resetFeedbackState();
-        }
-      } catch (error) {
-        setToast({ msg: resolveErrorMessage(error), type: "error" });
-      } finally {
-        setFeedbackSubmitting(false);
-      }
+      });
     },
     [
       feedbackStage,
@@ -637,6 +647,7 @@ export function FeedbackManager() {
       appendDismissedReviewKeys,
       resetFeedbackState,
       handleFeedbackClose,
+      runAction,
     ],
   );
 

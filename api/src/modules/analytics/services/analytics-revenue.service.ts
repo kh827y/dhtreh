@@ -5,6 +5,7 @@ import { AnalyticsCacheService } from '../analytics-cache.service';
 import { AnalyticsTimezoneService } from '../analytics-timezone.service';
 import type {
   DashboardPeriod,
+  DailyData,
   RevenueMetrics,
   TimeGrouping,
 } from '../analytics.service';
@@ -195,7 +196,7 @@ export class AnalyticsRevenueService {
     period: DashboardPeriod,
     grouping: TimeGrouping,
     timezone: RussiaTimezone,
-  ) {
+  ): Promise<DailyData[]> {
     const groupingFragment =
       grouping === 'month'
         ? Prisma.sql`'month'`
@@ -249,7 +250,7 @@ export class AnalyticsRevenueService {
 
     const start = truncateForTimezone(period.from, grouping, timezone);
     const end = truncateForTimezone(period.to, grouping, timezone);
-    const result = [];
+    const result: DailyData[] = [];
     let cursor = new Date(start);
     while (cursor.getTime() <= end.getTime()) {
       const label = formatDateLabel(cursor, timezone);

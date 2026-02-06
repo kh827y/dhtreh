@@ -3,6 +3,7 @@
 import React from "react";
 import { AlertTriangle, Lock, Bell, Info, Save } from "lucide-react";
 import { readApiError, readErrorMessage } from "lib/portal-errors";
+import { readPortalApiCache } from "lib/cache";
 
 type AntifraudApiPayload = {
   dailyCap?: number;
@@ -58,6 +59,15 @@ export default function AntifraudPage() {
   const [saving, setSaving] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [success, setSuccess] = React.useState<string>("");
+
+  React.useEffect(() => {
+    const cached = readPortalApiCache<AntifraudApiPayload>("/api/portal/loyalty/antifraud");
+    const normalized = normalizePayload(cached || null);
+    setDailyFrequency(normalized.dailyFrequency);
+    setMonthlyFrequency(normalized.monthlyFrequency);
+    setMaxPoints(normalized.maxPoints);
+    setBlockOnDailyLimit(normalized.blockOnDailyLimit);
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;

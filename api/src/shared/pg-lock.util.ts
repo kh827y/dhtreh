@@ -30,7 +30,7 @@ export async function pgTryAdvisoryLock(
       const ok = !!rows?.[0]?.ok;
       return { ok, key };
     },
-    async () => ({ ok: false, key }),
+    () => ({ ok: false, key }),
     logger,
     'pg_try_advisory_lock failed',
   );
@@ -44,7 +44,7 @@ export async function pgAdvisoryUnlock(
     async () => {
       await prisma.$queryRaw`SELECT pg_advisory_unlock(${key[0]}::int, ${key[1]}::int)`;
     },
-    async () => undefined,
+    () => undefined,
     logger,
     'pg_advisory_unlock failed',
   );

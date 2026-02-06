@@ -97,7 +97,10 @@ export class MerchantsAdminController {
   }
 
   @Post(':id/subscription')
-  grantSubscription(@Param('id') id: string, @Body() body: GrantSubscriptionDto) {
+  grantSubscription(
+    @Param('id') id: string,
+    @Body() body: GrantSubscriptionDto,
+  ) {
     return this.useCase.grantSubscription(id, body);
   }
 

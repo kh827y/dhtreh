@@ -14,6 +14,8 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
+import { readPortalApiCache } from "lib/cache";
 
 const MAX_DAYS_BEFORE = 90;
 const MAX_TEXT_LENGTH = 150;
@@ -24,15 +26,37 @@ export default function BurnReminderPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const [settings, setSettings] = useState({
-    isEnabled: true,
-    daysBefore: 3,
-    pushText: "Уважаемый %username%, у вас сгорает %amount% баллов %burn_date%. Успейте потратить!",
-  });
+  const fallbackSettings = React.useMemo(
+    () => ({
+      isEnabled: true,
+      daysBefore: 3,
+      pushText: "Уважаемый %username%, у вас сгорает %amount% баллов %burn_date%. Успейте потратить!",
+    }),
+    [],
+  );
+  const [settings, setSettings] = useState(fallbackSettings);
   const [forecastCount, setForecastCount] = useState<number | null>(null);
   const [forecastLoading, setForecastLoading] = useState(false);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const { start: startForecast, isLatest: isLatestForecast } = useLatestRequest();
+  const runAction = useActionGuard();
+
+  React.useEffect(() => {
+    const cached = readPortalApiCache<Record<string, unknown>>("/api/portal/loyalty/ttl");
+    if (!cached || typeof cached !== "object") return;
+    setSettings((prev) => ({
+      ...prev,
+      isEnabled: Boolean(cached.enabled),
+      daysBefore: Math.min(
+        MAX_DAYS_BEFORE,
+        Math.max(1, Math.floor(Number(cached.daysBefore ?? cached.days ?? prev.daysBefore) || 0)),
+      ),
+      pushText: typeof cached.text === "string" ? cached.text : prev.pushText,
+    }));
+  }, []);
 
   const load = React.useCallback(async (options?: { keepSuccess?: boolean }) => {
+    const requestId = startLoad();
     setLoading(true);
     setError(null);
     if (!options?.keepSuccess) setSuccess(null);
@@ -40,6 +64,7 @@ export default function BurnReminderPage() {
       const res = await fetch("/api/portal/loyalty/ttl", { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.message || "Не удалось загрузить настройки");
+      if (!isLatest(requestId)) return;
       setSettings((prev) => ({
         ...prev,
         isEnabled: Boolean(json?.enabled),
@@ -50,13 +75,15 @@ export default function BurnReminderPage() {
         pushText: typeof json?.text === "string" ? json.text : prev.pushText,
       }));
     } catch (e: any) {
+      if (!isLatest(requestId)) return;
       setError(normalizeErrorMessage(e, "Не удалось загрузить настройки"));
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, []);
+  }, [isLatest, startLoad]);
 
   const loadForecast = React.useCallback(async (daysBefore: number) => {
+    const requestId = startForecast();
     const safeDays = Math.min(MAX_DAYS_BEFORE, Math.max(1, Math.floor(Number(daysBefore) || 0)));
     setForecastLoading(true);
     try {
@@ -64,13 +91,15 @@ export default function BurnReminderPage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.message || "Не удалось загрузить прогноз");
       const count = Number(json?.count ?? 0);
+      if (!isLatestForecast(requestId)) return;
       setForecastCount(Number.isFinite(count) && count >= 0 ? count : 0);
     } catch {
+      if (!isLatestForecast(requestId)) return;
       setForecastCount(null);
     } finally {
-      setForecastLoading(false);
+      if (isLatestForecast(requestId)) setForecastLoading(false);
     }
-  }, []);
+  }, [isLatestForecast, startForecast]);
 
   React.useEffect(() => {
     void load();
@@ -84,7 +113,6 @@ export default function BurnReminderPage() {
   }, [loadForecast, settings.daysBefore]);
 
   const handleSave = React.useCallback(async () => {
-    if (saving) return;
     setError(null);
     setSuccess(null);
 
@@ -111,27 +139,29 @@ export default function BurnReminderPage() {
       }
     }
 
-    setSaving(true);
-    try {
-      const res = await fetch("/api/portal/loyalty/ttl", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          enabled: settings.isEnabled,
-          daysBefore,
-          text,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.message || "Не удалось сохранить настройки");
-      setSuccess("Настройки сохранены");
-      await load({ keepSuccess: true });
-    } catch (e: any) {
-      setError(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
-    } finally {
-      setSaving(false);
-    }
-  }, [load, saving, settings.daysBefore, settings.isEnabled, settings.pushText]);
+    await runAction(async () => {
+      setSaving(true);
+      try {
+        const res = await fetch("/api/portal/loyalty/ttl", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            enabled: settings.isEnabled,
+            daysBefore,
+            text,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.message || "Не удалось сохранить настройки");
+        setSuccess("Настройки сохранены");
+        await load({ keepSuccess: true });
+      } catch (e: any) {
+        setError(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
+      } finally {
+        setSaving(false);
+      }
+    });
+  }, [load, runAction, settings.daysBefore, settings.isEnabled, settings.pushText]);
 
   const insertPlaceholder = (placeholder: string) => {
     setSettings((prev) => ({

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, TxnType } from '@prisma/client';
+import { TxnType } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { AnalyticsCacheService } from '../analytics-cache.service';
 import { AnalyticsTimezoneService } from '../analytics-timezone.service';

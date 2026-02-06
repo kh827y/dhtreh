@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type PermissionEntry = {
   resource: string;
@@ -308,8 +309,11 @@ export default function AccessSettingsPage() {
   const [busy, setBusy] = React.useState(false);
 
   const [membersModal, setMembersModal] = React.useState<ModalState | null>(null);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const load = React.useCallback(async (force = false) => {
+    const requestId = startLoad();
     setLoading(true);
     try {
       const { groupsPayload, staffPayload } = await fetchAccessGroupsAndStaff(force);
@@ -336,11 +340,13 @@ export default function AccessSettingsPage() {
       }));
 
       const mergedGroups = mergeGroups(remoteGroups, staffRows);
+      if (!isLatest(requestId)) return;
       setGroups(mergedGroups);
       setStaff(staffList);
       setGroupsAvailable(true);
       setBanner((prev) => (prev?.type === "error" ? null : prev));
     } catch (err: unknown) {
+      if (!isLatest(requestId)) return;
       const isUnavailable = Boolean((err as any)?.groupsUnavailable);
       const message = isUnavailable
         ? "Группы доступа недоступны. Проверьте поддержку на сервере."
@@ -350,9 +356,9 @@ export default function AccessSettingsPage() {
       setGroupsAvailable(false);
       setBanner({ type: "error", text: message });
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, []);
+  }, [isLatest, startLoad]);
 
   React.useEffect(() => {
     load();
@@ -428,19 +434,21 @@ export default function AccessSettingsPage() {
 
   async function handleDelete(id: string) {
     if (!window.confirm("Удалить группу доступа?")) return;
-    try {
-      const res = await fetch(`/api/portal/access-groups/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        throw new Error(errText || "Не удалось удалить группу");
+    await runAction(async () => {
+      try {
+        const res = await fetch(`/api/portal/access-groups/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const errText = await res.text().catch(() => "");
+          throw new Error(errText || "Не удалось удалить группу");
+        }
+        setBanner({ type: "success", text: "Группа удалена" });
+        await load(true);
+      } catch (err: unknown) {
+        setBanner({ type: "error", text: normalizeErrorMessage(err, "Ошибка удаления группы") });
       }
-      setBanner({ type: "success", text: "Группа удалена" });
-      await load(true);
-    } catch (err: unknown) {
-      setBanner({ type: "error", text: normalizeErrorMessage(err, "Ошибка удаления группы") });
-    }
+    });
   }
 
   const handleSave = async () => {
@@ -449,57 +457,59 @@ export default function AccessSettingsPage() {
       setBanner({ type: "error", text: "Укажите название группы" });
       return;
     }
-    setBusy(true);
-    try {
-      const payload = {
-        name: draft.name.trim(),
-        description: draft.description?.trim() || null,
-        permissions: permissionsToList(draft.permissions, draft.fullAccess),
-      };
-      if (view === "create") {
-        const r = await fetch(`/api/portal/access-groups`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!r.ok) throw new Error(await r.text());
-        const created = await r.json();
-        const gid = created?.id || draft.id;
-        const membersRes = await fetch(
-          `/api/portal/access-groups/${encodeURIComponent(gid)}/members`,
-          {
+    await runAction(async () => {
+      setBusy(true);
+      try {
+        const payload = {
+          name: draft.name.trim(),
+          description: draft.description?.trim() || null,
+          permissions: permissionsToList(draft.permissions, draft.fullAccess),
+        };
+        if (view === "create") {
+          const r = await fetch(`/api/portal/access-groups`, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ staffIds: draft.staffIds }),
-          },
-        );
-        if (!membersRes.ok) throw new Error(await membersRes.text());
-        setBanner({ type: "success", text: "Группа создана" });
-      } else if (view === "edit" && editingId) {
-        const r = await fetch(`/api/portal/access-groups/${encodeURIComponent(editingId)}`, {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!r.ok) throw new Error(await r.text());
-        const membersRes = await fetch(
-          `/api/portal/access-groups/${encodeURIComponent(editingId)}/members`,
-          {
-            method: "POST",
+            body: JSON.stringify(payload),
+          });
+          if (!r.ok) throw new Error(await r.text());
+          const created = await r.json();
+          const gid = created?.id || draft.id;
+          const membersRes = await fetch(
+            `/api/portal/access-groups/${encodeURIComponent(gid)}/members`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ staffIds: draft.staffIds }),
+            },
+          );
+          if (!membersRes.ok) throw new Error(await membersRes.text());
+          setBanner({ type: "success", text: "Группа создана" });
+        } else if (view === "edit" && editingId) {
+          const r = await fetch(`/api/portal/access-groups/${encodeURIComponent(editingId)}`, {
+            method: "PUT",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ staffIds: draft.staffIds }),
-          },
-        );
-        if (!membersRes.ok) throw new Error(await membersRes.text());
-        setBanner({ type: "success", text: "Группа обновлена" });
+            body: JSON.stringify(payload),
+          });
+          if (!r.ok) throw new Error(await r.text());
+          const membersRes = await fetch(
+            `/api/portal/access-groups/${encodeURIComponent(editingId)}/members`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ staffIds: draft.staffIds }),
+            },
+          );
+          if (!membersRes.ok) throw new Error(await membersRes.text());
+          setBanner({ type: "success", text: "Группа обновлена" });
+        }
+        closeEditor();
+        await load(true);
+      } catch (err: unknown) {
+        setBanner({ type: "error", text: normalizeErrorMessage(err, "Ошибка сохранения") });
+      } finally {
+        setBusy(false);
       }
-      closeEditor();
-      await load(true);
-    } catch (err: unknown) {
-      setBanner({ type: "error", text: normalizeErrorMessage(err, "Ошибка сохранения") });
-    } finally {
-      setBusy(false);
-    }
+    });
   };
 
   const staffLabel = (id: string) => {

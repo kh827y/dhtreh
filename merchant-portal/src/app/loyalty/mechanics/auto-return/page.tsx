@@ -17,6 +17,8 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
+import { readPortalApiCache } from "lib/cache";
 
 const DEFAULT_TEXT = "Мы скучаем! Возвращайтесь и получите бонусные баллы.";
 
@@ -44,6 +46,8 @@ function AutoReturnPageInner() {
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const [settings, setSettings] = React.useState<AutoReturnSettings>({
     enabled: false,
@@ -56,6 +60,23 @@ function AutoReturnPageInner() {
     repeatEnabled: false,
     repeatDays: 14,
   });
+
+  React.useEffect(() => {
+    const cached = readPortalApiCache<Record<string, unknown>>("/api/portal/loyalty/auto-return");
+    if (!cached || typeof cached !== "object") return;
+    setSettings((prev) => ({
+      ...prev,
+      enabled: Boolean(cached.enabled),
+      days: Math.max(1, Math.floor(Number(cached.days ?? prev.days) || 0)),
+      text: typeof cached.text === "string" ? cached.text : prev.text,
+      giftEnabled: Boolean(cached.giftEnabled),
+      giftPoints: Math.max(0, Math.floor(Number(cached.giftPoints ?? prev.giftPoints) || 0)),
+      giftBurnEnabled: Boolean(cached.giftBurnEnabled),
+      giftTtlDays: Math.max(1, Math.floor(Number(cached.giftTtlDays ?? prev.giftTtlDays) || 0)),
+      repeatEnabled: Boolean(cached.repeatEnabled),
+      repeatDays: Math.max(1, Math.floor(Number(cached.repeatDays ?? prev.repeatDays) || 0)),
+    }));
+  }, []);
 
   React.useEffect(() => {
     const next = searchParams.get("tab") === "stats" ? "stats" : "main";
@@ -77,6 +98,7 @@ function AutoReturnPageInner() {
   );
 
   const load = React.useCallback(async (options?: { keepSuccess?: boolean }) => {
+    const requestId = startLoad();
     setLoading(true);
     setError(null);
     if (!options?.keepSuccess) setSuccess(null);
@@ -84,6 +106,7 @@ function AutoReturnPageInner() {
       const res = await fetch("/api/portal/loyalty/auto-return", { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.message || "Не удалось загрузить настройки");
+      if (!isLatest(requestId)) return;
       setSettings((prev) => ({
         ...prev,
         enabled: Boolean(json?.enabled),
@@ -97,11 +120,12 @@ function AutoReturnPageInner() {
         repeatDays: Math.max(1, Math.floor(Number(json?.repeatDays ?? prev.repeatDays) || 0)),
       }));
     } catch (e: any) {
+      if (!isLatest(requestId)) return;
       setError(normalizeErrorMessage(e, "Не удалось загрузить настройки"));
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, []);
+  }, [isLatest, startLoad]);
 
   React.useEffect(() => {
     void load();
@@ -111,7 +135,6 @@ function AutoReturnPageInner() {
   const detailDisabled = !settings.enabled || controlsDisabled;
 
   const handleSave = React.useCallback(async () => {
-    if (saving) return;
     setError(null);
     setSuccess(null);
 
@@ -141,33 +164,35 @@ function AutoReturnPageInner() {
       return;
     }
 
-    setSaving(true);
-    try {
-      const res = await fetch("/api/portal/loyalty/auto-return", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          enabled: settings.enabled,
-          days,
-          text: textValue,
-          giftEnabled: settings.giftEnabled,
-          giftPoints: settings.giftEnabled ? giftPoints : 0,
-          giftBurnEnabled: settings.giftEnabled ? settings.giftBurnEnabled : false,
-          giftTtlDays: settings.giftEnabled && settings.giftBurnEnabled ? giftTtlDays : 0,
-          repeatEnabled: settings.repeatEnabled,
-          repeatDays: settings.repeatEnabled ? repeatDays : 0,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.message || "Не удалось сохранить настройки");
-      setSuccess("Настройки сохранены");
-      await load({ keepSuccess: true });
-    } catch (e: any) {
-      setError(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
-    } finally {
-      setSaving(false);
-    }
-  }, [load, saving, settings]);
+    await runAction(async () => {
+      setSaving(true);
+      try {
+        const res = await fetch("/api/portal/loyalty/auto-return", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            enabled: settings.enabled,
+            days,
+            text: textValue,
+            giftEnabled: settings.giftEnabled,
+            giftPoints: settings.giftEnabled ? giftPoints : 0,
+            giftBurnEnabled: settings.giftEnabled ? settings.giftBurnEnabled : false,
+            giftTtlDays: settings.giftEnabled && settings.giftBurnEnabled ? giftTtlDays : 0,
+            repeatEnabled: settings.repeatEnabled,
+            repeatDays: settings.repeatEnabled ? repeatDays : 0,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.message || "Не удалось сохранить настройки");
+        setSuccess("Настройки сохранены");
+        await load({ keepSuccess: true });
+      } catch (e: any) {
+        setError(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
+      } finally {
+        setSaving(false);
+      }
+    });
+  }, [load, runAction, settings]);
 
   const appendPlaceholder = React.useCallback((token: string) => {
     setSettings((prev) => ({

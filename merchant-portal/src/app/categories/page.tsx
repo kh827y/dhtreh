@@ -15,6 +15,7 @@ import {
   Minus,
 } from "lucide-react";
 import { readErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type CategoryStatus = "active" | "archived";
 
@@ -80,6 +81,8 @@ const CategoriesPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const [formData, setFormData] = useState({
     name: "",
@@ -91,6 +94,7 @@ const CategoriesPage: React.FC = () => {
   const [productLinkSearch, setProductLinkSearch] = useState("");
 
   const loadData = useCallback(async () => {
+    const requestId = startLoad();
     setLoading(true);
     setError(null);
     try {
@@ -108,15 +112,17 @@ const CategoriesPage: React.FC = () => {
       const productsPayload = await productsRes.json();
       const nextCategories = Array.isArray(categoriesPayload) ? categoriesPayload.map(mapPortalCategory) : [];
       const nextProducts = Array.isArray(productsPayload?.items) ? productsPayload.items.map(mapPortalProduct) : [];
+      if (!isLatest(requestId)) return;
       setCategories(nextCategories);
       setProducts(nextProducts);
     } catch (err) {
+      if (!isLatest(requestId)) return;
       const message = err instanceof Error ? err.message : String(err || "Не удалось загрузить категории");
       setError(message);
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, []);
+  }, [isLatest, startLoad]);
 
   useEffect(() => {
     void loadData();
@@ -223,18 +229,20 @@ const CategoriesPage: React.FC = () => {
       return;
     }
     if (!confirm('Вы уверены? Товары в этой категории станут "Без категории".')) return;
-    setError(null);
-    try {
-      const res = await fetch(`/api/portal/catalog/categories/${encodeURIComponent(id)}`, { method: "DELETE" });
-      if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Не удалось удалить категорию"));
+    await runAction(async () => {
+      setError(null);
+      try {
+        const res = await fetch(`/api/portal/catalog/categories/${encodeURIComponent(id)}`, { method: "DELETE" });
+        if (!res.ok) {
+          throw new Error(await readErrorMessage(res, "Не удалось удалить категорию"));
+        }
+        setCategories((prev) => prev.filter((cat) => cat.id !== id));
+        setProducts((prev) => prev.map((prod) => (prod.categoryId === id ? { ...prod, categoryId: null } : prod)));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err || "Не удалось удалить категорию");
+        setError(message);
       }
-      setCategories((prev) => prev.filter((cat) => cat.id !== id));
-      setProducts((prev) => prev.map((prod) => (prod.categoryId === id ? { ...prod, categoryId: null } : prod)));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err || "Не удалось удалить категорию");
-      setError(message);
-    }
+    });
   };
 
   const handleSaveCategory = async () => {
@@ -262,30 +270,32 @@ const CategoriesPage: React.FC = () => {
           : [],
     };
 
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        view === "edit" ? `/api/portal/catalog/categories/${editingId}` : "/api/portal/catalog/categories",
-        {
-          method: view === "edit" ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
-      if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Не удалось сохранить категорию"));
-      }
-      await res.json().catch(() => null);
+    await runAction(async () => {
+      setSaving(true);
+      setError(null);
+      try {
+        const res = await fetch(
+          view === "edit" ? `/api/portal/catalog/categories/${editingId}` : "/api/portal/catalog/categories",
+          {
+            method: view === "edit" ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+        if (!res.ok) {
+          throw new Error(await readErrorMessage(res, "Не удалось сохранить категорию"));
+        }
+        await res.json().catch(() => null);
 
-      await loadData();
-      setView("list");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err || "Не удалось сохранить категорию");
-      setError(message);
-    } finally {
-      setSaving(false);
-    }
+        await loadData();
+        setView("list");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err || "Не удалось сохранить категорию");
+        setError(message);
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   const handleUnlinkProduct = (prodId: string) => {
@@ -301,35 +311,37 @@ const CategoriesPage: React.FC = () => {
     if (!editingId) return;
     const name = prompt("Название товара:");
     if (!name) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const payload = {
-        name: name.trim(),
-        categoryId: view === "edit" ? editingId : null,
-        externalId: null,
-        accruePoints: true,
-        allowRedeem: true,
-        redeemPercent: 100,
-      };
-      const res = await fetch("/api/portal/catalog/products", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Не удалось создать товар"));
+    await runAction(async () => {
+      setSaving(true);
+      setError(null);
+      try {
+        const payload = {
+          name: name.trim(),
+          categoryId: view === "edit" ? editingId : null,
+          externalId: null,
+          accruePoints: true,
+          allowRedeem: true,
+          redeemPercent: 100,
+        };
+        const res = await fetch("/api/portal/catalog/products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          throw new Error(await readErrorMessage(res, "Не удалось создать товар"));
+        }
+        const data = await res.json().catch(() => null);
+        const created = data ? mapPortalProduct(data) : { id: Date.now().toString(), name: payload.name, categoryId: payload.categoryId };
+        const next = view === "create" ? { ...created, categoryId: editingId } : created;
+        setProducts((prev) => [...prev, next]);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err || "Не удалось создать товар");
+        setError(message);
+      } finally {
+        setSaving(false);
       }
-      const data = await res.json().catch(() => null);
-      const created = data ? mapPortalProduct(data) : { id: Date.now().toString(), name: payload.name, categoryId: payload.categoryId };
-      const next = view === "create" ? { ...created, categoryId: editingId } : created;
-      setProducts((prev) => [...prev, next]);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err || "Не удалось создать товар");
-      setError(message);
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   const editorAttachedProducts = editingId ? products.filter((p) => p.categoryId === editingId) : [];

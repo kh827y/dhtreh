@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useLatestRequest } from '../../lib/async-guards';
 
 type HealthPayload = {
   health?: { ok?: boolean; ts?: string };
@@ -10,11 +11,14 @@ type HealthPayload = {
 export default function StatusPage() {
   const [data, setData] = useState<HealthPayload | null>(null);
   const [err, setErr] = useState<string>('');
+  const { start, isLatest } = useLatestRequest();
 
-  async function load() {
+  const load = useCallback(async () => {
+    const requestId = start();
     try {
       const r = await fetch('/api/health');
       const payload = await r.json().catch(() => null) as HealthPayload | null;
+      if (!isLatest(requestId)) return;
       setData(payload);
       if (!r.ok) {
         const msg = payload?.error ? String(payload.error) : `HTTP ${r.status}`;
@@ -22,10 +26,13 @@ export default function StatusPage() {
       } else {
         setErr('');
       }
-    } catch (e: unknown) { setErr(String(e instanceof Error ? e.message : e)); }
-  }
+    } catch (e: unknown) {
+      if (!isLatest(requestId)) return;
+      setErr(String(e instanceof Error ? e.message : e));
+    }
+  }, [isLatest, start]);
 
-  useEffect(() => { load().catch(()=>{}); const id = setInterval(load, 15000); return () => clearInterval(id); }, []);
+  useEffect(() => { load().catch(()=>{}); const id = setInterval(load, 15000); return () => clearInterval(id); }, [load]);
 
   const V = (label: string, value: string, ok?: boolean) => (
     <div style={{ background: '#0e1629', padding: 10, borderRadius: 8 }}>

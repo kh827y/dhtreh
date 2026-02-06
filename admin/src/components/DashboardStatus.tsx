@@ -1,20 +1,28 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useLatestRequest } from '../lib/async-guards';
 
 type Summary = { outboxPending: number; outboxDead: number; http5xx: number; http4xx: number; circuitOpen?: number; counters: Record<string, number> };
 
 export default function DashboardStatus() {
   const [data, setData] = useState<Summary | null>(null);
   const [err, setErr] = useState<string>('');
+  const { start, isLatest } = useLatestRequest();
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    const requestId = start();
     try {
       const res = await fetch('/api/metrics');
       if (!res.ok) throw new Error(await res.text());
-      setData(await res.json()); setErr('');
-    } catch (e: unknown) { setErr(e instanceof Error ? e.message : String(e)); }
-  };
-  useEffect(() => { load().catch(()=>{}); const id = setInterval(load, 15000); return () => clearInterval(id); }, []);
+      const payload = await res.json();
+      if (!isLatest(requestId)) return;
+      setData(payload); setErr('');
+    } catch (e: unknown) {
+      if (!isLatest(requestId)) return;
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }, [isLatest, start]);
+  useEffect(() => { load().catch(()=>{}); const id = setInterval(load, 15000); return () => clearInterval(id); }, [load]);
 
   return (
     <div style={{ background: '#0e1629', padding: 12, borderRadius: 8 }}>

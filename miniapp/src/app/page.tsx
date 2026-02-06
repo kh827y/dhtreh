@@ -38,6 +38,7 @@ import { getProgressPercent, type LevelInfo } from "../lib/levels";
 import { getTransactionMeta } from "../lib/transactionMeta";
 import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
 import { type TransactionItem } from "../lib/reviewUtils";
+import { useActionGuard, useLatestRequest } from "../lib/async-guards";
 import { writeTxCache } from "../lib/txCache";
 import { getTelegramWebApp } from "../lib/telegram";
 import {
@@ -853,10 +854,22 @@ function MiniappPage() {
   const txLoadSeq = useRef(0);
   const txLoadingMoreRef = useRef(false);
   const txLoadMoreRef = useRef<HTMLDivElement | null>(null);
+  const authKeyRef = useRef("");
+  const { start: startBalanceLoad, isLatest: isLatestBalance } = useLatestRequest();
+  const { start: startLevelsLoad, isLatest: isLatestLevels } = useLatestRequest();
+  const { start: startPromotionsLoad, isLatest: isLatestPromotions } = useLatestRequest();
+  const { start: startLevelCatalogLoad, isLatest: isLatestLevelCatalog } = useLatestRequest();
+  const { start: startBootstrapLoad, isLatest: isLatestBootstrap } = useLatestRequest();
+  const { start: startQrLoad, isLatest: isLatestQr } = useLatestRequest();
+  const runAction = useActionGuard();
 
   useEffect(() => {
     setLocalOnboarded(readStoredOnboardFlag(merchantId, telegramUserId));
   }, [merchantId, telegramUserId]);
+
+  useEffect(() => {
+    authKeyRef.current = `${merchantId || ""}:${customerId || ""}`;
+  }, [merchantId, customerId]);
 
   useEffect(() => {
     setBootstrapReady(false);
@@ -1219,15 +1232,18 @@ function MiniappPage() {
   const loadBalance = useCallback(async () => {
     if (!canLoadCustomerData) return;
     if (!merchantId || !customerId) return;
+    const requestId = startBalanceLoad();
     const mid = merchantId;
     const cid = customerId;
     try {
       const resp = await balance(mid, cid);
+      if (!isLatestBalance(requestId)) return;
       setBal(resp.balance);
     } catch (error) {
+      if (!isLatestBalance(requestId)) return;
       setToast({ msg: `Не удалось загрузить баланс: ${resolveErrorMessage(error)}`, type: "error" });
     }
-  }, [canLoadCustomerData, merchantId, customerId]);
+  }, [canLoadCustomerData, merchantId, customerId, isLatestBalance, startBalanceLoad]);
 
   const loadTx = useCallback(async (opts?: { fresh?: boolean }) => {
     if (!canLoadCustomerData) return;
@@ -1277,45 +1293,55 @@ function MiniappPage() {
   const loadLevels = useCallback(async () => {
     if (!canLoadCustomerData) return;
     if (!merchantId || !customerId) return;
+    const requestId = startLevelsLoad();
     const mid = merchantId;
     const cid = customerId;
     try {
       const resp = await levels(mid, cid);
+      if (!isLatestLevels(requestId)) return;
       setLevelInfo(resp);
     } catch (error) {
+      if (!isLatestLevels(requestId)) return;
       setToast({ msg: `Не удалось загрузить уровни: ${resolveErrorMessage(error)}`, type: "error" });
     }
-  }, [canLoadCustomerData, merchantId, customerId]);
+  }, [canLoadCustomerData, merchantId, customerId, isLatestLevels, startLevelsLoad]);
 
   const loadLevelCatalog = useCallback(async () => {
     if (!merchantId) return;
+    const requestId = startLevelCatalogLoad();
     try {
       const resp = await mechanicsLevels(merchantId);
       const levelsList = Array.isArray(resp.levels) ? resp.levels : [];
+      if (!isLatestLevelCatalog(requestId)) return;
       setLevelCatalog(levelsList);
     } catch {
       // ignore
     }
-  }, [merchantId]);
+  }, [merchantId, isLatestLevelCatalog, startLevelCatalogLoad]);
 
   const loadPromotions = useCallback(async () => {
     if (!canLoadCustomerData) return;
     if (!merchantId || !customerId) return;
+    const requestId = startPromotionsLoad();
     const mid = merchantId;
     const cid = customerId;
     try {
       const resp = await promotionsList(mid, cid);
+      if (!isLatestPromotions(requestId)) return;
       setPromotions(resp || []);
       setPromotionsResolved(true);
     } catch (error) {
+      if (!isLatestPromotions(requestId)) return;
       setToast({ msg: `Не удалось загрузить акции: ${resolveErrorMessage(error)}`, type: "error" });
     }
-  }, [canLoadCustomerData, merchantId, customerId]);
+  }, [canLoadCustomerData, merchantId, customerId, isLatestPromotions, startPromotionsLoad]);
 
   const loadBootstrap = useCallback(async () => {
     if (!canLoadCustomerData) return false;
     if (!merchantId || !customerId) return false;
     if (bootstrapInFlightRef.current) return false;
+    const requestId = startBootstrapLoad();
+    const authKey = `${merchantId}:${customerId}`;
     bootstrapInFlightRef.current = true;
     if (typeof window !== "undefined") {
       const w = window as typeof window & { __miniappBootstrapPending?: { merchantId: string; customerId: string } };
@@ -1325,6 +1351,7 @@ function MiniappPage() {
       const mid = merchantId;
       const cid = customerId;
       const resp = await bootstrap(mid, cid, { transactionsLimit: TX_PAGE_LIMIT });
+      if (!isLatestBootstrap(requestId) || authKeyRef.current !== authKey) return false;
       if (resp.profile) applyServerProfile(resp.profile);
       if (resp.consent) {
         if (!resp.consent.consentAt && !resp.consent.granted) {
@@ -1352,9 +1379,12 @@ function MiniappPage() {
       setBootstrapReady(true);
       return true;
     } catch {
+      if (!isLatestBootstrap(requestId) || authKeyRef.current !== authKey) return false;
       return false;
     } finally {
-      setBootstrapAttempted(true);
+      if (isLatestBootstrap(requestId) && authKeyRef.current === authKey) {
+        setBootstrapAttempted(true);
+      }
       bootstrapInFlightRef.current = false;
       if (typeof window !== "undefined") {
         const w = window as typeof window & { __miniappBootstrapPending?: { merchantId: string; customerId: string } };
@@ -1366,7 +1396,7 @@ function MiniappPage() {
         }
       }
     }
-  }, [canLoadCustomerData, merchantId, customerId, applyServerProfile]);
+  }, [canLoadCustomerData, merchantId, customerId, applyServerProfile, isLatestBootstrap, startBootstrapLoad]);
 
   useEffect(() => {
     if (auth.loading || !customerId) return;
@@ -1498,30 +1528,32 @@ function MiniappPage() {
         setToast({ msg: "Не удалось определить клиента", type: "error" });
         return;
       }
-      try {
-        const resp = await promotionClaim(merchantId, customerId, promotionId, null);
-        const message = resp.alreadyClaimed
-          ? "Уже получено"
-          : resp.pointsIssued > 0
-            ? `Начислено ${resp.pointsIssued} баллов`
-            : "Получено";
-        setToast({ msg: message, type: "success" });
-        if (resp.ok) {
-          setBal(resp.balance);
-          setPromotions((prev) =>
-            prev.map((promo) =>
-              promo.id === promotionId
-                ? { ...promo, claimed: true, canClaim: false }
-                : promo,
-            ),
-          );
+      await runAction(async () => {
+        try {
+          const resp = await promotionClaim(merchantId, customerId, promotionId, null);
+          const message = resp.alreadyClaimed
+            ? "Уже получено"
+            : resp.pointsIssued > 0
+              ? `Начислено ${resp.pointsIssued} баллов`
+              : "Получено";
+          setToast({ msg: message, type: "success" });
+          if (resp.ok) {
+            setBal(resp.balance);
+            setPromotions((prev) =>
+              prev.map((promo) =>
+                promo.id === promotionId
+                  ? { ...promo, claimed: true, canClaim: false }
+                  : promo,
+              ),
+            );
+          }
+          void Promise.allSettled([loadBalance(), loadTx({ fresh: true }), loadLevels(), loadPromotions()]);
+        } catch (error) {
+          setToast({ msg: resolveErrorMessage(error), type: "error" });
         }
-        void Promise.allSettled([loadBalance(), loadTx({ fresh: true }), loadLevels(), loadPromotions()]);
-      } catch (error) {
-        setToast({ msg: resolveErrorMessage(error), type: "error" });
-      }
+      });
     },
-    [merchantId, customerId, loadBalance, loadTx, loadLevels, loadPromotions],
+    [merchantId, customerId, loadBalance, loadTx, loadLevels, loadPromotions, runAction],
   );
 
   useEffect(() => {
@@ -1582,20 +1614,23 @@ function MiniappPage() {
 
   const refreshQr = useCallback(async () => {
     if (!customerId) return;
+    const requestId = startQrLoad();
     try {
       setQrRefreshing(true);
       const minted = await mintQr(customerId, merchantId, qrEffectiveTtl, initData);
+      if (!isLatestQr(requestId)) return;
       setQrToken(minted.token);
       const ttlSec = typeof minted.ttl === "number" && Number.isFinite(minted.ttl) ? minted.ttl : qrEffectiveTtl;
       setQrTtlSec(ttlSec);
       setQrExpiresAt(Date.now() + Math.max(5, ttlSec) * 1000);
       setQrError("");
     } catch (err) {
+      if (!isLatestQr(requestId)) return;
       setQrError(`Не удалось обновить QR: ${resolveErrorMessage(err)}`);
     } finally {
-      setQrRefreshing(false);
+      if (isLatestQr(requestId)) setQrRefreshing(false);
     }
-  }, [customerId, merchantId, qrEffectiveTtl, initData]);
+  }, [customerId, merchantId, qrEffectiveTtl, initData, isLatestQr, startQrLoad]);
 
   useEffect(() => {
     if (!qrOpen || !qrExpiresAt) {
@@ -1997,61 +2032,63 @@ function MiniappPage() {
       return;
     }
 
-    setProfileSaving(true);
-    const key = merchantId ? profileStorageKey(merchantId, telegramUserId) : null;
-    const pendingKey = merchantId ? profilePendingKey(merchantId, telegramUserId) : null;
-    if (key) {
-      try {
-        localStorage.setItem(key, JSON.stringify({
-          name: profileForm.name.trim(),
-          gender: profileForm.gender,
-          birthDate: profileForm.birthDate,
-        }));
-      } catch {}
-    }
-
-    let effectiveCustomerId = customerId;
-    if (!effectiveCustomerId || !merchantId) {
-      let initForAuth = initData;
-      if (!isValidInitData(initForAuth)) {
-        initForAuth = await waitForInitData(10, 200);
-      }
-      if (merchantId && isValidInitData(initForAuth)) {
+    await runAction(async () => {
+      setProfileSaving(true);
+      const key = merchantId ? profileStorageKey(merchantId, telegramUserId) : null;
+      const pendingKey = merchantId ? profilePendingKey(merchantId, telegramUserId) : null;
+      if (key) {
         try {
-          const result = await teleauth(merchantId, initForAuth, { create: true });
-          effectiveCustomerId = applyProfileSaveResult(
-            { name: null, gender: null, birthDate: null, customerId: result.customerId },
-            result.customerId,
-          );
-          setAuthTeleHasPhone(Boolean(result.hasPhone));
-          setAuthTeleOnboarded(Boolean(result.onboarded));
-        } catch (teleauthError) {
-          const message = resolveErrorMessage(teleauthError);
-          setToast({ msg: `Не удалось авторизоваться в Telegram: ${message}`, type: "error" });
+          localStorage.setItem(key, JSON.stringify({
+            name: profileForm.name.trim(),
+            gender: profileForm.gender,
+            birthDate: profileForm.birthDate,
+          }));
+        } catch {}
+      }
+
+      let effectiveCustomerId = customerId;
+      if (!effectiveCustomerId || !merchantId) {
+        let initForAuth = initData;
+        if (!isValidInitData(initForAuth)) {
+          initForAuth = await waitForInitData(10, 200);
+        }
+        if (merchantId && isValidInitData(initForAuth)) {
+          try {
+            const result = await teleauth(merchantId, initForAuth, { create: true });
+            effectiveCustomerId = applyProfileSaveResult(
+              { name: null, gender: null, birthDate: null, customerId: result.customerId },
+              result.customerId,
+            );
+            setAuthTeleHasPhone(Boolean(result.hasPhone));
+            setAuthTeleOnboarded(Boolean(result.onboarded));
+          } catch (teleauthError) {
+            const message = resolveErrorMessage(teleauthError);
+            setToast({ msg: `Не удалось авторизоваться в Telegram: ${message}`, type: "error" });
+            setProfileSaving(false);
+            return;
+          }
+        } else {
+          if (pendingKey) {
+            try {
+              localStorage.setItem(pendingKey, JSON.stringify({
+                name: profileForm.name.trim(),
+                gender: profileForm.gender,
+                birthDate: profileForm.birthDate,
+              }));
+            } catch {}
+          }
+          pendingProfileSync.current = false;
           setProfileSaving(false);
           return;
         }
-      } else {
-        if (pendingKey) {
-          try {
-            localStorage.setItem(pendingKey, JSON.stringify({
-              name: profileForm.name.trim(),
-              gender: profileForm.gender,
-              birthDate: profileForm.birthDate,
-            }));
-          } catch {}
-        }
-        pendingProfileSync.current = false;
-        setProfileSaving(false);
-        return;
       }
-    }
 
-    if (effectiveCustomerId) {
-      setPendingCustomerIdForPhone(effectiveCustomerId);
-    }
-    setProfileSaving(false);
-    await handleRequestPhone(effectiveCustomerId);
+      if (effectiveCustomerId) {
+        setPendingCustomerIdForPhone(effectiveCustomerId);
+      }
+      setProfileSaving(false);
+      await handleRequestPhone(effectiveCustomerId);
+    });
   }, [
     profileForm,
     profileConsent,
@@ -2064,6 +2101,7 @@ function MiniappPage() {
     setAuthTeleHasPhone,
     setAuthTeleOnboarded,
     handleRequestPhone,
+    runAction,
   ]);
 
   const handlePromoApply = useCallback(async () => {
@@ -2072,24 +2110,26 @@ function MiniappPage() {
       setToast({ msg: "Не удалось определить клиента", type: "error" });
       return;
     }
-    setPromoStatus("loading");
-    try {
-      const result = await promoCodeApply(merchantId, customerId, promoCode.trim());
-      if (result.ok) {
-        setPromoStatus("success");
-        setPromoCode("");
-        setToast({ msg: result.message || "Промокод применён", type: "success" });
-        await Promise.allSettled([loadBalance(), loadTx({ fresh: true }), loadLevels()]);
-      } else {
+    await runAction(async () => {
+      setPromoStatus("loading");
+      try {
+        const result = await promoCodeApply(merchantId, customerId, promoCode.trim());
+        if (result.ok) {
+          setPromoStatus("success");
+          setPromoCode("");
+          setToast({ msg: result.message || "Промокод применён", type: "success" });
+          await Promise.allSettled([loadBalance(), loadTx({ fresh: true }), loadLevels()]);
+        } else {
+          setPromoStatus("error");
+        }
+      } catch (error) {
         setPromoStatus("error");
+        setToast({ msg: resolveErrorMessage(error), type: "error" });
+      } finally {
+        setTimeout(() => setPromoStatus("idle"), 3000);
       }
-    } catch (error) {
-      setPromoStatus("error");
-      setToast({ msg: resolveErrorMessage(error), type: "error" });
-    } finally {
-      setTimeout(() => setPromoStatus("idle"), 3000);
-    }
-  }, [promoCode, merchantId, customerId, loadBalance, loadTx, loadLevels]);
+    });
+  }, [promoCode, merchantId, customerId, loadBalance, loadTx, loadLevels, runAction]);
 
   const handleInviteFriend = useCallback(() => {
     if (!referralInfo) return;
@@ -2151,27 +2191,31 @@ function MiniappPage() {
       setShowNotificationAlert(true);
       return;
     }
-    try {
-      await consentSet(merchantId, customerId, true);
-      setConsent(true);
-      setToast({ msg: "Уведомления включены", type: "success" });
-    } catch (error) {
-      setToast({ msg: `Ошибка согласия: ${resolveErrorMessage(error)}`, type: "error" });
-    }
-  }, [merchantId, customerId, consent]);
+    await runAction(async () => {
+      try {
+        await consentSet(merchantId, customerId, true);
+        setConsent(true);
+        setToast({ msg: "Уведомления включены", type: "success" });
+      } catch (error) {
+        setToast({ msg: `Ошибка согласия: ${resolveErrorMessage(error)}`, type: "error" });
+      }
+    });
+  }, [merchantId, customerId, consent, runAction]);
 
   const confirmTurnOffNotifications = useCallback(async () => {
     if (!customerId || !merchantId) return;
-    try {
-      await consentSet(merchantId, customerId, false);
-      setConsent(false);
-      setToast({ msg: "Уведомления отключены", type: "success" });
-    } catch (error) {
-      setToast({ msg: `Ошибка согласия: ${resolveErrorMessage(error)}`, type: "error" });
-    } finally {
-      setShowNotificationAlert(false);
-    }
-  }, [merchantId, customerId]);
+    await runAction(async () => {
+      try {
+        await consentSet(merchantId, customerId, false);
+        setConsent(false);
+        setToast({ msg: "Уведомления отключены", type: "success" });
+      } catch (error) {
+        setToast({ msg: `Ошибка согласия: ${resolveErrorMessage(error)}`, type: "error" });
+      } finally {
+        setShowNotificationAlert(false);
+      }
+    });
+  }, [merchantId, customerId, runAction]);
 
   const displayName = useMemo(() => {
     if (profileForm.name) return profileForm.name;

@@ -17,6 +17,7 @@ import {
 import { useTimezone } from "../../../components/TimezoneProvider";
 import { isAllCustomersAudience } from "../../../lib/audience-utils";
 import { readApiError } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type TabKey = "active" | "archived";
 
@@ -128,6 +129,9 @@ export default function PushPage() {
   const [audiencesLoaded, setAudiencesLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const { start: startCampaignLoad, isLatest: isLatestCampaign } = useLatestRequest();
+  const { start: startAudienceLoad, isLatest: isLatestAudience } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const defaultDate = useMemo(() => new Date(), []);
 
@@ -140,6 +144,7 @@ export default function PushPage() {
   });
 
   const loadCampaigns = useCallback(async () => {
+    const requestId = startCampaignLoad();
     setLoading(true);
     setError(null);
     try {
@@ -147,16 +152,19 @@ export default function PushPage() {
         fetchJson<PushCampaign[]>("/api/portal/communications/push?scope=ACTIVE"),
         fetchJson<PushCampaign[]>("/api/portal/communications/push?scope=ARCHIVED"),
       ]);
+      if (!isLatestCampaign(requestId)) return;
       setCampaigns({ active, archived });
     } catch (err) {
+      if (!isLatestCampaign(requestId)) return;
       setError(readApiError(err) || "Не удалось загрузить push-рассылки");
     } finally {
-      setLoading(false);
+      if (isLatestCampaign(requestId)) setLoading(false);
     }
-  }, []);
+  }, [isLatestCampaign, startCampaignLoad]);
 
   const loadAudiences = useCallback(async () => {
     if (audiencesLoaded) return;
+    const requestId = startAudienceLoad();
     try {
       const list = await fetchJson<any[]>("/api/portal/audiences?includeSystem=1");
       const mapped: AudienceOption[] = list
@@ -168,12 +176,14 @@ export default function PushPage() {
           systemKey: item.systemKey ?? null,
           customerCount: item.customerCount ?? null,
         }));
+      if (!isLatestAudience(requestId)) return;
       setAudiences(mapped);
       setAudiencesLoaded(true);
     } catch {
+      if (!isLatestAudience(requestId)) return;
       setAudiencesLoaded(true);
     }
-  }, [audiencesLoaded]);
+  }, [audiencesLoaded, isLatestAudience, startAudienceLoad]);
 
   useEffect(() => {
     loadCampaigns().catch(() => {});
@@ -269,18 +279,20 @@ export default function PushPage() {
   const handleDelete = useCallback(
     async (id: string) => {
       if (!confirm("Вы уверены, что хотите удалить эту рассылку?")) return;
-      setError(null);
-      try {
-        await fetchJson(`/api/portal/communications/push/${encodeURIComponent(id)}/cancel`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
-        await loadCampaigns();
-      } catch (err) {
-        setError(readApiError(err) || "Не удалось удалить рассылку");
-      }
+      await runAction(async () => {
+        setError(null);
+        try {
+          await fetchJson(`/api/portal/communications/push/${encodeURIComponent(id)}/cancel`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+          await loadCampaigns();
+        } catch (err) {
+          setError(readApiError(err) || "Не удалось удалить рассылку");
+        }
+      });
     },
-    [loadCampaigns],
+    [loadCampaigns, runAction],
   );
 
   const getStatusBadge = useCallback((status: string, failedCount: number) => {
@@ -350,44 +362,46 @@ export default function PushPage() {
     const selectedAudience = audiences.find((a) => a.id === formData.audience) || null;
     const scheduledAt = formData.sendNow ? null : buildLocalDate(formData.date, formData.time)?.toISOString() || null;
 
-    setSaving(true);
-    setFormError(null);
-    try {
-      if (editingId) {
-        await fetchJson(`/api/portal/communications/push/${encodeURIComponent(editingId)}/cancel`, {
+    await runAction(async () => {
+      setSaving(true);
+      setFormError(null);
+      try {
+        if (editingId) {
+          await fetchJson(`/api/portal/communications/push/${encodeURIComponent(editingId)}/cancel`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        await fetchJson("/api/portal/communications/push", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: trimmed,
+            audienceId: formData.audience,
+            audienceName: selectedAudience?.label ?? null,
+            scheduledAt,
+            timezone: timezoneInfo.iana,
+          }),
         });
+
+        setEditingId(null);
+        setView("list");
+        setActiveTab("active");
+        setFormData({
+          text: "",
+          audience: allAudience?.id || "",
+          sendNow: true,
+          date: toDateInputValue(new Date()),
+          time: "12:00",
+        });
+        await loadCampaigns();
+      } catch (err) {
+        setFormError(readApiError(err) || "Не удалось сохранить рассылку");
+      } finally {
+        setSaving(false);
       }
-
-      await fetchJson("/api/portal/communications/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: trimmed,
-          audienceId: formData.audience,
-          audienceName: selectedAudience?.label ?? null,
-          scheduledAt,
-          timezone: timezoneInfo.iana,
-        }),
-      });
-
-      setEditingId(null);
-      setView("list");
-      setActiveTab("active");
-      setFormData({
-        text: "",
-        audience: allAudience?.id || "",
-        sendNow: true,
-        date: toDateInputValue(new Date()),
-        time: "12:00",
-      });
-      await loadCampaigns();
-    } catch (err) {
-      setFormError(readApiError(err) || "Не удалось сохранить рассылку");
-    } finally {
-      setSaving(false);
-    }
+    });
   }, [
     audiences,
     editingId,
@@ -395,6 +409,7 @@ export default function PushPage() {
     loadCampaigns,
     timezoneInfo.iana,
     allAudience,
+    runAction,
   ]);
 
   if (view === "create") {

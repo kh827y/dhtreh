@@ -90,30 +90,50 @@ export class PortalCustomersMutationsService {
       }
     }
 
-    // Customer теперь per-merchant модель
-    const customer = await this.prisma.customer.create({
-      data: {
-        merchantId,
-        phone: phone ?? null,
-        email: email ?? null,
-        name: fullName ?? null,
-        birthday: dto.birthday ? new Date(dto.birthday) : null,
-        gender: dto.gender ?? null,
-        tags: sanitizeTags(dto.tags),
-        comment: dto.comment?.trim?.() || null,
-        accrualsBlocked: Boolean(dto.accrualsBlocked),
-        redemptionsBlocked: Boolean(dto.redemptionsBlocked),
-      },
-    });
+    const isUniqueError = (err: unknown) =>
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === 'P2002';
 
-    await this.prisma.wallet.create({
-      data: {
-        customerId: customer.id,
-        merchantId,
-        type: WalletType.POINTS,
-        balance: 0,
-      },
-    });
+    let customer: { id: string };
+    try {
+      customer = await this.prisma.customer.create({
+        data: {
+          merchantId,
+          phone: phone ?? null,
+          email: email ?? null,
+          name: fullName ?? null,
+          birthday: dto.birthday ? new Date(dto.birthday) : null,
+          gender: dto.gender ?? null,
+          tags: sanitizeTags(dto.tags),
+          comment: dto.comment?.trim?.() || null,
+          accrualsBlocked: Boolean(dto.accrualsBlocked),
+          redemptionsBlocked: Boolean(dto.redemptionsBlocked),
+        },
+      });
+    } catch (err) {
+      if (!isUniqueError(err)) throw err;
+      if (phone) {
+        const existingPhone = await this.prisma.customer.findUnique({
+          where: { merchantId_phone: { merchantId, phone } },
+          select: { id: true },
+        });
+        if (existingPhone) {
+          return this.queries.get(merchantId, existingPhone.id);
+        }
+      }
+      if (email) {
+        const existingEmail = await this.prisma.customer.findUnique({
+          where: { merchantId_email: { merchantId, email } },
+          select: { id: true },
+        });
+        if (existingEmail) {
+          throw new BadRequestException('Email уже используется');
+        }
+      }
+      throw err;
+    }
+
+    await ensureWallet(this.prisma, merchantId, customer.id);
 
     const requestedLevelId =
       typeof dto.levelId === 'string' && dto.levelId.trim()
@@ -260,10 +280,22 @@ export class PortalCustomersMutationsService {
     }
 
     if (Object.keys(updateCustomer).length > 0) {
-      await this.prisma.customer.update({
-        where: { id: customerId },
-        data: updateCustomer,
-      });
+      try {
+        await this.prisma.customer.update({
+          where: { id: customerId },
+          data: updateCustomer,
+        });
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          throw new BadRequestException(
+            'Телефон или email уже используется другим клиентом',
+          );
+        }
+        throw err;
+      }
     }
 
     const levelExpireDays =

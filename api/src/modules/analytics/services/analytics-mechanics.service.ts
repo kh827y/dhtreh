@@ -725,7 +725,9 @@ export class AnalyticsMechanicsService {
     }
 
     const purchaseWindowFrom = new Date(period.from);
-    purchaseWindowFrom.setDate(purchaseWindowFrom.getDate() - purchaseWindowDays);
+    purchaseWindowFrom.setDate(
+      purchaseWindowFrom.getDate() - purchaseWindowDays,
+    );
 
     const purchasesRaw = await this.prisma.receipt.findMany({
       where: {
@@ -798,18 +800,19 @@ export class AnalyticsMechanicsService {
       arr.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     }
 
-    const lots = await this.prisma.birthdayLot.findMany({
+    const lots = await this.prisma.birthdayGreeting.findMany({
       where: {
         merchantId,
         customerId: { in: birthdayCustomers },
         createdAt: { gte: period.from, lte: period.to },
+        giftPoints: { gt: 0 },
       },
       select: {
         customerId: true,
         createdAt: true,
         sendDate: true,
-        points: true,
-        expiresAt: true,
+        giftPoints: true,
+        giftExpiresAt: true,
       },
     });
 
@@ -827,8 +830,8 @@ export class AnalyticsMechanicsService {
       arr.push({
         createdAt: new Date(lot.createdAt),
         sendDate: new Date(lot.sendDate),
-        points: Math.max(0, Number(lot.points ?? 0)),
-        expiresAt: lot.expiresAt ? new Date(lot.expiresAt) : null,
+        points: Math.max(0, Number(lot.giftPoints ?? 0)),
+        expiresAt: lot.giftExpiresAt ? new Date(lot.giftExpiresAt) : null,
       });
       lotsByCustomer.set(lot.customerId, arr);
     }
@@ -836,7 +839,10 @@ export class AnalyticsMechanicsService {
       arr.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     }
 
-    const receiptsByCustomerInWindow = new Map<string, Array<typeof receipts[0]>>();
+    const receiptsByCustomerInWindow = new Map<
+      string,
+      Array<(typeof receipts)[0]>
+    >();
     for (const receipt of purchases) {
       const arr = receiptsByCustomerInWindow.get(receipt.customerId) ?? [];
       arr.push(receipt);
@@ -861,6 +867,7 @@ export class AnalyticsMechanicsService {
     let giftPurchasers = 0;
     let receiptsWithGifts = 0;
     let revenueNet = 0;
+    let grossRevenue = 0;
     let averageCheck = 0;
 
     const eligibleCustomers = onlyBuyers
@@ -895,6 +902,10 @@ export class AnalyticsMechanicsService {
         const applied = Math.min(lot.points, receipt.redeemApplied);
         if (applied > 0) {
           lotByReceipt.set(receipt.id, applied);
+          giftSpentByReceipt.set(
+            receipt.id,
+            (giftSpentByReceipt.get(receipt.id) ?? 0) + applied,
+          );
           lot.points -= applied;
           giftPointsSpent += applied;
           receiptsWithGifts += 1;
@@ -902,10 +913,15 @@ export class AnalyticsMechanicsService {
         }
       }
 
-      const customerReceipts =
-        receiptsByCustomerInWindow.get(customerId) ?? [];
+      const customerReceipts = receiptsByCustomerInWindow.get(customerId) ?? [];
       for (const receipt of customerReceipts) {
-        const giftSpent = lotByReceipt.get(receipt.id) ?? 0;
+        const giftSpent =
+          giftSpentByReceipt.get(receipt.id) ??
+          lotByReceipt.get(receipt.id) ??
+          0;
+        if (giftSpent <= 0) {
+          continue;
+        }
         const net = Math.max(0, receipt.total - giftSpent);
         const bucket = dateKey(receipt.createdAt);
         const set = purchasesPerBucket.get(bucket) ?? new Set<string>();
@@ -913,39 +929,33 @@ export class AnalyticsMechanicsService {
         purchasesPerBucket.set(bucket, set);
         revenuePerBucket.set(bucket, (revenuePerBucket.get(bucket) ?? 0) + net);
         revenueNet += net;
+        grossRevenue += receipt.total;
       }
 
       if (lotByReceipt.size > 0) giftPurchasers += 1;
     }
 
     if (receiptsWithGifts > 0) {
-      averageCheck = Math.round(revenueNet / receiptsWithGifts);
+      averageCheck = Math.round(grossRevenue / receiptsWithGifts);
     }
 
-    const timeline: Array<{ date: string; greetings: number; purchases: number }> =
-      [];
-    const revenue: Array<{ date: string; revenue: number }> = [];
-    const daysCount = Math.max(
-      1,
-      Math.floor(
-        (period.to.getTime() - period.from.getTime()) / (24 * 60 * 60 * 1000),
-      ) + 1,
-    );
-    for (let i = 0; i < daysCount; i += 1) {
-      const current = new Date(
-        period.from.getTime() + i * 24 * 60 * 60 * 1000,
-      );
-      const key = dateKey(current);
-      timeline.push({
-        date: key,
-        greetings: greetingsPerBucket.get(key)?.size ?? 0,
-        purchases: purchasesPerBucket.get(key)?.size ?? 0,
-      });
-      revenue.push({
-        date: key,
-        revenue: revenuePerBucket.get(key) ?? 0,
-      });
-    }
+    const timelineKeys = Array.from(
+      new Set([...greetingsPerBucket.keys(), ...purchasesPerBucket.keys()]),
+    ).sort();
+    const timeline: Array<{
+      date: string;
+      greetings: number;
+      purchases: number;
+    }> = timelineKeys.map((key) => ({
+      date: key,
+      greetings: greetingsPerBucket.get(key)?.size ?? 0,
+      purchases: purchasesPerBucket.get(key)?.size ?? 0,
+    }));
+
+    const revenue = Array.from(revenuePerBucket.entries())
+      .filter(([, value]) => value > 0)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, value]) => ({ date, revenue: value }));
 
     const result = {
       ...basePeriod,

@@ -14,6 +14,7 @@ import {
   X
 } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type StaffOutletAccess = {
   id: string;
@@ -155,6 +156,8 @@ export default function StaffPage() {
   const [groupsLoading, setGroupsLoading] = React.useState(false);
   const groupsLoadedRef = React.useRef(false);
   const groupsLoadingRef = React.useRef(false);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const [tab, setTab] = React.useState<"ACTIVE" | "FIRED">("ACTIVE");
   const [groupFilter, setGroupFilter] = React.useState<string>("ALL");
@@ -324,6 +327,7 @@ export default function StaffPage() {
   }, []);
 
   const load = React.useCallback(async () => {
+    const requestId = startLoad();
     setLoading(true);
     setError("");
     try {
@@ -397,6 +401,7 @@ export default function StaffPage() {
           groups,
         } as Staff;
       });
+      if (!isLatest(requestId)) return;
       setItems(staffItems);
       const countersData = staffPayload?.counters;
       setCounters(
@@ -413,11 +418,12 @@ export default function StaffPage() {
       );
       setOutlets(outletsPayload);
     } catch (e: any) {
+      if (!isLatest(requestId)) return;
       setError(normalizeErrorMessage(e, "Не удалось загрузить данных"));
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, [fetchAllOutlets, groupFilter, onlyPortal, outletFilter, router, search]);
+  }, [fetchAllOutlets, groupFilter, isLatest, onlyPortal, outletFilter, router, search, startLoad]);
 
   React.useEffect(() => {
     load();
@@ -445,58 +451,60 @@ export default function StaffPage() {
 
   async function handleCreate() {
     if (!canSubmitCreate) return;
-    setSubmitting(true);
-    setCreateError("");
-    try {
-      const normalizedGroup = cGroup.trim();
-      const emailValue = cEmail.trim().toLowerCase();
-      const hasEmail = Boolean(emailValue);
-      const payload: Record<string, any> = {
-        firstName: cFirstName.trim(),
-        lastName: cLastName.trim() || undefined,
-        position: cPosition.trim() || undefined,
-        phone: cPhone.trim() || undefined,
-        comment: cComment.trim() || undefined,
-        canAccessPortal: cPortal,
-        portalAccessEnabled: cPortal,
-        email: hasEmail ? emailValue : undefined,
-        status: 'ACTIVE',
-      };
-      if (hasEmail) {
-        payload.login = emailValue;
-      }
-      if (cPortal) {
-        const pwd = cPassword.trim();
-        if (pwd) {
-          payload.password = pwd;
-          payload.canAccessPortal = true;
-          payload.portalAccessEnabled = true;
+    await runAction(async () => {
+      setSubmitting(true);
+      setCreateError("");
+      try {
+        const normalizedGroup = cGroup.trim();
+        const emailValue = cEmail.trim().toLowerCase();
+        const hasEmail = Boolean(emailValue);
+        const payload: Record<string, any> = {
+          firstName: cFirstName.trim(),
+          lastName: cLastName.trim() || undefined,
+          position: cPosition.trim() || undefined,
+          phone: cPhone.trim() || undefined,
+          comment: cComment.trim() || undefined,
+          canAccessPortal: cPortal,
+          portalAccessEnabled: cPortal,
+          email: hasEmail ? emailValue : undefined,
+          status: 'ACTIVE',
+        };
+        if (hasEmail) {
+          payload.login = emailValue;
         }
-      }
-      if (normalizedGroup) {
-        payload.accessGroupIds = [normalizedGroup];
-        const upper = normalizedGroup.toUpperCase();
-        if (["MERCHANT", "MANAGER", "ANALYST", "CASHIER"].includes(upper)) {
-          payload.role = upper;
+        if (cPortal) {
+          const pwd = cPassword.trim();
+          if (pwd) {
+            payload.password = pwd;
+            payload.canAccessPortal = true;
+            payload.portalAccessEnabled = true;
+          }
         }
+        if (normalizedGroup) {
+          payload.accessGroupIds = [normalizedGroup];
+          const upper = normalizedGroup.toUpperCase();
+          if (["MERCHANT", "MANAGER", "ANALYST", "CASHIER"].includes(upper)) {
+            payload.role = upper;
+          }
+        }
+        if (!payload.role && !cPortal) {
+          payload.role = "CASHIER";
+        }
+        const res = await fetch("/api/portal/staff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        setShowCreate(false);
+        resetCreateForm();
+        await load();
+      } catch (e: any) {
+        setCreateError(normalizeErrorMessage(e, "Не удалось создать сотрудника"));
+      } finally {
+        setSubmitting(false);
       }
-      if (!payload.role && !cPortal) {
-        payload.role = "CASHIER";
-      }
-      const res = await fetch("/api/portal/staff", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      setShowCreate(false);
-      resetCreateForm();
-      await load();
-    } catch (e: any) {
-      setCreateError(normalizeErrorMessage(e, "Не удалось создать сотрудника"));
-    } finally {
-      setSubmitting(false);
-    }
+    });
   }
 
   return (

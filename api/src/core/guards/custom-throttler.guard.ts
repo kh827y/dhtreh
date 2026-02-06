@@ -43,7 +43,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
 
   protected async getTracker(req: RequestLike): Promise<string> {
     return safeExecAsync(
-      async () => {
+      () => {
         const ip =
           req.ip || req.ips?.[0] || req.socket?.remoteAddress || 'unknown';
         const routePath =
@@ -99,7 +99,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     requestProps: ThrottlerRequest,
   ): Promise<boolean> {
     return safeExecAsync(
-      async () => {
+      () => {
         const { context, limit, ttl } = requestProps;
         const req = context.switchToHttp().getRequest<RequestLike>();
         const path: string = (
@@ -195,7 +195,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
           limit: effLimit,
           ttl: effTtl,
         };
-        return await super.handleRequest(nextProps);
+        return super.handleRequest(nextProps);
       },
       () => super.handleRequest(requestProps),
       this.logger,

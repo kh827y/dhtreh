@@ -132,6 +132,8 @@ export class PortalCatalogUseCase {
     req: PortalRequest,
     status?: 'active' | 'inactive' | 'all',
     search?: string,
+    pageStr?: string,
+    pageSizeStr?: string,
   ): Promise<PortalOutletListResponseDto> {
     const rawStatus =
       typeof status === 'string' ? status.trim().toLowerCase() : '';
@@ -141,10 +143,20 @@ export class PortalCatalogUseCase {
         : rawStatus === 'inactive'
           ? 'inactive'
           : 'all';
+    const rawPage = Number.parseInt(String(pageStr ?? ''), 10);
+    const rawPageSize = Number.parseInt(String(pageSizeStr ?? ''), 10);
+    const pagination =
+      Number.isFinite(rawPage) || Number.isFinite(rawPageSize)
+        ? {
+            page: Number.isFinite(rawPage) ? rawPage : undefined,
+            pageSize: Number.isFinite(rawPageSize) ? rawPageSize : undefined,
+          }
+        : undefined;
     return this.catalog.listOutlets(
       this.helpers.getMerchantId(req),
       normalized,
       search,
+      pagination,
     );
   }
 

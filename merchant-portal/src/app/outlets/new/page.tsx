@@ -4,6 +4,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Monitor, Users, Save, ArrowLeft, X } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard } from "lib/async-guards";
 
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
 const isValidHttpUrl = (value: string) => {
@@ -40,6 +41,7 @@ export default function CreateOutletPage({ basePath }: CreateOutletPageProps) {
   const [formError, setFormError] = React.useState<string | null>(null);
   const [deviceError, setDeviceError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
+  const runAction = useActionGuard();
 
   const validateReviewLinks = () => {
     const invalid: string[] = [];
@@ -86,38 +88,40 @@ export default function CreateOutletPage({ basePath }: CreateOutletPageProps) {
       return;
     }
     setFormError(null);
-    setSaving(true);
-    try {
-      const payload = {
-        name: name.trim(),
-        works: isActive,
-        reviewsShareLinks: {
-          yandex: reviewLinks.yandex.trim() || null,
-          twogis: reviewLinks.gis.trim() || null,
-          google: reviewLinks.google.trim() || null,
-        },
-        devices: devices.map((d) => ({ code: d.code })),
-      };
-      const res = await fetch("/api/portal/outlets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const raw = await res.text().catch(() => "");
-        let message = raw;
-        try {
-          const parsed = JSON.parse(raw);
-          message = parsed?.message || parsed?.error || raw;
-        } catch {}
-        throw new Error(message || "Не удалось создать торговую точку");
+    await runAction(async () => {
+      setSaving(true);
+      try {
+        const payload = {
+          name: name.trim(),
+          works: isActive,
+          reviewsShareLinks: {
+            yandex: reviewLinks.yandex.trim() || null,
+            twogis: reviewLinks.gis.trim() || null,
+            google: reviewLinks.google.trim() || null,
+          },
+          devices: devices.map((d) => ({ code: d.code })),
+        };
+        const res = await fetch("/api/portal/outlets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const raw = await res.text().catch(() => "");
+          let message = raw;
+          try {
+            const parsed = JSON.parse(raw);
+            message = parsed?.message || parsed?.error || raw;
+          } catch {}
+          throw new Error(message || "Не удалось создать торговую точку");
+        }
+        router.push(listPath);
+      } catch (e: any) {
+        setFormError(normalizeErrorMessage(e, "Не удалось создать торговую точку"));
+      } finally {
+        setSaving(false);
       }
-      router.push(listPath);
-    } catch (e: any) {
-      setFormError(normalizeErrorMessage(e, "Не удалось создать торговую точку"));
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   return (

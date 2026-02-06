@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { listAudit, type AuditItem } from '../../lib/audit';
 import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
+import { useLatestRequest } from '../../lib/async-guards';
 
 export default function AuditPage() {
   const { merchantId, setMerchantId } = usePreferredMerchantId('');
@@ -11,6 +12,7 @@ export default function AuditPage() {
   const [before, setBefore] = useState<string>('');
   const [msg, setMsg] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+  const { start, isLatest } = useLatestRequest();
   const beforeValue = before.trim();
   const beforeValid = !beforeValue || !Number.isNaN(new Date(beforeValue).getTime());
 
@@ -19,14 +21,21 @@ export default function AuditPage() {
       setMsg('Неверный формат даты');
       return;
     }
+    const requestId = start();
     setLoading(true);
     try {
       const r = await listAudit({ merchantId: merchantId || undefined, limit, before: beforeValue || undefined });
+      if (!isLatest(requestId)) return;
       setItems(r);
       setMsg('');
-    } catch (e: unknown) { setMsg(String(e instanceof Error ? e.message : e)); }
-    finally { setLoading(false); }
-  }, [beforeValid, beforeValue, limit, merchantId]);
+    } catch (e: unknown) {
+      if (!isLatest(requestId)) return;
+      setMsg(String(e instanceof Error ? e.message : e));
+    }
+    finally {
+      if (isLatest(requestId)) setLoading(false);
+    }
+  }, [beforeValid, beforeValue, limit, merchantId, isLatest, start]);
 
   useEffect(() => { void load(); }, [load]);
 

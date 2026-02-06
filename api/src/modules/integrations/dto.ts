@@ -495,6 +495,15 @@ export class IntegrationCalculateBonusDto {
 
 export class IntegrationRefundDto {
   @ApiPropertyOptional({
+    description: 'Уникальный ключ идемпотентности операции',
+    name: 'idempotency_key',
+  })
+  @Transform(({ value, obj }) => pickValue(value, obj, ['idempotencyKey']))
+  @IsOptional()
+  @IsString()
+  idempotency_key?: string;
+
+  @ApiPropertyOptional({
     description: 'Кастомный номер чека от мерчанта',
     name: 'invoice_num',
   })

@@ -36,10 +36,7 @@ export class MerchantsOutboxUseCase {
     return this.merchants.getOutboxEvent(merchantId, eventId);
   }
 
-  retrySince(
-    merchantId: string,
-    body: { status?: string; since?: string },
-  ) {
+  retrySince(merchantId: string, body: { status?: string; since?: string }) {
     return this.merchants.retrySince(merchantId, {
       status: body?.status,
       since: body?.since,
@@ -62,11 +59,7 @@ export class MerchantsOutboxUseCase {
     return this.merchants.outboxStats(merchantId, since);
   }
 
-  outboxByOrder(
-    merchantId: string,
-    orderId: string,
-    limitStr?: string,
-  ) {
+  outboxByOrder(merchantId: string, orderId: string, limitStr?: string) {
     const limit = limitStr
       ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500)
       : 100;

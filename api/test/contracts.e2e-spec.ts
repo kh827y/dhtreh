@@ -15,29 +15,54 @@ import { PortalPromocodesUseCase } from '../src/modules/portal/use-cases/portal-
 import { PortalSettingsUseCase } from '../src/modules/portal/use-cases/portal-settings.use-case';
 import { LoyaltyTransactionsUseCase } from '../src/modules/loyalty/use-cases/loyalty-transactions.use-case';
 
+type HttpServer = Parameters<typeof request>[0];
+type PortalRequest = { portalMerchantId?: string };
+type ErrorBody = {
+  error: string;
+  code: string;
+  message: string;
+  statusCode: number;
+  path: string;
+  timestamp: string;
+  requestId: string;
+  details?: unknown;
+};
+
 const allowGuard = { canActivate: () => true };
 
 const allowPortalGuard = {
-  canActivate: (ctx: { switchToHttp: () => { getRequest: () => any } }) => {
+  canActivate: (ctx: {
+    switchToHttp: () => { getRequest: () => PortalRequest };
+  }) => {
     const req = ctx.switchToHttp().getRequest();
     req.portalMerchantId = 'merchant_test';
     return true;
   },
 };
 
-const makeErrorExpectations = (body: any, path: string, requestId: string) => {
-  expect(body).toEqual(
+const getServer = (app: INestApplication): HttpServer =>
+  app.getHttpServer() as unknown as HttpServer;
+
+const makeErrorExpectations = (
+  body: unknown,
+  path: string,
+  requestId: string,
+) => {
+  const errorBody = body as Partial<ErrorBody>;
+  const anyString = expect.any(String) as unknown as string;
+  const anyNumber = expect.any(Number) as unknown as number;
+  expect(errorBody).toEqual(
     expect.objectContaining({
-      error: expect.any(String),
-      code: expect.any(String),
-      message: expect.any(String),
-      statusCode: expect.any(Number),
+      error: anyString,
+      code: anyString,
+      message: anyString,
+      statusCode: anyNumber,
       path,
-      timestamp: expect.any(String),
+      timestamp: anyString,
       requestId,
     }),
   );
-  expect(Array.isArray(body.details)).toBe(true);
+  expect(Array.isArray(errorBody.details)).toBe(true);
 };
 
 describe('Contracts (critical endpoints)', () => {
@@ -187,7 +212,9 @@ describe('Contracts (critical endpoints)', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     app.useGlobalFilters(new HttpErrorFilter());
     await app.init();
   });
@@ -197,15 +224,13 @@ describe('Contracts (critical endpoints)', () => {
   });
 
   it('loyalty quote: success contract', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/loyalty/quote')
-      .send({
-        mode: 'redeem',
-        merchantId: 'm1',
-        userToken: 'c1',
-        orderId: 'o1',
-        total: 100,
-      });
+    const res = await request(getServer(app)).post('/loyalty/quote').send({
+      mode: 'redeem',
+      merchantId: 'm1',
+      userToken: 'c1',
+      orderId: 'o1',
+      total: 100,
+    });
     expect([200, 201]).toContain(res.status);
     expect(res.body).toEqual(
       expect.objectContaining({
@@ -219,17 +244,18 @@ describe('Contracts (critical endpoints)', () => {
 
   it('loyalty quote: validation error format', async () => {
     const requestId = 'req-loyalty-1';
-    const res = await request(app.getHttpServer())
+    const res = await request(getServer(app))
       .post('/loyalty/quote')
       .set('x-request-id', requestId)
       .send({});
     expect(res.status).toBe(400);
     makeErrorExpectations(res.body, '/loyalty/quote', requestId);
-    expect(res.body.code).toBe('BadRequest');
+    const body = res.body as ErrorBody;
+    expect(body.code).toBe('BadRequest');
   });
 
   it('portal customers: success contract', async () => {
-    const res = await request(app.getHttpServer())
+    const res = await request(getServer(app))
       .post('/portal/customers')
       .send({ phone: '+79990001122' });
     expect([200, 201]).toContain(res.status);
@@ -244,17 +270,18 @@ describe('Contracts (critical endpoints)', () => {
 
   it('portal customers: validation error format', async () => {
     const requestId = 'req-portal-customers-1';
-    const res = await request(app.getHttpServer())
+    const res = await request(getServer(app))
       .post('/portal/customers')
       .set('x-request-id', requestId)
       .send({ email: 123 });
     expect(res.status).toBe(400);
     makeErrorExpectations(res.body, '/portal/customers', requestId);
-    expect(res.body.code).toBe('BadRequest');
+    const body = res.body as ErrorBody;
+    expect(body.code).toBe('BadRequest');
   });
 
   it('portal promocodes: success contract', async () => {
-    const res = await request(app.getHttpServer())
+    const res = await request(getServer(app))
       .post('/portal/promocodes/issue')
       .send({ code: 'WELCOME', points: 100 });
     expect([200, 201]).toContain(res.status);
@@ -265,17 +292,18 @@ describe('Contracts (critical endpoints)', () => {
 
   it('portal promocodes: validation error format', async () => {
     const requestId = 'req-portal-promos-1';
-    const res = await request(app.getHttpServer())
+    const res = await request(getServer(app))
       .post('/portal/promocodes/issue')
       .set('x-request-id', requestId)
       .send({});
     expect(res.status).toBe(400);
     makeErrorExpectations(res.body, '/portal/promocodes/issue', requestId);
-    expect(res.body.code).toBe('BadRequest');
+    const body = res.body as ErrorBody;
+    expect(body.code).toBe('BadRequest');
   });
 
   it('loyalty commit: success contract', async () => {
-    const res = await request(app.getHttpServer()).post('/loyalty/commit').send({
+    const res = await request(getServer(app)).post('/loyalty/commit').send({
       merchantId: 'm1',
       holdId: 'hold_1',
       orderId: 'order_1',
@@ -293,17 +321,18 @@ describe('Contracts (critical endpoints)', () => {
 
   it('loyalty commit: validation error format', async () => {
     const requestId = 'req-loyalty-commit-1';
-    const res = await request(app.getHttpServer())
+    const res = await request(getServer(app))
       .post('/loyalty/commit')
       .set('x-request-id', requestId)
       .send({});
     expect(res.status).toBe(400);
     makeErrorExpectations(res.body, '/loyalty/commit', requestId);
-    expect(res.body.code).toBe('BadRequest');
+    const body = res.body as ErrorBody;
+    expect(body.code).toBe('BadRequest');
   });
 
   it('loyalty refund: success contract', async () => {
-    const res = await request(app.getHttpServer()).post('/loyalty/refund').send({
+    const res = await request(getServer(app)).post('/loyalty/refund').send({
       merchantId: 'm1',
       invoice_num: 'inv_1',
     });
@@ -320,17 +349,18 @@ describe('Contracts (critical endpoints)', () => {
 
   it('loyalty refund: validation error format', async () => {
     const requestId = 'req-loyalty-refund-1';
-    const res = await request(app.getHttpServer())
+    const res = await request(getServer(app))
       .post('/loyalty/refund')
       .set('x-request-id', requestId)
       .send({});
     expect(res.status).toBe(400);
     makeErrorExpectations(res.body, '/loyalty/refund', requestId);
-    expect(res.body.code).toBe('BadRequest');
+    const body = res.body as ErrorBody;
+    expect(body.code).toBe('BadRequest');
   });
 
   it('portal settings: update success contract', async () => {
-    const res = await request(app.getHttpServer())
+    const res = await request(getServer(app))
       .put('/portal/settings')
       .send({ earnBps: 400 });
     expect([200, 201]).toContain(res.status);
@@ -345,12 +375,13 @@ describe('Contracts (critical endpoints)', () => {
 
   it('portal settings: validation error format', async () => {
     const requestId = 'req-portal-settings-1';
-    const res = await request(app.getHttpServer())
+    const res = await request(getServer(app))
       .put('/portal/settings')
       .set('x-request-id', requestId)
       .send({ earnBps: -1 });
     expect(res.status).toBe(400);
     makeErrorExpectations(res.body, '/portal/settings', requestId);
-    expect(res.body.code).toBe('BadRequest');
+    const body = res.body as ErrorBody;
+    expect(body.code).toBe('BadRequest');
   });
 });

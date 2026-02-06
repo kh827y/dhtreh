@@ -15,6 +15,7 @@ import {
 import { TierMembersModal } from "../../../../components/TierMembersModal";
 import { createPortal } from "react-dom";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type TierRow = {
   id: string;
@@ -179,6 +180,8 @@ export default function LevelsPage() {
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
 
   const [membersTier, setMembersTier] = React.useState<TierRow | null>(null);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const inputIds = React.useMemo(
     () => ({
@@ -210,6 +213,7 @@ export default function LevelsPage() {
   }, []);
 
   const loadLevels = React.useCallback(async () => {
+    const requestId = startLoad();
     setLoading(true);
     setError(null);
     setPeriodError(null);
@@ -229,6 +233,7 @@ export default function LevelsPage() {
       const mapped = source
         .map(mapTier)
         .sort((a: TierRow, b: TierRow) => a.thresholdAmount - b.thresholdAmount);
+      if (!isLatest(requestId)) return;
       setLevels(mapped);
 
       try {
@@ -246,44 +251,46 @@ export default function LevelsPage() {
         }
       } catch {}
     } catch (e) {
+      if (!isLatest(requestId)) return;
       setLevels([]);
       setError(readableError(e, "Не удалось загрузить уровни"));
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, [mapTier]);
+  }, [isLatest, mapTier, startLoad]);
 
   const savePeriodDays = React.useCallback(async () => {
-    if (periodSaving) return;
     const raw = Number(periodInput);
     if (!Number.isFinite(raw) || raw <= 0) {
       setPeriodError("Период расчета уровня должен быть положительным");
       return;
     }
     const nextPeriod = Math.floor(raw);
-    setPeriodSaving(true);
-    setPeriodError(null);
-    try {
-      const res = await fetch("/api/portal/loyalty/levels", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ periodDays: nextPeriod }),
-      });
-      if (!res.ok)
-        throw new Error(
-          (await res.text().catch(() => "")) || "Не удалось сохранить период",
-        );
-      const payload = await res.json().catch(() => null);
-      const applied = Number(payload?.periodDays);
-      const normalized = Number.isFinite(applied) && applied > 0 ? Math.floor(applied) : nextPeriod;
-      setPeriodDays(normalized);
-      setPeriodInput(String(normalized));
-    } catch (e) {
-      setPeriodError(readableError(e, "Не удалось сохранить период"));
-    } finally {
-      setPeriodSaving(false);
-    }
-  }, [periodInput, periodSaving]);
+    await runAction(async () => {
+      setPeriodSaving(true);
+      setPeriodError(null);
+      try {
+        const res = await fetch("/api/portal/loyalty/levels", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ periodDays: nextPeriod }),
+        });
+        if (!res.ok)
+          throw new Error(
+            (await res.text().catch(() => "")) || "Не удалось сохранить период",
+          );
+        const payload = await res.json().catch(() => null);
+        const applied = Number(payload?.periodDays);
+        const normalized = Number.isFinite(applied) && applied > 0 ? Math.floor(applied) : nextPeriod;
+        setPeriodDays(normalized);
+        setPeriodInput(String(normalized));
+      } catch (e) {
+        setPeriodError(readableError(e, "Не удалось сохранить период"));
+      } finally {
+        setPeriodSaving(false);
+      }
+    });
+  }, [periodInput, runAction]);
 
   React.useEffect(() => {
     void loadLevels();
@@ -322,7 +329,6 @@ export default function LevelsPage() {
   const handleSave = React.useCallback(
     async (event?: React.FormEvent) => {
       event?.preventDefault();
-      if (saving) return;
 
       const validation = normalizeForm(formState, levels, editingId);
       if (validation.error) {
@@ -345,44 +351,46 @@ export default function LevelsPage() {
           return;
         }
       }
-      setSaving(true);
-      setFormError(null);
+      await runAction(async () => {
+        setSaving(true);
+        setFormError(null);
 
-      try {
-        const endpoint = editingId
-          ? `/api/portal/loyalty/tiers/${encodeURIComponent(editingId)}`
-          : "/api/portal/loyalty/tiers";
-        const method = editingId ? "PUT" : "POST";
-        const res = await fetch(endpoint, {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok)
-          throw new Error(
-            (await res.text().catch(() => "")) || "Не удалось сохранить уровень",
-          );
-        const saved = mapTier(await res.json());
-        setLevels((prev) => {
-          const without = prev.filter((lvl) => lvl.id !== saved.id);
-          const withSaved = [...without, saved];
-          const normalized = saved.isInitial
-            ? withSaved.map((lvl) =>
-                lvl.id === saved.id ? saved : { ...lvl, isInitial: false },
-              )
-            : withSaved;
-          return normalized.sort(
-            (a, b) => a.thresholdAmount - b.thresholdAmount,
-          );
-        });
-        setIsModalOpen(false);
-      } catch (e) {
-        setFormError(readableError(e, "Не удалось сохранить уровень"));
-      } finally {
-        setSaving(false);
-      }
+        try {
+          const endpoint = editingId
+            ? `/api/portal/loyalty/tiers/${encodeURIComponent(editingId)}`
+            : "/api/portal/loyalty/tiers";
+          const method = editingId ? "PUT" : "POST";
+          const res = await fetch(endpoint, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok)
+            throw new Error(
+              (await res.text().catch(() => "")) || "Не удалось сохранить уровень",
+            );
+          const saved = mapTier(await res.json());
+          setLevels((prev) => {
+            const without = prev.filter((lvl) => lvl.id !== saved.id);
+            const withSaved = [...without, saved];
+            const normalized = saved.isInitial
+              ? withSaved.map((lvl) =>
+                  lvl.id === saved.id ? saved : { ...lvl, isInitial: false },
+                )
+              : withSaved;
+            return normalized.sort(
+              (a, b) => a.thresholdAmount - b.thresholdAmount,
+            );
+          });
+          setIsModalOpen(false);
+        } catch (e) {
+          setFormError(readableError(e, "Не удалось сохранить уровень"));
+        } finally {
+          setSaving(false);
+        }
+      });
     },
-    [editingId, formState, levels, mapTier, saving],
+    [editingId, formState, levels, mapTier, runAction],
   );
 
   const handleDelete = React.useCallback(
@@ -406,29 +414,31 @@ export default function LevelsPage() {
       }
       if (!window.confirm(`Удалить уровень «${level.name}»?`)) return;
 
-      setDeletingId(level.id);
-      setError(null);
-      try {
-        const res = await fetch(
-          `/api/portal/loyalty/tiers/${encodeURIComponent(level.id)}`,
-          { method: "DELETE" },
-        );
-        if (!res.ok)
-          throw new Error(
-            (await res.text().catch(() => "")) || "Не удалось удалить уровень",
+      await runAction(async () => {
+        setDeletingId(level.id);
+        setError(null);
+        try {
+          const res = await fetch(
+            `/api/portal/loyalty/tiers/${encodeURIComponent(level.id)}`,
+            { method: "DELETE" },
           );
-        setLevels((prev) =>
-          prev
-            .filter((lvl) => lvl.id !== level.id)
-            .sort((a, b) => a.thresholdAmount - b.thresholdAmount),
-        );
-      } catch (e) {
-        setError(readableError(e, "Не удалось удалить уровень"));
-      } finally {
-        setDeletingId(null);
-      }
+          if (!res.ok)
+            throw new Error(
+              (await res.text().catch(() => "")) || "Не удалось удалить уровень",
+            );
+          setLevels((prev) =>
+            prev
+              .filter((lvl) => lvl.id !== level.id)
+              .sort((a, b) => a.thresholdAmount - b.thresholdAmount),
+          );
+        } catch (e) {
+          setError(readableError(e, "Не удалось удалить уровень"));
+        } finally {
+          setDeletingId(null);
+        }
+      });
     },
-    [deletingId, levels.length, saving],
+    [deletingId, levels.length, runAction, saving],
   );
 
   const rows = levels;
@@ -524,32 +534,14 @@ export default function LevelsPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
-                Array.from({ length: 3 }).map((_, idx) => (
-                  <tr key={idx} className="animate-pulse">
-                    <td className="px-6 py-4">
-                      <div className="h-4 bg-gray-100 rounded w-32 mb-2" />
-                      <div className="h-3 bg-gray-100 rounded w-48" />
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="h-4 bg-gray-100 rounded w-16 ml-auto" />
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="h-5 bg-gray-100 rounded w-16 mx-auto" />
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="h-5 bg-gray-100 rounded w-16 mx-auto" />
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="h-4 bg-gray-100 rounded w-20 mx-auto" />
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="h-4 bg-gray-100 rounded w-12 ml-auto" />
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="h-4 bg-gray-100 rounded w-16 ml-auto" />
-                    </td>
-                  </tr>
-                ))
+                <tr>
+                  <td className="px-6 py-8" colSpan={7}>
+                    <div className="flex items-center justify-center space-x-2 text-gray-500">
+                      <Loader2 size={16} className="animate-spin" />
+                      <span className="text-sm">Загружаем уровни…</span>
+                    </div>
+                  </td>
+                </tr>
               ) : showEmpty ? (
                 <tr>
                   <td className="px-6 py-6 text-gray-500" colSpan={7}>

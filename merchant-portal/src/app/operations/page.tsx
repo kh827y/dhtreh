@@ -23,6 +23,7 @@ import {
   ChevronDown,
   Briefcase,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { useTimezone } from "../../components/TimezoneProvider";
 
@@ -380,6 +381,7 @@ function OperationsPageInner() {
   const [directionFilter, setDirectionFilter] = React.useState<"all" | "earn" | "redeem">("all");
   const [search, setSearch] = React.useState("");
   const [page, setPage] = React.useState(1);
+  const [loading, setLoading] = React.useState(true);
   const [preview, setPreview] = React.useState<Operation | null>(null);
   const [items, setItems] = React.useState<Operation[]>([]);
   const [total, setTotal] = React.useState(0);
@@ -500,6 +502,8 @@ function OperationsPageInner() {
 
   React.useEffect(() => {
     const controller = new AbortController();
+    let active = true;
+    setLoading(true);
     const params = new URLSearchParams();
     params.set("limit", String(PAGE_SIZE));
     params.set("offset", String((page - 1) * PAGE_SIZE));
@@ -534,6 +538,7 @@ function OperationsPageInner() {
           }
         });
 
+        if (!active) return;
         setRefundedOrderIds(refunds);
         setItems(mapped);
         setTotal(Number(payload.total ?? mapped.length ?? 0));
@@ -557,22 +562,31 @@ function OperationsPageInner() {
           }
         });
         if (!staffOptionsReady && staffMap.size) {
+          if (!active) return;
           setStaffOptions(Array.from(staffMap.values()));
         }
         if (!outletOptionsReady && outletMap.size) {
+          if (!active) return;
           setOutletOptions(Array.from(outletMap.values()));
         }
         if (!deviceOptionsReady && deviceMap.size) {
+          if (!active) return;
           setDeviceOptions(Array.from(deviceMap.values()));
         }
       } catch (error) {
         if ((error as any)?.name === "AbortError") return;
+        if (!active) return;
         setItems([]);
         setTotal(0);
+      } finally {
+        if (active) setLoading(false);
       }
     })();
 
-    return () => controller.abort();
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [
     dateFrom,
     dateTo,
@@ -847,7 +861,16 @@ function OperationsPageInner() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {items.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                    <div className="inline-flex items-center space-x-2">
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Загружаем операции…</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                     <FileText size={48} className="mx-auto text-gray-300 mb-4" />
@@ -980,7 +1003,7 @@ function OperationsPageInner() {
         </div>
 
         {/* Pagination */}
-        {totalPages > 1 && (
+        {!loading && totalPages > 1 && (
           <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
             <span className="text-sm text-gray-500">
               Показано {pageStart} - {pageEnd} из {total}

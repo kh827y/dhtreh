@@ -80,7 +80,11 @@ export class ImportExportService {
     return this.exportsService.streamTransactionsCsv(params, res, batch);
   }
 
-  importTransactions(merchantId: string, format: 'csv' | 'excel', data: Buffer) {
+  importTransactions(
+    merchantId: string,
+    format: 'csv' | 'excel',
+    data: Buffer,
+  ) {
     return this.customers.importTransactions(merchantId, format, data);
   }
 
@@ -88,7 +92,10 @@ export class ImportExportService {
     return this.logs.getImportExportStats(merchantId);
   }
 
-  getImportTemplate(type: 'customers' | 'transactions', format: 'csv' | 'excel') {
+  getImportTemplate(
+    type: 'customers' | 'transactions',
+    format: 'csv' | 'excel',
+  ) {
     return this.templates.getImportTemplate(type, format);
   }
 }

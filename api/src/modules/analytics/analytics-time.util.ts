@@ -19,9 +19,7 @@ export const resolveGrouping = (
   return 'day';
 };
 
-export const getPreviousPeriod = (
-  period: DashboardPeriod,
-): DashboardPeriod => {
+export const getPreviousPeriod = (period: DashboardPeriod): DashboardPeriod => {
   const duration = period.to.getTime() - period.from.getTime();
   const previousTo = new Date(period.from.getTime() - 1);
   return {
@@ -63,10 +61,7 @@ export const truncateForTimezone = (
   return new Date(local.getTime() - timezone.utcOffsetMinutes * 60 * 1000);
 };
 
-export const truncateDate = (
-  value: Date,
-  grouping: TimeGrouping,
-): Date => {
+export const truncateDate = (value: Date, grouping: TimeGrouping): Date => {
   const date = new Date(value);
   date.setUTCHours(0, 0, 0, 0);
   if (grouping === 'week') {

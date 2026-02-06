@@ -3,6 +3,7 @@ import { MerchantPanelService } from './merchant-panel.service';
 import { MerchantPanelAccessGroupsService } from './merchant-panel-access-groups.service';
 import { MerchantPanelOutletsService } from './merchant-panel-outlets.service';
 import { MerchantPanelCashierService } from './merchant-panel-cashier.service';
+import { MerchantPanelStaffService } from './merchant-panel-staff.service';
 import type { MerchantsService } from '../merchants/merchants.service';
 import type { MetricsService } from '../../core/metrics/metrics.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
@@ -120,18 +121,17 @@ const buildService = (
     prismaService,
     merchantsService,
   );
+  const staff = new MerchantPanelStaffService(
+    prismaService,
+    metricsService,
+    cacheService,
+  );
   return {
-    service: new MerchantPanelService(
-      prismaService,
-      metricsService,
-      cacheService,
-      accessGroups,
-      outlets,
-      cashiers,
-    ),
+    service: new MerchantPanelService(staff, accessGroups, outlets, cashiers),
     accessGroups,
     outlets,
     cashiers,
+    staff,
   };
 };
 

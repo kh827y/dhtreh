@@ -16,9 +16,12 @@ import {
   recordExternalRequest,
   readResponseTextSafe,
 } from '../src/shared/http/external-http.util';
+import * as lockUtil from '../src/shared/pg-lock.util';
 
 jest.mock('../src/shared/http/external-http.util', () => {
-  const actual = jest.requireActual('../src/shared/http/external-http.util');
+  const actual = jest.requireActual(
+    '../src/shared/http/external-http.util',
+  ) as typeof import('../src/shared/http/external-http.util');
   return {
     ...actual,
     fetchWithTimeout: jest.fn(),
@@ -27,13 +30,10 @@ jest.mock('../src/shared/http/external-http.util', () => {
   };
 });
 
-type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
-  Return,
-  Args
->;
-
 const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
   jest.fn<Return, Args>();
+const objectContaining = <T extends object>(value: T) =>
+  expect.objectContaining(value) as unknown as T;
 
 const makeResponse = (status: number, body = ''): Response => {
   if (typeof Response === 'function') {
@@ -44,8 +44,8 @@ const makeResponse = (status: number, body = ''): Response => {
     status,
     statusText: status >= 200 && status < 300 ? 'OK' : 'ERROR',
     headers: { get: () => null },
-    text: async () => body,
-  } as Response;
+    text: () => Promise.resolve(body),
+  } as unknown as Response;
 };
 
 describe('Workers e2e (happy-path)', () => {
@@ -54,6 +54,10 @@ describe('Workers e2e (happy-path)', () => {
   beforeEach(() => {
     process.env = { ...origEnv };
     process.env.WORKERS_ENABLED = '1';
+    jest
+      .spyOn(lockUtil, 'pgTryAdvisoryLock')
+      .mockResolvedValue({ ok: true, key: [1, 2] });
+    jest.spyOn(lockUtil, 'pgAdvisoryUnlock').mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -62,9 +66,18 @@ describe('Workers e2e (happy-path)', () => {
   });
 
   it('outbox worker sends one event', async () => {
-    (fetchWithTimeout as jest.Mock).mockResolvedValue(makeResponse(200, 'ok'));
-    (recordExternalRequest as jest.Mock).mockImplementation(() => undefined);
-    (readResponseTextSafe as jest.Mock).mockResolvedValue('');
+    const fetchMock = fetchWithTimeout as jest.MockedFunction<
+      typeof fetchWithTimeout
+    >;
+    const recordMock = recordExternalRequest as jest.MockedFunction<
+      typeof recordExternalRequest
+    >;
+    const readMock = readResponseTextSafe as jest.MockedFunction<
+      typeof readResponseTextSafe
+    >;
+    fetchMock.mockResolvedValue(makeResponse(200, 'ok'));
+    recordMock.mockImplementation(() => undefined);
+    readMock.mockResolvedValue('');
 
     const event: EventOutbox = {
       id: 'e2e-outbox-1',
@@ -109,14 +122,16 @@ describe('Workers e2e (happy-path)', () => {
       ],
     }).compile();
 
-    const worker = moduleRef.get(OutboxDispatcherWorker) as any;
-    await worker.tick();
+    const worker = moduleRef.get(
+      OutboxDispatcherWorker,
+    ) as unknown as OutboxDispatcherWorker;
+    await (worker as unknown as { tick: () => Promise<void> }).tick();
 
     expect(fetchWithTimeout).toHaveBeenCalled();
     expect(prisma.eventOutbox.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: event.id },
-        data: expect.objectContaining({ status: 'SENT' }),
+        data: objectContaining({ status: 'SENT' }),
       }),
     );
   });
@@ -180,14 +195,16 @@ describe('Workers e2e (happy-path)', () => {
       ],
     }).compile();
 
-    const worker = moduleRef.get(NotificationDispatcherWorker) as any;
-    await worker.tick();
+    const worker = moduleRef.get(
+      NotificationDispatcherWorker,
+    ) as unknown as NotificationDispatcherWorker;
+    await (worker as unknown as { tick: () => Promise<void> }).tick();
 
     expect(push.sendToTopic).toHaveBeenCalled();
     expect(prisma.eventOutbox.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: event.id },
-        data: expect.objectContaining({ status: 'SENT' }),
+        data: objectContaining({ status: 'SENT' }),
       }),
     );
     expect(email.sendEmail).not.toHaveBeenCalled();
@@ -213,12 +230,15 @@ describe('Workers e2e (happy-path)', () => {
     const prisma = {
       $queryRaw: mockFn().mockResolvedValue([{ ok: true }]),
       communicationTask: {
-        findMany: mockFn().mockImplementation((args?: any) => {
-          const status = args?.where?.status;
-          if (status === 'SCHEDULED') return Promise.resolve([task]);
-          return Promise.resolve([]);
-        }),
+        findMany: mockFn().mockImplementation(
+          (args?: { where?: { status?: string } }) => {
+            const status = args?.where?.status;
+            if (status === 'SCHEDULED') return Promise.resolve([task]);
+            return Promise.resolve([]);
+          },
+        ),
         update: mockFn().mockResolvedValue({}),
+        updateMany: mockFn().mockResolvedValue({ count: 1 }),
         findUnique: mockFn().mockResolvedValue(task),
       },
       communicationTaskRecipient: {
@@ -276,18 +296,20 @@ describe('Workers e2e (happy-path)', () => {
       ],
     }).compile();
 
-    const worker = moduleRef.get(CommunicationsDispatcherWorker) as any;
-    await worker.tick();
+    const worker = moduleRef.get(
+      CommunicationsDispatcherWorker,
+    ) as unknown as CommunicationsDispatcherWorker;
+    await (worker as unknown as { tick: () => Promise<void> }).tick();
 
     expect(telegram.sendCampaignMessage).toHaveBeenCalledWith(
       'm1',
       '123',
-      expect.objectContaining({ text: 'Hello Ivan' }),
+      objectContaining({ text: 'Hello Ivan' }),
     );
     expect(prisma.communicationTask.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: task.id },
-        data: expect.objectContaining({ status: 'COMPLETED' }),
+        data: objectContaining({ status: 'COMPLETED' }),
       }),
     );
   });

@@ -62,6 +62,11 @@ export class LoyaltyTransactionsController {
 
   @Post('quote')
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description: 'Идемпотентность QUOTE (повтор безопасен)',
+  })
   @ApiOkResponse({
     schema: {
       oneOf: [

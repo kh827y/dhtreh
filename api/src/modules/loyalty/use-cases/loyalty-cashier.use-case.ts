@@ -38,11 +38,7 @@ export class LoyaltyCashierUseCase {
     private readonly support: LoyaltyControllerSupportService,
   ) {}
 
-  async cashierActivate(
-    body: CashierActivateDto,
-    req: Request,
-    res: Response,
-  ) {
+  async cashierActivate(body: CashierActivateDto, req: Request, res: Response) {
     const merchantLogin = readTrimmed(body?.merchantLogin);
     const activationCode = readTrimmed(body?.activationCode);
     const result = await this.merchants.activateCashierDeviceByCode(

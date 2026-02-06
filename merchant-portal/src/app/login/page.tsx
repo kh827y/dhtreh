@@ -3,6 +3,7 @@ import React, { Suspense } from "react";
 import { ArrowRight, Eye, EyeOff, KeyRound, Loader2, Lock, User } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard } from "lib/async-guards";
 
 function safeRedirectPath(input?: string | null): string {
   if (!input) return "/";
@@ -31,16 +32,10 @@ export default function PortalLoginPage() {
 function LoginSkeleton() {
   return (
     <div className="fixed inset-0 z-50 min-h-screen bg-gradient-to-br from-slate-50 to-purple-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 w-full max-w-md p-8 animate-pulse">
-        <div className="flex flex-col items-center">
-          <div className="w-12 h-12 bg-gray-200 rounded-xl mb-4" />
-          <div className="h-6 w-48 bg-gray-200 rounded mb-2" />
-          <div className="h-4 w-64 bg-gray-100 rounded" />
-        </div>
-        <div className="mt-8 space-y-5">
-          <div className="h-10 w-full bg-gray-100 rounded-lg" />
-          <div className="h-10 w-full bg-gray-100 rounded-lg" />
-          <div className="h-12 w-full bg-gray-200 rounded-xl" />
+      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 w-full max-w-md p-8">
+        <div className="flex items-center justify-center space-x-3 text-gray-600">
+          <Loader2 size={20} className="animate-spin" />
+          <span className="text-sm font-medium">Загружаем форму входа…</span>
         </div>
       </div>
     </div>
@@ -59,63 +54,65 @@ function LoginForm() {
   const [needMerchantId, setNeedMerchantId] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [msg, setMsg] = React.useState("");
+  const runLogin = useActionGuard();
 
   async function login() {
-    if (loading) return;
-    setMsg("");
-    setLoading(true);
-    try {
-      const payload: {
-        email: string;
-        password: string;
-        code?: string;
-        merchantId?: string;
-      } = {
-        email: email.trim(),
-        password,
-        code: needCode ? code.trim() : undefined,
-      };
-      const merchantIdValue = merchantId.trim();
-      if (merchantIdValue) payload.merchantId = merchantIdValue;
-      const r = await fetch("/api/session/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!r.ok) {
-        const t = await r.text();
-        if (/TOTP required/i.test(t)) {
-          setNeedCode(true);
-          setMsg("Требуется код из аутентификатора");
-          return;
-        }
+    await runLogin(async () => {
+      setMsg("");
+      setLoading(true);
+      try {
+        const payload: {
+          email: string;
+          password: string;
+          code?: string;
+          merchantId?: string;
+        } = {
+          email: email.trim(),
+          password,
+          code: needCode ? code.trim() : undefined,
+        };
+        const merchantIdValue = merchantId.trim();
+        if (merchantIdValue) payload.merchantId = merchantIdValue;
+        const r = await fetch("/api/session/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!r.ok) {
+          const t = await r.text();
+          if (/TOTP required/i.test(t)) {
+            setNeedCode(true);
+            setMsg("Требуется код из аутентификатора");
+            return;
+          }
 
-        let message = t;
-        try {
-          const json = JSON.parse(t);
-          if (json?.message) message = String(json.message);
-          else if (json?.error) message = String(json.error);
-        } catch {}
+          let message = t;
+          try {
+            const json = JSON.parse(t);
+            if (json?.message) message = String(json.message);
+            else if (json?.error) message = String(json.error);
+          } catch {}
 
-        if (r.status === 401 || r.status === 403) {
-          throw new Error(
-            message && message.length < 200
-              ? message
-              : "Не удалось войти. Проверьте логин и пароль.",
-          );
-        }
+          if (r.status === 401 || r.status === 403) {
+            throw new Error(
+              message && message.length < 200
+                ? message
+                : "Не удалось войти. Проверьте логин и пароль.",
+            );
+          }
 
-        if (/мерчант/i.test(message)) {
-          setNeedMerchantId(true);
+          if (/мерчант/i.test(message)) {
+            setNeedMerchantId(true);
+          }
+          throw new Error(message || "Ошибка входа");
         }
-        throw new Error(message || "Ошибка входа");
+        window.location.href = redirectPath;
+      } catch (e: any) {
+        setMsg(normalizeErrorMessage(e, "Ошибка входа"));
+      } finally {
+        setLoading(false);
       }
-      window.location.href = redirectPath;
-    } catch (e: any) {
-      setMsg(normalizeErrorMessage(e, "Ошибка входа"));
-    } finally {
-      setLoading(false);
-    }
+    });
   }
 
   return (

@@ -18,8 +18,8 @@ export const safeExec = <T>(
 };
 
 export const safeExecAsync = async <T>(
-  action: () => Promise<T>,
-  fallback: () => Promise<T>,
+  action: () => T | Promise<T>,
+  fallback: () => T | Promise<T>,
   logger?: LoggerLike,
   message?: string,
   context?: Record<string, unknown>,

@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   if (search) qs.set('search', search);
   if (page) qs.set('page', page);
   if (pageSize) qs.set('pageSize', pageSize);
-  if (!pageSize) qs.set('pageSize', '200');
+  if (page && !pageSize) qs.set('pageSize', '200');
   const path = `/portal/outlets${qs.toString() ? `?${qs.toString()}` : ''}`;
   const proxied = await portalFetch(req, path, { method: 'GET' });
   const raw = await proxied.text();

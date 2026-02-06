@@ -12,6 +12,8 @@ import {
   Bot,
 } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
+import { readPortalApiCache } from "lib/cache";
 
 type TelegramState = {
   enabled: boolean;
@@ -36,14 +38,25 @@ export default function TelegramMiniAppPage() {
   const [checking, setChecking] = React.useState(false);
   const [copiedLink, setCopiedLink] = React.useState(false);
   const [editingToken, setEditingToken] = React.useState(false);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
-  async function load() {
+  React.useEffect(() => {
+    const cached = readPortalApiCache<TelegramState>("/api/portal/integrations/telegram-mini-app");
+    if (!cached || typeof cached !== "object") return;
+    setState(cached);
+    setMessage(cached.message || "");
+  }, []);
+
+  const load = React.useCallback(async () => {
+    const requestId = startLoad();
     setLoading(true);
     setError("");
     setMessage("");
     try {
       const res = await fetch("/api/portal/integrations/telegram-mini-app");
       const data = await res.json().catch(() => null);
+      if (!isLatest(requestId)) return;
       if (!res.ok) {
         setState(null);
         setError(
@@ -55,16 +68,17 @@ export default function TelegramMiniAppPage() {
         setMessage((data && typeof data?.message === "string" && data.message) || "");
       }
     } catch (e: any) {
+      if (!isLatest(requestId)) return;
       setState(null);
       setError(normalizeErrorMessage(e, "Ошибка"));
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }
+  }, [isLatest, startLoad]);
 
   React.useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const isEnabled = Boolean(state?.enabled);
   const isHealthy = Boolean(state?.connectionHealthy);
@@ -78,88 +92,94 @@ export default function TelegramMiniAppPage() {
       setError("Введите токен Telegram-бота");
       return;
     }
-    setActionPending(true);
-    setError("");
-    setMessage("");
-    try {
-      const res = await fetch("/api/portal/integrations/telegram-mini-app", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: trimmed }),
-      });
-      const data: FetchResponse = await res.json().catch(() => ({} as any));
-      if (!res.ok) {
-        throw new Error(
-          (data && typeof data?.message === "string" && data.message) ||
-            "Не удалось подключить бота",
-        );
+    await runAction(async () => {
+      setActionPending(true);
+      setError("");
+      setMessage("");
+      try {
+        const res = await fetch("/api/portal/integrations/telegram-mini-app", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: trimmed }),
+        });
+        const data: FetchResponse = await res.json().catch(() => ({} as any));
+        if (!res.ok) {
+          throw new Error(
+            (data && typeof data?.message === "string" && data.message) ||
+              "Не удалось подключить бота",
+          );
+        }
+        setState(data);
+        setToken("");
+        setEditingToken(false);
+        setMessage(data?.message || "Telegram Mini App подключена");
+      } catch (e: any) {
+        setError(normalizeErrorMessage(e, "Ошибка"));
+      } finally {
+        setActionPending(false);
       }
-      setState(data);
-      setToken("");
-      setEditingToken(false);
-      setMessage(data?.message || "Telegram Mini App подключена");
-    } catch (e: any) {
-      setError(normalizeErrorMessage(e, "Ошибка"));
-    } finally {
-      setActionPending(false);
-    }
+    });
   };
 
   const disconnect = async () => {
     if (!confirm("Отключить бота? Ваше приложение в Telegram перестанет работать.")) {
       return;
     }
-    setActionPending(true);
-    setError("");
-    setMessage("");
-    try {
-      const res = await fetch("/api/portal/integrations/telegram-mini-app", {
-        method: "DELETE",
-      });
-      const data: FetchResponse = await res.json().catch(() => ({} as any));
-      if (!res.ok) {
-        throw new Error(
-          (data && typeof data?.message === "string" && data.message) ||
-            "Не удалось отключить интеграцию",
-        );
+    await runAction(async () => {
+      setActionPending(true);
+      setError("");
+      setMessage("");
+      try {
+        const res = await fetch("/api/portal/integrations/telegram-mini-app", {
+          method: "DELETE",
+        });
+        const data: FetchResponse = await res.json().catch(() => ({} as any));
+        if (!res.ok) {
+          throw new Error(
+            (data && typeof data?.message === "string" && data.message) ||
+              "Не удалось отключить интеграцию",
+          );
+        }
+        setState(data);
+        setToken("");
+        setEditingToken(false);
+        setMessage(data?.message || "Интеграция отключена");
+      } catch (e: any) {
+        setError(normalizeErrorMessage(e, "Ошибка"));
+      } finally {
+        setActionPending(false);
       }
-      setState(data);
-      setToken("");
-      setEditingToken(false);
-      setMessage(data?.message || "Интеграция отключена");
-    } catch (e: any) {
-      setError(normalizeErrorMessage(e, "Ошибка"));
-    } finally {
-      setActionPending(false);
-    }
+    });
   };
 
   const checkConnection = async () => {
-    setChecking(true);
-    setError("");
-    try {
-      const res = await fetch("/api/portal/integrations/telegram-mini-app/check", {
-        method: "POST",
-      });
-      const data: FetchResponse = await res.json().catch(() => ({} as any));
-      if (!res.ok) {
-        throw new Error(
-          (data && typeof data?.message === "string" && data.message) ||
-            "Не удалось проверить подключение",
+    await runAction(async () => {
+      setChecking(true);
+      setError("");
+      try {
+        const res = await fetch("/api/portal/integrations/telegram-mini-app/check", {
+          method: "POST",
+        });
+        const data: FetchResponse = await res.json().catch(() => ({} as any));
+        if (!res.ok) {
+          throw new Error(
+            (data && typeof data?.message === "string" && data.message) ||
+              "Не удалось проверить подключение",
+          );
+        }
+        setState(data);
+        setMessage(
+          data?.message ||
+            (data.connectionHealthy
+              ? "Подключение к боту работает"
+              : "Подключение к боту не удалось"),
         );
+      } catch (e: any) {
+        setError(normalizeErrorMessage(e, "Ошибка"));
+      } finally {
+        setChecking(false);
       }
-      setState(data);
-      setMessage(
-        data?.message ||
-          (data.connectionHealthy
-            ? "Подключение к боту работает"
-            : "Подключение к боту не удалось"),
-      );
-    } catch (e: any) {
-      setError(normalizeErrorMessage(e, "Ошибка"));
-    } finally {
-      setChecking(false);
-    }
+    });
   };
 
   const handleCopyLink = () => {

@@ -37,6 +37,9 @@ function createUseCase() {
   return { useCase, prisma, support };
 }
 
+const anyValue = <T>(ctor: new (...args: never[]) => T) =>
+  expect.any(ctor) as unknown as T;
+
 describe('LoyaltyMetaUseCase', () => {
   it('requires merchantId and customerId for consent updates', async () => {
     const { useCase } = createUseCase();
@@ -61,11 +64,11 @@ describe('LoyaltyMetaUseCase', () => {
       where: {
         merchantId_customerId: { merchantId: 'm-1', customerId: 'cust-1' },
       },
-      update: { consentAt: expect.any(Date) },
+      update: { consentAt: anyValue(Date) },
       create: {
         merchantId: 'm-1',
         customerId: 'cust-1',
-        consentAt: expect.any(Date),
+        consentAt: anyValue(Date),
       },
     });
     expect(result).toEqual({ ok: true });

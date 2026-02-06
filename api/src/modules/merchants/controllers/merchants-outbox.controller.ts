@@ -12,7 +12,6 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import {
-  ApiBadRequestResponse,
   ApiExtraModels,
   ApiHeader,
   ApiNotFoundResponse,

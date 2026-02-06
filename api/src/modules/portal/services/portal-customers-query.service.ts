@@ -208,7 +208,10 @@ export class PortalCustomersQueryService {
   }
 
   // После рефактора Customer = per-merchant, entity сам является профилем
-  buildBaseDto(entity: CustomerBase, aggregates: Aggregates): PortalCustomerDto {
+  buildBaseDto(
+    entity: CustomerBase,
+    aggregates: Aggregates,
+  ): PortalCustomerDto {
     const stats = Array.isArray(entity.customerStats)
       ? (entity.customerStats[0] ?? null)
       : null;
@@ -541,42 +544,45 @@ export class PortalCustomersQueryService {
         };
       };
     }>;
-    receipt:
-      | Prisma.ReceiptGetPayload<{
+    receipt: Prisma.ReceiptGetPayload<{
+      select: {
+        id: true;
+        orderId: true;
+        total: true;
+        redeemApplied: true;
+        earnApplied: true;
+        receiptNumber: true;
+        createdAt: true;
+        canceledAt: true;
+        outlet: { select: { id: true; name: true } };
+        staff: {
           select: {
             id: true;
-            orderId: true;
-            total: true;
-            redeemApplied: true;
-            earnApplied: true;
-            receiptNumber: true;
-            createdAt: true;
-            canceledAt: true;
-            outlet: { select: { id: true; name: true } };
-            staff: {
-              select: {
-                id: true;
-                login: true;
-                email: true;
-                firstName: true;
-                lastName: true;
-              };
-            };
-            canceledBy: {
-              select: {
-                id: true;
-                login: true;
-                email: true;
-                firstName: true;
-                lastName: true;
-              };
-            };
+            login: true;
+            email: true;
+            firstName: true;
+            lastName: true;
           };
-        }>
-      | null;
+        };
+        canceledBy: {
+          select: {
+            id: true;
+            login: true;
+            email: true;
+            firstName: true;
+            lastName: true;
+          };
+        };
+      };
+    }> | null;
     metadata: Record<string, unknown> | null;
     promoUsage: { code: string | null; name: string | null } | null;
-  }): { details: string; kind: string; note: string | null; purchaseAmount: number } {
+  }): {
+    details: string;
+    kind: string;
+    note: string | null;
+    purchaseAmount: number;
+  } {
     const base = this.describeTransactionBase({
       tx: params.tx,
       receipt: params.receipt,
@@ -615,39 +621,37 @@ export class PortalCustomersQueryService {
         };
       };
     }>;
-    receipt:
-      | Prisma.ReceiptGetPayload<{
+    receipt: Prisma.ReceiptGetPayload<{
+      select: {
+        id: true;
+        orderId: true;
+        total: true;
+        redeemApplied: true;
+        earnApplied: true;
+        receiptNumber: true;
+        createdAt: true;
+        canceledAt: true;
+        outlet: { select: { id: true; name: true } };
+        staff: {
           select: {
             id: true;
-            orderId: true;
-            total: true;
-            redeemApplied: true;
-            earnApplied: true;
-            receiptNumber: true;
-            createdAt: true;
-            canceledAt: true;
-            outlet: { select: { id: true; name: true } };
-            staff: {
-              select: {
-                id: true;
-                login: true;
-                email: true;
-                firstName: true;
-                lastName: true;
-              };
-            };
-            canceledBy: {
-              select: {
-                id: true;
-                login: true;
-                email: true;
-                firstName: true;
-                lastName: true;
-              };
-            };
+            login: true;
+            email: true;
+            firstName: true;
+            lastName: true;
           };
-        }>
-      | null;
+        };
+        canceledBy: {
+          select: {
+            id: true;
+            login: true;
+            email: true;
+            firstName: true;
+            lastName: true;
+          };
+        };
+      };
+    }> | null;
     metadata: Record<string, unknown> | null;
     promoUsage: { code: string | null; name: string | null } | null;
   }): {
@@ -657,7 +661,7 @@ export class PortalCustomersQueryService {
     purchaseAmount: number;
   } {
     let details = 'Операция';
-    let kind = params.tx.type;
+    let kind: string = params.tx.type;
     let note: string | null = null;
     let purchaseAmount = Math.abs(Number(params.tx.amount ?? 0));
 
@@ -678,51 +682,21 @@ export class PortalCustomersQueryService {
       return { details, kind, note, purchaseAmount };
     }
 
-    if (params.tx.type === 'PURCHASE' || params.tx.type === 'INCREASE') {
-      details = 'Покупка';
-      kind = 'PURCHASE';
-      return { details, kind, note, purchaseAmount };
-    }
-
     if (params.tx.type === 'REFUND') {
       details = 'Возврат';
       kind = 'REFUND';
       return { details, kind, note, purchaseAmount };
     }
 
-    if (params.tx.type === 'CANCEL') {
-      details = 'Отмена операции';
-      kind = 'CANCEL';
-      return { details, kind, note, purchaseAmount };
-    }
-
-    if (params.tx.type === 'EXPIRE') {
-      details = 'Списание по сроку';
-      kind = 'EXPIRE';
-      return { details, kind, note, purchaseAmount };
-    }
-
-    if (params.tx.type === 'CORRECTION') {
-      details = 'Корректировка баллов';
-      kind = 'CORRECTION';
-      return { details, kind, note, purchaseAmount };
-    }
-
-    if (params.tx.type === 'REVERT') {
-      details = 'Возврат списания';
-      kind = 'REVERT';
-      return { details, kind, note, purchaseAmount };
-    }
-
-    if (params.tx.type === 'REDUCE') {
-      details = 'Уменьшение баллов';
-      kind = 'REDUCE';
-      return { details, kind, note, purchaseAmount };
-    }
-
-    if (params.tx.type === 'MANUAL') {
-      details = 'Корректировка администратором';
-      kind = 'MANUAL';
+    if (params.tx.type === 'ADJUST') {
+      const delta = Number(params.tx.amount ?? 0);
+      if (delta < 0) {
+        details = 'Списание по сроку';
+        kind = 'EXPIRE';
+      } else {
+        details = 'Корректировка баллов';
+        kind = 'CORRECTION';
+      }
       if (typeof params.metadata?.comment === 'string') {
         const trimmed = params.metadata.comment.trim();
         if (trimmed) note = trimmed;
@@ -756,6 +730,12 @@ export class PortalCustomersQueryService {
       return { details, kind, note, purchaseAmount };
     }
 
+    if (params.tx.type === 'REFERRAL') {
+      details = 'Реферальное начисление';
+      kind = 'REFERRAL';
+      return { details, kind, note, purchaseAmount };
+    }
+
     if (params.tx.type === 'EARN') {
       details = 'Начисление за покупку';
       kind = 'PURCHASE_EARN';
@@ -765,7 +745,9 @@ export class PortalCustomersQueryService {
     return { details, kind, note, purchaseAmount };
   }
 
-  private formatReceiptDateTime(value: Date | string | null | undefined): string {
+  private formatReceiptDateTime(
+    value: Date | string | null | undefined,
+  ): string {
     if (!value) return '—';
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return '—';
@@ -884,7 +866,11 @@ export class PortalCustomersQueryService {
     });
     if (!customer) throw new NotFoundException('Customer not found');
 
-    const walletBalance = await ensureWallet(this.prisma, merchantId, customerId);
+    const walletBalance = await ensureWallet(
+      this.prisma,
+      merchantId,
+      customerId,
+    );
 
     const aggregates = await this.computeAggregates(merchantId, [customerId]);
 
@@ -1121,8 +1107,7 @@ export class PortalCustomersQueryService {
           : tx.type === 'REDEEM'
             ? Math.abs(change)
             : metaPaidBy;
-      const total =
-        receipt != null ? Number(receipt.total ?? 0) : metaTotal;
+      const total = receipt != null ? Number(receipt.total ?? 0) : metaTotal;
       const outletName = receipt?.outlet?.name ?? tx.outlet?.name ?? null;
       const receiptNumber = this.asStringValue(
         receipt?.receiptNumber ?? metadata?.receiptNumber,
@@ -1168,8 +1153,12 @@ export class PortalCustomersQueryService {
           ? Math.max(0, Number(metadata.redeemAmount))
           : null,
         referralCustomerId: this.asStringValue(metadata?.referralCustomerId),
-        referralCustomerName: this.asStringValue(metadata?.referralCustomerName),
-        referralCustomerPhone: this.asStringValue(metadata?.referralCustomerPhone),
+        referralCustomerName: this.asStringValue(
+          metadata?.referralCustomerName,
+        ),
+        referralCustomerPhone: this.asStringValue(
+          metadata?.referralCustomerPhone,
+        ),
       };
 
       if (tx.type === 'REFUND' && orderId) {
@@ -1197,24 +1186,25 @@ export class PortalCustomersQueryService {
       const redeem = this.parseAmount(descriptor.redeemAmount);
       const earn = this.parseAmount(descriptor.earnAmount);
       const total =
-        receipt != null ? Number(receipt.total ?? 0) : descriptor.total ?? null;
+        receipt != null
+          ? Number(receipt.total ?? 0)
+          : (descriptor.total ?? null);
       const toPay =
         receipt != null
           ? Math.max(
               0,
               Number(receipt.total ?? 0) - Number(receipt.redeemApplied ?? 0),
             )
-          : descriptor.toPay ?? null;
+          : (descriptor.toPay ?? null);
       const paidByPoints =
         receipt != null
           ? Number(receipt.redeemApplied ?? 0)
-          : descriptor.paidByPoints ?? null;
+          : (descriptor.paidByPoints ?? null);
       const receiptNumber = receipt?.receiptNumber ?? descriptor.receiptNumber;
       const outlet = receipt?.outlet?.name ?? descriptor.outlet;
-      const manager =
-        receipt?.staff
-          ? this.formatStaffName(receipt.staff)
-          : descriptor.manager;
+      const manager = receipt?.staff
+        ? this.formatStaffName(receipt.staff)
+        : descriptor.manager;
       const canceledAt = descriptor.canceledAt ?? null;
       const canceledBy = descriptor.canceledBy ?? null;
       const receiptId = receipt?.id ?? descriptor.receiptId ?? null;
@@ -1280,7 +1270,10 @@ export class PortalCustomersQueryService {
     baseDto.invited = invited;
 
     try {
-      baseDto.earnRateBps = await this.resolveEarnRateBps(merchantId, customerId);
+      baseDto.earnRateBps = await this.resolveEarnRateBps(
+        merchantId,
+        customerId,
+      );
     } catch (err) {
       logIgnoredError(
         err,

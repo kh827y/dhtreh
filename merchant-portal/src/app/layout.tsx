@@ -8,6 +8,7 @@ import { ThemeProvider } from "../components/ThemeProvider";
 import { AppHeader } from "../components/AppHeader";
 import { AlertTriangle, Lock, CreditCard } from "lucide-react";
 import { ContentWrapper } from "../components/ContentWrapper";
+import { PortalFetchCacheProvider } from "../components/PortalFetchCacheProvider";
 
 export const metadata = {
   title: "Panel Loyalty",
@@ -438,6 +439,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="ru" className={inter.variable} suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProvider defaultTheme="light">
+          <PortalFetchCacheProvider />
           <TimezoneProvider timezone={timezonePayload.timezone} options={timezonePayload.options}>
             <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-900">
               {/* Sidebar — 1:1 как в new design */}

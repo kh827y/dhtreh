@@ -1,6 +1,4 @@
-export const asRecord = (
-  value: unknown,
-): Record<string, unknown> | null => {
+export const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }

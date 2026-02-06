@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { isAllCustomersAudience } from "../../../lib/audience-utils";
 import { readApiError } from "lib/portal-errors";
+import { useActionGuard } from "lib/async-guards";
 
 type PromotionStatus = "active" | "disabled" | "ended";
 
@@ -100,6 +101,7 @@ export default function ActionsEarnPage() {
   const [audiences, setAudiences] = useState<AudienceOption[]>([]);
   const [promotions, setPromotions] = useState<PointsPromotion[]>([]);
   const [saving, setSaving] = useState(false);
+  const runAction = useActionGuard();
 
   const allAudience = useMemo(() => audiences.find((a) => a.isAll) ?? null, [audiences]);
   const allAudienceId = allAudience?.id ?? "";
@@ -346,7 +348,6 @@ export default function ActionsEarnPage() {
   };
 
   const handleSave = async () => {
-    if (saving) return;
     if (!formData.title) {
       alert("Введите название акции");
       return;
@@ -410,44 +411,50 @@ export default function ActionsEarnPage() {
       },
     };
 
-    setSaving(true);
-    try {
-      await upsertPromotion(payload);
-      await loadPromotions(allAudienceId);
-      setView("list");
-      setActiveTab(formData.isActive ? "active" : "disabled");
-    } catch (e: any) {
-      alert(e?.message || "Не удалось сохранить акцию");
-    } finally {
-      setSaving(false);
-    }
+    await runAction(async () => {
+      setSaving(true);
+      try {
+        await upsertPromotion(payload);
+        await loadPromotions(allAudienceId);
+        setView("list");
+        setActiveTab(formData.isActive ? "active" : "disabled");
+      } catch (e: any) {
+        alert(e?.message || "Не удалось сохранить акцию");
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Вы уверены, что хотите удалить эту акцию?")) return;
-    const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      alert(readApiError(text) || "Не удалось удалить акцию");
-      return;
-    }
-    await loadPromotions(allAudienceId);
+    await runAction(async () => {
+      const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        alert(readApiError(text) || "Не удалось удалить акцию");
+        return;
+      }
+      await loadPromotions(allAudienceId);
+    });
   };
 
   const handleToggleStatus = async (promo: PointsPromotion) => {
     if (promo.status === "ended") return;
     const newStatus = promo.status === "active" ? "PAUSED" : "ACTIVE";
-    const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(promo.id)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
+    await runAction(async () => {
+      const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(promo.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        alert(readApiError(text) || "Не удалось изменить статус акции");
+        return;
+      }
+      await loadPromotions(allAudienceId);
     });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      alert(readApiError(text) || "Не удалось изменить статус акции");
-      return;
-    }
-    await loadPromotions(allAudienceId);
   };
 
   const renderCreateForm = () => (
@@ -480,10 +487,11 @@ export default function ActionsEarnPage() {
 
           <button
             onClick={handleSave}
-            className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors shadow-sm"
+            disabled={saving}
+            className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors shadow-sm disabled:opacity-60"
           >
             <Save size={18} />
-            <span>Сохранить</span>
+            <span>{saving ? "Сохранение..." : "Сохранить"}</span>
           </button>
         </div>
       </div>

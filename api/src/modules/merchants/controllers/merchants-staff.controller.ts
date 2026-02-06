@@ -22,7 +22,13 @@ import { AdminGuard } from '../../../core/guards/admin.guard';
 import { AdminIpGuard } from '../../../core/guards/admin-ip.guard';
 import { AdminAuditInterceptor } from '../../admin/admin-audit.interceptor';
 import { ErrorDto, TransactionItemDto } from '../../loyalty/dto/dto';
-import { CreateStaffDto, OkDto, StaffDto, TokenRespDto, UpdateStaffDto } from '../dto';
+import {
+  CreateStaffDto,
+  OkDto,
+  StaffDto,
+  TokenRespDto,
+  UpdateStaffDto,
+} from '../dto';
 import { MerchantsStaffUseCase } from '../use-cases/merchants-staff.use-case';
 
 @Controller('merchants')

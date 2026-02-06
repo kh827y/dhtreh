@@ -8,6 +8,7 @@ import {
   sumCombinations,
 } from "./utils";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type RfmRange = { min: number | null; max: number | null; count: number };
 type RfmGroup = {
@@ -83,6 +84,8 @@ export default function AnalyticsRfmPage() {
   const [saving, setSaving] = React.useState(false);
   const [showInfo, setShowInfo] = React.useState(true);
   const [saveNotice, setSaveNotice] = React.useState("");
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const [settings, setSettings] = React.useState<RfmSettingsState>(defaultSettings);
   const [draft, setDraft] = React.useState<RfmSettingsState>(defaultSettings);
@@ -103,25 +106,28 @@ export default function AnalyticsRfmPage() {
   }, []);
 
   const load = React.useCallback(async () => {
+    const requestId = startLoad();
     setLoading(true);
     setError("");
     setSaveNotice("");
     try {
       const data = await fetchAnalytics();
       const normalizedSettings = normalizeSettings(data.settings);
+      if (!isLatest(requestId)) return;
       setAnalytics({ ...data, settings: normalizedSettings });
       setSettings(normalizedSettings);
       setDraft(normalizedSettings);
     } catch (error) {
       console.error("Не удалось загрузить RFM-аналитику", error);
+      if (!isLatest(requestId)) return;
       setAnalytics(null);
       setError(
         String((error as any)?.message || "Не удалось загрузить RFM-аналитику"),
       );
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, [normalizeSettings]);
+  }, [isLatest, normalizeSettings, startLoad]);
 
   React.useEffect(() => {
     load();
@@ -220,35 +226,37 @@ export default function AnalyticsRfmPage() {
         return;
       }
     }
-    setSaving(true);
-    try {
-      const payload = {
-        recencyMode: draft.recencyMode,
-        ...(draft.recencyMode === "manual"
-          ? { recencyDays: Math.max(1, Math.round(draft.recencyDays ?? 1)) }
-          : {}),
-        frequencyMode: draft.frequencyMode,
-        ...(draft.frequencyMode === "manual"
-          ? { frequencyThreshold: Math.max(1, Math.round(draft.frequencyThreshold ?? 1)) }
-          : {}),
-        moneyMode: draft.moneyMode,
-        ...(draft.moneyMode === "manual"
-          ? { moneyThreshold: Math.max(0, Math.round(draft.moneyThreshold ?? 0)) }
-          : {}),
-      } as const;
-      const data = await updateSettings(payload);
-      const normalizedSettings = normalizeSettings(data.settings);
-      setAnalytics({ ...data, settings: normalizedSettings });
-      setSettings(normalizedSettings);
-      setDraft(normalizedSettings);
-      setSaveNotice("Сегменты обновятся автоматически раз в сутки (обычно ночью).");
-    } catch (error) {
-      console.error("Не удалось сохранить настройки RFM", error);
-      setError(normalizeErrorMessage(error, "Не удалось сохранить настройки"));
-    } finally {
-      setSaving(false);
-    }
-  }, [draft, normalizeSettings]);
+    await runAction(async () => {
+      setSaving(true);
+      try {
+        const payload = {
+          recencyMode: draft.recencyMode,
+          ...(draft.recencyMode === "manual"
+            ? { recencyDays: Math.max(1, Math.round(draft.recencyDays ?? 1)) }
+            : {}),
+          frequencyMode: draft.frequencyMode,
+          ...(draft.frequencyMode === "manual"
+            ? { frequencyThreshold: Math.max(1, Math.round(draft.frequencyThreshold ?? 1)) }
+            : {}),
+          moneyMode: draft.moneyMode,
+          ...(draft.moneyMode === "manual"
+            ? { moneyThreshold: Math.max(0, Math.round(draft.moneyThreshold ?? 0)) }
+            : {}),
+        } as const;
+        const data = await updateSettings(payload);
+        const normalizedSettings = normalizeSettings(data.settings);
+        setAnalytics({ ...data, settings: normalizedSettings });
+        setSettings(normalizedSettings);
+        setDraft(normalizedSettings);
+        setSaveNotice("Сегменты обновятся автоматически раз в сутки (обычно ночью).");
+      } catch (error) {
+        console.error("Не удалось сохранить настройки RFM", error);
+        setError(normalizeErrorMessage(error, "Не удалось сохранить настройки"));
+      } finally {
+        setSaving(false);
+      }
+    });
+  }, [draft, normalizeSettings, runAction]);
 
   React.useEffect(() => {
     if (loading) return;
@@ -354,28 +362,28 @@ export default function AnalyticsRfmPage() {
           <div className="flex bg-gray-200 rounded-lg p-1">
             <button
               onClick={() => {
-                setSaving(true);
-                setError("");
-                setSaveNotice("");
-                setDraft((prev) => ({
-                  ...prev,
-                  recencyMode: "auto",
-                  frequencyMode: "auto",
-                  moneyMode: "auto",
-                }));
-                void updateSettings({
-                  recencyMode: "auto",
-                  frequencyMode: "auto",
-                  moneyMode: "auto",
-                })
-                  .then((data) => {
+                void runAction(async () => {
+                  setSaving(true);
+                  setError("");
+                  setSaveNotice("");
+                  setDraft((prev) => ({
+                    ...prev,
+                    recencyMode: "auto",
+                    frequencyMode: "auto",
+                    moneyMode: "auto",
+                  }));
+                  try {
+                    const data = await updateSettings({
+                      recencyMode: "auto",
+                      frequencyMode: "auto",
+                      moneyMode: "auto",
+                    });
                     const normalizedSettings = normalizeSettings(data.settings);
                     setAnalytics({ ...data, settings: normalizedSettings });
                     setSettings(normalizedSettings);
                     setDraft(normalizedSettings);
                     setSaveNotice("Сегменты обновятся автоматически раз в сутки (обычно ночью).");
-                  })
-                  .catch((err: any) => {
+                  } catch (err: any) {
                     console.error("Не удалось сохранить настройки RFM", err);
                     setError(
                       String(
@@ -383,8 +391,10 @@ export default function AnalyticsRfmPage() {
                           "Не удалось сохранить настройки RFM",
                       ),
                     );
-                  })
-                  .finally(() => setSaving(false));
+                  } finally {
+                    setSaving(false);
+                  }
+                });
               }}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
                 mode === "Auto"
@@ -397,66 +407,66 @@ export default function AnalyticsRfmPage() {
             </button>
             <button
               onClick={() => {
-                setSaving(true);
-                setError("");
-                setSaveNotice("");
-                setDraft((prev) => {
+                void runAction(async () => {
+                  setSaving(true);
+                  setError("");
+                  setSaveNotice("");
+                  setDraft((prev) => {
+                    const recencyDays =
+                      prev.recencyDays ?? settings.recencyDays ?? 90;
+                    const frequencyThreshold =
+                      prev.frequencyThreshold ??
+                      settings.frequencyThreshold ??
+                      settings.frequencySuggested ??
+                      10;
+                    const moneyThreshold =
+                      prev.moneyThreshold ??
+                      settings.moneyThreshold ??
+                      settings.moneySuggested ??
+                      50000;
+
+                    return {
+                      ...prev,
+                      recencyMode: "manual",
+                      frequencyMode: "manual",
+                      moneyMode: "manual",
+                      recencyDays,
+                      frequencyThreshold,
+                      moneyThreshold,
+                    };
+                  });
+
                   const recencyDays =
-                    prev.recencyDays ?? settings.recencyDays ?? 90;
+                    (draft.recencyDays ?? settings.recencyDays ?? 90) || 90;
                   const frequencyThreshold =
-                    prev.frequencyThreshold ??
-                    settings.frequencyThreshold ??
-                    settings.frequencySuggested ??
-                    10;
+                    (draft.frequencyThreshold ??
+                      settings.frequencyThreshold ??
+                      settings.frequencySuggested ??
+                      10) || 10;
                   const moneyThreshold =
-                    prev.moneyThreshold ??
-                    settings.moneyThreshold ??
-                    settings.moneySuggested ??
-                    50000;
+                    (draft.moneyThreshold ??
+                      settings.moneyThreshold ??
+                      settings.moneySuggested ??
+                      50000) || 50000;
 
-                  return {
-                    ...prev,
-                    recencyMode: "manual",
-                    frequencyMode: "manual",
-                    moneyMode: "manual",
-                    recencyDays,
-                    frequencyThreshold,
-                    moneyThreshold,
-                  };
-                });
-
-                const recencyDays =
-                  (draft.recencyDays ?? settings.recencyDays ?? 90) || 90;
-                const frequencyThreshold =
-                  (draft.frequencyThreshold ??
-                    settings.frequencyThreshold ??
-                    settings.frequencySuggested ??
-                    10) || 10;
-                const moneyThreshold =
-                  (draft.moneyThreshold ??
-                    settings.moneyThreshold ??
-                    settings.moneySuggested ??
-                    50000) || 50000;
-
-                void updateSettings({
-                  recencyMode: "manual",
-                  recencyDays: Math.max(1, Math.round(recencyDays)),
-                  frequencyMode: "manual",
-                  frequencyThreshold: Math.max(
-                    1,
-                    Math.round(frequencyThreshold),
-                  ),
-                  moneyMode: "manual",
-                  moneyThreshold: Math.max(0, Math.round(moneyThreshold)),
-                })
-                  .then((data) => {
+                  try {
+                    const data = await updateSettings({
+                      recencyMode: "manual",
+                      recencyDays: Math.max(1, Math.round(recencyDays)),
+                      frequencyMode: "manual",
+                      frequencyThreshold: Math.max(
+                        1,
+                        Math.round(frequencyThreshold),
+                      ),
+                      moneyMode: "manual",
+                      moneyThreshold: Math.max(0, Math.round(moneyThreshold)),
+                    });
                     const normalizedSettings = normalizeSettings(data.settings);
                     setAnalytics({ ...data, settings: normalizedSettings });
                     setSettings(normalizedSettings);
                     setDraft(normalizedSettings);
                     setSaveNotice("Сегменты обновятся автоматически раз в сутки (обычно ночью).");
-                  })
-                  .catch((err: any) => {
+                  } catch (err: any) {
                     console.error("Не удалось сохранить настройки RFM", err);
                     setError(
                       String(
@@ -464,8 +474,10 @@ export default function AnalyticsRfmPage() {
                           "Не удалось сохранить настройки RFM",
                       ),
                     );
-                  })
-                  .finally(() => setSaving(false));
+                  } finally {
+                    setSaving(false);
+                  }
+                });
               }}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
                 mode === "Manual"

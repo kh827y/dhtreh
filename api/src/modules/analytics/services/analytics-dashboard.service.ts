@@ -9,7 +9,6 @@ import type {
   DashboardSummary,
   SummaryMetrics,
   SummaryTimelinePoint,
-  TimeGrouping,
 } from '../analytics.service';
 import type { RussiaTimezone } from '../../../shared/timezone/russia-timezones';
 import {

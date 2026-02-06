@@ -287,8 +287,7 @@ export class MerchantsSettingsService {
         const ensureBoolean = (value: unknown, label: string) => {
           if (value == null) return;
           if (typeof value === 'boolean') return;
-          if (typeof value === 'number' && (value === 0 || value === 1))
-            return;
+          if (typeof value === 'number' && (value === 0 || value === 1)) return;
           if (typeof value === 'string') {
             const lowered = value.trim().toLowerCase();
             if (['true', 'false', '0', '1'].includes(lowered)) return;
@@ -336,7 +335,10 @@ export class MerchantsSettingsService {
           ensureNumber(birthday.giftTtlDays, 'birthday.giftTtlDays');
         }
 
-        const autoReturn = ensureObject(normalizedRecord.autoReturn, 'autoReturn');
+        const autoReturn = ensureObject(
+          normalizedRecord.autoReturn,
+          'autoReturn',
+        );
         if (autoReturn) {
           ensureBoolean(autoReturn.enabled, 'autoReturn.enabled');
           ensureNumber(autoReturn.days, 'autoReturn.days');
@@ -344,7 +346,10 @@ export class MerchantsSettingsService {
           ensureNumber(autoReturn.giftPoints, 'autoReturn.giftPoints');
           ensureNumber(autoReturn.giftTtlDays, 'autoReturn.giftTtlDays');
           ensureBoolean(autoReturn.giftEnabled, 'autoReturn.giftEnabled');
-          ensureBoolean(autoReturn.giftBurnEnabled, 'autoReturn.giftBurnEnabled');
+          ensureBoolean(
+            autoReturn.giftBurnEnabled,
+            'autoReturn.giftBurnEnabled',
+          );
           const repeat = ensureObject(autoReturn.repeat, 'autoReturn.repeat');
           if (repeat) {
             ensureBoolean(repeat.enabled, 'autoReturn.repeat.enabled');
@@ -372,7 +377,10 @@ export class MerchantsSettingsService {
           const recency = ensureObject(rfm.recency, 'rfm.recency');
           if (recency) {
             if (recency.mode != null) {
-              const mode = String(recency.mode).toLowerCase();
+              if (typeof recency.mode !== 'string') {
+                throw new Error('rfm.recency.mode invalid');
+              }
+              const mode = recency.mode.toLowerCase();
               if (mode !== 'auto' && mode !== 'manual') {
                 throw new Error('rfm.recency.mode invalid');
               }
@@ -384,7 +392,10 @@ export class MerchantsSettingsService {
           const frequency = ensureObject(rfm.frequency, 'rfm.frequency');
           if (frequency) {
             if (frequency.mode != null) {
-              const mode = String(frequency.mode).toLowerCase();
+              if (typeof frequency.mode !== 'string') {
+                throw new Error('rfm.frequency.mode invalid');
+              }
+              const mode = frequency.mode.toLowerCase();
               if (mode !== 'auto' && mode !== 'manual') {
                 throw new Error('rfm.frequency.mode invalid');
               }
@@ -394,7 +405,10 @@ export class MerchantsSettingsService {
           const monetary = ensureObject(rfm.monetary, 'rfm.monetary');
           if (monetary) {
             if (monetary.mode != null) {
-              const mode = String(monetary.mode).toLowerCase();
+              if (typeof monetary.mode !== 'string') {
+                throw new Error('rfm.monetary.mode invalid');
+              }
+              const mode = monetary.mode.toLowerCase();
               if (mode !== 'auto' && mode !== 'manual') {
                 throw new Error('rfm.monetary.mode invalid');
               }
@@ -412,8 +426,14 @@ export class MerchantsSettingsService {
             if (!key) continue;
             const entry = ensureObject(value, `staffNotify.${key}`);
             if (!entry) continue;
-            ensureBoolean(entry.notifyOrders, `staffNotify.${key}.notifyOrders`);
-            ensureBoolean(entry.notifyReviews, `staffNotify.${key}.notifyReviews`);
+            ensureBoolean(
+              entry.notifyOrders,
+              `staffNotify.${key}.notifyOrders`,
+            );
+            ensureBoolean(
+              entry.notifyReviews,
+              `staffNotify.${key}.notifyReviews`,
+            );
             ensureBoolean(
               entry.notifyDailyDigest,
               `staffNotify.${key}.notifyDailyDigest`,

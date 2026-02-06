@@ -91,6 +91,16 @@ export type LoyaltyRealtimeEvent = {
 };
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
+const API_TIMEOUT_MS = (() => {
+  const parsed = Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || '');
+  if (!Number.isFinite(parsed)) return 15_000;
+  return Math.min(Math.max(Math.floor(parsed), 3_000), 120_000);
+})();
+const API_LONG_POLL_TIMEOUT_MS = (() => {
+  const parsed = Number(process.env.NEXT_PUBLIC_API_LONG_POLL_TIMEOUT_MS || '');
+  if (!Number.isFinite(parsed)) return 45_000;
+  return Math.min(Math.max(Math.floor(parsed), API_TIMEOUT_MS), 180_000);
+})();
 let telegramInitDataAuth: string | null = null;
 
 export function setTelegramAuthInitData(initData: string | null) {
@@ -136,10 +146,38 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     headers.Authorization = `tma ${telegramInitDataAuth}`;
   }
   const { cache, ...rest } = init || {};
+  const timeoutMs = path.startsWith('/loyalty/events/poll')
+    ? API_LONG_POLL_TIMEOUT_MS
+    : API_TIMEOUT_MS;
+  const controller = new AbortController();
+  let timedOut = false;
+  const onAbort = () => controller.abort();
+  if (rest.signal) {
+    if (rest.signal.aborted) {
+      onAbort();
+    } else {
+      rest.signal.addEventListener('abort', onAbort, { once: true });
+    }
+  }
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   const res = await fetch(API_BASE + path, {
     cache: cache ?? 'no-store',
     ...rest,
     headers,
+    signal: controller.signal,
+  }).catch((error) => {
+    if (timedOut) {
+      throw new Error('Превышено время ожидания ответа сервера');
+    }
+    throw error;
+  }).finally(() => {
+    clearTimeout(timeout);
+    if (rest.signal) {
+      rest.signal.removeEventListener('abort', onAbort);
+    }
   });
   if (!res.ok) {
     const raw = await res.text().catch(() => '');

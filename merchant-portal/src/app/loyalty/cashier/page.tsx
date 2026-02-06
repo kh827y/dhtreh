@@ -6,6 +6,7 @@ import {
   EyeOff,
   ExternalLink,
   KeyRound,
+  Loader2,
   MonitorSmartphone,
   RefreshCw,
   Shield,
@@ -13,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { readApiError, readErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type CashierCreds = {
   login: string;
@@ -125,6 +127,8 @@ export default function CashierPanelPage() {
   const [busyIssue, setBusyIssue] = React.useState(false);
   const [busyRevokeId, setBusyRevokeId] = React.useState<string | null>(null);
   const [busyRevokeSessionId, setBusyRevokeSessionId] = React.useState<string | null>(null);
+  const { start: startLoad, isLatest: isLatestLoad } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const [appLogin, setAppLogin] = React.useState("");
   const [issueCount, setIssueCount] = React.useState(6);
@@ -235,6 +239,7 @@ export default function CashierPanelPage() {
   }, []);
 
   const reload = React.useCallback(async () => {
+    const requestId = startLoad();
     setLoading(true);
     try {
       const [nextCreds, nextPins, nextCodes, nextSessions] = await Promise.all([
@@ -243,20 +248,22 @@ export default function CashierPanelPage() {
         loadActivationCodes(),
         loadDeviceSessions(),
       ]);
+      if (!isLatestLoad(requestId)) return;
       setAppLogin(nextCreds?.login ?? "");
       setStaffPins(nextPins);
       setActivationCodes(nextCodes);
       setDeviceSessions(nextSessions);
     } catch (error) {
+      if (!isLatestLoad(requestId)) return;
       const message = error instanceof Error ? error.message : String(error || "");
       alert(readApiError(message) || "Не удалось загрузить данные панели кассира");
       setStaffPins([]);
       setActivationCodes([]);
       setDeviceSessions([]);
     } finally {
-      setLoading(false);
+      if (isLatestLoad(requestId)) setLoading(false);
     }
-  }, [loadActivationCodes, loadCreds, loadPins, loadDeviceSessions]);
+  }, [loadActivationCodes, loadCreds, loadPins, loadDeviceSessions, isLatestLoad, startLoad]);
 
   React.useEffect(() => {
     void reload();
@@ -273,95 +280,101 @@ export default function CashierPanelPage() {
     }
   }, []);
 
-  const issueActivationCodes = React.useCallback(async () => {
-    if (busyIssue) return;
-    setBusyIssue(true);
-    try {
-      const response = await fetch("/api/portal/cashier/activation-codes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ count: issueCount }),
-      });
-      if (!response.ok) {
-        throw new Error(
-          await readErrorMessage(
-            response,
-            "Не удалось выпустить коды активации",
-          ),
-        );
-      }
-      const data = (await response.json().catch(() => null)) as any;
-      const codes = Array.isArray(data?.codes) ? data.codes : [];
-      setIssuedCodes(codes.map((code: any) => String(code ?? "")).filter(Boolean));
-      setIssuedExpiresAt(typeof data?.expiresAt === "string" ? data.expiresAt : null);
-      await reload();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error || "");
-      alert(readApiError(message) || "Не удалось выпустить коды активации");
-    } finally {
-      setBusyIssue(false);
-    }
-  }, [busyIssue, issueCount, reload]);
-
-  const revokeActivationCode = React.useCallback(
-    async (id: string) => {
-      const codeId = String(id || "").trim();
-      if (!codeId || busyRevokeId) return;
-      setBusyRevokeId(codeId);
+  const issueActivationCodes = React.useCallback(() => {
+    void runAction(async () => {
+      if (busyIssue) return;
+      setBusyIssue(true);
       try {
-        const response = await fetch(
-          "/api/portal/cashier/activation-codes/revoke",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: codeId }),
-          },
-        );
+        const response = await fetch("/api/portal/cashier/activation-codes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ count: issueCount }),
+        });
         if (!response.ok) {
           throw new Error(
-            await readErrorMessage(response, "Не удалось отозвать код"),
+            await readErrorMessage(
+              response,
+              "Не удалось выпустить коды активации",
+            ),
           );
         }
+        const data = (await response.json().catch(() => null)) as any;
+        const codes = Array.isArray(data?.codes) ? data.codes : [];
+        setIssuedCodes(codes.map((code: any) => String(code ?? "")).filter(Boolean));
+        setIssuedExpiresAt(typeof data?.expiresAt === "string" ? data.expiresAt : null);
         await reload();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error || "");
-        alert(readApiError(message) || "Не удалось отозвать код");
+        alert(readApiError(message) || "Не удалось выпустить коды активации");
       } finally {
-        setBusyRevokeId(null);
+        setBusyIssue(false);
       }
+    });
+  }, [busyIssue, issueCount, reload, runAction]);
+
+  const revokeActivationCode = React.useCallback(
+    (id: string) => {
+      void runAction(async () => {
+        const codeId = String(id || "").trim();
+        if (!codeId || busyRevokeId) return;
+        setBusyRevokeId(codeId);
+        try {
+          const response = await fetch(
+            "/api/portal/cashier/activation-codes/revoke",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: codeId }),
+            },
+          );
+          if (!response.ok) {
+            throw new Error(
+              await readErrorMessage(response, "Не удалось отозвать код"),
+            );
+          }
+          await reload();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error || "");
+          alert(readApiError(message) || "Не удалось отозвать код");
+        } finally {
+          setBusyRevokeId(null);
+        }
+      });
     },
-    [busyRevokeId, reload],
+    [busyRevokeId, reload, runAction],
   );
 
   const revokeDeviceSession = React.useCallback(
-    async (id: string) => {
-      const sessionId = String(id || "").trim();
-      if (!sessionId || busyRevokeSessionId) return;
-      if (!confirm("Отозвать доступ у выбранного устройства?")) return;
-      setBusyRevokeSessionId(sessionId);
-      try {
-        const response = await fetch(
-          "/api/portal/cashier/device-sessions/revoke",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: sessionId }),
-          },
-        );
-        if (!response.ok) {
-          throw new Error(
-            await readErrorMessage(response, "Не удалось отозвать устройство"),
+    (id: string) => {
+      void runAction(async () => {
+        const sessionId = String(id || "").trim();
+        if (!sessionId || busyRevokeSessionId) return;
+        if (!confirm("Отозвать доступ у выбранного устройства?")) return;
+        setBusyRevokeSessionId(sessionId);
+        try {
+          const response = await fetch(
+            "/api/portal/cashier/device-sessions/revoke",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: sessionId }),
+            },
           );
+          if (!response.ok) {
+            throw new Error(
+              await readErrorMessage(response, "Не удалось отозвать устройство"),
+            );
+          }
+          await reload();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error || "");
+          alert(readApiError(message) || "Не удалось отозвать устройство");
+        } finally {
+          setBusyRevokeSessionId(null);
         }
-        await reload();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error || "");
-        alert(readApiError(message) || "Не удалось отозвать устройство");
-      } finally {
-        setBusyRevokeSessionId(null);
-      }
+      });
     },
-    [busyRevokeSessionId, reload],
+    [busyRevokeSessionId, reload, runAction],
   );
 
   const filteredPins = React.useMemo(
@@ -491,7 +504,12 @@ export default function CashierPanelPage() {
                     Выпущенные пароли
                   </div>
                   <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
-                    {activationCodes.map((code) => {
+                    {loading ? (
+                      <div className="flex items-center justify-center py-6 text-sm text-gray-500">
+                        <Loader2 size={16} className="animate-spin mr-2" />
+                        <span>Загружаем коды…</span>
+                      </div>
+                    ) : activationCodes.map((code) => {
                       const badge = mapActivationStatus(code.status);
                       const isActive =
                         String(code.status || "").trim().toUpperCase() ===
@@ -585,7 +603,16 @@ export default function CashierPanelPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {filteredPins.map((pin) => {
+                  {loading ? (
+                    <tr>
+                      <td className="px-6 py-6 text-center text-gray-500" colSpan={3}>
+                        <span className="inline-flex items-center">
+                          <Loader2 size={16} className="animate-spin mr-2" />
+                          Загружаем PIN-коды…
+                        </span>
+                      </td>
+                    </tr>
+                  ) : filteredPins.map((pin) => {
                     const name = String(pin.staffName || "").trim();
                     const outlet = String(pin.outletName || "").trim();
                     const initials = extractInitials(name);
@@ -646,7 +673,12 @@ export default function CashierPanelPage() {
               <h3 className="text-lg font-bold text-gray-900">Активные устройства кассы</h3>
             </div>
             <div className="p-6 space-y-3">
-              {deviceSessions.length ? (
+              {loading ? (
+                <div className="text-sm text-gray-500 inline-flex items-center">
+                  <Loader2 size={16} className="animate-spin mr-2" />
+                  Загружаем устройства…
+                </div>
+              ) : deviceSessions.length ? (
                 deviceSessions.map((session) => (
                   <div
                     key={session.id}

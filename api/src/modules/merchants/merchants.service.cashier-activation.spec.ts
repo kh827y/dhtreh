@@ -114,15 +114,15 @@ const objectContaining = <T extends object>(value: T) =>
   expect.objectContaining(value) as unknown as T;
 const makeSettingsStub = () =>
   ({
-    getSettings: jest.fn(),
-    updateSettings: jest.fn(),
+    getSettings: mockFn(),
+    updateSettings: mockFn(),
     normalizeRulesJson: jest.fn((value: unknown) => value),
   }) as unknown as MerchantsSettingsService;
 const makeCacheStub = () =>
   ({
-    invalidateSettings: jest.fn(),
-    invalidateOutlet: jest.fn(),
-    invalidateStaff: jest.fn(),
+    invalidateSettings: mockFn(),
+    invalidateOutlet: mockFn(),
+    invalidateStaff: mockFn(),
   }) as CacheStub;
 
 describe('MerchantsService cashier activation codes', () => {

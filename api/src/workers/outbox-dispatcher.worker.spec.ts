@@ -8,9 +8,12 @@ import {
   recordExternalRequest,
   readResponseTextSafe,
 } from '../shared/http/external-http.util';
+import * as lockUtil from '../shared/pg-lock.util';
 
 jest.mock('../shared/http/external-http.util', () => {
-  const actual = jest.requireActual('../shared/http/external-http.util');
+  const actual = jest.requireActual(
+    '../shared/http/external-http.util',
+  ) as typeof import('../shared/http/external-http.util');
   return {
     ...actual,
     fetchWithTimeout: jest.fn(),
@@ -49,6 +52,8 @@ type WorkerPrivate = {
 
 const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
   jest.fn<Return, Args>();
+const objectContaining = <T extends object>(value: T) =>
+  expect.objectContaining(value) as unknown as T;
 
 const asPrismaService = (stub: PrismaStub) => stub as unknown as PrismaService;
 const asMetricsService = (stub: MetricsStub) =>
@@ -65,8 +70,8 @@ const makeResponse = (status: number, body = ''): Response => {
     status,
     statusText: status >= 200 && status < 300 ? 'OK' : 'ERROR',
     headers: { get: () => null },
-    text: async () => body,
-  } as Response;
+    text: () => Promise.resolve(body),
+  } as unknown as Response;
 };
 
 describe('OutboxDispatcherWorker', () => {
@@ -94,12 +99,14 @@ describe('OutboxDispatcherWorker', () => {
       },
       eventOutbox: {
         update: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
-        updateMany: mockFn<Promise<{ count: number }>, [unknown?]>().mockResolvedValue(
-          { count: 1 },
-        ),
-        findMany: mockFn<Promise<EventOutbox[]>, [unknown?]>().mockResolvedValue(
-          [],
-        ),
+        updateMany: mockFn<
+          Promise<{ count: number }>,
+          [unknown?]
+        >().mockResolvedValue({ count: 1 }),
+        findMany: mockFn<
+          Promise<EventOutbox[]>,
+          [unknown?]
+        >().mockResolvedValue([]),
         count: mockFn<Promise<number>, [unknown?]>().mockResolvedValue(0),
       },
       ...overrides,
@@ -131,6 +138,8 @@ describe('OutboxDispatcherWorker', () => {
       payload: { ok: true },
       retries: 0,
       status: 'PENDING',
+      nextRetryAt: null,
+      lastError: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as EventOutbox;
@@ -138,9 +147,9 @@ describe('OutboxDispatcherWorker', () => {
     await asPrivateWorker(worker).send(row);
 
     expect(prisma.eventOutbox.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: 'e1' },
-        data: expect.objectContaining({
+        data: objectContaining({
           status: 'SENT',
           lastError: 'Webhook not configured',
         }),
@@ -167,6 +176,8 @@ describe('OutboxDispatcherWorker', () => {
       payload: { ok: true },
       retries: 0,
       status: 'PENDING',
+      nextRetryAt: null,
+      lastError: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as EventOutbox;
@@ -174,9 +185,9 @@ describe('OutboxDispatcherWorker', () => {
     await asPrivateWorker(worker).send(row);
 
     expect(prisma.eventOutbox.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: 'e2' },
-        data: expect.objectContaining({
+        data: objectContaining({
           status: 'FAILED',
           lastError: 'Webhook URL must use https',
         }),
@@ -206,6 +217,8 @@ describe('OutboxDispatcherWorker', () => {
       payload: { ok: true },
       retries: 0,
       status: 'PENDING',
+      nextRetryAt: null,
+      lastError: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as EventOutbox;
@@ -214,14 +227,18 @@ describe('OutboxDispatcherWorker', () => {
 
     expect(fetchWithTimeout).toHaveBeenCalledTimes(1);
     expect(prisma.eventOutbox.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: 'e3' },
-        data: expect.objectContaining({ status: 'SENT' }),
+        data: objectContaining({ status: 'SENT' }),
       }),
     );
   });
 
   it('reschedules events when circuit breaker is open', async () => {
+    jest
+      .spyOn(lockUtil, 'pgTryAdvisoryLock')
+      .mockResolvedValue({ ok: true, key: [1, 2] });
+    jest.spyOn(lockUtil, 'pgAdvisoryUnlock').mockResolvedValue(undefined);
     const { worker, prisma } = makeWorker({
       eventOutbox: {
         update: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
@@ -230,25 +247,31 @@ describe('OutboxDispatcherWorker', () => {
           [unknown?]
         >().mockResolvedValue({ count: 0 }),
         count: mockFn<Promise<number>, [unknown?]>().mockResolvedValue(1),
-        findMany: mockFn<Promise<EventOutbox[]>, [unknown?]>().mockResolvedValue(
-          [
-            {
-              id: 'e4',
-              merchantId: 'm1',
-              eventType: 'receipt.created',
-              payload: { ok: true },
-              retries: 0,
-              status: 'PENDING',
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            } as EventOutbox,
-          ],
-        ),
+        findMany: mockFn<
+          Promise<EventOutbox[]>,
+          [unknown?]
+        >().mockResolvedValue([
+          {
+            id: 'e4',
+            merchantId: 'm1',
+            eventType: 'receipt.created',
+            payload: { ok: true },
+            retries: 0,
+            status: 'PENDING',
+            nextRetryAt: null,
+            lastError: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          } as EventOutbox,
+        ]),
       },
     });
 
     const privateWorker = worker as unknown as {
-      cb: Map<string, { fails: number; windowStart: number; openUntil: number }>;
+      cb: Map<
+        string,
+        { fails: number; windowStart: number; openUntil: number }
+      >;
       tick: () => Promise<void>;
     };
     privateWorker.cb.set('m1', {
@@ -258,16 +281,19 @@ describe('OutboxDispatcherWorker', () => {
     });
 
     const sendSpy = jest
-      .spyOn(worker as unknown as { send: (row: EventOutbox) => Promise<void> }, 'send')
+      .spyOn(
+        worker as unknown as { send: (row: EventOutbox) => Promise<void> },
+        'send',
+      )
       .mockResolvedValue();
 
     await privateWorker.tick();
 
     expect(sendSpy).not.toHaveBeenCalled();
     expect(prisma.eventOutbox.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: 'e4' },
-        data: expect.objectContaining({
+        data: objectContaining({
           status: 'PENDING',
           lastError: 'circuit open',
         }),

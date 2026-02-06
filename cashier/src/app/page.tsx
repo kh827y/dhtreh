@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QrScanner from '../components/QrScanner';
+import { useActionGuard, useLatestRequest } from '../lib/async-guards';
 import {
   Award,
   AlertCircle,
@@ -79,6 +80,13 @@ type Txn = {
   staffId?: string | null;
   staffName?: string | null;
   customerName?: string | null;
+};
+
+const createIdempotencyKey = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
 type CashierSessionInfo = {
@@ -222,6 +230,11 @@ const LOYALTY_EVENT_STORAGE_KEY = 'loyalty:lastEvent';
 
 const isBrowser = typeof window !== 'undefined';
 const API_ORIGIN_FALLBACK = 'http://localhost';
+const API_TIMEOUT_MS = (() => {
+  const parsed = Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || '');
+  if (!Number.isFinite(parsed)) return 15_000;
+  return Math.min(Math.max(Math.floor(parsed), 3_000), 120_000);
+})();
 
 const buildApiUrl = (path: string) => {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
@@ -232,6 +245,45 @@ const buildApiUrl = (path: string) => {
     return new URL(normalizedPath, window.location.origin);
   }
   return new URL(normalizedPath, API_ORIGIN_FALLBACK);
+};
+
+const apiFetch = async (
+  input: string | URL,
+  init: RequestInit = {},
+): Promise<Response> => {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  const externalSignal = init.signal;
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      onAbort();
+    } else {
+      externalSignal.addEventListener('abort', onAbort, { once: true });
+    }
+  }
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, API_TIMEOUT_MS);
+
+  try {
+    return await globalThis.fetch(input, {
+      ...init,
+      cache: init.cache ?? 'no-store',
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (timedOut) {
+      throw new Error('Превышено время ожидания ответа сервера');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    if (externalSignal) {
+      externalSignal.removeEventListener('abort', onAbort);
+    }
+  }
 };
 
 const base64UrlDecode = (s: string) => {
@@ -573,12 +625,19 @@ export default function Page() {
   const [orderId, setOrderId] = useState('');
   const [holdId, setHoldId] = useState<string | null>(null);
   const [, setResult] = useState<QuoteRedeemResp | QuoteEarnResp | null>(null);
+  const quoteIdempotencyRef = useRef<string | null>(null);
+  const commitIdempotencyRef = useRef<string | null>(null);
+  const refundIdempotencyRef = useRef<string | null>(null);
   const [actionError, setActionError] = useState('');
   const [searchBusy, setSearchBusy] = useState(false);
 
   const [historyRaw, setHistoryRaw] = useState<Txn[]>([]);
   const histBusyRef = useRef(false);
   const histNextBeforeRef = useRef<string | null>(null);
+  const { start: startHistoryLoad, isLatest: isLatestHistory } = useLatestRequest();
+  const { start: startLeaderboardLoad, isLatest: isLatestLeaderboard } = useLatestRequest();
+  const { start: startCustomerLoad, isLatest: isLatestCustomer } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const [historySearch, setHistorySearch] = useState('');
   const [filterDate, setFilterDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -590,6 +649,15 @@ export default function Page() {
   const [returnSearchInput, setReturnSearchInput] = useState('');
   const [returnSuccess, setReturnSuccess] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  useEffect(() => {
+    quoteIdempotencyRef.current = null;
+  }, [orderId, userToken, txAmount, txRedeemPoints, txType, txCheckId]);
+  useEffect(() => {
+    commitIdempotencyRef.current = null;
+  }, [holdId, orderId, txCheckId]);
+  useEffect(() => {
+    refundIdempotencyRef.current = null;
+  }, [returnSearchInput, session?.merchantId]);
 
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [, setLeaderboardLoading] = useState(false);
@@ -682,7 +750,7 @@ export default function Page() {
     let cancelled = false;
     const bootstrap = async () => {
       try {
-        const resp = await fetch(`${API_BASE}/loyalty/cashier/session`, {
+        const resp = await apiFetch(`${API_BASE}/loyalty/cashier/session`, {
           credentials: 'include',
         });
         if (resp.ok) {
@@ -705,7 +773,7 @@ export default function Page() {
       setSession(null);
 
       try {
-        const resp = await fetch(`${API_BASE}/loyalty/cashier/device`, {
+        const resp = await apiFetch(`${API_BASE}/loyalty/cashier/device`, {
           credentials: 'include',
         });
         if (resp.ok) {
@@ -781,61 +849,65 @@ export default function Page() {
 
   const activateDevice = async () => {
     setAuthError('');
-    try {
-      if (!normalizedLogin || !appPassword || appPassword.length !== 9) {
-        throw new Error('Укажите логин мерчанта и 9‑значный код активации');
+    await runAction(async () => {
+      try {
+        if (!normalizedLogin || !appPassword || appPassword.length !== 9) {
+          throw new Error('Укажите логин мерчанта и 9‑значный код активации');
+        }
+        const r = await apiFetch(`${API_BASE}/loyalty/cashier/activate`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ merchantLogin: normalizedLogin, activationCode: appPassword }),
+        });
+        if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось активировать устройство'));
+        const data = await r.json();
+        const resolvedMerchantId = data?.merchantId ? String(data.merchantId) : '';
+        const resolvedLogin = data?.login ? String(data.login) : normalizedLogin;
+        if (resolvedMerchantId) setMerchantId(resolvedMerchantId);
+        setDeviceActive(true);
+        setAppLogin(resolvedLogin);
+        setPin('');
+        setAppPassword('');
+        setAuthStep('staff_pin');
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        setAuthError(humanizeCashierAuthError(message));
       }
-      const r = await fetch(`${API_BASE}/loyalty/cashier/activate`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchantLogin: normalizedLogin, activationCode: appPassword }),
-      });
-      if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось активировать устройство'));
-      const data = await r.json();
-      const resolvedMerchantId = data?.merchantId ? String(data.merchantId) : '';
-      const resolvedLogin = data?.login ? String(data.login) : normalizedLogin;
-      if (resolvedMerchantId) setMerchantId(resolvedMerchantId);
-      setDeviceActive(true);
-      setAppLogin(resolvedLogin);
-      setPin('');
-      setAppPassword('');
-      setAuthStep('staff_pin');
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      setAuthError(humanizeCashierAuthError(message));
-    }
+    });
   };
 
   const startCashierSession = async (pinCode: string) => {
     setPinMessage('');
-    try {
-      if (!deviceActive) throw new Error('Device not activated');
-      if (!normalizedLogin) throw new Error('merchantLogin required');
-      const r = await fetch(`${API_BASE}/loyalty/cashier/session`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchantLogin: normalizedLogin, pinCode, rememberPin }),
-      });
-      if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось войти по PIN'));
-      const data = await r.json();
-      const sessionInfo = mapSessionResponse(data);
-      setSession(sessionInfo);
-      setMerchantId(sessionInfo.merchantId || MERCHANT);
-      setRememberPin(Boolean(sessionInfo.rememberPin));
-      setPin('');
-      setAuthStep('authorized');
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      setPinMessage(humanizeCashierAuthError(message));
-      setPinError(true);
-      setTimeout(() => {
+    await runAction(async () => {
+      try {
+        if (!deviceActive) throw new Error('Device not activated');
+        if (!normalizedLogin) throw new Error('merchantLogin required');
+        const r = await apiFetch(`${API_BASE}/loyalty/cashier/session`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ merchantLogin: normalizedLogin, pinCode, rememberPin }),
+        });
+        if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось войти по PIN'));
+        const data = await r.json();
+        const sessionInfo = mapSessionResponse(data);
+        setSession(sessionInfo);
+        setMerchantId(sessionInfo.merchantId || MERCHANT);
+        setRememberPin(Boolean(sessionInfo.rememberPin));
         setPin('');
-        setPinError(false);
-        setPinMessage('');
-      }, 800);
-    }
+        setAuthStep('authorized');
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        setPinMessage(humanizeCashierAuthError(message));
+        setPinError(true);
+        setTimeout(() => {
+          setPin('');
+          setPinError(false);
+          setPinMessage('');
+        }, 800);
+      }
+    });
   };
 
   const handlePinInput = (num: string) => {
@@ -857,60 +929,64 @@ export default function Page() {
   };
 
   const logoutStaff = async () => {
-    try {
-      await fetch(`${API_BASE}/loyalty/cashier/session`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-    } catch {
-      /* ignore */
-    }
-    setSession(null);
-    resetAll();
-
-    try {
-      const resp = await fetch(`${API_BASE}/loyalty/cashier/device`, {
-        credentials: 'include',
-      });
-      if (resp.ok) {
-        const data = await resp.json().catch(() => null);
-        if (data?.active) {
-          const login = typeof data?.login === 'string' ? String(data.login) : '';
-          const mid = typeof data?.merchantId === 'string' ? String(data.merchantId) : '';
-          setDeviceActive(true);
-          if (mid) setMerchantId(mid);
-          if (login) setAppLogin(login);
-          setAuthStep('staff_pin');
-          return;
-        }
+    await runAction(async () => {
+      try {
+        await apiFetch(`${API_BASE}/loyalty/cashier/session`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+      } catch {
+        /* ignore */
       }
-    } catch {
-      /* ignore */
-    }
+      setSession(null);
+      resetAll();
 
-    setDeviceActive(false);
-    setAuthStep('app_login');
+      try {
+        const resp = await apiFetch(`${API_BASE}/loyalty/cashier/device`, {
+          credentials: 'include',
+        });
+        if (resp.ok) {
+          const data = await resp.json().catch(() => null);
+          if (data?.active) {
+            const login = typeof data?.login === 'string' ? String(data.login) : '';
+            const mid = typeof data?.merchantId === 'string' ? String(data.merchantId) : '';
+            setDeviceActive(true);
+            if (mid) setMerchantId(mid);
+            if (login) setAppLogin(login);
+            setAuthStep('staff_pin');
+            return;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+
+      setDeviceActive(false);
+      setAuthStep('app_login');
+    });
   };
 
   const deactivateDevice = async () => {
     setAuthError('');
-    try {
-      await fetch(`${API_BASE}/loyalty/cashier/device`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-    } catch {
-      /* ignore */
-    }
-    setDeviceActive(false);
-    setPin('');
-    setAppPassword('');
-    setAuthStep('app_login');
+    await runAction(async () => {
+      try {
+        await apiFetch(`${API_BASE}/loyalty/cashier/device`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+      } catch {
+        /* ignore */
+      }
+      setDeviceActive(false);
+      setPin('');
+      setAppPassword('');
+      setAuthStep('app_login');
+    });
   };
 
   const loadCustomerBalance = async (customerIdValue: string, merchant: string): Promise<number | null> => {
     try {
-      const r = await fetch(
+      const r = await apiFetch(
         `${API_BASE}/loyalty/balance/${merchant}/${encodeURIComponent(customerIdValue)}`,
         { credentials: 'include' },
       );
@@ -925,7 +1001,7 @@ export default function Page() {
 
   const loadCustomerLevel = async (merchant: string, customerIdValue: string): Promise<LevelInfo | null> => {
     try {
-      const r = await fetch(`${API_BASE}/levels/${merchant}/${encodeURIComponent(customerIdValue)}`, {
+      const r = await apiFetch(`${API_BASE}/levels/${merchant}/${encodeURIComponent(customerIdValue)}`, {
         credentials: 'include',
       });
       if (!r.ok) return null;
@@ -949,10 +1025,11 @@ export default function Page() {
   const fetchCustomerOverview = async (token: string): Promise<ClientProfile | null> => {
     const merchant = session?.merchantId || merchantId;
     if (!merchant) return null;
+    const requestId = startCustomerLoad();
     const fallbackName = extractNameFromToken(token);
     const fallbackId = resolveCustomerIdFromToken(token);
     try {
-      const r = await fetch(`${API_BASE}/loyalty/cashier/customer`, {
+      const r = await apiFetch(`${API_BASE}/loyalty/cashier/customer`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -969,6 +1046,7 @@ export default function Page() {
           : fallbackId;
       const nameFromApi =
         typeof data?.name === 'string' && data.name.trim().length > 0 ? data.name.trim() : null;
+      if (!isLatestCustomer(requestId)) return null;
       setCustomerId(resolvedCustomerId ?? null);
       const balanceHint = typeof data?.balance === 'number' ? data.balance : null;
       const redeemLimitRaw =
@@ -1020,9 +1098,11 @@ export default function Page() {
         redeemRateBps,
         minPaymentAmount,
       };
+      if (!isLatestCustomer(requestId)) return null;
       setCurrentClient(profile);
       return profile;
     } catch (e: unknown) {
+      if (!isLatestCustomer(requestId)) return null;
       const message = e instanceof Error ? e.message : String(e);
       setCustomerId(null);
       setCurrentClient(null);
@@ -1035,7 +1115,7 @@ export default function Page() {
     if (!holdToCancel) return;
     try {
       const url = buildApiUrl('/loyalty/cancel');
-      await fetch(url.toString(), {
+      await apiFetch(url.toString(), {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -1119,49 +1199,60 @@ export default function Page() {
       setActionError('Сначала авторизуйтесь в кассире.');
       return null;
     }
-    setIsProcessing(true);
-    setActionError('');
-    setResult(null);
-    setHoldId(null);
-    const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    try {
-      const activeMerchantId = session?.merchantId || merchantId;
-      const activeOutletId = session?.outlet?.id || undefined;
-      const activeStaffId = session?.staff?.id || undefined;
-      const r = await fetch(`${API_BASE}/loyalty/quote`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
-        body: JSON.stringify({
-          merchantId: activeMerchantId,
-          mode: overrides.mode,
-          userToken,
-          orderId,
-          total: overrides.total,
-          outletId: activeOutletId || undefined,
-          staffId: activeStaffId || undefined,
-          receiptNumber: overrides.receiptNumber || undefined,
-          redeemAmount:
-            overrides.redeemAmount != null && overrides.redeemAmount > 0
-              ? overrides.redeemAmount
-              : undefined,
-        }),
-      });
-      if (!r.ok) {
-        throw new Error(await readErrorMessage(r, 'Не удалось выполнить расчёт'));
-      }
-      const data = await r.json();
-      setResult(data);
-      const holdCandidate = (data as { holdId?: unknown } | null)?.holdId;
-      setHoldId(typeof holdCandidate === 'string' ? holdCandidate : null);
-      return data;
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      setActionError(humanizeQuoteError(message));
-      return null;
-    } finally {
-      setIsProcessing(false);
-    }
+    return (
+      (await runAction(async () => {
+        setIsProcessing(true);
+        setActionError('');
+        setResult(null);
+        setHoldId(null);
+        if (!quoteIdempotencyRef.current) {
+          quoteIdempotencyRef.current = createIdempotencyKey();
+        }
+        const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        try {
+          const activeMerchantId = session?.merchantId || merchantId;
+          const activeOutletId = session?.outlet?.id || undefined;
+          const activeStaffId = session?.staff?.id || undefined;
+          const r = await apiFetch(`${API_BASE}/loyalty/quote`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Request-Id': requestId,
+              'Idempotency-Key': quoteIdempotencyRef.current,
+            },
+            body: JSON.stringify({
+              merchantId: activeMerchantId,
+              mode: overrides.mode,
+              userToken,
+              orderId,
+              total: overrides.total,
+              outletId: activeOutletId || undefined,
+              staffId: activeStaffId || undefined,
+              receiptNumber: overrides.receiptNumber || undefined,
+              redeemAmount:
+                overrides.redeemAmount != null && overrides.redeemAmount > 0
+                  ? overrides.redeemAmount
+                  : undefined,
+            }),
+          });
+          if (!r.ok) {
+            throw new Error(await readErrorMessage(r, 'Не удалось выполнить расчёт'));
+          }
+          const data = await r.json();
+          setResult(data);
+          const holdCandidate = (data as { holdId?: unknown } | null)?.holdId;
+          setHoldId(typeof holdCandidate === 'string' ? holdCandidate : null);
+          return data;
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          setActionError(humanizeQuoteError(message));
+          return null;
+        } finally {
+          setIsProcessing(false);
+        }
+      })) ?? null
+    );
   };
 
   const callCommit = async () => {
@@ -1173,77 +1264,89 @@ export default function Page() {
       setActionError('Сначала выполните расчёт.');
       return null;
     }
-    setIsProcessing(true);
-    const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    try {
-      const normalizedReceiptNumber = txCheckId.trim();
-      const activeMerchantId = session?.merchantId || merchantId;
-      const activeOutletId = session?.outlet?.id || undefined;
-      const activeStaffId = session?.staff?.id || undefined;
-      const r = await fetch(`${API_BASE}/loyalty/commit`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
-        body: JSON.stringify({
-          merchantId: activeMerchantId,
-          holdId,
-          orderId,
-          outletId: activeOutletId || undefined,
-          staffId: activeStaffId || undefined,
-          receiptNumber: normalizedReceiptNumber ? normalizedReceiptNumber : undefined,
-          requestId,
-        }),
-      });
-      if (!r.ok) {
-        throw new Error(await readErrorMessage(r, 'Не удалось завершить операцию'));
-      }
-      const data = await r.json();
-      if (typeof data?.customerId === 'string') {
-        setCustomerId(data.customerId);
-      }
-      if (data?.ok) {
-        const eventCustomerId =
-          typeof data?.customerId === 'string'
-            ? data.customerId
-            : resolveCustomerIdFromToken(userToken);
-        emitLoyaltyEvent({
-          type: 'loyalty.commit',
-          merchantId: activeMerchantId,
-          customerId: eventCustomerId,
-          orderId,
-          receiptNumber: normalizedReceiptNumber || undefined,
-          redeemApplied: typeof data?.redeemApplied === 'number' ? data.redeemApplied : undefined,
-          earnApplied: typeof data?.earnApplied === 'number' ? data.earnApplied : undefined,
-          alreadyCommitted: Boolean(data?.alreadyCommitted),
-          mode: txType === 'redeem' ? 'redeem' : 'earn',
-        });
-        const appliedRedeem = typeof data?.redeemApplied === 'number' ? data.redeemApplied : Number(txRedeemPoints) || 0;
-        const appliedEarn = typeof data?.earnApplied === 'number' ? data.earnApplied : txAccruePoints;
-        const totalValue = Number(txAmount) || 0;
-        setTxRedeemPoints(appliedRedeem > 0 ? String(appliedRedeem) : '');
-        setTxAccruePoints(appliedEarn || 0);
-        setTxFinalAmount(Math.max(0, totalValue - appliedRedeem));
-        setHoldId(null);
-        setResult(null);
-        const scannedKey = qrKeyFromToken(userToken);
-        if (scannedKey) {
-          scannedTokensRef.current.add(scannedKey);
-          saveScanned();
+    return (
+      (await runAction(async () => {
+        setIsProcessing(true);
+        const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        try {
+          if (!commitIdempotencyRef.current) {
+            commitIdempotencyRef.current = createIdempotencyKey();
+          }
+          const normalizedReceiptNumber = txCheckId.trim();
+          const activeMerchantId = session?.merchantId || merchantId;
+          const activeOutletId = session?.outlet?.id || undefined;
+          const activeStaffId = session?.staff?.id || undefined;
+          const r = await apiFetch(`${API_BASE}/loyalty/commit`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Request-Id': requestId,
+              'Idempotency-Key': commitIdempotencyRef.current,
+            },
+            body: JSON.stringify({
+              merchantId: activeMerchantId,
+              holdId,
+              orderId,
+              outletId: activeOutletId || undefined,
+              staffId: activeStaffId || undefined,
+              receiptNumber: normalizedReceiptNumber ? normalizedReceiptNumber : undefined,
+              requestId,
+            }),
+          });
+          if (!r.ok) {
+            throw new Error(await readErrorMessage(r, 'Не удалось завершить операцию'));
+          }
+          const data = await r.json();
+          if (typeof data?.customerId === 'string') {
+            setCustomerId(data.customerId);
+          }
+          if (data?.ok) {
+            const eventCustomerId =
+              typeof data?.customerId === 'string'
+                ? data.customerId
+                : resolveCustomerIdFromToken(userToken);
+            emitLoyaltyEvent({
+              type: 'loyalty.commit',
+              merchantId: activeMerchantId,
+              customerId: eventCustomerId,
+              orderId,
+              receiptNumber: normalizedReceiptNumber || undefined,
+              redeemApplied: typeof data?.redeemApplied === 'number' ? data.redeemApplied : undefined,
+              earnApplied: typeof data?.earnApplied === 'number' ? data.earnApplied : undefined,
+              alreadyCommitted: Boolean(data?.alreadyCommitted),
+              mode: txType === 'redeem' ? 'redeem' : 'earn',
+            });
+            const appliedRedeem = typeof data?.redeemApplied === 'number' ? data.redeemApplied : Number(txRedeemPoints) || 0;
+            const appliedEarn = typeof data?.earnApplied === 'number' ? data.earnApplied : txAccruePoints;
+            const totalValue = Number(txAmount) || 0;
+            setTxRedeemPoints(appliedRedeem > 0 ? String(appliedRedeem) : '');
+            setTxAccruePoints(appliedEarn || 0);
+            setTxFinalAmount(Math.max(0, totalValue - appliedRedeem));
+            setHoldId(null);
+            setResult(null);
+            const scannedKey = qrKeyFromToken(userToken);
+            if (scannedKey) {
+              scannedTokensRef.current.add(scannedKey);
+              saveScanned();
+            }
+            setOrderId(buildOrderId());
+            await fetchCustomerOverview(userToken);
+            await loadHistory(true);
+            commitIdempotencyRef.current = null;
+            return data;
+          }
+          setActionError('Не удалось завершить операцию.');
+          return null;
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          setActionError(humanizeQuoteError(message));
+          return null;
+        } finally {
+          setIsProcessing(false);
         }
-        setOrderId(buildOrderId());
-        await fetchCustomerOverview(userToken);
-        await loadHistory(true);
-        return data;
-      }
-      setActionError('Не удалось завершить операцию.');
-      return null;
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      setActionError(humanizeQuoteError(message));
-      return null;
-    } finally {
-      setIsProcessing(false);
-    }
+      })) ?? null
+    );
   };
 
   const handleAccrueQuote = async () => {
@@ -1303,6 +1406,7 @@ export default function Page() {
     const outletId = session?.outlet?.id || null;
     if (!activeMerchantId || !outletId) return;
     histBusyRef.current = true;
+    const requestId = startHistoryLoad();
     try {
       const url = buildApiUrl('/loyalty/cashier/outlet-transactions');
       url.searchParams.set('merchantId', activeMerchantId);
@@ -1311,20 +1415,22 @@ export default function Page() {
       if (!reset && histNextBeforeRef.current) {
         url.searchParams.set('before', histNextBeforeRef.current);
       }
-      const r = await fetch(url.toString(), { credentials: 'include' });
+      const r = await apiFetch(url.toString(), { credentials: 'include' });
       if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось загрузить историю'));
       const data = await r.json();
       const items: Txn[] = Array.isArray(data.items) ? data.items : [];
+      if (!isLatestHistory(requestId)) return;
       setHistoryRaw((old) => (reset ? items : [...old, ...items]));
       histNextBeforeRef.current =
         typeof data.nextBefore === 'string' ? data.nextBefore : null;
     } catch (e: unknown) {
+      if (!isLatestHistory(requestId)) return;
       const message = e instanceof Error ? e.message : String(e);
       setActionError(humanizeQuoteError(message));
     } finally {
       histBusyRef.current = false;
     }
-  }, [merchantId, session?.merchantId, session?.outlet?.id]);
+  }, [merchantId, session?.merchantId, session?.outlet?.id, isLatestHistory, startHistoryLoad]);
 
   useEffect(() => {
     setHistoryRaw([]);
@@ -1340,13 +1446,14 @@ export default function Page() {
     }
     setLeaderboardLoading(true);
     setLeaderboardError('');
+    const requestId = startLeaderboardLoad();
     try {
       const url = buildApiUrl('/loyalty/cashier/leaderboard');
       url.searchParams.set('merchantId', session.merchantId);
       if (ratingFilter === 'my_outlet' && session.outlet?.id) {
         url.searchParams.set('outletId', session.outlet.id);
       }
-      const r = await fetch(url.toString(), { credentials: 'include' });
+      const r = await apiFetch(url.toString(), { credentials: 'include' });
       if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось загрузить рейтинг'));
       const data = await r.json();
       const settings: LeaderboardSettings = data?.settings ?? {};
@@ -1375,17 +1482,19 @@ export default function Page() {
         outletName: typeof item?.outletName === 'string' ? item.outletName : null,
         points: Number(item?.points ?? 0),
       }));
+      if (!isLatestLeaderboard(requestId)) return;
       entries.sort((a, b) => b.points - a.points);
       setLeaderboard(entries);
     } catch (e: unknown) {
+      if (!isLatestLeaderboard(requestId)) return;
       setLeaderboard([]);
       setMotivationInfo(null);
       const message = e instanceof Error ? e.message : String(e ?? '');
       setLeaderboardError(message || 'Не удалось загрузить рейтинг');
     } finally {
-      setLeaderboardLoading(false);
+      if (isLatestLeaderboard(requestId)) setLeaderboardLoading(false);
     }
-  }, [session, ratingFilter]);
+  }, [session, ratingFilter, isLatestLeaderboard, startLeaderboardLoad]);
 
   useEffect(() => {
     if (activeTab === 'rating' || activeView === 'rating') {
@@ -1615,8 +1724,8 @@ export default function Page() {
     };
   }, [currentClient?.balance, currentClient?.redeemRateBps, currentClient?.minPaymentAmount, txAmount]);
 
-  const handleReturnSearch = async () => {
-    if (!returnSearchInput.trim()) return;
+  const performReturnSearch = async (): Promise<boolean> => {
+    if (!returnSearchInput.trim()) return false;
     setRefundError('');
     setRefundPreview(null);
     setRefundBusy(true);
@@ -1635,7 +1744,7 @@ export default function Page() {
         url.searchParams.set('outletId', outletId);
         url.searchParams.set('limit', '100');
         if (nextBefore) url.searchParams.set('before', nextBefore);
-        const r = await fetch(url.toString(), { credentials: 'include' });
+        const r = await apiFetch(url.toString(), { credentials: 'include' });
         if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось найти чек'));
         const data = await r.json();
         const items: Txn[] = Array.isArray(data.items) ? data.items : [];
@@ -1652,7 +1761,7 @@ export default function Page() {
       if (!found) {
         setRefundError('Чек с таким номером или ID операции не найден');
         setReturnTx(null);
-        return;
+        return false;
       }
       const purchaseAmount = found.purchaseAmount ?? 0;
       const pointsToRestore = Math.max(0, found.redeemApplied ?? 0);
@@ -1680,13 +1789,22 @@ export default function Page() {
         orderId: found.orderId ?? null,
         receiptNumber: found.receiptNumber ?? null,
       });
+      return true;
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       setRefundError(humanizeRefundError(message));
       setReturnTx(null);
+      return false;
     } finally {
       setRefundBusy(false);
     }
+  };
+
+  const handleReturnSearch = async () => {
+    if (!returnSearchInput.trim()) return;
+    await runAction(async () => {
+      await performReturnSearch();
+    });
   };
 
   const doRefund = async () => {
@@ -1699,43 +1817,52 @@ export default function Page() {
       setRefundError('Укажите номер чека или ID операции');
       return;
     }
-    const preview = refundPreview;
-    if (!preview) {
-      await handleReturnSearch();
-      if (!refundPreview) return;
-    }
-    const effective = preview ?? refundPreview!;
-    const activeMerchantId = session?.merchantId || merchantId;
-    setRefundBusy(true);
-    setRefundError('');
-    try {
-      const r = await fetch(`${API_BASE}/loyalty/refund`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          merchantId: activeMerchantId,
-          invoice_num: effective.orderId || code,
-          order_id: effective.orderId || undefined,
-          receiptNumber: effective.receiptNumber || code,
-        }),
-      });
-      if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось оформить возврат'));
-      const data = await r.json();
-      if (typeof data?.customerId === 'string') {
-        setCustomerId(data.customerId);
+    await runAction(async () => {
+      const preview = refundPreview;
+      if (!preview) {
+        const ok = await performReturnSearch();
+        if (!ok) return;
       }
-      setReturnSearchInput('');
-      setRefundPreview(null);
-      setReturnTx(null);
-      setReturnSuccess(true);
-      await loadHistory(true);
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      setRefundError(humanizeRefundError(message));
-    } finally {
-      setRefundBusy(false);
-    }
+      const effective = preview ?? refundPreview!;
+      const activeMerchantId = session?.merchantId || merchantId;
+      setRefundBusy(true);
+      setRefundError('');
+      try {
+        if (!refundIdempotencyRef.current) {
+          refundIdempotencyRef.current = createIdempotencyKey();
+        }
+        const r = await apiFetch(`${API_BASE}/loyalty/refund`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': refundIdempotencyRef.current,
+          },
+          body: JSON.stringify({
+            merchantId: activeMerchantId,
+            invoice_num: effective.orderId || code,
+            order_id: effective.orderId || undefined,
+            receiptNumber: effective.receiptNumber || code,
+          }),
+        });
+        if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось оформить возврат'));
+        const data = await r.json();
+        if (typeof data?.customerId === 'string') {
+          setCustomerId(data.customerId);
+        }
+        setReturnSearchInput('');
+        setRefundPreview(null);
+        setReturnTx(null);
+        setReturnSuccess(true);
+        refundIdempotencyRef.current = null;
+        await loadHistory(true);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        setRefundError(humanizeRefundError(message));
+      } finally {
+        setRefundBusy(false);
+      }
+    });
   };
 
   const handleConfirmReturn = async () => {

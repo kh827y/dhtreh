@@ -135,14 +135,12 @@ export class LoyaltyProgramPromotionsService {
       );
       if (!metadataUpgrade.changed && !rewardUpgrade.changed) continue;
       if (metadataUpgrade.changed) {
-        promotion.metadata = (metadataUpgrade.value ?? null) as
-          | Prisma.JsonValue
-          | null;
+        promotion.metadata = (metadataUpgrade.value ??
+          null) as Prisma.JsonValue | null;
       }
       if (rewardUpgrade.changed) {
-        promotion.rewardMetadata = (rewardUpgrade.value ?? null) as
-          | Prisma.JsonValue
-          | null;
+        promotion.rewardMetadata = (rewardUpgrade.value ??
+          null) as Prisma.JsonValue | null;
       }
       const data: Prisma.LoyaltyPromotionUpdateInput = {};
       if (metadataUpgrade.changed) {

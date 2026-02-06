@@ -1,10 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PromotionStatus } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
-import type {
-  CampaignMetrics,
-  DashboardPeriod,
-} from '../analytics.service';
+import type { CampaignMetrics, DashboardPeriod } from '../analytics.service';
 
 @Injectable()
 export class AnalyticsCampaignsService {

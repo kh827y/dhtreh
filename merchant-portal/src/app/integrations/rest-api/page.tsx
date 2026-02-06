@@ -16,6 +16,8 @@ import {
   Terminal,
 } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
+import { readPortalApiCache } from "lib/cache";
 
 type RateLimit = { limit?: number; ttl?: number };
 type RateLimits = {
@@ -92,8 +94,18 @@ export default function RestApiIntegrationPage() {
   const [copiedUrl, setCopiedUrl] = React.useState(false);
   const [pending, setPending] = React.useState(false);
   const [disablePending, setDisablePending] = React.useState(false);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
-  async function load() {
+  React.useEffect(() => {
+    const cached = readPortalApiCache<RestApiState>("/api/portal/integrations/rest-api");
+    if (!cached || typeof cached !== "object") return;
+    setState(cached);
+    setMessage(cached.message || "");
+  }, []);
+
+  const load = React.useCallback(async () => {
+    const requestId = startLoad();
     setLoading(true);
     setError("");
     setMessage("");
@@ -106,19 +118,21 @@ export default function RestApiIntegrationPage() {
             "Не удалось получить состояние REST API",
         );
       }
+      if (!isLatest(requestId)) return;
       setState(data || null);
       setMessage((data && data.message) || "");
     } catch (e: any) {
+      if (!isLatest(requestId)) return;
       setState(null);
       setError(normalizeErrorMessage(e, "Ошибка"));
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }
+  }, [isLatest, startLoad]);
 
   React.useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const baseUrl = React.useMemo(() => {
     const base = (state?.baseUrl || "").replace(/\/$/, "");
@@ -147,25 +161,27 @@ export default function RestApiIntegrationPage() {
     ) {
       return;
     }
-    setPending(true);
-    setError("");
-    setMessage("");
-    try {
-      const res = await fetch("/api/portal/integrations/rest-api/issue", {
-        method: "POST",
-      });
-      const data: IssueResponse = await res.json().catch(() => ({} as any));
-      if (!res.ok) {
-        throw new Error((data && data.message) || "Не удалось сгенерировать ключ");
+    await runAction(async () => {
+      setPending(true);
+      setError("");
+      setMessage("");
+      try {
+        const res = await fetch("/api/portal/integrations/rest-api/issue", {
+          method: "POST",
+        });
+        const data: IssueResponse = await res.json().catch(() => ({} as any));
+        if (!res.ok) {
+          throw new Error((data && data.message) || "Не удалось сгенерировать ключ");
+        }
+        setState(data || null);
+        setIssuedKey(data?.apiKey || null);
+        setMessage(data?.message || "API-ключ обновлён");
+      } catch (e: any) {
+        setError(normalizeErrorMessage(e, "Ошибка"));
+      } finally {
+        setPending(false);
       }
-      setState(data || null);
-      setIssuedKey(data?.apiKey || null);
-      setMessage(data?.message || "API-ключ обновлён");
-    } catch (e: any) {
-      setError(normalizeErrorMessage(e, "Ошибка"));
-    } finally {
-      setPending(false);
-    }
+    });
   };
 
   const handleDisable = async () => {
@@ -173,27 +189,29 @@ export default function RestApiIntegrationPage() {
     if (!confirm("Отключить REST API? Доступ по ключу будет закрыт.")) {
       return;
     }
-    setDisablePending(true);
-    setError("");
-    setMessage("");
-    try {
-      const res = await fetch("/api/portal/integrations/rest-api", {
-        method: "DELETE",
-      });
-      const data: RestApiState = await res.json().catch(() => ({} as any));
-      if (!res.ok) {
-        throw new Error(
-          (data && (data as any)?.message) || "Не удалось отключить интеграцию",
-        );
+    await runAction(async () => {
+      setDisablePending(true);
+      setError("");
+      setMessage("");
+      try {
+        const res = await fetch("/api/portal/integrations/rest-api", {
+          method: "DELETE",
+        });
+        const data: RestApiState = await res.json().catch(() => ({} as any));
+        if (!res.ok) {
+          throw new Error(
+            (data && (data as any)?.message) || "Не удалось отключить интеграцию",
+          );
+        }
+        setState(data || null);
+        setIssuedKey(null);
+        setMessage(data?.message || "Интеграция отключена");
+      } catch (e: any) {
+        setError(normalizeErrorMessage(e, "Ошибка"));
+      } finally {
+        setDisablePending(false);
       }
-      setState(data || null);
-      setIssuedKey(null);
-      setMessage(data?.message || "Интеграция отключена");
-    } catch (e: any) {
-      setError(normalizeErrorMessage(e, "Ошибка"));
-    } finally {
-      setDisablePending(false);
-    }
+    });
   };
 
   return (

@@ -140,7 +140,10 @@ export class PortalCustomersController {
 
   @Post('customers')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  createCustomer(@Req() req: PortalRequest, @Body() body: PortalCustomerPayloadDto) {
+  createCustomer(
+    @Req() req: PortalRequest,
+    @Body() body: PortalCustomerPayloadDto,
+  ) {
     return this.useCase.createCustomer(req, body);
   }
 

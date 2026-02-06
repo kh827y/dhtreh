@@ -1,5 +1,6 @@
 "use client";
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useActionGuard, useLatestRequest } from '../lib/async-guards';
 
 export function EffectiveRatesPopover({ merchantId, className }: { merchantId: string; levelName?: string|null; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -8,9 +9,12 @@ export function EffectiveRatesPopover({ merchantId, className }: { merchantId: s
   const [earnPct, setEarnPct] = useState<string>('');
   const [redeemPct, setRedeemPct] = useState<string>('');
   const rootRef = useRef<HTMLSpanElement>(null);
+  const { start, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!merchantId) return;
+    const requestId = start();
     setLoading(true); setErr(''); setEarnPct(''); setRedeemPct('');
     try {
       const wd = new Date().getDay();
@@ -18,16 +22,18 @@ export function EffectiveRatesPopover({ merchantId, className }: { merchantId: s
       const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/rules/preview?` + p);
       if (!r.ok) throw new Error(await r.text());
       const rules = await r.json();
+      if (!isLatest(requestId)) return;
       const earnBps = Number(rules.earnBps || 500);
       const redeemBps = Number(rules.redeemLimitBps || 5000);
       setEarnPct((earnBps/100).toFixed(2));
       setRedeemPct((redeemBps/100).toFixed(2));
     } catch (e: unknown) {
+      if (!isLatest(requestId)) return;
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  };
+  }, [isLatest, merchantId, start]);
 
   // Закрытие по клику вне и по Esc
   useEffect(() => {
@@ -51,7 +57,10 @@ export function EffectiveRatesPopover({ merchantId, className }: { merchantId: s
   return (
     <span ref={rootRef} className={className} style={{ position:'relative', display:'inline-block', marginLeft: 6 }}>
       <button
-        onClick={async ()=>{ setOpen(v=>!v); if (!open) await load(); }}
+        onClick={() => {
+          setOpen(v=>!v);
+          if (!open) void runAction(load);
+        }}
         disabled={loading}
         title="Эффективные ставки"
         aria-expanded={open}

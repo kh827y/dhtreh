@@ -14,7 +14,9 @@ import {
   AlertCircle,
   AlertTriangle,
   RefreshCw,
+  Loader2,
 } from "lucide-react";
+import { useLatestRequest } from "lib/async-guards";
 
 // Типы для статуса настройки
 type SetupStatus = {
@@ -35,30 +37,35 @@ export default function Page() {
   const [loading, setLoading] = React.useState(true);
   const [status, setStatus] = React.useState<SetupStatus | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const { start: startLoad, isLatest: isLatest } = useLatestRequest();
 
   React.useEffect(() => {
     const loadStatus = async () => {
+      const requestId = startLoad();
       try {
         const res = await fetch("/api/portal/setup-status", { cache: "no-store" });
         if (!res.ok) {
           const text = await res.text().catch(() => "");
+          if (!isLatest(requestId)) return;
           setError(text || `Не удалось загрузить статус настройки (HTTP ${res.status})`);
           setStatus(null);
           return;
         }
         const data = await res.json();
+        if (!isLatest(requestId)) return;
         setStatus(data);
         setError(null);
       } catch (e: unknown) {
+        if (!isLatest(requestId)) return;
         const msg = e instanceof Error ? e.message : String(e);
         setError(msg || "Не удалось загрузить статус настройки");
         setStatus(null);
       } finally {
-        setLoading(false);
+        if (isLatest(requestId)) setLoading(false);
       }
     };
     loadStatus();
-  }, []);
+  }, [isLatest, startLoad]);
 
   // Расчёт прогресса
   const totalSteps = 6;
@@ -108,32 +115,13 @@ export default function Page() {
     );
   }
 
-  // Скелетон загрузки
+  // Лаконичная загрузка без детализированного skeleton
   if (loading) {
     return (
       <div className="p-8 max-w-[1200px] mx-auto space-y-8 ">
-        <div>
-          <div className="h-8 w-64 bg-gray-200 rounded animate-pulse" />
-          <div className="h-4 w-96 bg-gray-100 rounded mt-2 animate-pulse" />
-        </div>
-        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-          <div className="h-4 w-40 bg-gray-200 rounded animate-pulse mb-3" />
-          <div className="h-3 w-full bg-gray-100 rounded-full animate-pulse" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm animate-pulse">
-              <div className="flex items-start space-x-3 mb-4">
-                <div className="w-12 h-12 bg-gray-200 rounded-lg" />
-                <div className="flex-1">
-                  <div className="h-5 w-32 bg-gray-200 rounded" />
-                  <div className="h-3 w-48 bg-gray-100 rounded mt-2" />
-                </div>
-              </div>
-              <div className="h-10 w-full bg-gray-100 rounded-lg mt-4" />
-              <div className="h-10 w-full bg-gray-200 rounded-lg mt-4" />
-            </div>
-          ))}
+        <div className="bg-white p-8 rounded-xl border border-gray-100 shadow-sm flex items-center justify-center space-x-3 text-gray-600">
+          <Loader2 size={20} className="animate-spin" />
+          <span className="text-sm font-medium">Загружаем состояние настроек…</span>
         </div>
       </div>
     );

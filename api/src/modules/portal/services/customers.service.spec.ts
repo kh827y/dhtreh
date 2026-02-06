@@ -2,9 +2,11 @@ import { PortalCustomersService } from './customers.service';
 import { PortalCustomersQueryService } from './portal-customers-query.service';
 import { PortalCustomersOperationsService } from './portal-customers-operations.service';
 import { PortalCustomersMutationsService } from './portal-customers-mutations.service';
+import type { PortalCustomerDto } from './portal-customers.types';
 import type { CustomerAudiencesService } from '../../customer-audiences/customer-audiences.service';
 import type { PrismaService } from '../../../core/prisma/prisma.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
+import type { LoyaltyIdempotencyService } from '../../loyalty/services/loyalty-idempotency.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -21,6 +23,7 @@ type MockPrisma = {
   };
   wallet: {
     create: MockFn;
+    upsert: MockFn;
   };
   loyaltyTier: {
     findFirst: MockFn<unknown, [LoyaltyTierFindFirstArgs?]>;
@@ -37,6 +40,44 @@ type PrismaOverrides = {
 };
 type AudiencesStub = {
   evaluateCustomerSegments: MockFn;
+};
+
+const emptyCustomerDto: PortalCustomerDto = {
+  id: 'cust-1',
+  phone: null,
+  email: null,
+  name: null,
+  firstName: null,
+  lastName: null,
+  birthday: null,
+  gender: null,
+  tags: [],
+  balance: 0,
+  pendingBalance: 0,
+  visits: 0,
+  averageCheck: 0,
+  daysSinceLastVisit: null,
+  visitFrequencyDays: null,
+  age: null,
+  spendPreviousMonth: 0,
+  spendCurrentMonth: 0,
+  spendTotal: 0,
+  registeredAt: null,
+  createdAt: null,
+  erasedAt: null,
+  comment: null,
+  accrualsBlocked: false,
+  redemptionsBlocked: false,
+  levelId: null,
+  levelName: null,
+  levelExpireDays: null,
+  referrer: null,
+  invite: null,
+  expiry: [],
+  transactions: [],
+  reviews: [],
+  invited: [],
+  earnRateBps: null,
 };
 type AggregatesStub = {
   pendingBalance: Map<string, number>;
@@ -65,7 +106,14 @@ const buildServices = (prisma: MockPrisma, audiences: AudiencesStub) => {
   const config = new AppConfigService();
   const prismaService = asPrismaService(prisma);
   const queries = new PortalCustomersQueryService(prismaService, config);
-  const operations = new PortalCustomersOperationsService(prismaService, config);
+  const idempotency = {
+    run: async <T>(params: { execute: () => Promise<T> }) => params.execute(),
+  } as unknown as LoyaltyIdempotencyService;
+  const operations = new PortalCustomersOperationsService(
+    prismaService,
+    config,
+    idempotency,
+  );
   const mutations = new PortalCustomersMutationsService(
     prismaService,
     asAudiencesService(audiences),
@@ -101,6 +149,7 @@ function buildPrisma(overrides: PrismaOverrides = {}): MockPrisma {
     },
     wallet: {
       create: mockFn().mockResolvedValue({ id: 'wallet-1' }),
+      upsert: mockFn().mockResolvedValue({ id: 'wallet-1', balance: 0 }),
     },
     loyaltyTier: {
       findFirst: mockFn<
@@ -254,7 +303,7 @@ describe('PortalCustomersService.list', () => {
       lastPurchaseAt: new Map(),
     };
     jest.spyOn(queries, 'computeAggregates').mockResolvedValue(emptyAggregates);
-    jest.spyOn(queries, 'buildBaseDto').mockReturnValue({});
+    jest.spyOn(queries, 'buildBaseDto').mockReturnValue(emptyCustomerDto);
 
     await service.list('M1', { registeredOnly: false, excludeMiniapp: true });
 

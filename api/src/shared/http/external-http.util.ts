@@ -42,10 +42,23 @@ export const isAbortError = (error: unknown): boolean =>
   typeof error.name === 'string' &&
   error.name === 'AbortError';
 
-export const classifyExternalError = (error: unknown): ExternalRequestResult => {
+export const classifyExternalError = (
+  error: unknown,
+): ExternalRequestResult => {
   if (isAbortError(error)) return 'timeout';
   const msg =
-    error instanceof Error && error.message ? error.message : String(error || '');
+    error instanceof Error && error.message
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : (() => {
+            if (error == null) return '';
+            try {
+              return JSON.stringify(error);
+            } catch {
+              return '';
+            }
+          })();
   if (msg.toLowerCase().includes('timeout')) return 'timeout';
   return 'error';
 };
@@ -89,6 +102,9 @@ export const fetchWithTimeout = async (
   } catch (error) {
     const result = classifyExternalError(error);
     recordExternalRequest(metrics, context, result, null);
+    logIgnoredError(error, 'ExternalHttp request failed', logger, 'debug', {
+      ...context,
+    });
     if (result === 'timeout') {
       throw new Error(
         `External request timeout after ${timeoutMs}ms (${context.label})`,
@@ -112,13 +128,10 @@ export const readResponseTextSafe = async (
   try {
     return await res.text();
   } catch (err) {
-    logIgnoredError(
-      err,
-      'ExternalHttp read text',
-      logger,
-      'debug',
-      { ...context, status: res.status },
-    );
+    logIgnoredError(err, 'ExternalHttp read text', logger, 'debug', {
+      ...context,
+      status: res.status,
+    });
     return fallback;
   }
 };
@@ -134,13 +147,10 @@ export const readResponseJsonSafe = async (
   try {
     return await res.json();
   } catch (err) {
-    logIgnoredError(
-      err,
-      'ExternalHttp read json',
-      logger,
-      'debug',
-      { ...context, status: res.status },
-    );
+    logIgnoredError(err, 'ExternalHttp read json', logger, 'debug', {
+      ...context,
+      status: res.status,
+    });
     return null;
   }
 };

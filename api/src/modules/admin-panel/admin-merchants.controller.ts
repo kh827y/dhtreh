@@ -86,10 +86,7 @@ export class AdminMerchantsController {
   }
 
   @Post(':id/cashier/rotate')
-  rotateCashier(
-    @Param('id') id: string,
-    @Body() body: AdminRotateCashierDto,
-  ) {
+  rotateCashier(@Param('id') id: string, @Body() body: AdminRotateCashierDto) {
     return this.service.rotateCashierCredentials(id, !!body?.regenerateLogin);
   }
 

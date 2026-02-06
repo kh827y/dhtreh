@@ -30,6 +30,7 @@ import {
 import { createPortal } from "react-dom";
 import { isAllCustomersAudience } from "../../lib/audience-utils";
 import { readApiError } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type Audience = {
   id: string;
@@ -550,25 +551,33 @@ export default function AudiencesPage() {
   const [membersSearch, setMembersSearch] = useState("");
   const [modalPage, setModalPage] = useState(1);
   const modalItemsPerPage = 12;
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const { start: startCatalogLoad, isLatest: isLatestCatalog } = useLatestRequest();
+  const { start: startMembersLoad, isLatest: isLatestMembers } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const loadAudiences = useCallback(async () => {
+    const requestId = startLoad();
     setLoading(true);
     setError(null);
     try {
       const list = await fetchJson<any[]>("/api/portal/audiences?includeSystem=1");
       const items = Array.isArray(list) ? list : [];
       const mapped = items.map(mapSegmentToAudience);
+      if (!isLatest(requestId)) return;
       setAudiences(mapped);
     } catch (err) {
+      if (!isLatest(requestId)) return;
       setError(readApiError(err) || "Не удалось загрузить аудитории");
       setAudiences([]);
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, []);
+  }, [isLatest, startLoad]);
 
   const loadCatalog = useCallback(async () => {
     if (catalogLoaded || catalogLoading) return;
+    const requestId = startCatalogLoad();
     setCatalogLoading(true);
     setCatalogError(null);
     try {
@@ -578,6 +587,7 @@ export default function AudiencesPage() {
         fetchJson<any>("/api/portal/catalog/categories"),
         fetchJson<any>("/api/portal/loyalty/tiers"),
       ]);
+      if (!isLatestCatalog(requestId)) return;
 
       const outletItems = Array.isArray(outletsPayload?.items)
         ? outletsPayload.items
@@ -648,11 +658,12 @@ export default function AudiencesPage() {
 
       setCatalogLoaded(true);
     } catch (err) {
+      if (!isLatestCatalog(requestId)) return;
       setCatalogError(readApiError(err) || "Не удалось загрузить справочники");
     } finally {
-      setCatalogLoading(false);
+      if (isLatestCatalog(requestId)) setCatalogLoading(false);
     }
-  }, [catalogLoaded, catalogLoading]);
+  }, [catalogLoaded, catalogLoading, isLatestCatalog, startCatalogLoad]);
 
   useEffect(() => {
     loadAudiences().catch(() => {});
@@ -723,64 +734,69 @@ export default function AudiencesPage() {
     setView("create");
   };
 
-  const handleDelete = async (audience: Audience) => {
+  const handleDelete = (audience: Audience) => {
     if (audience.isAllCustomers) {
       setError("Системную аудиторию нельзя удалить");
       return;
     }
     if (!confirm("Вы уверены, что хотите удалить эту аудиторию?")) return;
-    setError(null);
-    try {
-      await fetchJson(`/api/portal/audiences/${encodeURIComponent(audience.id)}`, {
-        method: "DELETE",
-      });
-      await loadAudiences();
-    } catch (err) {
-      setError(readApiError(err) || "Не удалось удалить аудиторию");
-    }
+    void runAction(async () => {
+      setError(null);
+      try {
+        await fetchJson(`/api/portal/audiences/${encodeURIComponent(audience.id)}`, {
+          method: "DELETE",
+        });
+        await loadAudiences();
+      } catch (err) {
+        setError(readApiError(err) || "Не удалось удалить аудиторию");
+      }
+    });
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     const trimmed = formData.name.trim();
     if (!trimmed) {
       setFormError("Введите название аудитории");
       return;
     }
-    setSaving(true);
-    setFormError(null);
-    try {
-      const filters = formDataToFilters(formData);
-      const description = buildAudienceDescription(formData, { outlets, products, categories, levels });
-      const payload = {
-        name: trimmed,
-        description,
-        rules: { ui: "audience-settings" },
-        filters,
-      };
+    void runAction(async () => {
+      setSaving(true);
+      setFormError(null);
+      try {
+        const filters = formDataToFilters(formData);
+        const description = buildAudienceDescription(formData, { outlets, products, categories, levels });
+        const payload = {
+          name: trimmed,
+          description,
+          rules: { ui: "audience-settings" },
+          filters,
+        };
 
-      if (editingId) {
-        await fetchJson(`/api/portal/audiences/${encodeURIComponent(editingId)}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        });
-      } else {
-        await fetchJson("/api/portal/audiences", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
+        if (editingId) {
+          await fetchJson(`/api/portal/audiences/${encodeURIComponent(editingId)}`, {
+            method: "PUT",
+            body: JSON.stringify(payload),
+          });
+        } else {
+          await fetchJson("/api/portal/audiences", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+        }
+        await loadAudiences();
+        setEditingId(null);
+        setView("list");
+      } catch (err) {
+        setFormError(readApiError(err) || "Не удалось сохранить аудиторию");
+      } finally {
+        setSaving(false);
       }
-      await loadAudiences();
-      setEditingId(null);
-      setView("list");
-    } catch (err) {
-      setFormError(readApiError(err) || "Не удалось сохранить аудиторию");
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   const openMembers = useCallback(
     async (audience: Audience, event?: React.MouseEvent<HTMLButtonElement>) => {
+      const requestId = startMembersLoad();
       event?.stopPropagation();
       setViewingAudience(audience);
       setIsMembersModalOpen(true);
@@ -791,6 +807,7 @@ export default function AudiencesPage() {
       setMembersLoading(true);
       try {
         await loadCatalog();
+        if (!isLatestMembers(requestId)) return;
         const limit = 200;
         let offset = 0;
         let total: number | null = null;
@@ -803,6 +820,7 @@ export default function AudiencesPage() {
             registeredOnly: "0",
           });
           const res = await fetchJson<any>(`/api/customers?${qs.toString()}`);
+          if (!isLatestMembers(requestId)) return;
           const items = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : [];
           if (typeof res?.total === "number") {
             total = res.total;
@@ -812,18 +830,21 @@ export default function AudiencesPage() {
           if (total !== null && collected.length >= total) break;
           offset += limit;
         }
+        if (!isLatestMembers(requestId)) return;
         setMembers(collected.map(mapMember));
       } catch (err) {
+        if (!isLatestMembers(requestId)) return;
         setMembersError(readApiError(err) || "Не удалось загрузить участников");
         setMembers([]);
       } finally {
-        setMembersLoading(false);
+        if (isLatestMembers(requestId)) setMembersLoading(false);
       }
     },
-    [loadCatalog],
+    [isLatestMembers, loadCatalog, startMembersLoad],
   );
 
   const closeMembers = () => {
+    startMembersLoad();
     setIsMembersModalOpen(false);
     setViewingAudience(null);
     setMembers([]);

@@ -86,7 +86,7 @@ export class AdminAuditInterceptor implements NestInterceptor {
             payload: entry.payload === null ? Prisma.DbNull : entry.payload,
           },
         }),
-      async () => undefined,
+      () => undefined,
       this.logger,
       'admin audit write failed',
     );

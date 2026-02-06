@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac } from 'crypto';
+import {
+  applyNoStoreHeaders,
+  upstreamFetch,
+  withRequestId,
+} from '../../_shared/upstream';
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
 
@@ -62,9 +67,8 @@ async function verifyPortalJwt(
   if (local) return local;
   if (!API_BASE) return null;
   try {
-    const r = await fetch(API_BASE + '/portal/auth/me', {
-      headers: { authorization: `Bearer ${token}` },
-      cache: 'no-store',
+    const r = await upstreamFetch(API_BASE + '/portal/auth/me', {
+      headers: withRequestId({ authorization: `Bearer ${token}` }),
     });
     if (!r.ok) return null;
     const data = await r.json().catch(() => ({} as any));
@@ -82,11 +86,23 @@ export async function GET(req: NextRequest) {
   const token = url.searchParams.get('token') || '';
   const redirect = url.searchParams.get('redirect');
   const redirectPath = safeRedirectPath(redirect);
-  if (!token) return new NextResponse('Token required', { status: 400 });
+  if (!token) {
+    return new NextResponse('Token required', {
+      status: 400,
+      headers: applyNoStoreHeaders(),
+    });
+  }
   const verified = await verifyPortalJwt(token);
   if (!verified?.adminImpersonation)
-    return new NextResponse('Invalid token', { status: 400 });
+    return new NextResponse('Invalid token', {
+      status: 400,
+      headers: applyNoStoreHeaders(),
+    });
   const res = NextResponse.redirect(new URL(redirectPath, url.origin));
+  const noStore = applyNoStoreHeaders();
+  for (const [key, value] of noStore.entries()) {
+    res.headers.set(key, value);
+  }
   const secure = process.env.NODE_ENV === 'production';
   res.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60 });
   return res;
@@ -95,11 +111,19 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({} as any));
   const token = String(body?.token || '');
-  if (!token) return new NextResponse('Token required', { status: 400 });
+  if (!token) {
+    return new NextResponse('Token required', {
+      status: 400,
+      headers: applyNoStoreHeaders(),
+    });
+  }
   const verified = await verifyPortalJwt(token);
   if (!verified?.adminImpersonation)
-    return new NextResponse('Invalid token', { status: 400 });
-  const res = NextResponse.json({ ok: true });
+    return new NextResponse('Invalid token', {
+      status: 400,
+      headers: applyNoStoreHeaders(),
+    });
+  const res = NextResponse.json({ ok: true }, { headers: applyNoStoreHeaders() });
   const secure = process.env.NODE_ENV === 'production';
   res.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60 });
   return res;

@@ -109,6 +109,13 @@ export class LoyaltyTransactionsUseCase {
   async quote(dto: QuoteDto, _req: Request & { requestId?: string }) {
     const t0 = Date.now();
     try {
+      const idemKey =
+        (typeof _req.headers['idempotency-key'] === 'string'
+          ? (_req.headers['idempotency-key'] as string)
+          : undefined) ||
+        (typeof _req.headers['x-idempotency-key'] === 'string'
+          ? (_req.headers['x-idempotency-key'] as string)
+          : undefined);
       const v = await this.support.resolveFromToken(dto.userToken);
       const s = await this.cache.getMerchantSettings(dto.merchantId);
       const modeError = this.support.getQrModeError(
@@ -149,16 +156,41 @@ export class LoyaltyTransactionsUseCase {
           : undefined;
       const adjTotal = Math.max(0, Math.floor(dto.total));
       const normalizedOutletId = dto.outletId ?? outlet?.id ?? undefined;
-      const data = await this.service.quote(
-        {
-          ...dto,
-          outletId: normalizedOutletId,
-          total: adjTotal,
-          staffId,
-          customerId: customer.id,
-        },
-        qrMeta,
-      );
+      const requestHash =
+        idemKey && dto.merchantId
+          ? this.support.hashIdempotencyPayload({
+              merchantId: dto.merchantId,
+              customerId: customer.id,
+              mode: dto.mode,
+              orderId: dto.orderId ?? null,
+              outletId: normalizedOutletId ?? null,
+              staffId: staffId ?? null,
+              deviceId: dto.deviceId ?? null,
+              redeemAmount: dto.redeemAmount ?? null,
+              total: adjTotal,
+              positions: dto.positions ?? null,
+            })
+          : null;
+      const execute = () =>
+        this.service.quote(
+          {
+            ...dto,
+            outletId: normalizedOutletId,
+            total: adjTotal,
+            staffId,
+            customerId: customer.id,
+          },
+          qrMeta,
+        );
+      const data = idemKey
+        ? await this.idempotency.run({
+            merchantId: dto.merchantId,
+            scope: 'loyalty/quote',
+            key: idemKey,
+            requestHash,
+            execute,
+          })
+        : await execute();
       this.metrics.inc('loyalty_quote_requests_total', { result: 'ok' });
       return data;
     } catch (err: unknown) {
@@ -202,7 +234,9 @@ export class LoyaltyTransactionsUseCase {
     }
     try {
       const idemKey =
-        (req.headers['idempotency-key'] as string | undefined) || undefined;
+        (req.headers['idempotency-key'] as string | undefined) ||
+        (req.headers['x-idempotency-key'] as string | undefined) ||
+        undefined;
       const expectedMerchantId =
         typeof dto?.merchantId === 'string' ? dto.merchantId.trim() : '';
       const commitOptsPayload: CommitOptions = {};
@@ -406,7 +440,9 @@ export class LoyaltyTransactionsUseCase {
     let data: unknown;
     try {
       const idemKey =
-        (req.headers['idempotency-key'] as string | undefined) || undefined;
+        (req.headers['idempotency-key'] as string | undefined) ||
+        (req.headers['x-idempotency-key'] as string | undefined) ||
+        undefined;
       const scope = 'loyalty/refund';
       const requestHash = idemKey
         ? this.support.hashIdempotencyPayload({

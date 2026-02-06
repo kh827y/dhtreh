@@ -84,8 +84,8 @@ export class ImportExportFileService {
 
   csvCell(value: string) {
     const safe = this.sanitizeCsvValue(value);
-    const escaped = safe.replace(/\"/g, '\"\"');
-    return `\"${escaped}\"`;
+    const escaped = safe.replace(/"/g, '""');
+    return `"${escaped}"`;
   }
 
   private stringifyCsvValue(value: unknown): string {
@@ -114,7 +114,7 @@ export class ImportExportFileService {
 
   private sanitizeCsvValue(value: string) {
     const trimmed = value.replace(/^[\t\r\n ]+/, '');
-    if (trimmed && /^[=+\\-@]/.test(trimmed)) {
+    if (trimmed && /^[=+@-]/.test(trimmed)) {
       return `'${value}`;
     }
     return value;

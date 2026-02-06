@@ -169,10 +169,7 @@ export class PromotionsController {
 
   @Post()
   @PortalPermissionsHandled()
-  async create(
-    @Req() req: PortalRequest,
-    @Body() body: PromotionPayloadDto,
-  ) {
+  async create(@Req() req: PortalRequest, @Body() body: PromotionPayloadDto) {
     const merchantId = this.merchantId(req);
     const payload = normalizePayload(body);
     assertPortalPermissions(req, [resolvePromotionResource(payload)], 'manage');
@@ -228,10 +225,7 @@ export class PromotionsController {
 
   @Post('bulk/status')
   @PortalPermissionsHandled()
-  bulkStatus(
-    @Req() req: PortalRequest,
-    @Body() body: PromotionBulkStatusDto,
-  ) {
+  bulkStatus(@Req() req: PortalRequest, @Body() body: PromotionBulkStatusDto) {
     const merchantId = this.merchantId(req);
     return this.service
       .listPromotionBasics(merchantId, body.ids ?? [])

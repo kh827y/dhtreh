@@ -4,6 +4,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { Store, Plus, MapPin, Monitor, Users, Edit, Trash2 } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type OutletItem = {
   id: string;
@@ -34,6 +35,8 @@ export default function OutletsPage({ basePath }: OutletsPageProps) {
   const [inactiveOutlets, setInactiveOutlets] = React.useState<OutletItem[]>([]);
   const [activeTotal, setActiveTotal] = React.useState(0);
   const [inactiveTotal, setInactiveTotal] = React.useState(0);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const fetchOutletsByStatus = React.useCallback(async (status: string) => {
     const pageSize = 50;
@@ -57,6 +60,7 @@ export default function OutletsPage({ basePath }: OutletsPageProps) {
   }, []);
 
   const fetchOutlets = React.useCallback(async () => {
+    const requestId = startLoad();
     setLoading(true);
     setError("");
     try {
@@ -64,20 +68,22 @@ export default function OutletsPage({ basePath }: OutletsPageProps) {
         fetchOutletsByStatus("ACTIVE"),
         fetchOutletsByStatus("INACTIVE"),
       ]);
+      if (!isLatest(requestId)) return;
       setActiveOutlets(activeData.items);
       setInactiveOutlets(inactiveData.items);
       setActiveTotal(activeData.total);
       setInactiveTotal(inactiveData.total);
     } catch (e: any) {
+      if (!isLatest(requestId)) return;
       setError(normalizeErrorMessage(e, "Не удалось загрузить торговые точки"));
       setActiveOutlets([]);
       setInactiveOutlets([]);
       setActiveTotal(0);
       setInactiveTotal(0);
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, [fetchOutletsByStatus]);
+  }, [fetchOutletsByStatus, isLatest, startLoad]);
 
   React.useEffect(() => {
     fetchOutlets();
@@ -87,16 +93,18 @@ export default function OutletsPage({ basePath }: OutletsPageProps) {
 
   const handleDeleteOutlet = async (id: string) => {
     if (!confirm("Вы уверены? Это действие нельзя отменить.")) return;
-    try {
-      const res = await fetch(`/api/portal/outlets/${encodeURIComponent(id)}`, { method: "DELETE" });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || "Не удалось удалить точку");
+    await runAction(async () => {
+      try {
+        const res = await fetch(`/api/portal/outlets/${encodeURIComponent(id)}`, { method: "DELETE" });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(text || "Не удалось удалить точку");
+        }
+        await fetchOutlets();
+      } catch (e: any) {
+        setError(normalizeErrorMessage(e, "Не удалось удалить точку"));
       }
-      await fetchOutlets();
-    } catch (e: any) {
-      setError(normalizeErrorMessage(e, "Не удалось удалить точку"));
-    }
+    });
   };
 
   return (

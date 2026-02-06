@@ -6,7 +6,7 @@ export const ensureWallet = async (
   merchantId: string,
   customerId: string,
 ): Promise<number> => {
-  const existing = await prisma.wallet.findUnique({
+  const wallet = await prisma.wallet.upsert({
     where: {
       customerId_merchantId_type: {
         customerId,
@@ -14,16 +14,13 @@ export const ensureWallet = async (
         type: WalletType.POINTS,
       },
     },
-  });
-  if (existing) return existing.balance;
-
-  const created = await prisma.wallet.create({
-    data: {
+    update: {},
+    create: {
       customerId,
       merchantId,
       type: WalletType.POINTS,
       balance: 0,
     },
   });
-  return created.balance;
+  return wallet.balance;
 };

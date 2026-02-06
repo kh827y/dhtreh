@@ -265,8 +265,7 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
     entries.push({
       name: 'hold_gc',
       worker: this.holdGc,
-      intervalMs:
-        this.config.getNumber('HOLD_GC_INTERVAL_MS', 30000) ?? 30000,
+      intervalMs: this.config.getNumber('HOLD_GC_INTERVAL_MS', 30000) ?? 30000,
       expected: workersEnabled,
       reason: workersEnabled ? undefined : 'WORKERS_ENABLED!=1',
     });
@@ -290,8 +289,7 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
       name: 'retention_gc',
       worker: this.retentionGc,
       intervalMs:
-        this.config.getNumber('RETENTION_GC_INTERVAL_MS', 21600000) ??
-        21600000,
+        this.config.getNumber('RETENTION_GC_INTERVAL_MS', 21600000) ?? 21600000,
       expected: workersEnabled,
       reason: workersEnabled ? undefined : 'WORKERS_ENABLED!=1',
     });

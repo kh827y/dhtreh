@@ -10,6 +10,7 @@ import ComplimentaryModal from "./complimentary-modal";
 import { buildLevelLookups, getAvatarClass, getCustomerLevelRank } from "./level-utils";
 import CustomerCard from "./customer-card";
 import { readApiError } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type LevelOption = {
   id: string;
@@ -72,6 +73,8 @@ function CustomersPageInner() {
   const [modalState, setModalState] = React.useState<{ mode: "create" | "edit"; customer?: CustomerRecord } | null>(null);
   const [giftTarget, setGiftTarget] = React.useState<CustomerRecord | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const selectedCustomerId = searchParams.get("customerId");
   const selectedCustomer = React.useMemo(() => {
@@ -134,6 +137,7 @@ function CustomersPageInner() {
   }
 
   const loadCustomers = React.useCallback(async (search: string) => {
+    const requestId = startLoad();
     try {
       setLoading(true);
       const baseParams = new URLSearchParams({
@@ -145,6 +149,7 @@ function CustomersPageInner() {
       let offset = 0;
       const all: CustomerRecord[] = [];
       while (true) {
+        if (!isLatest(requestId)) return;
         const params = new URLSearchParams(baseParams);
         params.set("offset", String(offset));
         const batch = await api<any[]>(`/api/customers?${params.toString()}`);
@@ -153,15 +158,17 @@ function CustomersPageInner() {
         if (normalized.length < CUSTOMERS_FETCH_LIMIT) break;
         offset += CUSTOMERS_FETCH_LIMIT;
       }
+      if (!isLatest(requestId)) return;
       setCustomers(all);
     } catch (e: any) {
       console.error(e);
+      if (!isLatest(requestId)) return;
       setToast(readApiError(e?.message || e) || "Не удалось загрузить клиентов");
       setCustomers([]);
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, []);
+  }, [isLatest, startLoad]);
 
   React.useEffect(() => {
     void loadCustomers(appliedSearch);
@@ -266,45 +273,47 @@ function CustomersPageInner() {
       levelExpireDays: payload.levelId && levelExpireDays !== undefined ? levelExpireDays : undefined,
     };
 
-    if (modalState.mode === "create") {
-      try {
-        const created = await api<any>("/api/customers", {
-          method: "POST",
-          body: JSON.stringify(baseBody),
-        });
-        const normalized = normalizeCustomer(created);
-        let existed = false;
-        setCustomers((prev) => {
-          const idx = prev.findIndex((item) => item.id === normalized.id);
-          if (idx >= 0) {
-            existed = true;
-            const next = [...prev];
-            next[idx] = normalized;
-            return next;
-          }
-          return [normalized, ...prev];
-        });
-        setToast(existed ? "Клиент уже существует, данные загружены" : "Клиент создан");
-        void loadCustomers(appliedSearch);
-      } catch (e: any) {
-        setToast(readApiError(e?.message || e) || "Ошибка при создании клиента");
+    await runAction(async () => {
+      if (modalState.mode === "create") {
+        try {
+          const created = await api<any>("/api/customers", {
+            method: "POST",
+            body: JSON.stringify(baseBody),
+          });
+          const normalized = normalizeCustomer(created);
+          let existed = false;
+          setCustomers((prev) => {
+            const idx = prev.findIndex((item) => item.id === normalized.id);
+            if (idx >= 0) {
+              existed = true;
+              const next = [...prev];
+              next[idx] = normalized;
+              return next;
+            }
+            return [normalized, ...prev];
+          });
+          setToast(existed ? "Клиент уже существует, данные загружены" : "Клиент создан");
+          void loadCustomers(appliedSearch);
+        } catch (e: any) {
+          setToast(readApiError(e?.message || e) || "Ошибка при создании клиента");
+        }
+      } else if (modalState.mode === "edit" && modalState.customer) {
+        const { customer } = modalState;
+        try {
+          const saved = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`, {
+            method: "PUT",
+            body: JSON.stringify(baseBody),
+          });
+          const normalized = normalizeCustomer(saved ?? { ...customer, ...baseBody });
+          setCustomers((prev) => prev.map((item) => (item.id === customer.id ? normalized : item)));
+          setToast("Данные клиента обновлены");
+          void loadCustomers(appliedSearch);
+        } catch (e: any) {
+          setToast(readApiError(e?.message || e) || "Ошибка при сохранении клиента");
+        }
       }
-    } else if (modalState.mode === "edit" && modalState.customer) {
-      const { customer } = modalState;
-      try {
-        const saved = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`, {
-          method: "PUT",
-          body: JSON.stringify(baseBody),
-        });
-        const normalized = normalizeCustomer(saved ?? { ...customer, ...baseBody });
-        setCustomers((prev) => prev.map((item) => (item.id === customer.id ? normalized : item)));
-        setToast("Данные клиента обновлены");
-        void loadCustomers(appliedSearch);
-      } catch (e: any) {
-        setToast(readApiError(e?.message || e) || "Ошибка при сохранении клиента");
-      }
-    }
-    setModalState(null);
+      setModalState(null);
+    });
   }
 
   const shownFrom = filteredCustomers.length ? startIndex + 1 : 0;

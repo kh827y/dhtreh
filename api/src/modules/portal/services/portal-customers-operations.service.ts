@@ -5,13 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, TxnType, WalletType } from '@prisma/client';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { AppConfigService } from '../../../core/config/app-config.service';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { planConsume } from '../../loyalty/utils/lots.util';
 import { ensureBaseTier } from '../../loyalty/utils/tier-defaults.util';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import { MS_PER_DAY } from './portal-customers.types';
+import { LoyaltyIdempotencyService } from '../../loyalty/services/loyalty-idempotency.service';
 
 @Injectable()
 export class PortalCustomersOperationsService {
@@ -20,7 +21,29 @@ export class PortalCustomersOperationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
+    private readonly idempotency: LoyaltyIdempotencyService,
   ) {}
+
+  private stableStringify(value: unknown): string {
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => this.stableStringify(item)).join(',')}]`;
+    }
+    if (value && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      const keys = Object.keys(record).sort();
+      const entries = keys.map(
+        (key) => `${JSON.stringify(key)}:${this.stableStringify(record[key])}`,
+      );
+      return `{${entries.join(',')}}`;
+    }
+    return JSON.stringify(value);
+  }
+
+  private hashPayload(payload: Record<string, unknown>): string {
+    return createHash('sha256')
+      .update(this.stableStringify(payload))
+      .digest('hex');
+  }
 
   private parseAmount(value: unknown): number | null {
     if (value === null || value === undefined || value === '') {
@@ -30,7 +53,6 @@ export class PortalCustomersOperationsService {
     if (!Number.isFinite(num)) return null;
     return Math.max(0, Math.round(num));
   }
-
 
   private async resolveEarnRateBps(
     merchantId: string,
@@ -174,6 +196,7 @@ export class PortalCustomersOperationsService {
       outletId?: string | null;
       comment?: string | null;
     },
+    idempotencyKey?: string,
   ) {
     const purchaseAmount = this.parseAmount(payload.purchaseAmount);
     if (!purchaseAmount || purchaseAmount <= 0) {
@@ -217,77 +240,97 @@ export class PortalCustomersOperationsService {
       comment,
     };
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      let wallet = await tx.wallet.findUnique({
-        where: {
-          customerId_merchantId_type: {
-            customerId,
-            merchantId,
-            type: WalletType.POINTS,
+    const execute = async () => {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const wallet = await tx.wallet.upsert({
+          where: {
+            customerId_merchantId_type: {
+              customerId,
+              merchantId,
+              type: WalletType.POINTS,
+            },
           },
-        },
-      });
-      if (!wallet) {
-        wallet = await tx.wallet.create({
-          data: {
+          update: {},
+          create: {
             customerId,
             merchantId,
             type: WalletType.POINTS,
             balance: 0,
           },
         });
-      }
-      const updatedWallet = await tx.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: { increment: appliedPoints } },
-        select: { balance: true },
-      });
+        const updatedWallet = await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: { increment: appliedPoints } },
+          select: { balance: true },
+        });
 
-      if (this.config.isEarnLotsEnabled() && appliedPoints > 0) {
-        await tx.earnLot.create({
+        if (this.config.isEarnLotsEnabled() && appliedPoints > 0) {
+          await tx.earnLot.create({
+            data: {
+              merchantId,
+              customerId,
+              points: appliedPoints,
+              consumedPoints: 0,
+              earnedAt: new Date(),
+              maturesAt: null,
+              expiresAt,
+              orderId,
+              receiptId: null,
+              outletId: outletId ?? null,
+              staffId: staffId ?? null,
+              status: 'ACTIVE',
+            },
+          });
+        }
+
+        const transaction = await tx.transaction.create({
           data: {
-            merchantId,
             customerId,
-            points: appliedPoints,
-            consumedPoints: 0,
-            earnedAt: new Date(),
-            maturesAt: null,
-            expiresAt,
+            merchantId,
+            type: TxnType.CAMPAIGN,
+            amount: appliedPoints,
             orderId,
-            receiptId: null,
             outletId: outletId ?? null,
             staffId: staffId ?? null,
-            status: 'ACTIVE',
+            metadata,
           },
         });
-      }
 
-      const transaction = await tx.transaction.create({
-        data: {
-          customerId,
-          merchantId,
-          type: TxnType.CAMPAIGN,
-          amount: appliedPoints,
-          orderId,
-          outletId: outletId ?? null,
-          staffId: staffId ?? null,
-          metadata,
-        },
+        return {
+          transactionId: transaction.id,
+          balance: updatedWallet.balance,
+        };
       });
 
       return {
-        transactionId: transaction.id,
-        balance: updatedWallet.balance,
+        ok: true,
+        pointsIssued: appliedPoints,
+        orderId,
+        transactionId: result.transactionId,
+        comment,
       };
-    });
-
-    return {
-      ok: true,
-      pointsIssued: appliedPoints,
-      orderId,
-      transactionId: result.transactionId,
-      comment,
     };
+
+    const key = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
+    if (!key) return execute();
+    const requestHash = this.hashPayload({
+      type: 'manual_accrual',
+      merchantId,
+      customerId,
+      staffId,
+      purchaseAmount,
+      points: appliedPoints,
+      receiptNumber,
+      outletId,
+      comment,
+    });
+    return this.idempotency.run({
+      merchantId,
+      scope: 'portal/customers/manual_accrual',
+      key,
+      requestHash,
+      execute,
+    });
   }
 
   async redeemManual(
@@ -299,6 +342,7 @@ export class PortalCustomersOperationsService {
       outletId?: string | null;
       comment?: string | null;
     },
+    idempotencyKey?: string,
   ) {
     const points = this.parseAmount(payload.points);
     if (!points || points <= 0) {
@@ -316,61 +360,84 @@ export class PortalCustomersOperationsService {
     };
     const outletId = payload.outletId ?? null;
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const wallet = await tx.wallet.findUnique({
-        where: {
-          customerId_merchantId_type: {
+    const execute = async () => {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const wallet = await tx.wallet.findUnique({
+          where: {
+            customerId_merchantId_type: {
+              customerId,
+              merchantId,
+              type: WalletType.POINTS,
+            },
+          },
+        });
+        if (!wallet) {
+          throw new BadRequestException(
+            'У клиента отсутствует кошелёк с баллами',
+          );
+        }
+        const updated = await tx.wallet.updateMany({
+          where: { id: wallet.id, balance: { gte: redeemPoints } },
+          data: { balance: { decrement: redeemPoints } },
+        });
+        if (!updated.count) {
+          throw new BadRequestException(
+            'Недостаточно баллов на балансе клиента',
+          );
+        }
+
+        await this.consumeLotsForRedeem(
+          tx,
+          merchantId,
+          customerId,
+          redeemPoints,
+          orderId,
+        );
+
+        const transaction = await tx.transaction.create({
+          data: {
             customerId,
             merchantId,
-            type: WalletType.POINTS,
+            type: TxnType.REDEEM,
+            amount: -redeemPoints,
+            orderId,
+            outletId: outletId ?? null,
+            staffId: staffId ?? null,
+            metadata,
           },
-        },
-      });
-      if (!wallet) {
-        throw new BadRequestException(
-          'У клиента отсутствует кошелёк с баллами',
-        );
-      }
-      const updated = await tx.wallet.updateMany({
-        where: { id: wallet.id, balance: { gte: redeemPoints } },
-        data: { balance: { decrement: redeemPoints } },
-      });
-      if (!updated.count) {
-        throw new BadRequestException('Недостаточно баллов на балансе клиента');
-      }
+        });
 
-      await this.consumeLotsForRedeem(
-        tx,
-        merchantId,
-        customerId,
-        redeemPoints,
-        orderId,
-      );
-
-      const transaction = await tx.transaction.create({
-        data: {
-          customerId,
-          merchantId,
-          type: TxnType.REDEEM,
-          amount: -redeemPoints,
-          orderId,
-          outletId: outletId ?? null,
-          staffId: staffId ?? null,
-          metadata,
-        },
+        return {
+          transactionId: transaction.id,
+        };
       });
 
       return {
-        transactionId: transaction.id,
+        ok: true,
+        pointsRedeemed: redeemPoints,
+        orderId,
+        transactionId: result.transactionId,
       };
-    });
-
-    return {
-      ok: true,
-      pointsRedeemed: redeemPoints,
-      orderId,
-      transactionId: result.transactionId,
     };
+
+    const key = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
+    if (!key) return execute();
+    const requestHash = this.hashPayload({
+      type: 'manual_redeem',
+      merchantId,
+      customerId,
+      staffId,
+      points: redeemPoints,
+      outletId,
+      comment: metadata.comment,
+    });
+    return this.idempotency.run({
+      merchantId,
+      scope: 'portal/customers/manual_redeem',
+      key,
+      requestHash,
+      execute,
+    });
   }
 
   async issueComplimentary(
@@ -383,6 +450,7 @@ export class PortalCustomersOperationsService {
       outletId?: string | null;
       comment?: string | null;
     },
+    idempotencyKey?: string,
   ) {
     const points = this.parseAmount(payload.points);
     if (!points || points <= 0) {
@@ -414,78 +482,97 @@ export class PortalCustomersOperationsService {
       expiresInDays,
     };
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      let wallet = await tx.wallet.findUnique({
-        where: {
-          customerId_merchantId_type: {
-            customerId,
-            merchantId,
-            type: WalletType.POINTS,
+    const execute = async () => {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const wallet = await tx.wallet.upsert({
+          where: {
+            customerId_merchantId_type: {
+              customerId,
+              merchantId,
+              type: WalletType.POINTS,
+            },
           },
-        },
-      });
-      if (!wallet) {
-        wallet = await tx.wallet.create({
-          data: {
+          update: {},
+          create: {
             customerId,
             merchantId,
             type: WalletType.POINTS,
             balance: 0,
           },
         });
-      }
 
-      const updatedWallet = await tx.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: { increment: bonusPoints } },
-        select: { balance: true },
-      });
+        const updatedWallet = await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: { increment: bonusPoints } },
+          select: { balance: true },
+        });
 
-      if (this.config.isEarnLotsEnabled() && bonusPoints > 0) {
-        await tx.earnLot.create({
+        if (this.config.isEarnLotsEnabled() && bonusPoints > 0) {
+          await tx.earnLot.create({
+            data: {
+              merchantId,
+              customerId,
+              points: bonusPoints,
+              consumedPoints: 0,
+              earnedAt: new Date(),
+              maturesAt: null,
+              expiresAt,
+              orderId,
+              receiptId: null,
+              outletId: outletId ?? null,
+              staffId: staffId ?? null,
+              status: 'ACTIVE',
+            },
+          });
+        }
+
+        const transaction = await tx.transaction.create({
           data: {
-            merchantId,
             customerId,
-            points: bonusPoints,
-            consumedPoints: 0,
-            earnedAt: new Date(),
-            maturesAt: null,
-            expiresAt,
+            merchantId,
+            type: TxnType.CAMPAIGN,
+            amount: bonusPoints,
             orderId,
-            receiptId: null,
             outletId: outletId ?? null,
             staffId: staffId ?? null,
-            status: 'ACTIVE',
+            metadata,
           },
         });
-      }
 
-      const transaction = await tx.transaction.create({
-        data: {
-          customerId,
-          merchantId,
-          type: TxnType.CAMPAIGN,
-          amount: bonusPoints,
-          orderId,
-          outletId: outletId ?? null,
-          staffId: staffId ?? null,
-          metadata,
-        },
+        return {
+          transactionId: transaction.id,
+          balance: updatedWallet.balance,
+        };
       });
 
       return {
-        transactionId: transaction.id,
-        balance: updatedWallet.balance,
+        ok: true,
+        pointsIssued: bonusPoints,
+        orderId,
+        transactionId: result.transactionId,
+        comment,
+        expiresAt: expiresAt ? expiresAt.toISOString() : null,
       };
-    });
-
-    return {
-      ok: true,
-      pointsIssued: bonusPoints,
-      orderId,
-      transactionId: result.transactionId,
-      comment,
-      expiresAt: expiresAt ? expiresAt.toISOString() : null,
     };
+
+    const key = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
+    if (!key) return execute();
+    const requestHash = this.hashPayload({
+      type: 'manual_gift',
+      merchantId,
+      customerId,
+      staffId,
+      points: bonusPoints,
+      expiresInDays,
+      outletId,
+      comment,
+    });
+    return this.idempotency.run({
+      merchantId,
+      scope: 'portal/customers/manual_gift',
+      key,
+      requestHash,
+      execute,
+    });
   }
 }

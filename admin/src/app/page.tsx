@@ -1,10 +1,11 @@
 "use client";
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import { getObservabilitySummary, type ObservabilitySummary } from '../lib/admin';
 import { listMerchants, type MerchantRow } from '../lib/merchants';
+import { useLatestRequest } from '../lib/async-guards';
 
 type Stat = { label: string; value: number | string; tone?: 'ok' | 'warn' | 'danger' };
 
@@ -14,38 +15,46 @@ export default function Page() {
   const [loading, setLoading] = useState(false);
   const [merchantsLoading, setMerchantsLoading] = useState(false);
   const [err, setErr] = useState('');
+  const { start: startObsLoad, isLatest: isLatestObs } = useLatestRequest();
+  const { start: startMerchantsLoad, isLatest: isLatestMerchants } = useLatestRequest();
 
-  const loadObservability = async () => {
+  const loadObservability = useCallback(async () => {
+    const requestId = startObsLoad();
     setLoading(true);
     try {
       const res = await getObservabilitySummary();
+      if (!isLatestObs(requestId)) return;
       setObs(res);
       setErr('');
     } catch (e: unknown) {
+      if (!isLatestObs(requestId)) return;
       setErr(String(e instanceof Error ? e.message : e));
     } finally {
-      setLoading(false);
+      if (isLatestObs(requestId)) setLoading(false);
     }
-  };
+  }, [isLatestObs, startObsLoad]);
 
-  const loadMerchants = async () => {
+  const loadMerchants = useCallback(async () => {
+    const requestId = startMerchantsLoad();
     setMerchantsLoading(true);
     try {
       const rows = await listMerchants();
+      if (!isLatestMerchants(requestId)) return;
       setMerchants(rows);
     } catch (e: unknown) {
+      if (!isLatestMerchants(requestId)) return;
       setErr(String(e instanceof Error ? e.message : e));
     } finally {
-      setMerchantsLoading(false);
+      if (isLatestMerchants(requestId)) setMerchantsLoading(false);
     }
-  };
+  }, [isLatestMerchants, startMerchantsLoad]);
 
   useEffect(() => {
     loadObservability().catch(() => {});
     loadMerchants().catch(() => {});
     const timer = setInterval(() => { loadObservability().catch(() => {}); }, 20000);
     return () => clearInterval(timer);
-  }, []);
+  }, [loadMerchants, loadObservability]);
 
   const metrics: Stat[] = useMemo(() => {
     const m = obs?.metrics;

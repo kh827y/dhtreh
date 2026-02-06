@@ -15,6 +15,7 @@ import {
   FileText,
 } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { readPortalApiCache } from "lib/cache";
 
 type Subscriber = {
   id: string;
@@ -74,6 +75,31 @@ export default function TelegramSettingsPage() {
     notifyFraud: true,
   });
   const [prefsSaving, setPrefsSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    const cachedState = readPortalApiCache<TelegramState>("/api/portal/settings/telegram-notify/state");
+    if (cachedState && typeof cachedState === "object") {
+      setState(cachedState);
+    }
+
+    const cachedSubscribers = readPortalApiCache<Subscriber[]>("/api/portal/settings/telegram-notify/subscribers");
+    if (Array.isArray(cachedSubscribers)) {
+      setSubs(cachedSubscribers);
+    }
+
+    const cachedPrefs = readPortalApiCache<Record<string, unknown>>("/api/portal/settings/telegram-notify/preferences");
+    if (!cachedPrefs || typeof cachedPrefs !== "object") return;
+    const threshold = Number(cachedPrefs.notifyReviewThreshold);
+    setPrefs({
+      notifyOrders: !!cachedPrefs.notifyOrders,
+      notifyReviews: !!cachedPrefs.notifyReviews,
+      notifyReviewThreshold: Number.isFinite(threshold)
+        ? Math.min(5, Math.max(1, Math.round(threshold)))
+        : 3,
+      notifyDailyDigest: !!cachedPrefs.notifyDailyDigest,
+      notifyFraud: cachedPrefs.notifyFraud !== undefined ? !!cachedPrefs.notifyFraud : true,
+    });
+  }, []);
 
   const loadAll = React.useCallback(async () => {
     setBusy(true);

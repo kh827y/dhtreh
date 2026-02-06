@@ -40,9 +40,7 @@ export class EmailController {
    */
   @Post('welcome')
   @ApiOperation({ summary: 'Отправить приветственное письмо новому клиенту' })
-  async sendWelcomeEmail(
-    @Body() dto: SendWelcomeEmailDto,
-  ) {
+  async sendWelcomeEmail(@Body() dto: SendWelcomeEmailDto) {
     await this.emailService.sendWelcomeEmail(
       dto.merchantId,
       dto.customerId,

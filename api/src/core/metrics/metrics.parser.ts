@@ -57,7 +57,9 @@ export function parsePromMetrics(text: string): MetricsSummary {
       continue;
     }
     if (ln.startsWith('http_slow_requests_total')) {
-      const m = ln.match(/^http_slow_requests_total(?:\{[^}]*\})?\s+(\d+(?:\.\d+)?)/);
+      const m = ln.match(
+        /^http_slow_requests_total(?:\{[^}]*\})?\s+(\d+(?:\.\d+)?)/,
+      );
       if (m) {
         const v = Number(m[1]);
         if (!Number.isNaN(v)) httpSlow += v;

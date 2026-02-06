@@ -1,18 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  applyNoStoreHeaders,
+  upstreamFetch,
+  withRequestId,
+} from "../../_shared/upstream";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
 
-async function fetchJson(url: string, headers: Record<string, string>, label: string) {
-  const res = await fetch(url, { headers, cache: "no-store" });
+async function fetchJson(
+  req: NextRequest,
+  url: string,
+  headers: Record<string, string>,
+  label: string,
+) {
+  const res = await upstreamFetch(url, {
+    req,
+    headers: withRequestId(headers, req),
+  });
   if (!res.ok) {
     throw new Error(`Не удалось загрузить ${label}`);
   }
   return res.json();
 }
 
-async function fetchJsonSafe(url: string, headers: Record<string, string>) {
+async function fetchJsonSafe(
+  req: NextRequest,
+  url: string,
+  headers: Record<string, string>,
+) {
   try {
-    const res = await fetch(url, { headers, cache: "no-store" });
+    const res = await upstreamFetch(url, {
+      req,
+      headers: withRequestId(headers, req),
+    });
     if (!res.ok) {
       return { ok: false, status: res.status, data: null };
     }
@@ -37,11 +57,13 @@ export async function GET(req: NextRequest) {
     }
 
     const headers = { authorization: `Bearer ${token}` };
+    const outletsUrl = `${API_BASE}/portal/outlets?page=1&pageSize=1&status=all`;
+    const staffUrl = `${API_BASE}/portal/staff?page=1&pageSize=1`;
 
     const [tiers, outlets, staff] = await Promise.all([
-      fetchJson(`${API_BASE}/portal/loyalty/tiers`, headers, "уровни лояльности"),
-      fetchJson(`${API_BASE}/portal/outlets`, headers, "торговые точки"),
-      fetchJson(`${API_BASE}/portal/staff`, headers, "сотрудников"),
+      fetchJson(req, `${API_BASE}/portal/loyalty/tiers`, headers, "уровни лояльности"),
+      fetchJson(req, outletsUrl, headers, "торговые точки"),
+      fetchJson(req, staffUrl, headers, "сотрудников"),
     ]);
 
     const tiersList = Array.isArray(tiers)
@@ -75,11 +97,11 @@ export async function GET(req: NextRequest) {
     staffCount = staffTotal;
 
     const [bonusRes, nameRes, timezoneRes, supportRes, telegramRes] = await Promise.all([
-      fetchJsonSafe(`${API_BASE}/portal/loyalty/redeem-limits`, headers),
-      fetchJsonSafe(`${API_BASE}/portal/settings/name`, headers),
-      fetchJsonSafe(`${API_BASE}/portal/settings/timezone`, headers),
-      fetchJsonSafe(`${API_BASE}/portal/settings/support`, headers),
-      fetchJsonSafe(`${API_BASE}/portal/integrations/telegram-mini-app`, headers),
+      fetchJsonSafe(req, `${API_BASE}/portal/loyalty/redeem-limits`, headers),
+      fetchJsonSafe(req, `${API_BASE}/portal/settings/name`, headers),
+      fetchJsonSafe(req, `${API_BASE}/portal/settings/timezone`, headers),
+      fetchJsonSafe(req, `${API_BASE}/portal/settings/support`, headers),
+      fetchJsonSafe(req, `${API_BASE}/portal/integrations/telegram-mini-app`, headers),
     ]);
 
     const bonusData = bonusRes.ok ? bonusRes.data : null;
@@ -105,23 +127,26 @@ export async function GET(req: NextRequest) {
     const telegramData = telegramRes.ok ? telegramRes.data : null;
     const hasTelegramMiniApp = Boolean(telegramData?.enabled);
 
-    return NextResponse.json({
-      hasLoyaltySettings,
-      hasOutlets,
-      hasStaff,
-      hasBonusSettings,
-      hasSystemSettings,
-      hasTelegramMiniApp,
-      outletsCount,
-      staffCount,
-      bonusTtlDays: ttlDays,
-      bonusTtlEnabled: ttlEnabled,
-    });
+    return NextResponse.json(
+      {
+        hasLoyaltySettings,
+        hasOutlets,
+        hasStaff,
+        hasBonusSettings,
+        hasSystemSettings,
+        hasTelegramMiniApp,
+        outletsCount,
+        staffCount,
+        bonusTtlDays: ttlDays,
+        bonusTtlEnabled: ttlEnabled,
+      },
+      { headers: applyNoStoreHeaders() },
+    );
   } catch (err) {
     console.error("Setup status error:", err);
     return NextResponse.json(
       { error: "Не удалось загрузить статус настройки" },
-      { status: 502 },
+      { status: 502, headers: applyNoStoreHeaders() },
     );
   }
 }

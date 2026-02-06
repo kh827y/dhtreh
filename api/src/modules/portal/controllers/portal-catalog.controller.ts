@@ -157,8 +157,10 @@ export class PortalCatalogController {
     @Req() req: PortalRequest,
     @Query('status') status?: 'active' | 'inactive' | 'all',
     @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
-    return this.useCase.listOutlets(req, status, search);
+    return this.useCase.listOutlets(req, status, search, page, pageSize);
   }
 
   @Get('outlets/:outletId')

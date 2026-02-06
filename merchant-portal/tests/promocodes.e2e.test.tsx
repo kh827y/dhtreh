@@ -5,6 +5,13 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 
 const originalFetch = global.fetch;
 
+function formatLocalDateInput(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 describe("promocodes page (new design)", () => {
   let fetchMock: ReturnType<typeof mock.method> | undefined;
 
@@ -186,7 +193,7 @@ describe("promocodes page (new design)", () => {
     render(React.createElement(PromocodesPage));
 
     await screen.findByText("Промокоды");
-    const expectedStart = new Date().toISOString().split("T")[0];
+    const expectedStart = formatLocalDateInput(new Date());
     fireEvent.click(screen.getByText("Создать промокод"));
     await screen.findByText("Новый промокод");
 

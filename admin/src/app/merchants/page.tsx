@@ -1,5 +1,6 @@
 "use client";
 import React from 'react';
+import { useActionGuard, useLatestRequest } from "../../lib/async-guards";
 import { listMerchants, createMerchant, updateMerchant as apiUpdateMerchant, setPortalLoginEnabled, initTotp, verifyTotp, disableTotp, impersonatePortal, getCashier, rotateCashier, setCashier as apiSetCashier, grantSubscription as apiGrantSubscription, resetSubscription as apiResetSubscription, updateMerchantSettings, type MerchantRow } from "../../lib/merchants";
 
 const PORTAL_BASE = process.env.NEXT_PUBLIC_PORTAL_BASE || 'http://localhost:3004';
@@ -30,13 +31,25 @@ export default function AdminMerchantsPage() {
   const [subscriptionFilter, setSubscriptionFilter] = React.useState<SubscriptionFilter>('all');
   const maxOutletsParsed = parseOptionalPositiveInt(maxOutlets);
   const maxOutletsInvalid = maxOutletsParsed === null;
+  const { start: startLoad, isLatest: isLatestLoad } = useLatestRequest();
+  const runAction = useActionGuard();
 
-  async function load() {
-    setLoading(true); setMsg('');
-    try { setItems(await listMerchants()); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
-    finally { setLoading(false); }
-  }
-  React.useEffect(()=>{ load(); },[]);
+  const load = React.useCallback(async () => {
+    const requestId = startLoad();
+    setLoading(true);
+    setMsg('');
+    try {
+      const rows = await listMerchants();
+      if (!isLatestLoad(requestId)) return;
+      setItems(rows);
+    } catch (e: unknown) {
+      if (!isLatestLoad(requestId)) return;
+      setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (isLatestLoad(requestId)) setLoading(false);
+    }
+  }, [isLatestLoad, startLoad]);
+  React.useEffect(()=>{ load().catch(()=>{}); },[load]);
   const stats = React.useMemo(() => {
     const total = items.length;
     const expired = items.filter((m) => m.subscriptionExpired).length;
@@ -57,25 +70,27 @@ export default function AdminMerchantsPage() {
     });
   }, [items, search, subscriptionFilter]);
 
-  async function create() {
-    setMsg('');
-    const parsedLimit = parseOptionalPositiveInt(maxOutlets);
-    if (parsedLimit === null) {
-      setMsg('Лимит торговых точек должен быть целым числом >= 1');
-      return;
-    }
-    try {
-      await createMerchant(
-        name.trim(),
-        email.trim().toLowerCase(),
-        password,
-        ownerName.trim() || undefined,
-        parsedLimit ?? undefined,
-      );
-      setName(''); setEmail(''); setPassword(''); setOwnerName(''); setMaxOutlets('');
-      await load();
-    } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
-  }
+  const create = async () => {
+    await runAction(async () => {
+      setMsg('');
+      const parsedLimit = parseOptionalPositiveInt(maxOutlets);
+      if (parsedLimit === null) {
+        setMsg('Лимит торговых точек должен быть целым числом >= 1');
+        return;
+      }
+      try {
+        await createMerchant(
+          name.trim(),
+          email.trim().toLowerCase(),
+          password,
+          ownerName.trim() || undefined,
+          parsedLimit ?? undefined,
+        );
+        setName(''); setEmail(''); setPassword(''); setOwnerName(''); setMaxOutlets('');
+        await load();
+      } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
+    });
+  };
   async function saveRow(id: string, fields: { name?: string; email?: string; password?: string }) {
     setMsg('');
     try { await apiUpdateMerchant(id, fields); await load(); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
@@ -86,48 +101,90 @@ export default function AdminMerchantsPage() {
     });
     await load();
   }
-  async function toggleLogin(id: string, enabled: boolean) {
-    setMsg(''); try { await setPortalLoginEnabled(id, enabled); await load(); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
-  }
-  async function grantPlan(id: string, days: number) {
-    setMsg('');
-    try {
-      await apiGrantSubscription(id, { days, planId: 'plan_full' });
-      await load();
-      setMsg('Подписка обновлена');
-    } catch (e: unknown) {
-      setMsg(e instanceof Error ? e.message : String(e));
-    }
-  }
-  async function resetPlan(id: string) {
-    setMsg('');
-    try {
-      await apiResetSubscription(id);
-      await load();
-      setMsg('Подписка сброшена');
-    } catch (e: unknown) {
-      setMsg(e instanceof Error ? e.message : String(e));
-    }
-  }
-  async function doInitTotp(id: string) {
-    setMsg(''); setTotp(null); setCode('');
-    try { const r = await initTotp(id); setTotp({ merchantId: id, secret: r.secret, otpauth: r.otpauth }); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
-  }
-  async function doVerifyTotp(id: string) {
-    setMsg('');
-    try { await verifyTotp(id, code.trim()); setMsg('TOTP включён'); setTotp(null); setCode(''); await load(); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
-  }
-  async function doDisableTotp(id: string) {
-    setMsg(''); try { await disableTotp(id); setMsg('TOTP выключен'); await load(); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
-  }
-  async function openAs(id: string) {
-    setMsg('');
-    try { 
-      const r = await impersonatePortal(id);
-      const url = `${PORTAL_BASE}/api/session/accept-token?token=${encodeURIComponent(r.token)}&redirect=${encodeURIComponent('/')}`;
-      window.open(url, '_blank');
-    } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
-  }
+  const toggleLogin = async (id: string, enabled: boolean) => {
+    await runAction(async () => {
+      setMsg('');
+      try {
+        await setPortalLoginEnabled(id, enabled);
+        await load();
+      } catch (e: unknown) {
+        setMsg(e instanceof Error ? e.message : String(e));
+      }
+    });
+  };
+  const grantPlan = async (id: string, days: number) => {
+    await runAction(async () => {
+      setMsg('');
+      try {
+        await apiGrantSubscription(id, { days, planId: 'plan_full' });
+        await load();
+        setMsg('Подписка обновлена');
+      } catch (e: unknown) {
+        setMsg(e instanceof Error ? e.message : String(e));
+      }
+    });
+  };
+  const resetPlan = async (id: string) => {
+    await runAction(async () => {
+      setMsg('');
+      try {
+        await apiResetSubscription(id);
+        await load();
+        setMsg('Подписка сброшена');
+      } catch (e: unknown) {
+        setMsg(e instanceof Error ? e.message : String(e));
+      }
+    });
+  };
+  const doInitTotp = async (id: string) => {
+    await runAction(async () => {
+      setMsg(''); setTotp(null); setCode('');
+      try {
+        const r = await initTotp(id);
+        setTotp({ merchantId: id, secret: r.secret, otpauth: r.otpauth });
+      } catch (e: unknown) {
+        setMsg(e instanceof Error ? e.message : String(e));
+      }
+    });
+  };
+  const doVerifyTotp = async (id: string) => {
+    await runAction(async () => {
+      setMsg('');
+      try {
+        await verifyTotp(id, code.trim());
+        setMsg('TOTP включён');
+        setTotp(null);
+        setCode('');
+        await load();
+      } catch (e: unknown) {
+        setMsg(e instanceof Error ? e.message : String(e));
+      }
+    });
+  };
+  const doDisableTotp = async (id: string) => {
+    await runAction(async () => {
+      setMsg('');
+      try {
+        await disableTotp(id);
+        setMsg('TOTP выключен');
+        await load();
+      } catch (e: unknown) {
+        setMsg(e instanceof Error ? e.message : String(e));
+      }
+    });
+  };
+  const openAs = async (id: string) => {
+    await runAction(async () => {
+      setMsg('');
+      try {
+        const r = await impersonatePortal(id);
+        const url = `${PORTAL_BASE}/api/session/accept-token?token=${encodeURIComponent(r.token)}&redirect=${encodeURIComponent('/')}`;
+        window.open(url, '_blank');
+      } catch (e: unknown) {
+        setMsg(e instanceof Error ? e.message : String(e));
+      }
+    });
+  };
 
   return (
     <main style={{ maxWidth: 980, margin: '32px auto', fontFamily: 'system-ui, Arial' }}>
@@ -253,41 +310,48 @@ function RowEditor({ row, onSave, onGrantSubscription, onResetSubscription, onUp
   const [maxOutletsBusy, setMaxOutletsBusy] = React.useState(false);
   const parsedMaxOutlets = parseOptionalPositiveInt(maxOutletsInput);
   const maxOutletsInvalid = parsedMaxOutlets === null;
+  const runAction = useActionGuard();
   async function save() {
-    setSaving(true);
-    try {
-      const patch: { name?: string; email?: string; password?: string } = {};
-      const nextName = name.trim();
-      if (nextName && nextName !== row.name) patch.name = nextName;
-      const nextLogin = email.trim();
-      const currentLogin = row.portalEmail ?? '';
-      if (nextLogin && nextLogin !== currentLogin) patch.email = nextLogin;
-      if (pwd.trim()) patch.password = pwd;
-      if (Object.keys(patch).length === 0) return;
-      await onSave(row.id, patch);
-      setPwd('');
-    } finally {
-      setSaving(false);
-    }
+    await runAction(async () => {
+      setSaving(true);
+      try {
+        const patch: { name?: string; email?: string; password?: string } = {};
+        const nextName = name.trim();
+        if (nextName && nextName !== row.name) patch.name = nextName;
+        const nextLogin = email.trim();
+        const currentLogin = row.portalEmail ?? '';
+        if (nextLogin && nextLogin !== currentLogin) patch.email = nextLogin;
+        if (pwd.trim()) patch.password = pwd;
+        if (Object.keys(patch).length === 0) return;
+        await onSave(row.id, patch);
+        setPwd('');
+      } finally {
+        setSaving(false);
+      }
+    });
   }
   async function loadCashier() {
-    setCashierMsg('');
-    try {
-      const current = await getCashier(row.id);
-      setCashier(current);
-      setCashierInput(current.login || '');
-    } catch (e: unknown) {
-      setCashierMsg(String(e instanceof Error ? e.message : e));
-    }
+    await runAction(async () => {
+      setCashierMsg('');
+      try {
+        const current = await getCashier(row.id);
+        setCashier(current);
+        setCashierInput(current.login || '');
+      } catch (e: unknown) {
+        setCashierMsg(String(e instanceof Error ? e.message : e));
+      }
+    });
   }
   async function rotateLogin(regenLogin?: boolean) {
-    setCashierMsg('');
-    try {
-      const r = await rotateCashier(row.id, !!regenLogin);
-      setCashier({ login: r.login });
-      setCashierInput(r.login || '');
-      setCashierMsg('Логин кассира обновлён');
-    } catch (e: unknown) { setCashierMsg(String(e instanceof Error ? e.message : e)); }
+    await runAction(async () => {
+      setCashierMsg('');
+      try {
+        const r = await rotateCashier(row.id, !!regenLogin);
+        setCashier({ login: r.login });
+        setCashierInput(r.login || '');
+        setCashierMsg('Логин кассира обновлён');
+      } catch (e: unknown) { setCashierMsg(String(e instanceof Error ? e.message : e)); }
+    });
   }
   async function saveCashierLogin() {
     setCashierMsg('');
@@ -296,14 +360,16 @@ function RowEditor({ row, onSave, onGrantSubscription, onResetSubscription, onUp
       setCashierMsg('Введите логин кассира');
       return;
     }
-    try {
-      const r = await apiSetCashier(row.id, nextLogin);
-      setCashier({ login: r.login });
-      setCashierInput(r.login || '');
-      setCashierMsg('Логин кассира обновлён');
-    } catch (e: unknown) {
-      setCashierMsg(String(e instanceof Error ? e.message : e));
-    }
+    await runAction(async () => {
+      try {
+        const r = await apiSetCashier(row.id, nextLogin);
+        setCashier({ login: r.login });
+        setCashierInput(r.login || '');
+        setCashierMsg('Логин кассира обновлён');
+      } catch (e: unknown) {
+        setCashierMsg(String(e instanceof Error ? e.message : e));
+      }
+    });
   }
   async function grantSubscription() {
     const days = Number(subscriptionDays);
@@ -311,28 +377,32 @@ function RowEditor({ row, onSave, onGrantSubscription, onResetSubscription, onUp
       setSubscriptionMsg('Укажите срок в днях (>0)');
       return;
     }
-    setSubscriptionBusy(true);
-    setSubscriptionMsg('');
-    try {
-      await onGrantSubscription(row.id, days);
-      setSubscriptionMsg('Подписка обновлена');
-    } catch (e: unknown) {
-      setSubscriptionMsg(String(e instanceof Error ? e.message : e));
-    } finally {
-      setSubscriptionBusy(false);
-    }
+    await runAction(async () => {
+      setSubscriptionBusy(true);
+      setSubscriptionMsg('');
+      try {
+        await onGrantSubscription(row.id, days);
+        setSubscriptionMsg('Подписка обновлена');
+      } catch (e: unknown) {
+        setSubscriptionMsg(String(e instanceof Error ? e.message : e));
+      } finally {
+        setSubscriptionBusy(false);
+      }
+    });
   }
   async function resetSubscription() {
-    setSubscriptionBusy(true);
-    setSubscriptionMsg('');
-    try {
-      await onResetSubscription(row.id);
-      setSubscriptionMsg('Подписка сброшена');
-    } catch (e: unknown) {
-      setSubscriptionMsg(String(e instanceof Error ? e.message : e));
-    } finally {
-      setSubscriptionBusy(false);
-    }
+    await runAction(async () => {
+      setSubscriptionBusy(true);
+      setSubscriptionMsg('');
+      try {
+        await onResetSubscription(row.id);
+        setSubscriptionMsg('Подписка сброшена');
+      } catch (e: unknown) {
+        setSubscriptionMsg(String(e instanceof Error ? e.message : e));
+      } finally {
+        setSubscriptionBusy(false);
+      }
+    });
   }
   async function saveMaxOutlets() {
     setMaxOutletsMsg('');
@@ -341,15 +411,17 @@ function RowEditor({ row, onSave, onGrantSubscription, onResetSubscription, onUp
       setMaxOutletsMsg('Лимит должен быть целым числом ≥ 1');
       return;
     }
-    setMaxOutletsBusy(true);
-    try {
-      await onUpdateMaxOutlets(row.id, limit ?? null);
-      setMaxOutletsMsg('Лимит обновлён');
-    } catch (e: unknown) {
-      setMaxOutletsMsg(String(e instanceof Error ? e.message : e));
-    } finally {
-      setMaxOutletsBusy(false);
-    }
+    await runAction(async () => {
+      setMaxOutletsBusy(true);
+      try {
+        await onUpdateMaxOutlets(row.id, limit ?? null);
+        setMaxOutletsMsg('Лимит обновлён');
+      } catch (e: unknown) {
+        setMaxOutletsMsg(String(e instanceof Error ? e.message : e));
+      } finally {
+        setMaxOutletsBusy(false);
+      }
+    });
   }
   const expiresLabel = row.subscriptionEndsAt ? new Date(row.subscriptionEndsAt).toLocaleString('ru-RU') : '—';
   const daysLeftLabel = row.subscriptionDaysLeft != null ? `${row.subscriptionDaysLeft} дн.` : '—';

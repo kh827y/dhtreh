@@ -14,7 +14,10 @@ import type {
   AccessGroupListResponseDto as AccessGroupListResponseDtoModel,
   AccessGroupPermissionDto as AccessGroupPermissionDtoModel,
 } from './dto/access-group.dto';
-import type { AccessGroupFilters, AccessGroupPayload } from './merchant-panel.types';
+import type {
+  AccessGroupFilters,
+  AccessGroupPayload,
+} from './merchant-panel.types';
 
 @Injectable()
 export class MerchantPanelAccessGroupsService {
@@ -39,7 +42,10 @@ export class MerchantPanelAccessGroupsService {
     );
   }
 
-  private normalizePagination(pagination?: { page?: number; pageSize?: number }) {
+  private normalizePagination(pagination?: {
+    page?: number;
+    pageSize?: number;
+  }) {
     const page = Math.max(1, Math.floor(pagination?.page ?? 1));
     const pageSize = Math.max(
       1,
@@ -48,7 +54,10 @@ export class MerchantPanelAccessGroupsService {
     return { page, pageSize };
   }
 
-  private buildMeta(pagination: { page: number; pageSize: number }, total: number) {
+  private buildMeta(
+    pagination: { page: number; pageSize: number },
+    total: number,
+  ) {
     const totalPages = Math.max(1, Math.ceil(total / pagination.pageSize));
     return {
       page: pagination.page,
@@ -345,7 +354,9 @@ export class MerchantPanelAccessGroupsService {
       );
       const invalid = uniqueIds.filter((id) => !validIds.has(id));
       if (invalid.length) {
-        throw new BadRequestException('Сотрудники должны принадлежать мерчанту');
+        throw new BadRequestException(
+          'Сотрудники должны принадлежать мерчанту',
+        );
       }
     }
     const ownerRows = await this.prisma.staff.findMany({

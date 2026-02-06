@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { LoyaltyService } from '../services/loyalty.service';
 import { LevelsService } from '../../levels/levels.service';
 import { PrismaService } from '../../../core/prisma/prisma.service';

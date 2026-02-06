@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { outboxStats } from '../../../lib/outbox';
 import { usePreferredMerchantId } from '../../../lib/usePreferredMerchantId';
+import { useLatestRequest } from '../../../lib/async-guards';
 
 type Summary = { outboxPending: number; outboxDead: number; http5xx: number; http4xx: number; circuitOpen?: number; rateLimited?: number; counters: Record<string, number>; outboxEvents?: Record<string, number> };
 
@@ -11,6 +12,7 @@ export default function OutboxMonitorPage() {
   const [stats, setStats] = useState<Awaited<ReturnType<typeof outboxStats>> | null>(null);
   const [metrics, setMetrics] = useState<Summary | null>(null);
   const [err, setErr] = useState<string>('');
+  const { start, isLatest } = useLatestRequest();
   const sinceValue = since.trim();
   const sinceValid = !sinceValue || !Number.isNaN(new Date(sinceValue).getTime());
 
@@ -23,13 +25,17 @@ export default function OutboxMonitorPage() {
         setMetrics(null);
         return;
       }
+      const requestId = start();
       const [st, met] = await Promise.all([
         outboxStats(merchantId, sinceValue || undefined),
         fetch('/api/metrics').then(r=>r.json() as Promise<Summary>),
       ]);
+      if (!isLatest(requestId)) return;
       setStats(st); setMetrics(met); setErr('');
-    } catch (e: unknown) { setErr(String(e instanceof Error ? e.message : e)); }
-  }, [merchantId, sinceValid, sinceValue]);
+    } catch (e: unknown) {
+      setErr(String(e instanceof Error ? e.message : e));
+    }
+  }, [merchantId, sinceValid, sinceValue, isLatest, start]);
   useEffect(() => {
     void load();
     const id = setInterval(() => { void load(); }, 15000);

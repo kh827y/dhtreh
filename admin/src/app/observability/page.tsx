@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getObservabilitySummary, sendAlertTest, type ObservabilitySummary } from "../../lib/admin";
+import { useActionGuard, useLatestRequest } from "../../lib/async-guards";
 
 function formatAgo(iso: string | null) {
   if (!iso) return "нет данных";
@@ -32,21 +33,26 @@ export default function ObservabilityPage() {
   const [data, setData] = useState<ObservabilitySummary | null>(null);
   const [err, setErr] = useState<string>("");
   const [sending, setSending] = useState(false);
+  const { start, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    const requestId = start();
     try {
       const res = await getObservabilitySummary();
+      if (!isLatest(requestId)) return;
       setData(res); setErr("");
     } catch (e: unknown) {
+      if (!isLatest(requestId)) return;
       setErr(e instanceof Error ? e.message : String(e));
     }
-  };
+  }, [isLatest, start]);
 
   useEffect(() => {
     load().catch(() => {});
     const id = setInterval(load, 20000);
     return () => clearInterval(id);
-  }, []);
+  }, [load]);
 
   const incidents = useMemo(() => {
     const list = data?.incidents || [];
@@ -56,15 +62,17 @@ export default function ObservabilityPage() {
   const telemetry = data?.telemetry || { prometheus: true, grafana: true, sentry: false, otel: false };
 
   const sendTest = async () => {
-    try {
-      setSending(true);
-      await sendAlertTest("Проверка из админки");
-      await load();
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSending(false);
-    }
+    await runAction(async () => {
+      try {
+        setSending(true);
+        await sendAlertTest("Проверка из админки");
+        await load();
+      } catch (e: unknown) {
+        setErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSending(false);
+      }
+    });
   };
 
   return (

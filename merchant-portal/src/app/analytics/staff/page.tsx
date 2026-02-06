@@ -2,7 +2,7 @@
 
 import React from "react";
 import "./staff.css";
-import { Calendar, Store, Users, Medal, TrendingUp, UserPlus, BadgeCheck, Star } from "lucide-react";
+import { Calendar, Store, Users, Medal, TrendingUp, UserPlus, BadgeCheck, Star, Loader2 } from "lucide-react";
 import { normalizeErrorMessage } from "lib/portal-errors";
 
 type ApiStaffRow = {
@@ -380,17 +380,9 @@ export default function StaffActivityPage() {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {Array.from({ length: 3 }).map((_, idx) => (
-            <div
-              key={idx}
-              className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm relative overflow-hidden animate-pulse"
-            >
-              <div className="h-4 bg-gray-100 rounded w-28 mb-4" />
-              <div className="h-6 bg-gray-100 rounded w-1/2 mb-3" />
-              <div className="h-4 bg-gray-100 rounded w-2/5" />
-            </div>
-          ))}
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-8 flex items-center justify-center space-x-3 text-gray-600">
+          <Loader2 size={20} className="animate-spin" />
+          <span className="text-sm font-medium">Загружаем показатели по сотрудникам…</span>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -490,15 +482,16 @@ export default function StaffActivityPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading
-                ? Array.from({ length: 6 }).map((_, idx) => (
-                    <tr key={idx} className="animate-pulse">
-                      {Array.from({ length: 9 }).map((__, cellIdx) => (
-                        <td key={cellIdx} className="px-6 py-4">
-                          <div className="h-4 bg-gray-100 rounded w-24" />
-                        </td>
-                      ))}
+                ? (
+                    <tr>
+                      <td colSpan={9} className="px-6 py-8">
+                        <div className="flex items-center justify-center space-x-2 text-gray-500">
+                          <Loader2 size={16} className="animate-spin" />
+                          <span className="text-sm">Обновляем таблицу…</span>
+                        </div>
+                      </td>
                     </tr>
-                  ))
+                  )
                 : staffRows.map((staff) => (
                     <tr key={`${staff.id}-${staff.branch}`} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 font-medium text-gray-900 flex items-center">

@@ -99,8 +99,7 @@ export class ProductListItemDto {
   @ApiPropertyOptional() price?: number | null;
 }
 
-export class ProductDto extends ProductListItemDto {
-}
+export class ProductDto extends ProductListItemDto {}
 
 export class ProductListResponseDto {
   @ApiProperty({ type: () => [ProductListItemDto] })

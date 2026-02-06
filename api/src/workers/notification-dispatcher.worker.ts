@@ -17,6 +17,7 @@ import { getRulesSection } from '../shared/rules-json.util';
 import type { EventOutbox } from '@prisma/client';
 import { AppConfigService } from '../core/config/app-config.service';
 import { logIgnoredError } from '../shared/logging/ignore-error.util';
+import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../shared/pg-lock.util';
 
 type OutboxRow = EventOutbox;
 
@@ -238,7 +239,7 @@ export class NotificationDispatcherWorker
         const htmlRaw = this.asString(template.html) ?? '';
         const dataVars = this.toRecord(payload.variables) ?? {};
         const dispatchErrors: string[] = [];
-        let firstDispatchError: unknown | null = null;
+        let firstDispatchError: unknown = null;
 
         // derive recipients by segment if provided
         let customerIds: string[] = [];
@@ -809,6 +810,14 @@ export class NotificationDispatcherWorker
   private async tick() {
     if (this.running) return;
     this.running = true;
+    const lock = await pgTryAdvisoryLock(
+      this.prisma,
+      'worker:notification_dispatcher',
+    );
+    if (!lock.ok) {
+      this.running = false;
+      return;
+    }
     try {
       this.lastTickAt = new Date();
       try {
@@ -859,6 +868,7 @@ export class NotificationDispatcherWorker
         await this.handle(row);
       }
     } finally {
+      await pgAdvisoryUnlock(this.prisma, lock.key);
       this.running = false;
     }
   }

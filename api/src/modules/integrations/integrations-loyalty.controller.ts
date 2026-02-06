@@ -10,9 +10,11 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { Prisma, type Customer } from '@prisma/client';
+import { createHash } from 'crypto';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../core/cache/lookup-cache.service';
 import { LoyaltyService } from '../loyalty/services/loyalty.service';
+import { LoyaltyIdempotencyService } from '../loyalty/services/loyalty-idempotency.service';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { IntegrationApiKeyGuard } from './integration-api-key.guard';
 import { ApiTags } from '@nestjs/swagger';
@@ -79,6 +81,9 @@ const readErrorMessage = (error: unknown): string => {
   return Object.prototype.toString.call(error) as string;
 };
 
+const hashPayload = (payload: Record<string, unknown>): string =>
+  createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+
 @Controller('api/integrations')
 @UseGuards(IntegrationApiKeyGuard)
 @ApiTags('integrations')
@@ -87,6 +92,7 @@ export class IntegrationsLoyaltyController {
     private readonly loyalty: LoyaltyService,
     private readonly prisma: PrismaService,
     private readonly cache: LookupCacheService,
+    private readonly idempotency: LoyaltyIdempotencyService,
     private readonly config: AppConfigService,
   ) {}
 
@@ -892,6 +898,7 @@ export class IntegrationsLoyaltyController {
     if (!receipt) {
       throw new BadRequestException('Receipt not found');
     }
+    const idempotencyKey = (dto.idempotency_key || '').trim();
     const device = await this.ensureDeviceContext(
       merchantId,
       dto.device_id ?? null,
@@ -899,14 +906,34 @@ export class IntegrationsLoyaltyController {
     );
     const effectiveOutletId =
       dto.outlet_id ?? device?.outletId ?? receipt.outletId ?? null;
-    const result = await this.loyalty.refund({
-      merchantId,
-      invoiceNum: receipt.orderId,
-      orderId: receipt.id,
-      requestId: req.requestId,
-      deviceId: dto.device_id ?? null,
-      operationDate,
-    });
+    const execute = () =>
+      this.loyalty.refund({
+        merchantId,
+        invoiceNum: receipt.orderId,
+        orderId: receipt.id,
+        requestId: req.requestId,
+        deviceId: dto.device_id ?? null,
+        operationDate,
+      });
+    const requestHash = idempotencyKey
+      ? hashPayload({
+          merchantId,
+          invoiceNum: receipt.orderId,
+          orderId: receipt.id,
+          outletId: effectiveOutletId ?? null,
+          deviceId: dto.device_id ?? null,
+          operationDate: operationDate ? operationDate.toISOString() : null,
+        })
+      : null;
+    const result = idempotencyKey
+      ? await this.idempotency.run({
+          merchantId,
+          scope: 'integrations/refund',
+          key: idempotencyKey,
+          requestHash,
+          execute,
+        })
+      : await execute();
     const balanceAfter =
       result.customerId && result.customerId.length
         ? (await this.loyalty.balance(merchantId, result.customerId)).balance

@@ -1,4 +1,10 @@
 import { ImportExportService } from './import-export.service';
+import { ImportExportCustomersService } from './services/import-export-customers.service';
+import { ImportExportExportsService } from './services/import-export-exports.service';
+import { ImportExportFileService } from './services/import-export-file.service';
+import { ImportExportJobsService } from './services/import-export-jobs.service';
+import { ImportExportLogsService } from './services/import-export-logs.service';
+import { ImportExportTemplatesService } from './services/import-export-templates.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
@@ -8,6 +14,7 @@ type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
 type MockPrisma = {
   $transaction: (fn: (tx: MockPrisma) => Promise<unknown>) => Promise<unknown>;
   $queryRaw: MockFn;
+  syncLog: { create: MockFn; findFirst: MockFn; count: MockFn };
   customer: {
     findFirst: MockFn;
     create: MockFn;
@@ -17,6 +24,7 @@ type MockPrisma = {
     findFirst: MockFn;
     create: MockFn;
     update: MockFn;
+    upsert: MockFn;
   };
   receipt: {
     findUnique: MockFn;
@@ -63,6 +71,11 @@ const buildPrisma = (overrides: PrismaOverrides = {}): MockPrisma => {
   const prisma: MockPrisma = {
     $transaction: async (fn) => fn(prisma),
     $queryRaw: mockFn().mockResolvedValue([]),
+    syncLog: {
+      create: mockFn().mockResolvedValue({}),
+      findFirst: mockFn().mockResolvedValue(null),
+      count: mockFn().mockResolvedValue(0),
+    },
     customer: {
       findFirst: mockFn().mockResolvedValue(null),
       create: mockFn().mockResolvedValue({
@@ -82,6 +95,7 @@ const buildPrisma = (overrides: PrismaOverrides = {}): MockPrisma => {
       findFirst: mockFn().mockResolvedValue(null),
       create: mockFn().mockResolvedValue({ id: 'wallet_1' }),
       update: mockFn().mockResolvedValue({ id: 'wallet_1' }),
+      upsert: mockFn().mockResolvedValue({ id: 'wallet_1', balance: 0 }),
     },
     receipt: {
       findUnique: mockFn().mockResolvedValue(null),
@@ -122,10 +136,35 @@ const buildPrisma = (overrides: PrismaOverrides = {}): MockPrisma => {
   return prisma;
 };
 
+const buildService = (prisma: MockPrisma) => {
+  const prismaService = asPrismaService(prisma);
+  const files = new ImportExportFileService();
+  const logs = new ImportExportLogsService(prismaService);
+  const customers = new ImportExportCustomersService(
+    prismaService,
+    files,
+    logs,
+  );
+  const exportsService = new ImportExportExportsService(
+    prismaService,
+    files,
+    logs,
+  );
+  const templates = new ImportExportTemplatesService(files);
+  const jobs = new ImportExportJobsService(prismaService, customers);
+  return new ImportExportService(
+    jobs,
+    customers,
+    exportsService,
+    logs,
+    templates,
+  );
+};
+
 describe('ImportExportService.importCustomers', () => {
   it('создаёт клиента, чек и выставляет баланс', async () => {
     const prisma = buildPrisma();
-    const service = new ImportExportService(asPrismaService(prisma));
+    const service = buildService(prisma);
     const csv = [
       'phone;balance_points;operation_amount;earn_points;redeem_points;order_id;receipt_number',
       '+7 (900) 123-45-67;1200;1500;75;0;ORDER-1;0001',
@@ -167,7 +206,7 @@ describe('ImportExportService.importCustomers', () => {
 
   it('поддерживает русские заголовки', async () => {
     const prisma = buildPrisma();
-    const service = new ImportExportService(asPrismaService(prisma));
+    const service = buildService(prisma);
     const csv = [
       'Номер телефона;Сумма операции;ID операции',
       '+7 (900) 123-45-67;1500;ORDER-1',
@@ -205,7 +244,7 @@ describe('ImportExportService.importCustomers', () => {
         create: mockFn(),
       },
     });
-    const service = new ImportExportService(asPrismaService(prisma));
+    const service = buildService(prisma);
     const csv = [
       'phone;operation_amount;earn_points;redeem_points;order_id;receipt_number',
       '+7 (900) 123-45-67;1500;75;0;ORDER-1;0001',
@@ -237,7 +276,7 @@ describe('ImportExportService.importCustomers', () => {
         create: mockFn(),
       },
     });
-    const service = new ImportExportService(asPrismaService(prisma));
+    const service = buildService(prisma);
     const csv = [
       'phone;operation_amount;earn_points;redeem_points;order_id;receipt_number',
       '+7 (900) 123-45-67;1500;75;0;ORDER-1;0001',
@@ -287,7 +326,7 @@ describe('ImportExportService.importCustomers', () => {
         ]),
       },
     });
-    const service = new ImportExportService(asPrismaService(prisma));
+    const service = buildService(prisma);
     const csv = [
       'phone;total_spent;visits_count;last_purchase_at',
       '+7 (900) 123-45-67;10000;5;2024-10-12',
@@ -330,7 +369,7 @@ describe('ImportExportService.importCustomers', () => {
         findMany: mockFn().mockResolvedValue([]),
       },
     });
-    const service = new ImportExportService(asPrismaService(prisma));
+    const service = buildService(prisma);
     const csv = ['phone;level', '+7 (900) 123-45-67;Silver'].join('\n');
 
     await service.importCustomers({
@@ -356,7 +395,7 @@ describe('ImportExportService.importCustomers', () => {
         ]),
       },
     });
-    const service = new ImportExportService(asPrismaService(prisma));
+    const service = buildService(prisma);
     const csv = ['phone;level', `+7 (900) 123-45-67;Base\u200b`].join('\n');
 
     await service.importCustomers({
@@ -375,7 +414,7 @@ describe('ImportExportService.importCustomers', () => {
 
   it('игнорирует полностью пустые строки', async () => {
     const prisma = buildPrisma();
-    const service = new ImportExportService(asPrismaService(prisma));
+    const service = buildService(prisma);
     const csv = [
       'phone;balance_points;operation_amount;order_id',
       '+7 (900) 123-45-67;1200;1500;ORDER-1',

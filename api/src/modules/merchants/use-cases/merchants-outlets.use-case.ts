@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { MerchantsService } from '../merchants.service';
-import { CreateOutletDto, UpdateOutletDto, UpdateOutletStatusDto } from '../dto';
+import {
+  CreateOutletDto,
+  UpdateOutletDto,
+  UpdateOutletStatusDto,
+} from '../dto';
 
 @Injectable()
 export class MerchantsOutletsUseCase {

@@ -24,6 +24,8 @@ import {
   type ReferralProgramSettingsApi,
 } from "./referral-program-model";
 import { normalizeErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
+import { readPortalApiCache } from "lib/cache";
 
 type RegistrationBonusState = { loaded: boolean; enabled: boolean; points: number };
 
@@ -36,8 +38,24 @@ export default function ReferralProgramSettingsPage() {
     enabled: false,
     points: 0,
   });
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
+
+  React.useEffect(() => {
+    const cachedSettings = readPortalApiCache<ReferralProgramSettingsApi>("/api/portal/referrals/program");
+    if (cachedSettings && typeof cachedSettings === "object") {
+      setSettings(mapReferralProgramApiToForm(cachedSettings));
+    }
+
+    const cachedBonus = readPortalApiCache<Record<string, unknown>>("/api/portal/loyalty/registration-bonus");
+    if (!cachedBonus || typeof cachedBonus !== "object") return;
+    const points = Math.max(0, Math.floor(Number(cachedBonus.points ?? 0) || 0));
+    const enabled = Boolean(cachedBonus.enabled) && points > 0;
+    setRegistrationBonus({ loaded: true, enabled, points });
+  }, []);
 
   const load = React.useCallback(async () => {
+    const requestId = startLoad();
     setLoading(true);
     try {
       const [refRes, regRes] = await Promise.all([
@@ -47,54 +65,59 @@ export default function ReferralProgramSettingsPage() {
 
       const refJson = (await refRes.json().catch(() => ({}))) as ReferralProgramSettingsApi;
       if (!refRes.ok) throw new Error((refJson as any)?.message || "Не удалось загрузить настройки");
+      if (!isLatest(requestId)) return;
       setSettings(mapReferralProgramApiToForm(refJson));
 
       const regJson = (await regRes.json().catch(() => ({}))) as any;
       if (!regRes.ok) {
+        if (!isLatest(requestId)) return;
         setRegistrationBonus({ loaded: true, enabled: false, points: 0 });
       } else {
         const points = Math.max(0, Math.floor(Number(regJson?.points ?? 0) || 0));
         const enabled = Boolean(regJson?.enabled) && points > 0;
+        if (!isLatest(requestId)) return;
         setRegistrationBonus({ loaded: true, enabled, points });
       }
     } catch (e: any) {
+      if (!isLatest(requestId)) return;
       alert(normalizeErrorMessage(e, "Не удалось загрузить настройки"));
       setRegistrationBonus({ loaded: true, enabled: false, points: 0 });
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, []);
+  }, [isLatest, startLoad]);
 
   React.useEffect(() => {
     void load();
   }, [load]);
 
   const handleSave = React.useCallback(async () => {
-    if (loading || saving) return;
     const validationError = validateReferralProgramForm(settings);
     if (validationError) {
       alert(validationError);
       return;
     }
 
-    setSaving(true);
-    try {
-      const payload = buildReferralProgramPayload(settings);
-      const res = await fetch("/api/portal/referrals/program", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const json = (await res.json().catch(() => ({}))) as ReferralProgramSettingsApi;
-      if (!res.ok) throw new Error((json as any)?.message || "Не удалось сохранить настройки");
-      alert("Настройки реферальной программы сохранены!");
-      setSettings(mapReferralProgramApiToForm(json, settings));
-    } catch (e: any) {
-      alert(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
-    } finally {
-      setSaving(false);
-    }
-  }, [loading, saving, settings]);
+    await runAction(async () => {
+      setSaving(true);
+      try {
+        const payload = buildReferralProgramPayload(settings);
+        const res = await fetch("/api/portal/referrals/program", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = (await res.json().catch(() => ({}))) as ReferralProgramSettingsApi;
+        if (!res.ok) throw new Error((json as any)?.message || "Не удалось сохранить настройки");
+        alert("Настройки реферальной программы сохранены!");
+        setSettings(mapReferralProgramApiToForm(json, settings));
+      } catch (e: any) {
+        alert(normalizeErrorMessage(e, "Не удалось сохранить настройки"));
+      } finally {
+        setSaving(false);
+      }
+    });
+  }, [runAction, settings]);
 
   const updateLevelValue = React.useCallback((index: number, value: number) => {
     setSettings((prev) => {

@@ -44,7 +44,7 @@ export class NotificationsController {
             },
           },
         }),
-      async () => undefined,
+      () => undefined,
       this.logger,
       'admin audit write failed',
     );
@@ -55,10 +55,7 @@ export class NotificationsController {
   @ApiOkResponse({
     schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
   })
-  async test(
-    @Body() body: NotificationsTestDto,
-    @Req() _req: any,
-  ) {
+  async test(@Body() body: NotificationsTestDto, @Req() _req: any) {
     const res = await this.svc.test(
       body.merchantId,
       body.channel,
@@ -77,7 +74,7 @@ export class NotificationsController {
             payload: { channel: body.channel, to: body.to },
           },
         }),
-      async () => undefined,
+      () => undefined,
       this.logger,
       'admin audit write failed',
     );

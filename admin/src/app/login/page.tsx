@@ -1,32 +1,37 @@
 "use client";
 import { useState } from 'react';
+import { useActionGuard } from '../../lib/async-guards';
 
 export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  const runAction = useActionGuard();
   async function submit(e: React.FormEvent) {
-    e.preventDefault(); setBusy(true); setMsg('');
-    try {
-      const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password, code: code || undefined }) });
-      if (r.ok) {
-        location.href = '/';
-        return;
+    e.preventDefault();
+    await runAction(async () => {
+      setBusy(true); setMsg('');
+      try {
+        const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password, code: code || undefined }) });
+        if (r.ok) {
+          location.href = '/';
+          return;
+        }
+        if (r.status === 401) {
+          setMsg('Неверный пароль или код.');
+          return;
+        }
+        if (r.status === 429) {
+          setMsg('Слишком много попыток. Попробуйте позже.');
+          return;
+        }
+        setMsg('Вход временно недоступен. Попробуйте позже.');
+      } catch {
+        setMsg('Не удалось подключиться. Попробуйте позже.');
       }
-      if (r.status === 401) {
-        setMsg('Неверный пароль или код.');
-        return;
-      }
-      if (r.status === 429) {
-        setMsg('Слишком много попыток. Попробуйте позже.');
-        return;
-      }
-      setMsg('Вход временно недоступен. Попробуйте позже.');
-    } catch {
-      setMsg('Не удалось подключиться. Попробуйте позже.');
-    }
-    finally { setBusy(false); }
+      finally { setBusy(false); }
+    });
   }
   return (
     <div style={{ maxWidth: 400, margin: '80px auto', fontFamily: 'system-ui, Arial', color: '#e6edf3' }}>

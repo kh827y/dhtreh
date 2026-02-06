@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { IntegrationsLoyaltyController } from './integrations-loyalty.controller';
 import type { LoyaltyService } from '../loyalty/services/loyalty.service';
+import type { LoyaltyIdempotencyService } from '../loyalty/services/loyalty-idempotency.service';
 import type { PrismaService } from '../../core/prisma/prisma.service';
 import type { LookupCacheService } from '../../core/cache/lookup-cache.service';
 import { AppConfigService } from '../../core/config/app-config.service';
@@ -41,6 +42,9 @@ type LoyaltyStub = {
   calculateAction: MockFn;
 };
 type LoyaltyOverrides = Partial<LoyaltyStub>;
+type IdempotencyStub = {
+  run: MockFn;
+};
 type CacheStub = {
   getMerchantSettings: MockFn;
   getOutlet: MockFn;
@@ -132,11 +136,10 @@ function createPrismaMock(overrides: PrismaOverrides = {}): MockPrisma {
 
 function createCacheMock(prisma: MockPrisma): CacheStub {
   return {
-    getMerchantSettings: mockFn().mockImplementation(
-      async (merchantId: string) =>
-        prisma.merchantSettings.findUnique({
-          where: { merchantId },
-        }),
+    getMerchantSettings: mockFn().mockImplementation((merchantId: string) =>
+      prisma.merchantSettings.findUnique({
+        where: { merchantId },
+      }),
     ),
     getOutlet: mockFn().mockImplementation(
       async (merchantId: string, outletId: string) => {
@@ -182,6 +185,9 @@ function createController(
 ) {
   const prisma = createPrismaMock(prismaOverrides);
   const cache = createCacheMock(prisma);
+  const idempotency: IdempotencyStub = {
+    run: mockFn(),
+  };
   const loyalty: LoyaltyStub = {
     calculateBonusPreview: mockFn(),
     processIntegrationBonus: mockFn(),
@@ -196,9 +202,10 @@ function createController(
     asLoyaltyService(loyalty),
     asPrismaService(prisma),
     asCacheService(cache),
+    idempotency as unknown as LoyaltyIdempotencyService,
     new AppConfigService(),
   );
-  return { controller, prisma, loyalty, cache };
+  return { controller, prisma, loyalty, cache, idempotency };
 }
 
 describe('IntegrationsLoyaltyController', () => {

@@ -73,7 +73,6 @@ function formatErrorMessage(error: unknown): string {
   return 'unknown_error';
 }
 
-
 class TelegramSendError extends Error {
   status?: number;
   constructor(message: string, status?: number) {

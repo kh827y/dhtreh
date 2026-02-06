@@ -14,6 +14,7 @@ type PrismaStub = {
   communicationTask: {
     findMany: MockFn<Promise<unknown[]>, [unknown?]>;
     update: MockFn<Promise<unknown>, [unknown?]>;
+    updateMany: MockFn<Promise<{ count: number }>, [unknown?]>;
     findUnique: MockFn<Promise<unknown>, [unknown?]>;
   };
   communicationTaskRecipient: {
@@ -55,6 +56,8 @@ type WorkerPrivate = {
 
 const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
   jest.fn<Return, Args>();
+const objectContaining = <T extends object>(value: T) =>
+  expect.objectContaining(value) as unknown as T;
 
 const asPrismaService = (stub: PrismaStub) => stub as unknown as PrismaService;
 const asMetricsService = (stub: MetricsStub) =>
@@ -84,6 +87,10 @@ describe('CommunicationsDispatcherWorker', () => {
           [],
         ),
         update: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
+        updateMany: mockFn<
+          Promise<{ count: number }>,
+          [unknown?]
+        >().mockResolvedValue({ count: 1 }),
         findUnique: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue(
           null,
         ),
@@ -110,7 +117,9 @@ describe('CommunicationsDispatcherWorker', () => {
         ),
       },
       segmentCustomer: {
-        findMany: mockFn<Promise<unknown[]>, [unknown?]>().mockResolvedValue([]),
+        findMany: mockFn<Promise<unknown[]>, [unknown?]>().mockResolvedValue(
+          [],
+        ),
       },
       loyaltyPromotion: {
         findFirst: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue(
@@ -126,9 +135,10 @@ describe('CommunicationsDispatcherWorker', () => {
     };
     const metrics: MetricsStub = { inc: mockFn() };
     const telegram: TelegramStub = {
-      sendCampaignMessage: mockFn<Promise<void>, [string, string, unknown]>().mockResolvedValue(
-        undefined,
-      ),
+      sendCampaignMessage: mockFn<
+        Promise<void>,
+        [string, string, unknown]
+      >().mockResolvedValue(undefined),
       sendPushNotification: mockFn<
         Promise<void>,
         [string, string, unknown]
@@ -154,6 +164,10 @@ describe('CommunicationsDispatcherWorker', () => {
           { id: 't1', stats: { attempts: 1 } },
         ]),
         update: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
+        updateMany: mockFn<
+          Promise<{ count: number }>,
+          [unknown?]
+        >().mockResolvedValue({ count: 1 }),
         findUnique: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue(
           null,
         ),
@@ -163,9 +177,9 @@ describe('CommunicationsDispatcherWorker', () => {
     await asPrivateWorker(worker).recoverStaleTasks();
 
     expect(prisma.communicationTask.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: 't1' },
-        data: expect.objectContaining({ status: 'SCHEDULED', startedAt: null }),
+        data: objectContaining({ status: 'SCHEDULED', startedAt: null }),
       }),
     );
   });
@@ -180,6 +194,10 @@ describe('CommunicationsDispatcherWorker', () => {
           { id: 't2', stats: { attempts: 1 } },
         ]),
         update: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
+        updateMany: mockFn<
+          Promise<{ count: number }>,
+          [unknown?]
+        >().mockResolvedValue({ count: 1 }),
         findUnique: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue(
           null,
         ),
@@ -189,9 +207,9 @@ describe('CommunicationsDispatcherWorker', () => {
     await asPrivateWorker(worker).recoverStaleTasks();
 
     expect(prisma.communicationTask.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: 't2' },
-        data: expect.objectContaining({ status: 'FAILED' }),
+        data: objectContaining({ status: 'FAILED' }),
       }),
     );
   });
@@ -206,6 +224,10 @@ describe('CommunicationsDispatcherWorker', () => {
           { id: 't3', stats: { attempts: 0 } },
         ]),
         update: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
+        updateMany: mockFn<
+          Promise<{ count: number }>,
+          [unknown?]
+        >().mockResolvedValue({ count: 1 }),
         findUnique: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue(
           null,
         ),
@@ -215,9 +237,9 @@ describe('CommunicationsDispatcherWorker', () => {
     await asPrivateWorker(worker).requeueFailedTasks();
 
     expect(prisma.communicationTask.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: 't3' },
-        data: expect.objectContaining({ status: 'SCHEDULED', startedAt: null }),
+        data: objectContaining({ status: 'SCHEDULED', startedAt: null }),
       }),
     );
   });
@@ -266,12 +288,12 @@ describe('CommunicationsDispatcherWorker', () => {
     expect(telegram.sendCampaignMessage).toHaveBeenCalledWith(
       'm1',
       '123',
-      expect.objectContaining({ text: 'Hello Ivan' }),
+      objectContaining({ text: 'Hello Ivan' }),
     );
     expect(prisma.communicationTask.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: 't4' },
-        data: expect.objectContaining({ status: 'COMPLETED' }),
+        data: objectContaining({ status: 'COMPLETED' }),
       }),
     );
   });
@@ -293,9 +315,9 @@ describe('CommunicationsDispatcherWorker', () => {
     await asPrivateWorker(worker).processTelegramTask(task);
 
     expect(prisma.communicationTask.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: 't5' },
-        data: expect.objectContaining({ status: 'FAILED' }),
+        data: objectContaining({ status: 'FAILED' }),
       }),
     );
   });
@@ -344,12 +366,12 @@ describe('CommunicationsDispatcherWorker', () => {
     expect(telegram.sendPushNotification).toHaveBeenCalledWith(
       'm1',
       '555',
-      expect.objectContaining({ body: 'Push Maya', title: 'Hi Maya' }),
+      objectContaining({ body: 'Push Maya', title: 'Hi Maya' }),
     );
     expect(prisma.communicationTask.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: 't6' },
-        data: expect.objectContaining({ status: 'COMPLETED' }),
+        data: objectContaining({ status: 'COMPLETED' }),
       }),
     );
   });

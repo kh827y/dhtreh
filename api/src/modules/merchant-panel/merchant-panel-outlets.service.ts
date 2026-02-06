@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, StaffOutletAccessStatus } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { MerchantsService } from '../merchants/merchants.service';
@@ -7,7 +11,10 @@ import {
   ensureUniqueDeviceCodes,
   type NormalizedDeviceCode,
 } from '../../shared/devices/device.util';
-import type { OutletFilters, UpsertOutletPayload } from './merchant-panel.types';
+import type {
+  OutletFilters,
+  UpsertOutletPayload,
+} from './merchant-panel.types';
 
 @Injectable()
 export class MerchantPanelOutletsService {
@@ -16,13 +23,22 @@ export class MerchantPanelOutletsService {
     private readonly merchants: MerchantsService,
   ) {}
 
-  private normalizePagination(pagination?: { page?: number; pageSize?: number }) {
+  private normalizePagination(pagination?: {
+    page?: number;
+    pageSize?: number;
+  }) {
     const page = Math.max(1, Math.floor(pagination?.page ?? 1));
-    const pageSize = Math.max(1, Math.min(200, Math.floor(pagination?.pageSize ?? 20)));
+    const pageSize = Math.max(
+      1,
+      Math.min(200, Math.floor(pagination?.pageSize ?? 20)),
+    );
     return { page, pageSize };
   }
 
-  private buildMeta(pagination: { page: number; pageSize: number }, total: number) {
+  private buildMeta(
+    pagination: { page: number; pageSize: number },
+    total: number,
+  ) {
     const totalPages = Math.max(1, Math.ceil(total / pagination.pageSize));
     return {
       page: pagination.page,
@@ -38,7 +54,9 @@ export class MerchantPanelOutletsService {
     for (const [rawKey, rawValue] of Object.entries(
       input as Record<string, unknown>,
     )) {
-      const key = String(rawKey || '').toLowerCase().trim();
+      const key = String(rawKey || '')
+        .toLowerCase()
+        .trim();
       if (!key) continue;
       if (typeof rawValue === 'string') {
         const trimmed = rawValue.trim();

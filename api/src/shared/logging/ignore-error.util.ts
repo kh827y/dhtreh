@@ -21,7 +21,7 @@ const formatError = (err: unknown): string => {
   if (err == null) return 'unknown error';
   try {
     return JSON.stringify(err);
-  } catch (_err) {
+  } catch {
     return 'unknown error';
   }
 };
@@ -30,7 +30,7 @@ const formatContext = (context?: Record<string, unknown>): string | null => {
   if (!context) return null;
   try {
     return JSON.stringify(context);
-  } catch (_err) {
+  } catch {
     return null;
   }
 };
@@ -69,7 +69,7 @@ export const logIgnoredError = (
   const line = contextLine ? `${base} | context=${contextLine}` : base;
   try {
     logWithLevel(resolveLogger(logger), level, line);
-  } catch (_err) {
+  } catch {
     // Ignore logging failures to avoid infinite loops.
   }
 };

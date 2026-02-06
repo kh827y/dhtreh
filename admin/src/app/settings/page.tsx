@@ -3,6 +3,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getSettings, updateSettings, previewRules, type MerchantSettings } from '../../lib/admin';
 import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
+import { useActionGuard, useLatestRequest } from '../../lib/async-guards';
 
 type PreviewChannel = 'SMART' | 'PC_POS' | 'VIRTUAL';
 
@@ -55,6 +56,9 @@ function SettingsPageInner() {
   const [msg, setMsg] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [rulesErrors, setRulesErrors] = useState<string[]>([]);
+  const { start: startLoad, isLatest: isLatestLoad } = useLatestRequest();
+  const { start: startPreview, isLatest: isLatestPreview } = useLatestRequest();
+  const runAction = useActionGuard();
   const [preview, setPreview] = useState<{ channel: PreviewChannel }>({
     channel: 'SMART',
   });
@@ -74,8 +78,10 @@ function SettingsPageInner() {
 
   useEffect(() => {
     if (!merchantId) { setS(null); setMsg('Укажите merchantId'); return; }
+    const requestId = startLoad();
     setLoading(true);
     getSettings(merchantId).then(r => {
+      if (!isLatestLoad(requestId)) return;
       setS(r);
       setRules(r.rulesJson ? JSON.stringify(r.rulesJson, null, 2) : '');
       setWebhookUrl(r.webhookUrl || '');
@@ -86,49 +92,56 @@ function SettingsPageInner() {
       setMiniappThemePrimary(r.miniappThemePrimary || '');
       setMiniappThemeBg(r.miniappThemeBg || '');
       setTelegramStartParamRequired(!!r.telegramStartParamRequired);
-    }).catch((e: unknown) => setMsg(String(e instanceof Error ? e.message : e))).finally(()=>setLoading(false));
-  }, [merchantId]);
+    }).catch((e: unknown) => {
+      if (!isLatestLoad(requestId)) return;
+      setMsg(String(e instanceof Error ? e.message : e));
+    }).finally(() => {
+      if (isLatestLoad(requestId)) setLoading(false);
+    });
+  }, [merchantId, isLatestLoad, startLoad]);
 
   const save = async () => {
     if (!s) return;
-    setLoading(true);
-    try {
-      let rulesJson: unknown = undefined;
-      if (rules.trim()) {
-        try { rulesJson = JSON.parse(rules); }
-        catch (e: unknown) { setMsg('Некорректный JSON правил: ' + (e instanceof Error ? e.message : e)); setLoading(false); return; }
-        const errs = validateRules(rulesJson);
-        setRulesErrors(errs);
-        if (errs.length) { setMsg('Исправьте ошибки правил перед сохранением'); setLoading(false); return; }
-      }
-      const dto: Partial<MerchantSettings> = {
-        qrTtlSec: s.qrTtlSec,
-        redeemCooldownSec: s.redeemCooldownSec,
-        earnCooldownSec: s.earnCooldownSec,
-        redeemDailyCap: s.redeemDailyCap ?? null,
-        earnDailyCap: s.earnDailyCap ?? null,
-        pointsTtlDays: s.pointsTtlDays ?? null,
-        maxOutlets: s.maxOutlets ?? null,
-        timezone: s.timezone ?? undefined,
-        rulesJson,
-        webhookUrl: webhookUrl || undefined,
-        webhookKeyId: webhookKeyId || undefined,
-        webhookSecret: webhookSecret || undefined,
-        webhookKeyIdNext: webhookKeyIdNext || undefined,
-        webhookSecretNext: webhookSecretNext || undefined,
-        useWebhookNext: useWebhookNext,
-        miniappBaseUrl: miniappBaseUrl || undefined,
-        miniappThemePrimary: miniappThemePrimary || undefined,
-        miniappThemeBg: miniappThemeBg || undefined,
-        telegramStartParamRequired: telegramStartParamRequired,
-      };
-      const r = await updateSettings(merchantId, dto);
-      setS(r);
-      setMsg('Сохранено');
-      setWebhookSecret('');
-      setWebhookSecretNext('');
-    } catch (e: unknown) { setMsg('Ошибка сохранения: ' + (e instanceof Error ? e.message : e)); }
-    finally { setLoading(false); }
+    await runAction(async () => {
+      setLoading(true);
+      try {
+        let rulesJson: unknown = undefined;
+        if (rules.trim()) {
+          try { rulesJson = JSON.parse(rules); }
+          catch (e: unknown) { setMsg('Некорректный JSON правил: ' + (e instanceof Error ? e.message : e)); setLoading(false); return; }
+          const errs = validateRules(rulesJson);
+          setRulesErrors(errs);
+          if (errs.length) { setMsg('Исправьте ошибки правил перед сохранением'); setLoading(false); return; }
+        }
+        const dto: Partial<MerchantSettings> = {
+          qrTtlSec: s.qrTtlSec,
+          redeemCooldownSec: s.redeemCooldownSec,
+          earnCooldownSec: s.earnCooldownSec,
+          redeemDailyCap: s.redeemDailyCap ?? null,
+          earnDailyCap: s.earnDailyCap ?? null,
+          pointsTtlDays: s.pointsTtlDays ?? null,
+          maxOutlets: s.maxOutlets ?? null,
+          timezone: s.timezone ?? undefined,
+          rulesJson,
+          webhookUrl: webhookUrl || undefined,
+          webhookKeyId: webhookKeyId || undefined,
+          webhookSecret: webhookSecret || undefined,
+          webhookKeyIdNext: webhookKeyIdNext || undefined,
+          webhookSecretNext: webhookSecretNext || undefined,
+          useWebhookNext: useWebhookNext,
+          miniappBaseUrl: miniappBaseUrl || undefined,
+          miniappThemePrimary: miniappThemePrimary || undefined,
+          miniappThemeBg: miniappThemeBg || undefined,
+          telegramStartParamRequired: telegramStartParamRequired,
+        };
+        const r = await updateSettings(merchantId, dto);
+        setS(r);
+        setMsg('Сохранено');
+        setWebhookSecret('');
+        setWebhookSecretNext('');
+      } catch (e: unknown) { setMsg('Ошибка сохранения: ' + (e instanceof Error ? e.message : e)); }
+      finally { setLoading(false); }
+    });
   };
 
   const computeRules = useCallback(
@@ -163,15 +176,26 @@ function SettingsPageInner() {
       const json = rules.trim() ? JSON.parse(rules) : [];
       setRulesErrors(validateRules(json));
       setPreviewOut(computeRules(json, preview));
+      if (!merchantId) {
+        setServerPreviewOut(null);
+        return;
+      }
+      const requestId = startPreview();
       // запрос к серверу для превью текущих сохраненных правил мерчанта
       previewRules(merchantId, {
         channel: preview.channel,
         weekday: new Date().getDay(),
       })
-        .then(res => setServerPreviewOut(res))
-        .catch(()=>setServerPreviewOut(null));
+        .then(res => {
+          if (!isLatestPreview(requestId)) return;
+          setServerPreviewOut(res);
+        })
+        .catch(() => {
+          if (!isLatestPreview(requestId)) return;
+          setServerPreviewOut(null);
+        });
     } catch { setRulesErrors(['Некорректный JSON']); setPreviewOut(null); }
-  }, [rules, preview, merchantId, computeRules]);
+  }, [rules, preview, merchantId, computeRules, isLatestPreview, startPreview]);
 
   return (
     <div>

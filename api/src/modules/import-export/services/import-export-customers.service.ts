@@ -57,7 +57,7 @@ export class ImportExportCustomersService {
       balancesSet: 0,
       errors: [] as Array<{ row: number; error: string }>,
     };
-    let firstError: unknown | null = null;
+    let firstError: unknown = null;
 
     const updateExisting = dto.updateExisting === true;
     const tierCache: { loaded: boolean; map: Map<string, string> } = {
@@ -151,9 +151,9 @@ export class ImportExportCustomersService {
           [operationAmount, earnPoints, redeemPoints].some(
             (value) => value !== null,
           ) &&
-          (!transactionDate || !orderId)
+          !orderId
         ) {
-          throw new Error('Дата и ID операции обязательны при операции');
+          throw new Error('ID операции обязателен');
         }
 
         const rowResult = await this.prisma.$transaction(async (tx) => {
@@ -175,7 +175,9 @@ export class ImportExportCustomersService {
           );
 
           if (tags.length > 0) {
-            const merged = Array.from(new Set([...(customer.tags || []), ...tags]));
+            const merged = Array.from(
+              new Set([...(customer.tags || []), ...tags]),
+            );
             await tx.customer.update({
               where: { id: customer.id },
               data: { tags: merged },
@@ -192,21 +194,23 @@ export class ImportExportCustomersService {
             );
           }
 
-          const wallet = await this.ensureWallet(dto.merchantId, customer.id, tx);
+          const wallet = await this.ensureWallet(
+            dto.merchantId,
+            customer.id,
+            tx,
+          );
 
           let receiptsImported = 0;
           let receiptsSkipped = 0;
           let statsUpdated = 0;
           let receiptCacheKey: string | null = null;
-          let receiptCacheValue:
-            | {
-                customerId: string;
-                total: number;
-                earnApplied: number;
-                redeemApplied: number;
-                receiptNumber: string | null;
-              }
-            | null = null;
+          let receiptCacheValue: {
+            customerId: string;
+            total: number;
+            earnApplied: number;
+            redeemApplied: number;
+            receiptNumber: string | null;
+          } | null = null;
 
           if (balancePoints !== null) {
             await tx.wallet.update({
@@ -226,6 +230,10 @@ export class ImportExportCustomersService {
               },
               tx,
             );
+            await this.refreshCustomerStats(
+              { merchantId: dto.merchantId, customerId: customer.id },
+              tx,
+            );
             statsUpdated = 1;
           }
 
@@ -234,10 +242,14 @@ export class ImportExportCustomersService {
             earnPoints !== null ||
             redeemPoints !== null
           ) {
+            if (!orderId) {
+              throw new Error('ID операции обязателен');
+            }
+            const orderIdValue = orderId;
             const total = operationAmount ?? 0;
             const earnApplied = earnPoints ?? 0;
             const redeemApplied = Math.abs(redeemPoints ?? 0);
-            const receiptCacheId = `${customer.id}_${orderId}_${total}_${earnApplied}_${redeemApplied}_${receiptNumber}`;
+            const receiptCacheId = `${customer.id}_${orderIdValue}_${total}_${earnApplied}_${redeemApplied}_${receiptNumber}`;
             if (cachedReceipts.has(receiptCacheId)) {
               receiptsSkipped++;
             } else {
@@ -245,23 +257,39 @@ export class ImportExportCustomersService {
                 where: {
                   merchantId_orderId: {
                     merchantId: dto.merchantId,
-                    orderId: orderId ?? '',
+                    orderId: orderIdValue,
                   },
                 },
-                select: { id: true, total: true, earnApplied: true, redeemApplied: true },
+                select: {
+                  id: true,
+                  total: true,
+                  earnApplied: true,
+                  redeemApplied: true,
+                  receiptNumber: true,
+                },
               });
               if (existing) {
-                receiptsSkipped++;
+                const same =
+                  Number(existing.total ?? 0) === total &&
+                  Number(existing.earnApplied ?? 0) === earnApplied &&
+                  Number(existing.redeemApplied ?? 0) === redeemApplied &&
+                  (existing.receiptNumber ?? null) === (receiptNumber ?? null);
+                if (same) {
+                  receiptsSkipped++;
+                } else {
+                  throw new Error('order_id уже используется');
+                }
               } else {
                 await tx.receipt.create({
                   data: {
                     merchantId: dto.merchantId,
                     customerId: customer.id,
                     total,
+                    eligibleTotal: total,
                     earnApplied,
                     redeemApplied,
                     createdAt: transactionDate ?? new Date(),
-                    orderId: orderId ?? undefined,
+                    orderId: orderIdValue,
                     receiptNumber,
                   },
                 });
@@ -273,7 +301,7 @@ export class ImportExportCustomersService {
                       customerId: customer.id,
                       type: TxnType.EARN,
                       amount: Math.abs(earnApplied),
-                      orderId: orderId ?? undefined,
+                      orderId: orderIdValue,
                       createdAt: transactionDate ?? new Date(),
                     },
                   });
@@ -285,7 +313,7 @@ export class ImportExportCustomersService {
                       customerId: customer.id,
                       type: TxnType.REDEEM,
                       amount: -Math.abs(redeemApplied),
-                      orderId: orderId ?? undefined,
+                      orderId: orderIdValue,
                       createdAt: transactionDate ?? new Date(),
                     },
                   });
@@ -417,7 +445,7 @@ export class ImportExportCustomersService {
       updated: 0,
       errors: [] as Array<{ row: number; error: string }>,
     };
-    let firstError: unknown | null = null;
+    let firstError: unknown = null;
 
     const valueRaw = this.asString(dto.value ?? null);
     const valueAmount =
@@ -541,7 +569,7 @@ export class ImportExportCustomersService {
       imported: 0,
       errors: [] as Array<{ row: number; error: string }>,
     };
-    let firstError: unknown | null = null;
+    let firstError: unknown = null;
 
     const allowedTypes = new Set(Object.values(TxnType));
 
@@ -722,7 +750,16 @@ export class ImportExportCustomersService {
       return String(value);
     }
     if (value instanceof Date) return value.toISOString();
-    return String(value);
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return '';
+      }
+    }
+    if (typeof value === 'symbol') return value.toString();
+    if (typeof value === 'function') return value.name || 'function';
+    return '';
   }
 
   private toTrimmedString(value: unknown): string | null {
@@ -997,9 +1034,9 @@ export class ImportExportCustomersService {
 
   private normalizeTierName(value: string) {
     return value
-      .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
-      .replace(/\\u00A0/g, ' ')
-      .replace(/\\s+/g, ' ')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/\u00A0/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim()
       .toLowerCase();
   }
@@ -1017,12 +1054,16 @@ export class ImportExportCustomersService {
     customerId: string,
     prisma: PrismaClientLike = this.prisma,
   ) {
-    const wallet = await prisma.wallet.findFirst({
-      where: { merchantId, customerId, type: WalletType.POINTS },
-    });
-    if (wallet) return wallet;
-    return prisma.wallet.create({
-      data: {
+    return prisma.wallet.upsert({
+      where: {
+        customerId_merchantId_type: {
+          customerId,
+          merchantId,
+          type: WalletType.POINTS,
+        },
+      },
+      update: {},
+      create: {
         merchantId,
         customerId,
         type: WalletType.POINTS,
@@ -1187,7 +1228,7 @@ export class ImportExportCustomersService {
 
   private buildPhoneVariants(phone?: string | null): string[] {
     if (!phone) return [];
-    const digits = phone.replace(/\\D/g, '');
+    const digits = phone.replace(/\D/g, '');
     if (!digits || digits === phone) return [phone];
     return [phone, digits];
   }
@@ -1195,7 +1236,7 @@ export class ImportExportCustomersService {
   private normalizePhone(phone?: string): string | null {
     if (!phone) return null;
 
-    let cleaned = phone.replace(/\\D/g, '');
+    let cleaned = phone.replace(/\D/g, '');
 
     if (cleaned.startsWith('8')) {
       cleaned = '7' + cleaned.substring(1);
@@ -1216,9 +1257,9 @@ export class ImportExportCustomersService {
     if (!dateStr) return null;
 
     const formats = [
-      /^(\\d{2})\\.(\\d{2})\\.(\\d{4})$/,
-      /^(\\d{2})\\/(\\d{2})\\/(\\d{4})$/,
-      /^(\\d{4})-(\\d{2})-(\\d{2})$/,
+      /^(\d{2})\.(\d{2})\.(\d{4})$/,
+      /^(\d{2})\/(\d{2})\/(\d{4})$/,
+      /^(\d{4})-(\d{2})-(\d{2})$/,
     ];
 
     for (const format of formats) {

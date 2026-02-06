@@ -23,7 +23,10 @@ type PrismaStub = {
 
 type MetricsStub = { inc: MockFn; setGauge: MockFn };
 type PushStub = {
-  sendToTopic: MockFn<Promise<{ success: boolean }>, [string, string, string, Record<string, string>?]>;
+  sendToTopic: MockFn<
+    Promise<{ success: boolean }>,
+    [string, string, string, Record<string, string>?]
+  >;
 };
 type EmailStub = { sendEmail: MockFn };
 type StaffNotifyStub = { sendStaffAlert: MockFn };
@@ -34,6 +37,8 @@ type WorkerPrivate = {
 
 const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
   jest.fn<Return, Args>();
+const objectContaining = <T extends object>(value: T) =>
+  expect.objectContaining(value) as unknown as T;
 
 const asPrismaService = (stub: PrismaStub) => stub as unknown as PrismaService;
 const asMetricsService = (stub: MetricsStub) =>
@@ -98,6 +103,8 @@ describe('NotificationDispatcherWorker', () => {
       },
       retries: 0,
       status: 'PENDING',
+      nextRetryAt: null,
+      lastError: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as EventOutbox;
@@ -111,9 +118,9 @@ describe('NotificationDispatcherWorker', () => {
       expect.any(Object),
     );
     expect(prisma.eventOutbox.update).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         where: { id: 'n1' },
-        data: expect.objectContaining({ status: 'SENT' }),
+        data: objectContaining({ status: 'SENT' }),
       }),
     );
     expect(prisma.adminAudit.create).toHaveBeenCalled();

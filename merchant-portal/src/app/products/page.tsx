@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ShoppingBag,
   Plus,
@@ -17,6 +17,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { readErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type Category = {
   id: string;
@@ -82,9 +83,13 @@ const ProductsPage: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
+  const { start: startProductsLoad, isLatest: isLatestProducts } = useLatestRequest();
+  const { start: startCategoriesLoad, isLatest: isLatestCategories } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
@@ -101,6 +106,8 @@ const ProductsPage: React.FC = () => {
   });
 
   const loadCategories = useCallback(async () => {
+    const requestId = startCategoriesLoad();
+    setError(null);
     try {
       const res = await fetch("/api/portal/catalog/categories");
       if (!res.ok) {
@@ -108,12 +115,14 @@ const ProductsPage: React.FC = () => {
       }
       const payload = await res.json();
       const nextCategories = Array.isArray(payload) ? payload.map(mapPortalCategory) : [];
+      if (!isLatestCategories(requestId)) return;
       setCategories(nextCategories);
     } catch (err) {
+      if (!isLatestCategories(requestId)) return;
       const message = err instanceof Error ? err.message : String(err || "Не удалось загрузить категории");
       setError(message);
     }
-  }, []);
+  }, [isLatestCategories, startCategoriesLoad]);
 
   const loadProducts = useCallback(
     async (options?: { append?: boolean; offset?: number; search?: string; categoryId?: string }) => {
@@ -121,6 +130,8 @@ const ProductsPage: React.FC = () => {
       const offset = Number(options?.offset ?? 0) || 0;
       const search = String(options?.search ?? "").trim();
       const categoryId = String(options?.categoryId ?? "all");
+      if (append && loadingMoreRef.current) return;
+      const requestId = startProductsLoad();
       if (append) {
         setLoadingMore(true);
       } else {
@@ -145,9 +156,11 @@ const ProductsPage: React.FC = () => {
             : [];
         const nextProducts = items.map(mapPortalProduct);
         const nextTotal = Number(payload?.total ?? nextProducts.length) || 0;
+        if (!isLatestProducts(requestId)) return;
         setProducts((prev) => (append ? [...prev, ...nextProducts] : nextProducts));
         setTotal(nextTotal);
       } catch (err) {
+        if (!isLatestProducts(requestId)) return;
         const message = err instanceof Error ? err.message : String(err || "Не удалось загрузить товары");
         setError(message);
         if (!append) {
@@ -155,19 +168,21 @@ const ProductsPage: React.FC = () => {
           setTotal(0);
         }
       } finally {
-        if (append) {
-          setLoadingMore(false);
-        } else {
-          setLoading(false);
-        }
+        if (!isLatestProducts(requestId)) return;
+        if (append) setLoadingMore(false);
+        else setLoading(false);
       }
     },
-    [],
+    [isLatestProducts, startProductsLoad],
   );
 
   useEffect(() => {
     void loadCategories();
   }, [loadCategories]);
+
+  useEffect(() => {
+    loadingMoreRef.current = loadingMore;
+  }, [loadingMore]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -210,7 +225,7 @@ const ProductsPage: React.FC = () => {
     setView("edit");
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     const name = formData.name.trim();
     if (!name) {
       setError("Введите название товара");
@@ -229,45 +244,49 @@ const ProductsPage: React.FC = () => {
       redeemPercent: formData.allowPointPayment ? clampPercent(formData.maxPaymentPercent) : 0,
     };
 
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        view === "edit" && editingId ? `/api/portal/catalog/products/${editingId}` : "/api/portal/catalog/products",
-        {
-          method: view === "edit" ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
-      if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Не удалось сохранить товар"));
+    void runAction(async () => {
+      setSaving(true);
+      setError(null);
+      try {
+        const res = await fetch(
+          view === "edit" && editingId ? `/api/portal/catalog/products/${editingId}` : "/api/portal/catalog/products",
+          {
+            method: view === "edit" ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+        if (!res.ok) {
+          throw new Error(await readErrorMessage(res, "Не удалось сохранить товар"));
+        }
+        await res.json().catch(() => null);
+        setView("list");
+        await loadProducts({ offset: 0, search: appliedSearch, categoryId: filterCategory });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err || "Не удалось сохранить товар");
+        setError(message);
+      } finally {
+        setSaving(false);
       }
-      await res.json().catch(() => null);
-      setView("list");
-      await loadProducts({ offset: 0, search: appliedSearch, categoryId: filterCategory });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err || "Не удалось сохранить товар");
-      setError(message);
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     if (!confirm("Вы уверены, что хотите удалить этот товар?")) return;
-    setError(null);
-    try {
-      const res = await fetch(`/api/portal/catalog/products/${encodeURIComponent(id)}`, { method: "DELETE" });
-      if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Не удалось удалить товар"));
+    void runAction(async () => {
+      setError(null);
+      try {
+        const res = await fetch(`/api/portal/catalog/products/${encodeURIComponent(id)}`, { method: "DELETE" });
+        if (!res.ok) {
+          throw new Error(await readErrorMessage(res, "Не удалось удалить товар"));
+        }
+        setProducts((prev) => prev.filter((item) => item.id !== id));
+        setTotal((prev) => Math.max(0, prev - 1));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err || "Не удалось удалить товар");
+        setError(message);
       }
-      setProducts((prev) => prev.filter((item) => item.id !== id));
-      setTotal((prev) => Math.max(0, prev - 1));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err || "Не удалось удалить товар");
-      setError(message);
-    }
+    });
   };
 
   if (view === "create" || view === "edit") {

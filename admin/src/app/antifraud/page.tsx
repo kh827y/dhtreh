@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getSettings, resetAntifraudLimit } from '../../lib/admin';
 import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
+import { useActionGuard, useLatestRequest } from '../../lib/async-guards';
 
 type ResetScope = 'merchant' | 'customer' | 'staff' | 'device' | 'outlet';
 
@@ -244,11 +245,15 @@ export default function AntiFraudPage() {
   const [resetTargetId, setResetTargetId] = useState('');
   const [resetMsg, setResetMsg] = useState('');
   const [resetBusy, setResetBusy] = useState(false);
+  const { start: startReports, isLatest: isLatestReports } = useLatestRequest();
+  const { start: startConfig, isLatest: isLatestConfig } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const loadReports = useCallback(async () => {
+    const requestId = startReports();
     setLoading(true);
     try {
-      if (!merchantId) { setLoading(false); return; }
+      if (!merchantId) { if (isLatestReports(requestId)) setLoading(false); return; }
       // Fetch transactions for analysis
       const txParams = new URLSearchParams({ limit: String(TRANSACTION_LIMIT) });
       if (dateRange.from) txParams.set('from', dateRange.from);
@@ -263,20 +268,24 @@ export default function AntiFraudPage() {
       const transactions = rawItems.map(toTransaction);
       
       // Analyze for anomalies
+      if (!isLatestReports(requestId)) return;
       setAnomalies(buildAnomalies(transactions));
       setNightActivity(buildNightActivity(transactions, merchantTimezone));
       setSerialRefunds(buildSerialRefunds(transactions));
     } catch (e: unknown) {
+      if (!isLatestReports(requestId)) return;
       console.error(e);
     } finally {
-      setLoading(false);
+      if (isLatestReports(requestId)) setLoading(false);
     }
-  }, [dateRange.from, dateRange.to, merchantId, merchantTimezone]);
+  }, [dateRange.from, dateRange.to, merchantId, merchantTimezone, isLatestReports, startReports]);
 
   const loadAf = useCallback(async () => {
+    const requestId = startConfig();
     try {
       if (!merchantId) return;
       const s = await getSettings(merchantId) as { timezone?: unknown; rulesJson?: unknown };
+      if (!isLatestConfig(requestId)) return;
       setMerchantTimezone(String(s.timezone || DEFAULT_TIMEZONE_CODE));
       const rules = s.rulesJson;
       const rulesRecord = isRecord(rules) ? rules : null;
@@ -307,10 +316,12 @@ export default function AntiFraudPage() {
         ? (afObj as { blockFactors: unknown[] }).blockFactors.map(String).join(',')
         : '';
       setBfStr(bfs);
+      setCfgMsg('');
     } catch (e: unknown) {
+      if (!isLatestConfig(requestId)) return;
       setCfgMsg('Не удалось загрузить настройки антифрода: ' + (e instanceof Error ? e.message : String(e)));
     }
-  }, [merchantId]);
+  }, [isLatestConfig, merchantId, startConfig]);
 
   useEffect(() => {
     if (!merchantId) return;
@@ -325,20 +336,22 @@ export default function AntiFraudPage() {
   const canReset = !!merchantId && (resetScope === 'merchant' || !!resetTargetId.trim());
   const runReset = async () => {
     if (!merchantId) return;
-    setResetBusy(true);
-    setResetMsg('');
-    try {
-      await resetAntifraudLimit(merchantId, {
-        scope: resetScope,
-        targetId: resetScope === 'merchant' ? undefined : resetTargetId.trim(),
-      });
-      setResetMsg('Сброс выполнен.');
-      setResetTargetId('');
-    } catch (e: unknown) {
-      setResetMsg(e instanceof Error ? e.message : 'Не удалось выполнить сброс');
-    } finally {
-      setResetBusy(false);
-    }
+    await runAction(async () => {
+      setResetBusy(true);
+      setResetMsg('');
+      try {
+        await resetAntifraudLimit(merchantId, {
+          scope: resetScope,
+          targetId: resetScope === 'merchant' ? undefined : resetTargetId.trim(),
+        });
+        setResetMsg('Сброс выполнен.');
+        setResetTargetId('');
+      } catch (e: unknown) {
+        setResetMsg(e instanceof Error ? e.message : 'Не удалось выполнить сброс');
+      } finally {
+        setResetBusy(false);
+      }
+    });
   };
 
   return (

@@ -4,6 +4,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Search, X } from "lucide-react";
 import { createPortal } from "react-dom";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type TierSummary = {
   id: string;
@@ -74,6 +75,8 @@ export function TierMembersModal({
   const [error, setError] = React.useState("");
   const [nextCursor, setNextCursor] = React.useState<string | null>(null);
   const [total, setTotal] = React.useState(0);
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runLoad = useActionGuard();
 
   const mapResponse = React.useCallback(
     (payload: TierMembersResponse | TierMember[] | null | undefined) => {
@@ -97,46 +100,51 @@ export function TierMembersModal({
   const loadMembers = React.useCallback(
     async (cursor?: string | null, append = false) => {
       if (!tier?.id) return;
-      setLoading(true);
-      setError("");
-      try {
-        const qs = new URLSearchParams({ limit: "100" });
-        if (cursor) qs.set("cursor", cursor);
-        const res = await fetch(
-          `/api/portal/loyalty/tiers/${encodeURIComponent(tier.id)}/customers?${qs.toString()}`,
-          { cache: "no-store" },
-        );
-        if (!res.ok)
-          throw new Error(
-            (await res.text().catch(() => "")) ||
-              "Не удалось загрузить клиентов уровня",
+      await runLoad(async () => {
+        const requestId = startLoad();
+        setLoading(true);
+        setError("");
+        try {
+          const qs = new URLSearchParams({ limit: "100" });
+          if (cursor) qs.set("cursor", cursor);
+          const res = await fetch(
+            `/api/portal/loyalty/tiers/${encodeURIComponent(tier.id)}/customers?${qs.toString()}`,
+            { cache: "no-store" },
           );
-        const payload = mapResponse(await res.json().catch(() => null));
-        const normalized = payload.items.map((item) => ({
-          customerId: item?.customerId ?? (item as any)?.merchantCustomerId ?? "",
-          name: item?.name ?? null,
-          phone: item?.phone ?? null,
-          assignedAt: item?.assignedAt ?? "",
-          source: item?.source ?? null,
-          totalSpent:
-            item?.totalSpent != null ? Number(item.totalSpent) : null,
-          firstSeenAt: item?.firstSeenAt ?? null,
-        }));
-        setNextCursor(payload.nextCursor ?? null);
-        setTotal(payload.total ?? normalized.length);
-        setMembers((prev) => (append ? [...prev, ...normalized] : normalized));
-      } catch (e: any) {
-        if (!append) {
-          setMembers([]);
-          setNextCursor(null);
-          setTotal(0);
+          if (!res.ok)
+            throw new Error(
+              (await res.text().catch(() => "")) ||
+                "Не удалось загрузить клиентов уровня",
+            );
+          const payload = mapResponse(await res.json().catch(() => null));
+          const normalized = payload.items.map((item) => ({
+            customerId: item?.customerId ?? (item as any)?.merchantCustomerId ?? "",
+            name: item?.name ?? null,
+            phone: item?.phone ?? null,
+            assignedAt: item?.assignedAt ?? "",
+            source: item?.source ?? null,
+            totalSpent:
+              item?.totalSpent != null ? Number(item.totalSpent) : null,
+            firstSeenAt: item?.firstSeenAt ?? null,
+          }));
+          if (!isLatest(requestId)) return;
+          setNextCursor(payload.nextCursor ?? null);
+          setTotal(payload.total ?? normalized.length);
+          setMembers((prev) => (append ? [...prev, ...normalized] : normalized));
+        } catch (e: any) {
+          if (!isLatest(requestId)) return;
+          if (!append) {
+            setMembers([]);
+            setNextCursor(null);
+            setTotal(0);
+          }
+          setError(humanError(e, "Не удалось загрузить клиентов"));
+        } finally {
+          if (isLatest(requestId)) setLoading(false);
         }
-        setError(humanError(e, "Не удалось загрузить клиентов"));
-      } finally {
-        setLoading(false);
-      }
+      });
     },
-    [tier?.id, mapResponse],
+    [tier?.id, mapResponse, runLoad, startLoad, isLatest],
   );
 
   React.useEffect(() => {

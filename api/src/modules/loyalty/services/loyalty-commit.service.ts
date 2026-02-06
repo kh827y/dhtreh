@@ -18,6 +18,11 @@ import { safeExecAsync } from '../../../shared/safe-exec';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import { getRulesRoot } from '../../../shared/rules-json.util';
 import { LoyaltyOpsBase } from './loyalty-ops-base.service';
+
+type TierRateSnapshot = {
+  earnBps: number;
+  tierMinPayment: number | null;
+};
 import { allocateByWeight, allocateProRata } from './loyalty-ops-math.util';
 import type {
   OptionalModelsClient,
@@ -471,13 +476,15 @@ export class LoyaltyCommitService extends LoyaltyOpsBase {
         // Доп. начисление при списании, если включено allowEarnRedeemSameReceipt
         let extraEarn = 0;
         if (!accrualsBlocked) {
-          const msRules = await safeExecAsync(
+          const msRules = await safeExecAsync<{
+            rulesJson?: Prisma.InputJsonValue | null;
+          } | null>(
             () =>
               tx.merchantSettings.findUnique({
                 where: { merchantId: hold.merchantId },
               }),
-            async () => null,
-            { warn: this.logger.debug.bind(this.logger) },
+            () => null,
+            { warn: (msg: string) => this.logger.debug(msg) },
             'commit: load merchant settings for extra earn',
           );
           const rules = getRulesRoot(msRules?.rulesJson) ?? {};
@@ -491,15 +498,15 @@ export class LoyaltyCommitService extends LoyaltyOpsBase {
             const { earnDailyCap } = await this.getSettings(hold.merchantId);
             let earnBpsEff = 0;
             let tierMinPaymentLocal: number | null = null;
-            const tierRates = await safeExecAsync(
+            const tierRates = await safeExecAsync<TierRateSnapshot | null>(
               () =>
                 this.tiers.resolveTierRatesForCustomer(
                   hold.merchantId,
                   hold.customerId,
                   tx,
                 ),
-              async () => null,
-              { warn: this.logger.debug.bind(this.logger) },
+              () => null,
+              { warn: (msg: string) => this.logger.debug(msg) },
               'commit: resolve tier rates for extra earn',
             );
             if (tierRates) {
@@ -1266,7 +1273,7 @@ export class LoyaltyCommitService extends LoyaltyOpsBase {
               merchantId_orderId: { merchantId: hold.merchantId, orderId },
             },
           }),
-        async () => null,
+        () => null,
         this.logger,
         'commit: load receipt after txn failure',
       );

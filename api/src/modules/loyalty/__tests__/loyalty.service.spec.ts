@@ -7,6 +7,8 @@ import type { StaffMotivationEngine } from '../../staff-motivation/staff-motivat
 import type { PrismaService } from '../../../core/prisma/prisma.service';
 import type { LoyaltyContextService } from '../services/loyalty-context.service';
 import type { LoyaltyTierService } from '../services/loyalty-tier.service';
+import type { LoyaltyIntegrationService } from '../services/loyalty-integration.service';
+import type { LoyaltyCommitService } from '../services/loyalty-commit.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -65,6 +67,10 @@ type LoyaltyServicePrivate = {
   ) => { total: number; eligibleAmount: number };
   applyReferralRewards: PrivateMethod;
 };
+type IntegrationServicePrivate = LoyaltyIntegrationService & {
+  ensurePointsWallet: PrivateMethod;
+  computeIntegrationCalc: PrivateMethod;
+};
 const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
   jest.fn<Return, Args>();
 const mockFnWithImpl = <Return, Args extends unknown[]>(
@@ -80,9 +86,10 @@ const asPromoCodesService = (stub: PromoCodesStub) =>
 const asNotificationsService = (stub: NotificationsStub) =>
   stub as unknown as TelegramStaffNotificationsService;
 const getIntegrationService = (service: LoyaltyService) =>
-  (service as unknown as { integrationService: any }).integrationService;
+  (service as unknown as { integrationService: IntegrationServicePrivate })
+    .integrationService;
 const getCommitService = (service: LoyaltyService) =>
-  (service as unknown as { commitService: any }).commitService;
+  (service as unknown as { commitService: LoyaltyCommitService }).commitService;
 
 const buildContext = (
   overrides: Partial<{
@@ -1145,7 +1152,7 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     );
     const applyReferralRewardsSpy = jest
       .spyOn(
-        getCommitService(svc) as LoyaltyServicePrivate,
+        getCommitService(svc) as unknown as LoyaltyServicePrivate,
         'applyReferralRewards',
       )
       .mockResolvedValue(undefined);

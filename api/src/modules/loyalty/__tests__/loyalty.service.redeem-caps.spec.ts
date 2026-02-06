@@ -6,6 +6,7 @@ import type { TelegramStaffNotificationsService } from '../../telegram/staff-not
 import type { StaffMotivationEngine } from '../../staff-motivation/staff-motivation.engine';
 import type { LoyaltyContextService } from '../services/loyalty-context.service';
 import type { LoyaltyTierService } from '../services/loyalty-tier.service';
+import type { LoyaltyIntegrationService } from '../services/loyalty-integration.service';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -15,11 +16,6 @@ type MetricsStub = {
   inc: MockFn;
   observe: MockFn;
   setGauge: MockFn;
-};
-type CustomerContext = {
-  customerId: string;
-  accrualsBlocked: boolean;
-  redemptionsBlocked: boolean;
 };
 type MerchantSettings = {
   earnBps: number;
@@ -96,9 +92,10 @@ const asStaffNotificationsService = (stub: TelegramStaffNotificationsService) =>
 const asStaffMotivationEngine = (stub: StaffMotivationEngine) =>
   stub as unknown as StaffMotivationEngine;
 const getIntegrationService = (service: LoyaltyService) =>
-  (service as unknown as { integrationService: any }).integrationService;
+  (service as unknown as { integrationService: LoyaltyIntegrationService })
+    .integrationService;
 const asPrivateService = (service: LoyaltyService) =>
-  getIntegrationService(service) as LoyaltyServicePrivate;
+  getIntegrationService(service) as unknown as LoyaltyServicePrivate;
 const getContext = (service: LoyaltyService) =>
   (service as unknown as { context: { ensureCustomerContext: MockFn } })
     .context;

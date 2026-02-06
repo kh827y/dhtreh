@@ -4,6 +4,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import type { Gender } from "./data";
+import { useActionGuard } from "lib/async-guards";
 
 export type CustomerFormPayload = {
   login: string;
@@ -56,6 +57,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
   const [errors, setErrors] = React.useState<FormErrors>({});
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const runSubmit = useActionGuard();
 
   React.useEffect(() => {
     if (open) {
@@ -128,17 +130,19 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
     event.preventDefault();
     if (!validate()) return;
 
-    try {
-      setSubmitting(true);
-      setSubmitError(null);
-      await onSubmit(form);
-      onClose();
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error ?? "Произошла ошибка");
-      setSubmitError(message);
-    } finally {
-      setSubmitting(false);
-    }
+    await runSubmit(async () => {
+      try {
+        setSubmitting(true);
+        setSubmitError(null);
+        await onSubmit(form);
+        onClose();
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error ?? "Произошла ошибка");
+        setSubmitError(message);
+      } finally {
+        setSubmitting(false);
+      }
+    });
   }
 
   return createPortal(

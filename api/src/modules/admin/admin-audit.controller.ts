@@ -100,9 +100,15 @@ export class AdminAuditController {
     const row = await this.prisma.adminAudit
       .findUnique({ where: { id } })
       .catch((err) => {
-        logIgnoredError(err, 'AdminAuditController get one', undefined, 'debug', {
-          id,
-        });
+        logIgnoredError(
+          err,
+          'AdminAuditController get one',
+          undefined,
+          'debug',
+          {
+            id,
+          },
+        );
         return null;
       });
     if (!row) throw new NotFoundException('Запись не найдена');

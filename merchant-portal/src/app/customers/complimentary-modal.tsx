@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Gift } from "lucide-react";
 import { getFullName, type CustomerRecord } from "./data";
 import { readApiError } from "lib/portal-errors";
+import { useActionGuard } from "lib/async-guards";
 
 type ComplimentaryModalProps = {
   customer: CustomerRecord;
@@ -18,6 +19,13 @@ type FormErrors = {
   comment?: string;
 };
 
+const createIdempotencyKey = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
 function formatPoints(value?: number | null): string {
   if (value == null || Number.isNaN(Number(value))) return "0";
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(Number(value));
@@ -28,12 +36,18 @@ export const ComplimentaryModal: React.FC<ComplimentaryModalProps> = ({ customer
   const [errors, setErrors] = React.useState<FormErrors>({});
   const [apiError, setApiError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+  const runSubmit = useActionGuard();
+  const idempotencyKeyRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (typeof document === "undefined") return;
     document.body.classList.add("modal-blur-active");
     return () => document.body.classList.remove("modal-blur-active");
   }, []);
+
+  React.useEffect(() => {
+    idempotencyKeyRef.current = null;
+  }, [form.points, form.expiresIn, form.comment]);
 
   function update(key: keyof typeof form, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -68,45 +82,54 @@ export const ComplimentaryModal: React.FC<ComplimentaryModalProps> = ({ customer
     setApiError(null);
     if (!validate()) return;
 
-    try {
-      setSubmitting(true);
-      const payload: Record<string, unknown> = {
-        points: Number(form.points),
-        expiresInDays: Number(form.expiresIn),
-        comment: form.comment.trim() || undefined,
-      };
-
-      const res = await fetch(
-        `/api/customers/${encodeURIComponent(customer.id)}/transactions/complimentary`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
-      const text = await res.text();
-      if (!res.ok) {
-        throw new Error(readApiError(text) || text || res.statusText);
-      }
-      let data: any = {};
-      if (text) {
-        try {
-          data = JSON.parse(text);
-        } catch {
-          data = {};
+    await runSubmit(async () => {
+      try {
+        setSubmitting(true);
+        if (!idempotencyKeyRef.current) {
+          idempotencyKeyRef.current = createIdempotencyKey();
         }
+        const payload: Record<string, unknown> = {
+          points: Number(form.points),
+          expiresInDays: Number(form.expiresIn),
+          comment: form.comment.trim() || undefined,
+        };
+
+        const res = await fetch(
+          `/api/customers/${encodeURIComponent(customer.id)}/transactions/complimentary`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "Idempotency-Key": idempotencyKeyRef.current,
+            },
+            body: JSON.stringify(payload),
+          },
+        );
+        const text = await res.text();
+        if (!res.ok) {
+          throw new Error(readApiError(text) || text || res.statusText);
+        }
+        let data: any = {};
+        if (text) {
+          try {
+            data = JSON.parse(text);
+          } catch {
+            data = {};
+          }
+        }
+        const pointsIssued = data?.pointsIssued ?? Number(form.points);
+        const message =
+          pointsIssued && Number.isFinite(pointsIssued)
+            ? `Начислено ${formatPoints(pointsIssued)} баллов`
+            : "Баллы начислены";
+        idempotencyKeyRef.current = null;
+        onSuccess(message);
+      } catch (error: any) {
+        setApiError(readApiError(error?.message || error) || "Не удалось начислить баллы");
+      } finally {
+        setSubmitting(false);
       }
-      const pointsIssued = data?.pointsIssued ?? Number(form.points);
-      const message =
-        pointsIssued && Number.isFinite(pointsIssued)
-          ? `Начислено ${formatPoints(pointsIssued)} баллов`
-          : "Баллы начислены";
-      onSuccess(message);
-    } catch (error: any) {
-      setApiError(readApiError(error?.message || error) || "Не удалось начислить баллы");
-    } finally {
-      setSubmitting(false);
-    }
+    });
   }
 
   if (typeof document === "undefined") return null;

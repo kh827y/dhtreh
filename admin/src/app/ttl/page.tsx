@@ -1,7 +1,8 @@
 "use client";
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ttlReconciliation, type TtlRecon } from '../../lib/ttl';
 import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
+import { useActionGuard, useLatestRequest } from '../../lib/async-guards';
 
 export default function TtlPage() {
   const { merchantId, setMerchantId } = usePreferredMerchantId();
@@ -10,16 +11,32 @@ export default function TtlPage() {
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [onlyDiff, setOnlyDiff] = useState(true);
+  const { start, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    const requestId = start();
     setLoading(true);
     try {
-      if (!merchantId) { setMsg('Укажите merchantId'); setData(null); return; }
+      if (!merchantId) {
+        if (isLatest(requestId)) {
+          setMsg('Укажите merchantId');
+          setData(null);
+        }
+        return;
+      }
       const d = await ttlReconciliation(merchantId, cutoff);
+      if (!isLatest(requestId)) return;
       setData(d); setMsg('');
-    } catch (e: unknown) { setMsg(String(e instanceof Error ? e.message : e)); }
-    finally { setLoading(false); }
-  };
+    } catch (e: unknown) {
+      if (!isLatest(requestId)) return;
+      setMsg(String(e instanceof Error ? e.message : e));
+    } finally {
+      if (isLatest(requestId)) setLoading(false);
+    }
+  }, [cutoff, isLatest, merchantId, start]);
+
+  const handleLoad = useCallback(() => runAction(load), [load, runAction]);
 
   const csvUrl = merchantId ? `/api/admin/merchants/${encodeURIComponent(merchantId)}/ttl/reconciliation.csv?cutoff=${encodeURIComponent(cutoff)}${onlyDiff ? '&onlyDiff=1' : ''}` : '#';
 
@@ -29,7 +46,7 @@ export default function TtlPage() {
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
         <label>Мерчант: <input value={merchantId} onChange={e=>setMerchantId(e.target.value)} /></label>
         <label>Cutoff (ISO date): <input value={cutoff} onChange={e=>setCutoff(e.target.value)} /></label>
-        <button onClick={load} disabled={loading} style={{ padding: '6px 10px' }}>Построить</button>
+        <button onClick={handleLoad} disabled={loading} style={{ padding: '6px 10px' }}>Построить</button>
         {data && <a href={csvUrl} download style={{ color: '#89b4fa' }}>Скачать CSV</a>}
       </div>
       {msg && <div style={{ color: '#f38ba8' }}>{msg}</div>}

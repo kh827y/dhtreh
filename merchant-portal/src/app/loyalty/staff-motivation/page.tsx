@@ -3,6 +3,7 @@
 import React from "react";
 import { Award, UserPlus, User, Clock, Save, Power, Layout } from "lucide-react";
 import { readApiError, readErrorMessage } from "lib/portal-errors";
+import { useActionGuard, useLatestRequest } from "lib/async-guards";
 
 type RatingPeriod = "week" | "month" | "quarter" | "year" | "custom";
 
@@ -81,8 +82,11 @@ export default function StaffMotivationPage() {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [success, setSuccess] = React.useState<string>("");
+  const { start: startLoad, isLatest } = useLatestRequest();
+  const runAction = useActionGuard();
 
   const fetchSettings = React.useCallback(async () => {
+    const requestId = startLoad();
     setLoading(true);
     try {
       const response = await fetch("/api/portal/staff-motivation", {
@@ -94,62 +98,65 @@ export default function StaffMotivationPage() {
       const data = (await response.json().catch(() => null)) as
         | StaffMotivationApiPayload
         | null;
+      if (!isLatest(requestId)) return;
       setSettings(normalizeSettings(data));
     } catch (error) {
+      if (!isLatest(requestId)) return;
       const message = error instanceof Error ? error.message : String(error || "");
       alert(readApiError(message) || "Не удалось загрузить настройки мотивации персонала");
     } finally {
-      setLoading(false);
+      if (isLatest(requestId)) setLoading(false);
     }
-  }, []);
+  }, [isLatest, startLoad]);
 
   React.useEffect(() => {
     void fetchSettings();
   }, [fetchSettings]);
 
   const handleSave = React.useCallback(async () => {
-    if (loading || saving) return;
-    setSaving(true);
-    setSuccess("");
-    try {
-      const payload = {
-        enabled: settings.enabled,
-        pointsForNewCustomer: clampNonNegativeInt(
-          settings.newClientPoints,
-          DEFAULT_STATE.newClientPoints,
-        ),
-        pointsForExistingCustomer: clampNonNegativeInt(
-          settings.existingClientPoints,
-          DEFAULT_STATE.existingClientPoints,
-        ),
-        leaderboardPeriod: settings.ratingPeriod,
-        customDays:
-          settings.ratingPeriod === "custom"
-            ? clampPositiveInt(settings.customDays, DEFAULT_STATE.customDays)
-            : null,
-      };
+    await runAction(async () => {
+      setSaving(true);
+      setSuccess("");
+      try {
+        const payload = {
+          enabled: settings.enabled,
+          pointsForNewCustomer: clampNonNegativeInt(
+            settings.newClientPoints,
+            DEFAULT_STATE.newClientPoints,
+          ),
+          pointsForExistingCustomer: clampNonNegativeInt(
+            settings.existingClientPoints,
+            DEFAULT_STATE.existingClientPoints,
+          ),
+          leaderboardPeriod: settings.ratingPeriod,
+          customDays:
+            settings.ratingPeriod === "custom"
+              ? clampPositiveInt(settings.customDays, DEFAULT_STATE.customDays)
+              : null,
+        };
 
-      const response = await fetch("/api/portal/staff-motivation", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        throw new Error(await readErrorMessage(response, "Не удалось сохранить настройки"));
+        const response = await fetch("/api/portal/staff-motivation", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response, "Не удалось сохранить настройки"));
+        }
+
+        const data = (await response.json().catch(() => null)) as
+          | StaffMotivationApiPayload
+          | null;
+        setSettings(normalizeSettings(data || payload));
+        setSuccess("Настройки мотивации персонала сохранены!");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error || "");
+        alert(readApiError(message) || "Не удалось сохранить настройки мотивации персонала");
+      } finally {
+        setSaving(false);
       }
-
-      const data = (await response.json().catch(() => null)) as
-        | StaffMotivationApiPayload
-        | null;
-      setSettings(normalizeSettings(data || payload));
-      setSuccess("Настройки мотивации персонала сохранены!");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error || "");
-      alert(readApiError(message) || "Не удалось сохранить настройки мотивации персонала");
-    } finally {
-      setSaving(false);
-    }
-  }, [loading, saving, settings]);
+    });
+  }, [runAction, settings]);
 
   return (
     <div className="p-8 max-w-[1200px] mx-auto space-y-8 ">

@@ -61,6 +61,13 @@ const ITEMS_PER_PAGE = 5;
 
 type TabKey = "expiration" | "history" | "reviews" | "referrals";
 
+const createIdempotencyKey = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
 function formatCurrency(value?: number | null): string {
   if (value == null || Number.isNaN(Number(value))) return "—";
   return `₽${Math.round(Number(value)).toLocaleString("ru-RU")}`;
@@ -1258,12 +1265,17 @@ const AccrueModal: React.FC<AccrueModalProps> = ({
   const [errors, setErrors] = React.useState<AccrueErrors>({});
   const [apiError, setApiError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+  const idempotencyKeyRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (typeof document === "undefined") return;
     document.body.classList.add("modal-blur-active");
     return () => document.body.classList.remove("modal-blur-active");
   }, []);
+
+  React.useEffect(() => {
+    idempotencyKeyRef.current = null;
+  }, [form.amount, form.receipt, form.manualPoints, form.outletId, autoCalc]);
 
   const earnRateBps = customer.earnRateBps ?? null;
   const outletsUnavailable = !outletsLoading && outlets.length === 0;
@@ -1340,6 +1352,9 @@ const AccrueModal: React.FC<AccrueModalProps> = ({
 
     try {
       setSubmitting(true);
+      if (!idempotencyKeyRef.current) {
+        idempotencyKeyRef.current = createIdempotencyKey();
+      }
       const payload: Record<string, unknown> = {
         purchaseAmount: Number.isFinite(amountValue) ? amountValue : 0,
         receiptNumber: form.receipt.trim() || undefined,
@@ -1351,7 +1366,10 @@ const AccrueModal: React.FC<AccrueModalProps> = ({
 
       const res = await fetch(`/api/customers/${encodeURIComponent(customer.id)}/transactions/accrual`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "Idempotency-Key": idempotencyKeyRef.current,
+        },
         body: JSON.stringify(payload),
       });
       const text = await res.text();
@@ -1371,6 +1389,7 @@ const AccrueModal: React.FC<AccrueModalProps> = ({
         pointsIssued && Number.isFinite(pointsIssued)
           ? `Начислено ${formatPoints(pointsIssued)} баллов`
           : "Баллы начислены";
+      idempotencyKeyRef.current = null;
       onSuccess(message);
     } catch (error: any) {
       setApiError(readApiError(error?.message || error) || "Не удалось начислить баллы");
@@ -1502,12 +1521,17 @@ const RedeemModal: React.FC<RedeemModalProps> = ({
   const [errors, setErrors] = React.useState<RedeemErrors>({});
   const [apiError, setApiError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+  const idempotencyKeyRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (typeof document === "undefined") return;
     document.body.classList.add("modal-blur-active");
     return () => document.body.classList.remove("modal-blur-active");
   }, []);
+
+  React.useEffect(() => {
+    idempotencyKeyRef.current = null;
+  }, [form.amount, form.outletId]);
 
   const outletsUnavailable = !outletsLoading && outlets.length === 0;
 
@@ -1561,6 +1585,9 @@ const RedeemModal: React.FC<RedeemModalProps> = ({
 
     try {
       setSubmitting(true);
+      if (!idempotencyKeyRef.current) {
+        idempotencyKeyRef.current = createIdempotencyKey();
+      }
       const payload: Record<string, unknown> = {
         points: Number(form.amount),
         outletId: form.outletId || undefined,
@@ -1568,7 +1595,10 @@ const RedeemModal: React.FC<RedeemModalProps> = ({
 
       const res = await fetch(`/api/customers/${encodeURIComponent(customer.id)}/transactions/redeem`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "Idempotency-Key": idempotencyKeyRef.current,
+        },
         body: JSON.stringify(payload),
       });
       const text = await res.text();
@@ -1588,6 +1618,7 @@ const RedeemModal: React.FC<RedeemModalProps> = ({
         pointsRedeemed && Number.isFinite(pointsRedeemed)
           ? `Списано ${formatPoints(pointsRedeemed)} баллов`
           : "Баллы списаны";
+      idempotencyKeyRef.current = null;
       onSuccess(message);
     } catch (error: any) {
       setApiError(readApiError(error?.message || error) || "Не удалось списать баллы");

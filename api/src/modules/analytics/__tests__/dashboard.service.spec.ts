@@ -54,7 +54,10 @@ describe('AnalyticsService — dashboard summary', () => {
     jest.spyOn(timezone, 'getTimezoneInfo').mockResolvedValue({
       code: 'UTC',
       iana: 'UTC',
-      name: 'UTC',
+      label: 'UTC',
+      city: 'UTC',
+      description: 'UTC',
+      mskOffset: 0,
       utcOffsetMinutes: 0,
     });
     jest.spyOn(revenue, 'getDailyRevenue').mockResolvedValue([

@@ -491,7 +491,9 @@ export class AnalyticsRfmService {
       frequencySuggested: suggestedFrequency ?? null,
       moneyMode,
       moneyThreshold:
-        moneyMode === 'manual' ? (moneyThreshold ?? null) : (suggestedMoney ?? null),
+        moneyMode === 'manual'
+          ? (moneyThreshold ?? null)
+          : (suggestedMoney ?? null),
       moneySuggested: suggestedMoney ?? null,
     };
 

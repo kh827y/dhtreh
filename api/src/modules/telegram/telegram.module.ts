@@ -8,12 +8,22 @@ import { TelegramNotifyService } from './telegram-notify.service';
 import { TelegramNotifyController } from './telegram-notify.controller';
 import { TelegramStaffNotificationsService } from './staff-notifications.service';
 import { AdminAuditInterceptor } from '../admin/admin-audit.interceptor';
+import { TelegramBotApiService } from './services/telegram-bot-api.service';
+import { TelegramBotRegistryService } from './services/telegram-bot-registry.service';
+import { TelegramBotUpdatesService } from './services/telegram-bot-updates.service';
+import { TelegramBotMessagingService } from './services/telegram-bot-messaging.service';
+import { TelegramBotCustomersService } from './services/telegram-bot-customers.service';
 
 @Module({
   imports: [ConfigModule, PrismaModule],
   controllers: [TelegramController, TelegramNotifyController],
   providers: [
     TelegramBotService,
+    TelegramBotApiService,
+    TelegramBotRegistryService,
+    TelegramBotUpdatesService,
+    TelegramBotMessagingService,
+    TelegramBotCustomersService,
     TelegramNotifyService,
     TelegramStaffNotificationsService,
     AdminIpGuard,

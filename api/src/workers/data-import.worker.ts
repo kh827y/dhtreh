@@ -31,10 +31,7 @@ export class DataImportWorker implements OnModuleInit {
     );
     if (!Number.isFinite(staleMs) || staleMs <= 0) return;
     const staleBefore = new Date(Date.now() - staleMs);
-    const retryStale = this.config.getBoolean(
-      'DATA_IMPORT_RETRY_STALE',
-      false,
-    );
+    const retryStale = this.config.getBoolean('DATA_IMPORT_RETRY_STALE', false);
     const staleJobs = await this.prisma.dataImportJob.findMany({
       where: {
         status: DataImportStatus.PROCESSING,

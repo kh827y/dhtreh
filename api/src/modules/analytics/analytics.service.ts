@@ -119,7 +119,6 @@ export interface OperationalMetrics {
   outletUsage: OutletUsageStats[];
 }
 
-
 export interface CustomerPortraitMetrics {
   gender: Array<{
     sex: string;
@@ -246,14 +245,7 @@ interface HourlyData {
   transactions: number;
 }
 
-interface DashboardAggregates {
-  revenue: number;
-  orders: number;
-  buyers: number;
-  pointsRedeemed: number;
-}
-
-interface DailyData {
+export interface DailyData {
   date: string;
   revenue: number;
   transactions: number;
@@ -288,7 +280,7 @@ interface CampaignPerformance {
   roi: number;
 }
 
-interface OutletPerformance {
+export interface OutletPerformance {
   id: string;
   name: string;
   revenue: number;
@@ -301,7 +293,7 @@ interface OutletPerformance {
   growth: number;
 }
 
-interface StaffPerformance {
+export interface StaffPerformance {
   id: string;
   name: string;
   outletId?: string | null;
@@ -317,7 +309,7 @@ interface StaffPerformance {
   reviewsCount?: number;
 }
 
-interface OutletUsageStats {
+export interface OutletUsageStats {
   outletId: string;
   name: string;
   transactions: number;
@@ -418,7 +410,12 @@ export class AnalyticsService {
     grouping?: TimeGrouping,
     timezone?: string | RussiaTimezone,
   ): Promise<RevenueMetrics> {
-    return this.revenue.getRevenueMetrics(merchantId, period, grouping, timezone);
+    return this.revenue.getRevenueMetrics(
+      merchantId,
+      period,
+      grouping,
+      timezone,
+    );
   }
 
   getCustomerMetrics(
@@ -434,7 +431,12 @@ export class AnalyticsService {
     grouping?: TimeGrouping,
     timezone?: string | RussiaTimezone,
   ): Promise<LoyaltyMetrics> {
-    return this.loyalty.getLoyaltyMetrics(merchantId, period, grouping, timezone);
+    return this.loyalty.getLoyaltyMetrics(
+      merchantId,
+      period,
+      grouping,
+      timezone,
+    );
   }
 
   getCampaignMetrics(
@@ -465,7 +467,11 @@ export class AnalyticsService {
     period: DashboardPeriod,
     outletId?: string,
   ) {
-    return this.mechanics.getBirthdayMechanicMetrics(merchantId, period, outletId);
+    return this.mechanics.getBirthdayMechanicMetrics(
+      merchantId,
+      period,
+      outletId,
+    );
   }
 
   getRfmGroupsAnalytics(merchantId: string) {
@@ -498,10 +504,7 @@ export class AnalyticsService {
     return this.customers.getTimeActivityMetrics(merchantId, period, timezone);
   }
 
-  resolveTimezone(
-    merchantId: string,
-    timezone?: string | RussiaTimezone,
-  ) {
+  resolveTimezone(merchantId: string, timezone?: string | RussiaTimezone) {
     return this.timezone.resolveTimezone(merchantId, timezone);
   }
 }

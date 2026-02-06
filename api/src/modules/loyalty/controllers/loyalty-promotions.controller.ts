@@ -30,25 +30,19 @@ export class LoyaltyPromotionsController {
 
   @Post('promotions/claim')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  async claimPromotion(
-    @Body() body: PromotionClaimDto,
-  ) {
+  async claimPromotion(@Body() body: PromotionClaimDto) {
     return this.useCase.claimPromotion(body);
   }
 
   @Post('reviews')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  async submitReview(
-    @Body() body: ReviewSubmitDto,
-  ) {
+  async submitReview(@Body() body: ReviewSubmitDto) {
     return this.useCase.submitReview(body);
   }
 
   @Post('reviews/dismiss')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  async dismissReviewPrompt(
-    @Body() body: ReviewDismissDto,
-  ) {
+  async dismissReviewPrompt(@Body() body: ReviewDismissDto) {
     return this.useCase.dismissReviewPrompt(body);
   }
 
@@ -71,9 +65,7 @@ export class LoyaltyPromotionsController {
     },
   })
   @ApiBadRequestResponse({ type: ErrorDto })
-  async applyPromoCode(
-    @Body() body: PromoCodeApplyDto,
-  ) {
+  async applyPromoCode(@Body() body: PromoCodeApplyDto) {
     return this.useCase.applyPromoCode(body);
   }
 }
