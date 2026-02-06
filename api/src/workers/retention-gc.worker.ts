@@ -16,6 +16,9 @@ export class RetentionGcWorker implements OnModuleInit, OnModuleDestroy {
   private running = false;
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
+  public lastProgressAt: Date | null = null;
+  public lastLockMissAt: Date | null = null;
+  public lockMissCount = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -62,8 +65,11 @@ export class RetentionGcWorker implements OnModuleInit, OnModuleDestroy {
     if (this.running) return;
     this.running = true;
     this.lastTickAt = new Date();
+    this.lastProgressAt = this.lastTickAt;
     const lock = await pgTryAdvisoryLock(this.prisma, 'worker:retention_gc');
     if (!lock.ok) {
+      this.lockMissCount += 1;
+      this.lastLockMissAt = new Date();
       this.running = false;
       return;
     }
@@ -80,6 +86,7 @@ export class RetentionGcWorker implements OnModuleInit, OnModuleDestroy {
         await this.prisma.adminAudit.deleteMany({
           where: { createdAt: { lt: adminCutoff } },
         });
+        this.lastProgressAt = new Date();
       }
 
       const syncCutoff = this.toCutoff(syncDays);
@@ -87,6 +94,7 @@ export class RetentionGcWorker implements OnModuleInit, OnModuleDestroy {
         await this.prisma.syncLog.deleteMany({
           where: { createdAt: { lt: syncCutoff } },
         });
+        this.lastProgressAt = new Date();
       }
 
       const commCutoff = this.toCutoff(commDays);
@@ -97,6 +105,7 @@ export class RetentionGcWorker implements OnModuleInit, OnModuleDestroy {
             createdAt: { lt: commCutoff },
           },
         });
+        this.lastProgressAt = new Date();
       }
     } catch (error) {
       this.logger.error('RetentionGcWorker tick error', error as Error);

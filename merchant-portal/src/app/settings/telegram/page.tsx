@@ -115,8 +115,17 @@ export default function TelegramSettingsPage() {
       }
       setState(s);
 
-      if (s?.configured) {
-        const inviteRes = await fetch("/api/portal/settings/telegram-notify/invite", { method: "POST" });
+      const inviteRequest = s?.configured
+        ? fetch("/api/portal/settings/telegram-notify/invite", { method: "POST" })
+        : Promise.resolve<Response | null>(null);
+
+      const [inviteRes, listRes, prefRes] = await Promise.all([
+        inviteRequest,
+        fetch("/api/portal/settings/telegram-notify/subscribers"),
+        fetch("/api/portal/settings/telegram-notify/preferences"),
+      ]);
+
+      if (inviteRes) {
         let invitePayload: any = null;
         try {
           invitePayload = await inviteRes.json();
@@ -133,7 +142,6 @@ export default function TelegramSettingsPage() {
         setInvite(null);
       }
 
-      const listRes = await fetch("/api/portal/settings/telegram-notify/subscribers");
       let list: any = null;
       try {
         list = await listRes.json();
@@ -143,7 +151,6 @@ export default function TelegramSettingsPage() {
       }
       setSubs(Array.isArray(list) ? list : []);
 
-      const prefRes = await fetch("/api/portal/settings/telegram-notify/preferences");
       let prefJson: any = null;
       try {
         prefJson = await prefRes.json();
@@ -161,7 +168,6 @@ export default function TelegramSettingsPage() {
       } else if (!prefRes.ok) {
         setErr((prefJson && prefJson.message) || "Не удалось загрузить настройки уведомлений");
       }
-
     } catch (e: any) {
       setErr(normalizeErrorMessage(e, "Не удалось загрузить настройки"));
       setState(null);

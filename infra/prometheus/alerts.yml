@@ -30,13 +30,22 @@ groups:
           description: "Pending outbox items exceed threshold"
 
       - alert: WorkerStale
-        expr: (time() - loyalty_worker_last_tick_seconds{worker=~"outbox|hold_gc"}) > 300
+        expr: max_over_time(loyalty_worker_stale[5m]) > 0
         for: 5m
         labels:
           severity: critical
         annotations:
           summary: "Worker {{ $labels.worker }} stale"
-          description: "No tick from worker {{ $labels.worker }} for >5m"
+          description: "Worker {{ $labels.worker }} reported stale state for more than 5 minutes"
+
+      - alert: WorkerLockContention
+        expr: increase(loyalty_worker_lock_miss_total[10m]) > 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Worker {{ $labels.worker }} lock contention"
+          description: "Worker {{ $labels.worker }} advisory-lock misses are above threshold in last 10m"
 
   - name: antifraud-alerts
     interval: 30s

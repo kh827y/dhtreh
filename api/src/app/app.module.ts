@@ -53,8 +53,22 @@ import { logIgnoredError } from '../shared/logging/ignore-error.util';
 import { ImportExportModule } from '../modules/import-export/import-export.module';
 // Optional Redis storage for Throttler
 let throttlerStorage: object | undefined = undefined;
+let throttlerDefaultTtlMs = 60_000;
+let throttlerDefaultLimit = 200;
+const clampPositiveInt = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, Math.floor(value)));
 try {
   const config = new AppConfigService();
+  throttlerDefaultTtlMs = clampPositiveInt(
+    config.getNumber('THROTTLER_DEFAULT_TTL_MS', 60_000) ?? 60_000,
+    1_000,
+    300_000,
+  );
+  throttlerDefaultLimit = clampPositiveInt(
+    config.getNumber('THROTTLER_DEFAULT_LIMIT', 200) ?? 200,
+    20,
+    5_000,
+  );
   const redisUrl = config.getRedisUrl();
   if (redisUrl) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -82,8 +96,8 @@ try {
     ThrottlerModule.forRoot([
       {
         name: 'default',
-        ttl: 60_000, // мс
-        limit: 200, // базовый мягкий лимит
+        ttl: throttlerDefaultTtlMs, // мс
+        limit: throttlerDefaultLimit, // базовый мягкий лимит
         ...(throttlerStorage ? { storage: throttlerStorage } : {}),
       },
     ]),

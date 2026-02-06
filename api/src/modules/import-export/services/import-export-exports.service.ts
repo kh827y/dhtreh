@@ -113,7 +113,7 @@ export class ImportExportExportsService {
       });
       return buffer;
     }
-    const buffer = this.files.generateExcel(exportData);
+    const buffer = await this.files.generateExcel(exportData);
     await this.logs.writeImportExportLog({
       merchantId: dto.merchantId,
       direction: 'OUT',

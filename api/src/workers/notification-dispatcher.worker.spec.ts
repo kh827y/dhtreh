@@ -125,4 +125,130 @@ describe('NotificationDispatcherWorker', () => {
     );
     expect(prisma.adminAudit.create).toHaveBeenCalled();
   });
+
+  it('requeues failed notification with retry metadata when retries budget remains', async () => {
+    process.env.NOTIFY_MAX_RETRIES = '3';
+
+    const prisma: PrismaStub = {
+      eventOutbox: {
+        update: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
+      },
+      adminAudit: {
+        create: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
+      },
+    };
+    const metrics: MetricsStub = { inc: mockFn(), setGauge: mockFn() };
+    const push: PushStub = {
+      sendToTopic: mockFn<
+        Promise<{ success: boolean }>,
+        [string, string, string, Record<string, string>?]
+      >().mockRejectedValue(new Error('push unavailable')),
+    };
+    const email: EmailStub = { sendEmail: mockFn() };
+    const staffNotify: StaffNotifyStub = { sendStaffAlert: mockFn() };
+
+    const worker = new NotificationDispatcherWorker(
+      asPrismaService(prisma),
+      asMetricsService(metrics),
+      asPushService(push),
+      asEmailService(email),
+      asStaffNotifyService(staffNotify),
+      new AppConfigService(),
+    );
+
+    const row = {
+      id: 'n-retry',
+      merchantId: 'm1',
+      eventType: 'notify.broadcast',
+      payload: {
+        channel: 'PUSH',
+        merchantId: 'm1',
+        template: { subject: 'Hello', text: 'Body' },
+        variables: {},
+      },
+      retries: 0,
+      status: 'PENDING',
+      nextRetryAt: null,
+      lastError: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as EventOutbox;
+
+    await asPrivateWorker(worker).handle(row);
+
+    expect(prisma.eventOutbox.update).toHaveBeenLastCalledWith(
+      objectContaining({
+        where: { id: 'n-retry' },
+        data: objectContaining({
+          status: 'PENDING',
+          retries: 1,
+          lastError: expect.stringContaining('push unavailable'),
+          nextRetryAt: expect.any(Date),
+        }),
+      }),
+    );
+  });
+
+  it('marks notification as dead when retries are exhausted', async () => {
+    process.env.NOTIFY_MAX_RETRIES = '1';
+
+    const prisma: PrismaStub = {
+      eventOutbox: {
+        update: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
+      },
+      adminAudit: {
+        create: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
+      },
+    };
+    const metrics: MetricsStub = { inc: mockFn(), setGauge: mockFn() };
+    const push: PushStub = {
+      sendToTopic: mockFn<
+        Promise<{ success: boolean }>,
+        [string, string, string, Record<string, string>?]
+      >().mockRejectedValue(new Error('gateway timeout')),
+    };
+    const email: EmailStub = { sendEmail: mockFn() };
+    const staffNotify: StaffNotifyStub = { sendStaffAlert: mockFn() };
+
+    const worker = new NotificationDispatcherWorker(
+      asPrismaService(prisma),
+      asMetricsService(metrics),
+      asPushService(push),
+      asEmailService(email),
+      asStaffNotifyService(staffNotify),
+      new AppConfigService(),
+    );
+
+    const row = {
+      id: 'n-dead',
+      merchantId: 'm1',
+      eventType: 'notify.broadcast',
+      payload: {
+        channel: 'PUSH',
+        merchantId: 'm1',
+        template: { subject: 'Hello', text: 'Body' },
+        variables: {},
+      },
+      retries: 0,
+      status: 'PENDING',
+      nextRetryAt: null,
+      lastError: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as EventOutbox;
+
+    await asPrivateWorker(worker).handle(row);
+
+    expect(prisma.eventOutbox.update).toHaveBeenLastCalledWith(
+      objectContaining({
+        where: { id: 'n-dead' },
+        data: objectContaining({
+          status: 'DEAD',
+          retries: 1,
+          nextRetryAt: null,
+          lastError: expect.stringContaining('gateway timeout'),
+        }),
+      }),
+    );
+  });
 });

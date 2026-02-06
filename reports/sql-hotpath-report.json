@@ -1,0 +1,111 @@
+{
+  "generatedAt": "2026-02-06T12:35:37.071Z",
+  "merchantId": "cmkgqtylm0000tawi21ts7099",
+  "taskId": null,
+  "checks": [
+    {
+      "title": "Outbox pending queue",
+      "elapsedMs": 2,
+      "planningTimeMs": 0.229,
+      "executionTimeMs": 0.028,
+      "scans": [
+        {
+          "nodeType": "Index Scan",
+          "relation": "EventOutbox",
+          "planRows": 1,
+          "actualRows": 0
+        }
+      ],
+      "seqScans": [],
+      "sql": "\nSELECT id\nFROM \"EventOutbox\"\nWHERE status = 'PENDING'\n  AND \"eventType\" LIKE 'notify.%'\n  AND (\"nextRetryAt\" IS NULL OR \"nextRetryAt\" <= NOW())\nORDER BY \"createdAt\" ASC\nLIMIT 50\n      ",
+      "params": [],
+      "skipped": false
+    },
+    {
+      "title": "Outbox stale sending recovery",
+      "elapsedMs": 1,
+      "planningTimeMs": 0.078,
+      "executionTimeMs": 0.345,
+      "scans": [
+        {
+          "nodeType": "Index Scan",
+          "relation": "EventOutbox",
+          "planRows": 1,
+          "actualRows": 0
+        }
+      ],
+      "seqScans": [],
+      "sql": "\nSELECT id\nFROM \"EventOutbox\"\nWHERE status = 'SENDING'\n  AND \"eventType\" LIKE 'notify.%'\n  AND \"updatedAt\" < NOW() - interval '5 minute'\nLIMIT 50\n      ",
+      "params": [],
+      "skipped": false
+    },
+    {
+      "title": "Communications due tasks",
+      "elapsedMs": 1,
+      "planningTimeMs": 0.094,
+      "executionTimeMs": 0.011,
+      "scans": [
+        {
+          "nodeType": "Index Scan",
+          "relation": "CommunicationTask",
+          "planRows": 1,
+          "actualRows": 0
+        }
+      ],
+      "seqScans": [],
+      "sql": "\nSELECT id\nFROM \"CommunicationTask\"\nWHERE status = 'SCHEDULED'\n  AND \"archivedAt\" IS NULL\n  AND (\"scheduledAt\" IS NULL OR \"scheduledAt\" <= NOW())\nORDER BY \"createdAt\" ASC\nLIMIT 50\n      ",
+      "params": [],
+      "skipped": false
+    },
+    {
+      "title": "Communications recipients batch",
+      "skipped": true,
+      "reason": "No CommunicationTask rows found"
+    },
+    {
+      "title": "Data import stale jobs",
+      "elapsedMs": 2,
+      "planningTimeMs": 0.167,
+      "executionTimeMs": 0.037,
+      "scans": [
+        {
+          "nodeType": "Index Scan",
+          "relation": "DataImportJob",
+          "planRows": 1,
+          "actualRows": 0
+        }
+      ],
+      "seqScans": [],
+      "sql": "\nSELECT id\nFROM \"DataImportJob\"\nWHERE status = 'PROCESSING'\n  AND \"startedAt\" < NOW() - interval '2 hour'\nORDER BY \"startedAt\" ASC\nLIMIT 50\n      ",
+      "params": [],
+      "skipped": false
+    },
+    {
+      "title": "Portal staff list hot path",
+      "elapsedMs": 1,
+      "planningTimeMs": 0.141,
+      "executionTimeMs": 0.017,
+      "scans": [
+        {
+          "nodeType": "Seq Scan",
+          "relation": "Staff",
+          "planRows": 1,
+          "actualRows": 1
+        }
+      ],
+      "seqScans": [
+        {
+          "nodeType": "Seq Scan",
+          "relation": "Staff",
+          "planRows": 1,
+          "actualRows": 1
+        }
+      ],
+      "sql": "\nSELECT id\nFROM \"Staff\"\nWHERE \"merchantId\" = $1\nORDER BY \"createdAt\" DESC\nLIMIT 200\n      ",
+      "params": [
+        "cmkgqtylm0000tawi21ts7099"
+      ],
+      "skipped": false
+    }
+  ]
+}

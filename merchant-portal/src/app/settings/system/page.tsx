@@ -34,26 +34,16 @@ export default function SettingsSystemPage() {
     () => cacheKey("portal", "settings", "system"),
     [],
   );
-  const initialCache = React.useMemo(
-    () =>
-      readCache<{
-        name: string;
-        supportTelegram: string;
-        qrMode: "short" | "jwt";
-        logoUrl: string | null;
-      }>(systemCacheKey, 0),
-    [systemCacheKey],
-  );
-  const [companyName, setCompanyName] = React.useState(initialCache?.name || "");
-  const [savedCompanyName, setSavedCompanyName] = React.useState(initialCache?.name || "");
-  const [supportTelegram, setSupportTelegram] = React.useState(initialCache?.supportTelegram || "");
-  const [savedSupportTelegram, setSavedSupportTelegram] = React.useState(initialCache?.supportTelegram || "");
+  const [companyName, setCompanyName] = React.useState("");
+  const [savedCompanyName, setSavedCompanyName] = React.useState("");
+  const [supportTelegram, setSupportTelegram] = React.useState("");
+  const [savedSupportTelegram, setSavedSupportTelegram] = React.useState("");
   const [timezoneCode, setTimezoneCode] = React.useState(timezone.code);
-  const [qrMode, setQrMode] = React.useState<"short" | "jwt">(initialCache?.qrMode === "jwt" ? "jwt" : "short");
-  const [savedQrMode, setSavedQrMode] = React.useState<"short" | "jwt">(initialCache?.qrMode === "jwt" ? "jwt" : "short");
+  const [qrMode, setQrMode] = React.useState<"short" | "jwt">("short");
+  const [savedQrMode, setSavedQrMode] = React.useState<"short" | "jwt">("short");
   const [saving, setSaving] = React.useState(false);
   const [success, setSuccess] = React.useState<string>("");
-  const [logoUrl, setLogoUrl] = React.useState<string | null>(initialCache?.logoUrl ?? null);
+  const [logoUrl, setLogoUrl] = React.useState<string | null>(null);
   const [logoUploading, setLogoUploading] = React.useState(false);
   const [logoError, setLogoError] = React.useState<string>("");
   const logoInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -94,52 +84,74 @@ export default function SettingsSystemPage() {
   }, [timezone.code]);
 
   React.useEffect(() => {
+    const cached = readCache<{
+      name: string;
+      supportTelegram: string;
+      qrMode: "short" | "jwt";
+      logoUrl: string | null;
+    }>(systemCacheKey, 0);
+    if (!cached) return;
+    const cachedName = String(cached.name || "");
+    const cachedSupport = String(cached.supportTelegram || "");
+    const cachedMode = cached.qrMode === "jwt" ? "jwt" : "short";
+    setCompanyName(cachedName);
+    setSavedCompanyName(cachedName);
+    setSupportTelegram(cachedSupport);
+    setSavedSupportTelegram(cachedSupport);
+    setQrMode(cachedMode);
+    setSavedQrMode(cachedMode);
+    setLogoUrl(cached.logoUrl ?? null);
+  }, [systemCacheKey]);
+
+  React.useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/portal/settings/name", {
-          cache: "no-store",
-        });
-        if (!res.ok) {
-          throw new Error(await readErrorMessage(res, "Не удалось загрузить название"));
+        const [nameRes, supportRes, settingsRes, logoRes] = await Promise.all([
+          fetch("/api/portal/settings/name", {
+            cache: "no-store",
+          }),
+          fetch("/api/portal/settings/support", {
+            cache: "no-store",
+          }),
+          fetch("/api/portal/settings/qr", {
+            cache: "no-store",
+          }),
+          fetch("/api/portal/settings/logo", {
+            cache: "no-store",
+          }),
+        ]);
+        if (!nameRes.ok) {
+          throw new Error(await readErrorMessage(nameRes, "Не удалось загрузить название"));
         }
-        const data = (await res.json().catch(() => ({}))) as any;
-        if (cancelled) return;
-        const name = String(data?.name || "");
-        setCompanyName(name);
-        setSavedCompanyName(name);
-        const supportRes = await fetch("/api/portal/settings/support", {
-          cache: "no-store",
-        });
         if (!supportRes.ok) {
           throw new Error(await readErrorMessage(supportRes, "Не удалось загрузить поддержку"));
         }
-        const supportData = (await supportRes.json().catch(() => ({}))) as any;
-        if (cancelled) return;
-        const supportValue = String(supportData?.supportTelegram || "");
-        setSupportTelegram(supportValue);
-        setSavedSupportTelegram(supportValue);
-        const settingsRes = await fetch("/api/portal/settings/qr", {
-          cache: "no-store",
-        });
         if (!settingsRes.ok) {
           throw new Error(await readErrorMessage(settingsRes, "Не удалось загрузить системные настройки"));
         }
-        const settingsData = (await settingsRes.json().catch(() => ({}))) as any;
+        const [data, supportData, settingsData, logoData] = await Promise.all([
+          nameRes.json().catch(() => ({})),
+          supportRes.json().catch(() => ({})),
+          settingsRes.json().catch(() => ({})),
+          logoRes.ok ? logoRes.json().catch(() => ({})) : Promise.resolve(null),
+        ]);
         if (cancelled) return;
+        const name = String((data as any)?.name || "");
+        setCompanyName(name);
+        setSavedCompanyName(name);
+        const supportValue = String((supportData as any)?.supportTelegram || "");
+        setSupportTelegram(supportValue);
+        setSavedSupportTelegram(supportValue);
         const requireJwtForQuote = Boolean(settingsData?.requireJwtForQuote);
         const mode = requireJwtForQuote ? "jwt" : "short";
         setQrMode(mode);
         setSavedQrMode(mode);
 
-        const logoRes = await fetch("/api/portal/settings/logo", {
-          cache: "no-store",
-        });
         if (logoRes.ok) {
-          const logoData = (await logoRes.json().catch(() => ({}))) as any;
-          if (cancelled) return;
+          const resolvedLogoData = (logoData ?? {}) as any;
           const nextLogo =
-            typeof logoData?.miniappLogoUrl === "string" ? logoData.miniappLogoUrl : "";
+            typeof resolvedLogoData?.miniappLogoUrl === "string" ? resolvedLogoData.miniappLogoUrl : "";
           setLogoUrl(nextLogo || null);
           writeCache(systemCacheKey, {
             name,
@@ -148,11 +160,17 @@ export default function SettingsSystemPage() {
             logoUrl: nextLogo || null,
           });
         } else {
+          const cached = readCache<{
+            name: string;
+            supportTelegram: string;
+            qrMode: "short" | "jwt";
+            logoUrl: string | null;
+          }>(systemCacheKey, CacheTtl.long);
           writeCache(systemCacheKey, {
             name,
             supportTelegram: supportValue,
             qrMode: mode,
-            logoUrl: initialCache?.logoUrl ?? null,
+            logoUrl: cached?.logoUrl ?? null,
           });
         }
       } catch (e: any) {
@@ -164,7 +182,7 @@ export default function SettingsSystemPage() {
     return () => {
       cancelled = true;
     };
-  }, [initialCache?.logoUrl, systemCacheKey]);
+  }, [systemCacheKey]);
 
   const handleLogoChange = React.useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {

@@ -38,9 +38,22 @@ export type WorkerState = {
   reason?: string;
   alive: boolean;
   stale: boolean;
+  running: boolean;
   intervalMs: number;
   lastTickAt: string | null;
+  lastProgressAt: string | null;
+  lastLockMissAt: string | null;
+  lockMissCount: number;
   startedAt: string | null;
+};
+
+type WorkerRuntimeState = {
+  startedAt: Date | null;
+  lastTickAt: Date | null;
+  lastProgressAt: Date | null;
+  lastLockMissAt: Date | null;
+  lockMissCount: number;
+  running: boolean;
 };
 
 export type ObservabilitySnapshot = {
@@ -61,6 +74,9 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
   private readonly pendingThreshold: number;
   private readonly deadThreshold: number;
   private readonly workerStaleMs: number;
+  private readonly workerStaleGraceMs: number;
+  private readonly workerLockMissGraceMs: number;
+  private readonly workerProgressHeartbeatMs: number;
   private readonly repeatMinutes: number;
   private readonly warmupMs: number;
   private readonly commFailedThreshold: number;
@@ -113,6 +129,18 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
     this.workerStaleMs = Math.max(
       60_000,
       (this.config.getNumber('ALERT_WORKER_STALE_MINUTES', 5) ?? 5) * 60_000,
+    );
+    this.workerStaleGraceMs = Math.max(
+      0,
+      this.config.getWorkerStaleGraceMs() ?? 0,
+    );
+    this.workerLockMissGraceMs = Math.max(
+      0,
+      this.config.getWorkerLockMissGraceMs() ?? this.workerStaleMs,
+    );
+    this.workerProgressHeartbeatMs = Math.max(
+      5_000,
+      this.config.getWorkerProgressHeartbeatMs() ?? 30000,
     );
     this.repeatMinutes = Math.max(
       5,
@@ -198,7 +226,7 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
     const warmupPassed = Date.now() - this.bootAt > this.warmupMs;
     const entries: Array<{
       name: string;
-      worker: { lastTickAt: Date | null; startedAt: Date | null } | null;
+      worker: unknown;
       intervalMs: number;
       expected: boolean;
       reason?: string;
@@ -359,18 +387,30 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
     });
 
     for (const item of entries) {
-      const lastTick =
-        item.worker?.lastTickAt instanceof Date
-          ? item.worker.lastTickAt.getTime()
-          : null;
-      const started =
-        item.worker?.startedAt instanceof Date
-          ? item.worker.startedAt.getTime()
-          : null;
-      const threshold = Math.max(this.workerStaleMs, item.intervalMs * 3);
+      const runtime = this.readWorkerRuntime(item.worker);
+      const lastTick = runtime?.lastTickAt?.getTime() ?? null;
+      const lastProgress = runtime?.lastProgressAt?.getTime() ?? null;
+      const started = runtime?.startedAt?.getTime() ?? null;
+      const lastLockMiss = runtime?.lastLockMissAt?.getTime() ?? null;
+      const lockMissCount = runtime?.lockMissCount ?? 0;
+      const running = runtime?.running ?? false;
+      const lastActivity = Math.max(lastTick ?? 0, lastProgress ?? 0) || null;
+      const threshold = Math.max(
+        this.workerStaleMs + this.workerStaleGraceMs,
+        item.intervalMs * 3,
+        this.workerProgressHeartbeatMs * 2,
+      );
       let stale = false;
       if (item.expected && warmupPassed) {
-        if (lastTick) {
+        if (
+          !running &&
+          lastLockMiss &&
+          Date.now() - lastLockMiss <= this.workerLockMissGraceMs
+        ) {
+          stale = false;
+        } else if (lastActivity) {
+          stale = Date.now() - lastActivity > threshold;
+        } else if (lastTick) {
           stale = Date.now() - lastTick > threshold;
         } else if (started) {
           stale = Date.now() - started > threshold;
@@ -378,18 +418,67 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
           stale = true;
         }
       }
+      try {
+        const labels = { worker: item.name };
+        this.metrics.setGauge('loyalty_worker_running', running ? 1 : 0, labels);
+        this.metrics.setGauge(
+          'loyalty_worker_lock_miss_total',
+          lockMissCount,
+          labels,
+        );
+        this.metrics.setGauge('loyalty_worker_stale', stale ? 1 : 0, labels);
+        if (lastTick) {
+          this.metrics.setGauge(
+            'loyalty_worker_last_tick_seconds',
+            Math.floor(lastTick / 1000),
+            labels,
+          );
+        }
+        if (lastProgress) {
+          this.metrics.setGauge(
+            'loyalty_worker_last_progress_seconds',
+            Math.floor(lastProgress / 1000),
+            labels,
+          );
+        }
+      } catch (err) {
+        logIgnoredError(err, 'OpsAlertMonitor worker metrics', this.logger, 'debug');
+      }
       workerStates.push({
         name: item.name,
         expected: item.expected,
         reason: item.reason,
-        alive: Boolean(item.worker?.startedAt),
+        alive: Boolean(runtime?.startedAt),
         stale,
+        running,
         intervalMs: item.intervalMs,
         lastTickAt: lastTick ? new Date(lastTick).toISOString() : null,
+        lastProgressAt: lastProgress ? new Date(lastProgress).toISOString() : null,
+        lastLockMissAt: lastLockMiss ? new Date(lastLockMiss).toISOString() : null,
+        lockMissCount,
         startedAt: started ? new Date(started).toISOString() : null,
       });
     }
     return workerStates;
+  }
+
+  private readWorkerRuntime(worker: unknown): WorkerRuntimeState | null {
+    if (!worker || typeof worker !== 'object') return null;
+    const source = worker as Record<string, unknown>;
+    const readDate = (value: unknown): Date | null =>
+      value instanceof Date ? value : null;
+    const readNumber = (value: unknown): number =>
+      typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    const readBoolean = (value: unknown): boolean =>
+      typeof value === 'boolean' ? value : false;
+    return {
+      startedAt: readDate(source.startedAt),
+      lastTickAt: readDate(source.lastTickAt),
+      lastProgressAt: readDate(source.lastProgressAt),
+      lastLockMissAt: readDate(source.lastLockMissAt),
+      lockMissCount: readNumber(source.lockMissCount),
+      running: readBoolean(source.running),
+    };
   }
 
   private async tick() {
@@ -512,11 +601,18 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
     for (const w of workers) {
       if (!w.expected || !w.stale) continue;
       const last =
-        w.lastTickAt || w.startedAt ? w.lastTickAt || w.startedAt : 'нет тиков';
+        w.lastProgressAt || w.lastTickAt || w.startedAt
+          ? w.lastProgressAt || w.lastTickAt || w.startedAt
+          : 'нет тиков';
       void this.alerts.notifyIncident({
         title: `Worker stalled: ${w.name}`,
         severity: 'critical',
-        lines: [`lastTickAt: ${last}`, `intervalMs: ${w.intervalMs}`],
+        lines: [
+          `lastActivityAt: ${last}`,
+          `intervalMs: ${w.intervalMs}`,
+          `running: ${w.running ? '1' : '0'}`,
+          `lockMissCount: ${w.lockMissCount}`,
+        ],
         throttleKey: `worker:${w.name}`,
         throttleMinutes: this.repeatMinutes,
       });

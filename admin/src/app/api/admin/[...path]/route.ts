@@ -6,6 +6,11 @@ const API_BASE = (process.env.API_BASE || '').replace(/\/$/, '');
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || '';
 const ADMIN_UI_PASSWORD = process.env.ADMIN_UI_PASSWORD || '';
+const ADMIN_PROXY_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.ADMIN_PROXY_TIMEOUT_MS || '');
+  if (!Number.isFinite(raw)) return 15000;
+  return Math.min(Math.max(Math.trunc(raw), 1000), 120000);
+})();
 
 function getClientIp(req: NextRequest) {
   const forwarded = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '';
@@ -54,11 +59,31 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   if (body != null) headers['content-type'] = 'application/json';
 
   let res: Response;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, ADMIN_PROXY_TIMEOUT_MS);
   try {
-    res = await fetch(target, { method, headers, body, redirect: 'manual' });
+    res = await fetch(target, {
+      method,
+      headers,
+      body,
+      redirect: 'manual',
+      signal: controller.signal,
+    });
   } catch (e: unknown) {
+    if (timedOut) {
+      return new NextResponse(
+        `Upstream timeout after ${ADMIN_PROXY_TIMEOUT_MS}ms: ${target}`,
+        { status: 504 },
+      );
+    }
     const msg = `Upstream fetch failed to ${target}: ${String(e instanceof Error ? e.message : e)}`;
     return new NextResponse(msg, { status: 502 });
+  } finally {
+    clearTimeout(timeout);
   }
   const isCsv = /\.csv(\?|$)/i.test(suffix) || /\/csv(\?|$)/i.test(suffix);
   if (isCsv) {

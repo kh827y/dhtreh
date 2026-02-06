@@ -332,6 +332,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     setError("");
     setBanner(null);
     try {
+      const outletsPromise = fetchAllOutlets();
       const [staffRes, accessRes] = await Promise.all([
         fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`),
         fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access`),
@@ -341,7 +342,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       const [staffPayload, accessData, outletsData] = await Promise.all([
         staffRes.json(),
         accessRes.json(),
-        fetchAllOutlets(),
+        outletsPromise,
       ]);
       const detail: Staff | null = staffPayload && typeof staffPayload === "object" && staffPayload.id ? staffPayload : null;
       if (!detail) {

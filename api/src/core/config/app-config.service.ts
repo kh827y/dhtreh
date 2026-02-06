@@ -153,6 +153,22 @@ export class AppConfigService {
     return this.getBoolean('NO_HTTP');
   }
 
+  getWorkerMetricsPort(): number {
+    return this.getNumber('WORKER_METRICS_PORT', 0) ?? 0;
+  }
+
+  getWorkerProgressHeartbeatMs(): number {
+    return this.getNumber('WORKER_PROGRESS_HEARTBEAT_MS', 30000) ?? 30000;
+  }
+
+  getWorkerStaleGraceMs(): number {
+    return this.getNumber('WORKER_STALE_GRACE_MS', 0) ?? 0;
+  }
+
+  getWorkerLockMissGraceMs(): number {
+    return this.getNumber('WORKER_LOCK_MISS_GRACE_MS', 300000) ?? 300000;
+  }
+
   getTelegramHttpTimeoutMs(): number {
     return this.getNumber('TELEGRAM_HTTP_TIMEOUT_MS', 15000) ?? 15000;
   }

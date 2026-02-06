@@ -13,6 +13,8 @@ type MockedService = {
 type MockedSupport = {
   ensureCustomer: jest.Mock;
   listPromotionsForCustomer: jest.Mock;
+  buildReviewsShareSettings: jest.Mock;
+  buildShareOptions: jest.Mock;
 };
 
 function createUseCase() {
@@ -22,12 +24,16 @@ function createUseCase() {
   const support: MockedSupport = {
     ensureCustomer: jest.fn(),
     listPromotionsForCustomer: jest.fn(),
+    buildReviewsShareSettings: jest.fn(),
+    buildShareOptions: jest.fn(),
   };
 
   const prisma = {} as PrismaService;
-  const metrics = {} as MetricsService;
-  const reviews = {} as ReviewService;
-  const cache = {} as LookupCacheService;
+  const metrics = { inc: jest.fn() } as unknown as MetricsService;
+  const reviews = { createReview: jest.fn() } as unknown as ReviewService;
+  const cache = {
+    getMerchantSettings: jest.fn(),
+  } as unknown as LookupCacheService;
   const config = {} as AppConfigService;
 
   const useCase = new LoyaltyPromotionsUseCase(
@@ -40,7 +46,7 @@ function createUseCase() {
     support as unknown as LoyaltyControllerSupportService,
   );
 
-  return { useCase, service, support };
+  return { useCase, service, support, cache, reviews, metrics };
 }
 
 describe('LoyaltyPromotionsUseCase', () => {
@@ -86,5 +92,80 @@ describe('LoyaltyPromotionsUseCase', () => {
       code: 'PROMO',
     });
     expect(result).toEqual({ ok: true });
+  });
+
+  it('blocks submitReview when reviews are disabled in settings', async () => {
+    const { useCase, support, cache, reviews } = createUseCase();
+    support.ensureCustomer.mockResolvedValue({ id: 'cust-1' });
+    (cache.getMerchantSettings as jest.Mock).mockResolvedValue({
+      rulesJson: { reviews: { enabled: false } },
+    });
+
+    await expect(
+      useCase.submitReview({
+        merchantId: 'm-1',
+        customerId: 'c-1',
+        rating: 5,
+        orderId: 'order-1',
+      }),
+    ).rejects.toThrow('Сбор отзывов отключен');
+
+    expect(reviews.createReview).not.toHaveBeenCalled();
+  });
+
+  it('returns review share payload when sharing is enabled', async () => {
+    const { useCase, support, cache, reviews, metrics } = createUseCase();
+    support.ensureCustomer.mockResolvedValue({ id: 'cust-1' });
+    (cache.getMerchantSettings as jest.Mock).mockResolvedValue({
+      rulesJson: { reviews: { enabled: true } },
+    });
+    (reviews.createReview as jest.Mock).mockResolvedValue({
+      id: 'review-1',
+      status: 'PUBLISHED',
+      rewardPoints: 10,
+      message: 'ok',
+    });
+    support.buildReviewsShareSettings.mockResolvedValue({
+      settings: null,
+      share: { enabled: true, threshold: 4, platforms: [] },
+    });
+    support.buildShareOptions.mockReturnValue([
+      { id: 'google', url: 'https://example.com/review' },
+    ]);
+
+    const result = await useCase.submitReview({
+      merchantId: 'm-1',
+      customerId: 'c-1',
+      rating: 5,
+      orderId: 'order-1',
+      outletId: 'outlet-1',
+      comment: 'Great service',
+    });
+
+    expect(reviews.createReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        merchantId: 'm-1',
+        customerId: 'cust-1',
+        rating: 5,
+        orderId: 'order-1',
+      }),
+      expect.objectContaining({ autoApprove: true }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        reviewId: 'review-1',
+        share: {
+          enabled: true,
+          threshold: 4,
+          options: [{ id: 'google', url: 'https://example.com/review' }],
+        },
+      }),
+    );
+    expect((metrics.inc as jest.Mock).mock.calls).toEqual(
+      expect.arrayContaining([
+        ['reviews_share_stage_total', { outcome: 'shown', reason: 'ok' }],
+      ]),
+    );
   });
 });

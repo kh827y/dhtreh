@@ -19,6 +19,7 @@ import { HttpErrorFilter } from './core/filters/http-error.filter';
 import { AppConfigService } from './core/config/app-config.service';
 import { logIgnoredError } from './shared/logging/ignore-error.util';
 import { asRecord } from './shared/common/input.util';
+import { createServer, IncomingMessage } from 'node:http';
 
 type RequestLike = {
   headers?: Record<string, string | string[] | undefined>;
@@ -43,6 +44,13 @@ function getHeader(req: RequestLike, name: string): string | undefined {
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) return value[0];
   return undefined;
+}
+
+function readReqHeader(req: IncomingMessage, name: string): string {
+  const value = req.headers[name.toLowerCase()];
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value[0] ?? '';
+  return '';
 }
 
 async function bootstrap() {
@@ -303,6 +311,67 @@ async function bootstrap() {
   });
   if (config.getNoHttp()) {
     await app.init();
+    const workerMetricsPort = config.getWorkerMetricsPort();
+    if (workerMetricsPort > 0) {
+      const metricsService = app.get(MetricsService);
+      const workerMetricsServer = createServer(async (req, res) => {
+        try {
+          const path = new URL(req.url || '/', 'http://localhost').pathname;
+          if (path === '/healthz' || path === '/readyz' || path === '/live') {
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, mode: 'worker' }));
+            return;
+          }
+          if (path !== '/metrics') {
+            res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+            res.end('Not found');
+            return;
+          }
+          const token = config.getString('METRICS_TOKEN', '') ?? '';
+          const requireToken = config.getString('NODE_ENV') === 'production';
+          if (requireToken && !token) {
+            res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' });
+            res.end('Metrics token required');
+            return;
+          }
+          if (token) {
+            const byHeader = readReqHeader(req, 'x-metrics-token');
+            const auth = readReqHeader(req, 'authorization');
+            const byBearer = auth.startsWith('Bearer ')
+              ? auth.slice('Bearer '.length)
+              : '';
+            if (byHeader !== token && byBearer !== token) {
+              res.writeHead(401, {
+                'content-type': 'text/plain; charset=utf-8',
+              });
+              res.end('Metrics token required');
+              return;
+            }
+          }
+          const payload = await metricsService.exportProm();
+          res.writeHead(200, { 'content-type': 'text/plain; version=0.0.4' });
+          res.end(payload);
+        } catch (err) {
+          logIgnoredError(err, 'worker metrics server', logger, 'debug');
+          res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end('internal error');
+        }
+      });
+      workerMetricsServer.listen(workerMetricsPort, () => {
+        logger.log(
+          `Workers metrics server on http://localhost:${workerMetricsPort}`,
+        );
+      });
+      const closeWorkerMetricsServer = () => {
+        try {
+          workerMetricsServer.close();
+        } catch (err) {
+          logIgnoredError(err, 'worker metrics close', logger, 'debug');
+        }
+      };
+      process.once('SIGINT', closeWorkerMetricsServer);
+      process.once('SIGTERM', closeWorkerMetricsServer);
+    }
     logger.log('Workers-only mode: NO_HTTP=1 (HTTP server disabled)');
     return;
   }

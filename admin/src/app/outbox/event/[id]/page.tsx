@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from 'react';
+import { use, useCallback, useEffect, useState } from 'react';
 import { usePreferredMerchantId } from '../../../../lib/usePreferredMerchantId';
 import { useActionGuard, useLatestRequest } from '../../../../lib/async-guards';
 
@@ -14,7 +14,11 @@ type OutboxEvent = {
   payload?: unknown;
 };
 
-export default function OutboxEventPage({ params }: { params: { id: string } }) {
+export default function OutboxEventPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { merchantId, setMerchantId } = usePreferredMerchantId();
   const [data, setData] = useState<OutboxEvent | null>(null);
   const [msg, setMsg] = useState<string>('');
@@ -24,7 +28,7 @@ export default function OutboxEventPage({ params }: { params: { id: string } }) 
   const [showLastErrorFull, setShowLastErrorFull] = useState<boolean>(false);
   const { start, isLatest } = useLatestRequest();
   const runAction = useActionGuard();
-  const id = params.id;
+  const id = use(params).id;
   const payloadPreviewLimit = 4000;
   const errorPreviewLimit = 500;
 

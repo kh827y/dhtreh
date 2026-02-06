@@ -16,6 +16,9 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
   private running = false;
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
+  public lastProgressAt: Date | null = null;
+  public lastLockMissAt: Date | null = null;
+  public lockMissCount = 0;
 
   constructor(
     private prisma: PrismaService,
@@ -62,8 +65,11 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
     if (this.running) return;
     this.running = true;
     this.lastTickAt = new Date();
+    this.lastProgressAt = this.lastTickAt;
     const lock = await pgTryAdvisoryLock(this.prisma, 'worker:idempotency_gc');
     if (!lock.ok) {
+      this.lockMissCount += 1;
+      this.lastLockMissAt = new Date();
       this.running = false;
       return;
     }
@@ -79,6 +85,7 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
           ],
         },
       });
+      this.lastProgressAt = new Date();
     } catch (error) {
       this.logger.error('IdempotencyGcWorker tick error', error as Error);
     } finally {

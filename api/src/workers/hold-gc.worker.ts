@@ -18,6 +18,9 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
   private running = false;
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
+  public lastProgressAt: Date | null = null;
+  public lastLockMissAt: Date | null = null;
+  public lockMissCount = 0;
 
   constructor(
     private prisma: PrismaService,
@@ -65,8 +68,11 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
     if (this.running) return;
     this.running = true;
     this.lastTickAt = new Date();
+    this.lastProgressAt = this.lastTickAt;
     const lock = await pgTryAdvisoryLock(this.prisma, 'worker:hold_gc');
     if (!lock.ok) {
+      this.lockMissCount += 1;
+      this.lastLockMissAt = new Date();
       this.running = false;
       return;
     }
@@ -86,6 +92,7 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
         take: 50,
       });
       for (const h of expired) {
+        this.lastProgressAt = new Date();
         try {
           await this.prisma.hold.update({
             where: { id: h.id },

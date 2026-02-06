@@ -298,6 +298,85 @@ describe('CommunicationsDispatcherWorker', () => {
     );
   });
 
+  it('processes telegram recipients in batches with cursor pagination', async () => {
+    process.env.COMM_RECIPIENT_BATCH = '1';
+    process.env.COMM_DELIVERY_CONCURRENCY = '1';
+
+    const { worker, prisma, telegram } = makeWorker({
+      customer: {
+        findMany: mockFn<Promise<unknown[]>, [unknown?]>().mockResolvedValue([
+          { id: 'c1', tgId: '111', name: 'Ivan' },
+          { id: 'c2', tgId: '222', name: 'Maya' },
+        ]),
+      },
+      communicationTaskRecipient: {
+        count: mockFn<Promise<number>, [unknown?]>().mockResolvedValue(0),
+        createMany: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue(
+          {},
+        ),
+        findMany: mockFn<Promise<unknown[]>, [unknown?]>()
+          .mockResolvedValueOnce([
+            {
+              id: 'r1',
+              customerId: 'c1',
+              status: 'PENDING',
+              metadata: {},
+              createdAt: new Date(),
+            },
+          ])
+          .mockResolvedValueOnce([
+            {
+              id: 'r2',
+              customerId: 'c2',
+              status: 'PENDING',
+              metadata: {},
+              createdAt: new Date(),
+            },
+          ])
+          .mockResolvedValueOnce([]),
+        update: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
+        groupBy: mockFn<Promise<unknown[]>, [unknown?]>().mockResolvedValue([
+          { status: 'SENT', _count: { _all: 2 } },
+        ]),
+      },
+    });
+
+    const task = {
+      id: 't4b',
+      merchantId: 'm1',
+      channel: CommunicationChannel.TELEGRAM,
+      payload: { text: 'Hello {client}' },
+      stats: null,
+      promotionId: null,
+      media: null,
+      audienceId: null,
+    };
+
+    await asPrivateWorker(worker).processTelegramTask(task);
+
+    expect(telegram.sendCampaignMessage).toHaveBeenCalledTimes(2);
+    expect(prisma.communicationTaskRecipient.findMany).toHaveBeenCalledTimes(3);
+    expect(prisma.communicationTaskRecipient.findMany).toHaveBeenNthCalledWith(
+      1,
+      objectContaining({
+        where: objectContaining({
+          taskId: 't4b',
+        }),
+        take: 1,
+      }),
+    );
+    expect(prisma.communicationTaskRecipient.findMany).toHaveBeenNthCalledWith(
+      2,
+      objectContaining({
+        where: objectContaining({
+          id: { gt: 'r1' },
+        }),
+        take: 1,
+      }),
+    );
+    expect(worker.lastProgressAt).toBeInstanceOf(Date);
+  });
+
   it('fails telegram task with empty text', async () => {
     const { worker, prisma } = makeWorker();
 

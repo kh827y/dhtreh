@@ -1,43 +1,82 @@
 {
-  "annotations": {"list": []},
+  "annotations": { "list": [] },
   "editable": true,
   "graphTooltip": 0,
   "panels": [
     {
       "type": "stat",
-      "title": "Outbox worker stale (>5m)",
-      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 6},
-      "targets": [ {"expr": "(time() - loyalty_worker_last_tick_seconds{worker='outbox'}) > 300"} ]
+      "title": "Stale workers",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "targets": [{ "expr": "sum(loyalty_worker_stale)", "legendFormat": "stale" }]
     },
     {
       "type": "stat",
-      "title": "Hold GC worker stale (>5m)",
-      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 6},
-      "targets": [ {"expr": "(time() - loyalty_worker_last_tick_seconds{worker='hold_gc'}) > 300"} ]
+      "title": "Running workers",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "targets": [{ "expr": "sum(loyalty_worker_running)", "legendFormat": "running" }]
+    },
+    {
+      "type": "stat",
+      "title": "Lock misses / 10m",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+      "targets": [{ "expr": "sum(increase(loyalty_worker_lock_miss_total[10m]))", "legendFormat": "lock_miss" }]
+    },
+    {
+      "type": "stat",
+      "title": "Outbox pending",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+      "targets": [{ "expr": "loyalty_outbox_pending", "legendFormat": "pending" }]
     },
     {
       "type": "timeseries",
-      "title": "Last tick time (seconds)",
-      "gridPos": {"x": 0, "y": 6, "w": 24, "h": 8},
+      "title": "Worker stale by name",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+      "targets": [{ "expr": "loyalty_worker_stale", "legendFormat": "{{worker}}" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Worker running by name",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+      "targets": [{ "expr": "loyalty_worker_running", "legendFormat": "{{worker}}" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Seconds since last progress",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
       "targets": [
-        {"expr": "loyalty_worker_last_tick_seconds{worker='outbox'}", "legendFormat": "outbox"},
-        {"expr": "loyalty_worker_last_tick_seconds{worker='hold_gc'}", "legendFormat": "hold_gc"}
+        {
+          "expr": "time() - loyalty_worker_last_progress_seconds",
+          "legendFormat": "{{worker}}"
+        }
       ]
     },
     {
       "type": "timeseries",
-      "title": "Circuit open (merchants) over time",
-      "gridPos": {"x": 0, "y": 14, "w": 12, "h": 8},
-      "targets": [ {"expr": "loyalty_outbox_circuit_open", "legendFormat": "open"} ]
+      "title": "Lock misses rate (5m)",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(loyalty_worker_lock_miss_total[5m])",
+          "legendFormat": "{{worker}}"
+        }
+      ]
     },
     {
       "type": "timeseries",
-      "title": "Rate-limited (5m rate)",
-      "gridPos": {"x": 12, "y": 14, "w": 12, "h": 8},
-      "targets": [ {"expr": "rate(loyalty_outbox_rate_limited_total[5m])", "legendFormat": "rate_limited/s"} ]
+      "title": "Outbox circuit open (merchants)",
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 8 },
+      "targets": [{ "expr": "loyalty_outbox_circuit_open", "legendFormat": "open" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbox rate-limited (5m)",
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "rate(loyalty_outbox_rate_limited_total[5m])", "legendFormat": "rate_limited/s" }
+      ]
     }
   ],
   "schemaVersion": 38,
   "title": "Workers",
-  "version": 1
+  "version": 2
 }

@@ -28,6 +28,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private running = false;
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
+  public lastProgressAt: Date | null = null;
+  public lastLockMissAt: Date | null = null;
+  public lockMissCount = 0;
   private cb: Map<
     string,
     { fails: number; windowStart: number; openUntil: number }
@@ -542,11 +545,14 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       'worker:outbox_dispatcher',
     );
     if (!lock.ok) {
+      this.lockMissCount += 1;
+      this.lastLockMissAt = new Date();
       this.running = false;
       return;
     }
     try {
       this.lastTickAt = new Date();
+      this.lastProgressAt = this.lastTickAt;
       try {
         this.metrics.setGauge(
           'loyalty_worker_last_tick_seconds',
@@ -600,6 +606,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       const ready = items.filter((it) => !this.isCircuitOpen(it.merchantId));
       const skipped = items.filter((it) => this.isCircuitOpen(it.merchantId));
       for (const row of skipped) {
+        this.lastProgressAt = new Date();
         const rowContext = {
           merchantId: row.merchantId,
           eventId: row.id,
@@ -642,9 +649,11 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       for (const [type, arr] of byType.entries()) {
         const conc = this.concurrencyForType(type);
         for (let i = 0; i < arr.length; i += conc) {
+          this.lastProgressAt = new Date();
           const slice = arr.slice(i, i + conc);
           await Promise.all(
             slice.map(async (row) => {
+              this.lastProgressAt = new Date();
               const rowContext = {
                 merchantId: row.merchantId,
                 eventId: row.id,
@@ -688,6 +697,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
               if (!claimed) return;
               await this.send(row);
               this.noteRate(row.merchantId);
+              this.lastProgressAt = new Date();
             }),
           );
         }

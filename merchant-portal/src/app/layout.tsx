@@ -426,9 +426,11 @@ function formatDateLabel(value: string | null) {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const profile = await fetchPortalProfile();
-  const timezonePayload = await fetchPortalTimezone();
-  const subscription = await fetchPortalSubscription();
+  const [profile, timezonePayload, subscription] = await Promise.all([
+    fetchPortalProfile(),
+    fetchPortalTimezone(),
+    fetchPortalSubscription(),
+  ]);
   const filteredSections = filterSectionsByProfile(profile);
   const staffLabel = profile?.staff?.name || profile?.staff?.email || null;
   const expired = subscription?.expired ?? false;

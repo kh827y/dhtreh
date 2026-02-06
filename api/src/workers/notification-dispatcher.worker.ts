@@ -30,6 +30,9 @@ export class NotificationDispatcherWorker
   private running = false;
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
+  public lastProgressAt: Date | null = null;
+  public lastLockMissAt: Date | null = null;
+  public lockMissCount = 0;
   private rpsDefault = 0; // 0 = unlimited
   private rpsByMerchant = new Map<string, number>();
   private rpsWindow = new Map<string, { startMs: number; count: number }>();
@@ -108,6 +111,20 @@ export class NotificationDispatcherWorker
 
   onModuleDestroy() {
     if (this.timer) clearInterval(this.timer);
+  }
+
+  private markTick() {
+    this.lastTickAt = new Date();
+    this.lastProgressAt = this.lastTickAt;
+  }
+
+  private markProgress() {
+    this.lastProgressAt = new Date();
+  }
+
+  private markLockMiss() {
+    this.lockMissCount += 1;
+    this.lastLockMissAt = new Date();
   }
 
   private async claim(row: OutboxRow): Promise<boolean> {
@@ -369,6 +386,7 @@ export class NotificationDispatcherWorker
                   select: { name: true },
                 });
                 for (const c of customers) {
+                  this.markProgress();
                   emailAttempted += 1;
                   const ctx = {
                     ...dataVars,
@@ -815,11 +833,12 @@ export class NotificationDispatcherWorker
       'worker:notification_dispatcher',
     );
     if (!lock.ok) {
+      this.markLockMiss();
       this.running = false;
       return;
     }
     try {
-      this.lastTickAt = new Date();
+      this.markTick();
       try {
         this.metrics.setGauge(
           'loyalty_worker_last_tick_seconds',
@@ -863,9 +882,11 @@ export class NotificationDispatcherWorker
         take: batch,
       });
       for (const row of items) {
+        this.markProgress();
         const claimed = await this.claim(row);
         if (!claimed) continue;
         await this.handle(row);
+        this.markProgress();
       }
     } finally {
       await pgAdvisoryUnlock(this.prisma, lock.key);

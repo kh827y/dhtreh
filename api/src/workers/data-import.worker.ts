@@ -10,8 +10,12 @@ import { DataImportStatus, DataImportType } from '@prisma/client';
 @Injectable()
 export class DataImportWorker implements OnModuleInit {
   private readonly logger = new Logger(DataImportWorker.name);
+  private running = false;
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
+  public lastProgressAt: Date | null = null;
+  public lastLockMissAt: Date | null = null;
+  public lockMissCount = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -95,10 +99,19 @@ export class DataImportWorker implements OnModuleInit {
   @Cron('*/1 * * * *')
   async tick() {
     if (!this.config.isWorkersEnabled()) return;
+    if (this.running) return;
+    this.running = true;
     this.lastTickAt = new Date();
+    this.lastProgressAt = this.lastTickAt;
     await this.recoverStaleJobs();
+    this.lastProgressAt = new Date();
     const lock = await pgTryAdvisoryLock(this.prisma, 'data-import-worker');
-    if (!lock.ok) return;
+    if (!lock.ok) {
+      this.lockMissCount += 1;
+      this.lastLockMissAt = new Date();
+      this.running = false;
+      return;
+    }
     try {
       const job = await this.prisma.dataImportJob.findFirst({
         where: {
@@ -109,11 +122,13 @@ export class DataImportWorker implements OnModuleInit {
       });
       if (!job) return;
       await this.importer.processImportJob(job.id);
+      this.lastProgressAt = new Date();
       this.logger.log(`Processed import job ${job.id}`);
     } catch (err) {
       logIgnoredError(err, 'DataImportWorker tick', this.logger, 'debug');
     } finally {
       await pgAdvisoryUnlock(this.prisma, lock.key);
+      this.running = false;
     }
   }
 }

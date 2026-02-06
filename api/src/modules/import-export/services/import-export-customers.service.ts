@@ -32,7 +32,7 @@ export class ImportExportCustomersService {
       if (dto.format === 'csv') {
         rows = this.files.parseCsv(dto.data);
       } else {
-        rows = this.files.parseExcel(dto.data);
+        rows = await this.files.parseExcel(dto.data);
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -424,7 +424,7 @@ export class ImportExportCustomersService {
       if (dto.format === 'csv') {
         rows = this.files.parseCsv(dto.data);
       } else {
-        rows = this.files.parseExcel(dto.data);
+        rows = await this.files.parseExcel(dto.data);
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -553,7 +553,7 @@ export class ImportExportCustomersService {
       if (format === 'csv') {
         rows = this.files.parseCsv(data);
       } else {
-        rows = this.files.parseExcel(data);
+        rows = await this.files.parseExcel(data);
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

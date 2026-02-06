@@ -1,0 +1,40 @@
+{
+  "generatedAt": "2026-02-06T11:24:45.933Z",
+  "baseUrl": "http://localhost:3000",
+  "totalRequests": 1400,
+  "concurrency": 30,
+  "timeoutMs": 5000,
+  "maxP95Ms": 1300,
+  "maxErrorRate": 0.02,
+  "durationMs": 3480.25,
+  "throughputRps": 402.27,
+  "successCount": 1400,
+  "failureCount": 0,
+  "errorRate": 0,
+  "latenciesMs": {
+    "p50": 69.77,
+    "p95": 107.67,
+    "p99": 254.12
+  },
+  "statuses": {
+    "200": 1400
+  },
+  "endpoints": {
+    "/portal/me": 200,
+    "/portal/settings/timezone": 200,
+    "/portal/access-groups": 200,
+    "/portal/outlets?status=active&page=1&pageSize=50": 200,
+    "/portal/staff?page=1&pageSize=50": 200,
+    "/portal/analytics/dashboard?period=month": 200,
+    "/portal/analytics/operations?period=month": 200
+  },
+  "endpointStatuses": {
+    "/portal/me::200": 200,
+    "/portal/settings/timezone::200": 200,
+    "/portal/access-groups::200": 200,
+    "/portal/outlets?status=active&page=1&pageSize=50::200": 200,
+    "/portal/staff?page=1&pageSize=50::200": 200,
+    "/portal/analytics/dashboard?period=month::200": 200,
+    "/portal/analytics/operations?period=month::200": 200
+  }
+}

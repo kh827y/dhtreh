@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 import * as csv from 'csv-parse/sync';
 import * as csvStringify from 'csv-stringify/sync';
 import type { RowRecord } from '../import-export.types';
@@ -26,20 +26,57 @@ export class ImportExportFileService {
       .filter((row): row is RowRecord => row !== null);
   }
 
-  parseExcel(buffer: Buffer): RowRecord[] {
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
+  async parseExcel(buffer: Buffer): Promise<RowRecord[]> {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
+      return [];
+    }
 
-    const rows = XLSX.utils.sheet_to_json(worksheet, {
-      defval: '',
-      raw: false,
-      dateNF: 'DD.MM.YYYY',
-    }) as unknown[];
+    const rows: RowRecord[] = [];
+    const headers: string[] = [];
 
-    return rows
-      .map((row) => this.toRecord(row))
-      .filter((row): row is RowRecord => row !== null);
+    worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      const values = row.values as unknown[];
+      if (rowNumber === 1) {
+        for (let i = 1; i < values.length; i++) {
+          const header = this.stringifyValue(
+            this.normalizeExcelCell(values[i]),
+          ).trim();
+          headers[i - 1] = header || `column_${i}`;
+        }
+        return;
+      }
+
+      if (!headers.length) {
+        return;
+      }
+
+      const record: RowRecord = {};
+      let hasData = false;
+      for (let i = 1; i <= headers.length; i++) {
+        const header = headers[i - 1];
+        if (!header) {
+          continue;
+        }
+        const cellValue = this.normalizeExcelCell(values[i]);
+        record[header] = cellValue;
+        if (
+          cellValue !== '' &&
+          cellValue !== null &&
+          cellValue !== undefined
+        ) {
+          hasData = true;
+        }
+      }
+
+      if (hasData) {
+        rows.push(record);
+      }
+    });
+
+    return rows;
   }
 
   generateCsv(data: Array<Record<string, unknown>>): Buffer {
@@ -65,21 +102,28 @@ export class ImportExportFileService {
     return Buffer.from(csvText, 'utf-8');
   }
 
-  generateExcel(data: Array<Record<string, unknown>>): Buffer {
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+  async generateExcel(data: Array<Record<string, unknown>>): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Sheet1');
+    const headers = Object.keys(data[0] || {});
 
-    const maxWidth = 30;
-    const cols = Object.keys(data[0] || {}).map(() => ({ wch: maxWidth }));
-    worksheet['!cols'] = cols;
+    if (headers.length) {
+      worksheet.columns = headers.map((header) => ({
+        header,
+        key: header,
+        width: 30,
+      }));
+      for (const row of data) {
+        const normalized: Record<string, unknown> = {};
+        for (const header of headers) {
+          normalized[header] = this.normalizeExcelOutputValue(row[header]);
+        }
+        worksheet.addRow(normalized);
+      }
+    }
 
-    const raw = XLSX.write(workbook, {
-      type: 'buffer',
-      bookType: 'xlsx',
-    }) as Buffer;
-
-    return Buffer.from(raw);
+    const raw = await workbook.xlsx.writeBuffer();
+    return Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
   }
 
   csvCell(value: string) {
@@ -125,5 +169,71 @@ export class ImportExportFileService {
       return null;
     }
     return value as RowRecord;
+  }
+
+  private normalizeExcelCell(value: unknown): unknown {
+    if (value == null) return '';
+    if (value instanceof Date) return value;
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      return value;
+    }
+    if (typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      if (typeof obj.result === 'string' || typeof obj.result === 'number') {
+        return obj.result;
+      }
+      if (obj.result instanceof Date) {
+        return obj.result;
+      }
+      if (typeof obj.text === 'string') {
+        return obj.text;
+      }
+      if (Array.isArray(obj.richText)) {
+        return obj.richText
+          .map((part) => {
+            if (
+              part &&
+              typeof part === 'object' &&
+              typeof (part as { text?: unknown }).text === 'string'
+            ) {
+              return (part as { text: string }).text;
+            }
+            return '';
+          })
+          .join('');
+      }
+      if (typeof obj.hyperlink === 'string') {
+        return obj.hyperlink;
+      }
+      if (typeof obj.formula === 'string') {
+        return obj.formula;
+      }
+      if (typeof obj.error === 'string') {
+        return obj.error;
+      }
+    }
+    return this.stringifyCsvValue(value);
+  }
+
+  private normalizeExcelOutputValue(value: unknown): unknown {
+    if (value == null) return null;
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      return value;
+    }
+    if (value instanceof Date) return value;
+    if (typeof value === 'bigint') return String(value);
+    return this.stringifyCsvValue(value);
+  }
+
+  private stringifyValue(value: unknown): string {
+    return this.stringifyCsvValue(value);
   }
 }

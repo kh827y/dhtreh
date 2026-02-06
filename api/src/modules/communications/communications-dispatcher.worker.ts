@@ -56,6 +56,9 @@ export class CommunicationsDispatcherWorker
   private running = false;
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
+  public lastProgressAt: Date | null = null;
+  public lastLockMissAt: Date | null = null;
+  public lockMissCount = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -93,21 +96,38 @@ export class CommunicationsDispatcherWorker
     if (this.timer) clearInterval(this.timer);
   }
 
+  private markTick() {
+    this.lastTickAt = new Date();
+    this.lastProgressAt = this.lastTickAt;
+  }
+
+  private markProgress() {
+    this.lastProgressAt = new Date();
+  }
+
+  private markLockMiss() {
+    this.lockMissCount += 1;
+    this.lastLockMissAt = new Date();
+  }
+
   private async tick() {
     if (this.running) return;
     this.running = true;
-    this.lastTickAt = new Date();
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'worker:communications_dispatcher',
     );
     if (!lock.ok) {
+      this.markLockMiss();
       this.running = false;
       return;
     }
     try {
+      this.markTick();
       await this.recoverStaleTasks();
+      this.markProgress();
       await this.requeueFailedTasks();
+      this.markProgress();
       const due = await this.prisma.communicationTask.findMany({
         where: {
           status: 'SCHEDULED',
@@ -121,6 +141,7 @@ export class CommunicationsDispatcherWorker
         take: this.config.getNumber('COMM_WORKER_BATCH', 10) ?? 10,
       });
       for (const task of due) {
+        this.markProgress();
         if (task.channel === CommunicationChannel.TELEGRAM) {
           await this.processTelegramTask(task).catch((err) => {
             this.logger.error(
@@ -134,6 +155,7 @@ export class CommunicationsDispatcherWorker
             );
           });
         }
+        this.markProgress();
       }
     } finally {
       await pgAdvisoryUnlock(this.prisma, lock.key);
@@ -190,6 +212,37 @@ export class CommunicationsDispatcherWorker
     const stats = this.toStatsRecord(value);
     const raw = this.toNumber(stats.attempts);
     return raw && raw > 0 ? Math.floor(raw) : 0;
+  }
+
+  private getRecipientBatchSize(): number {
+    return Math.max(
+      1,
+      this.config.getNumber('COMM_RECIPIENT_BATCH', 200) ?? 200,
+    );
+  }
+
+  private getDeliveryConcurrency(): number {
+    return Math.max(
+      1,
+      this.config.getNumber('COMM_DELIVERY_CONCURRENCY', 5) ?? 5,
+    );
+  }
+
+  private async runWithConcurrency<T>(
+    items: T[],
+    limit: number,
+    worker: (item: T) => Promise<void>,
+  ) {
+    const active = new Set<Promise<void>>();
+    for (const item of items) {
+      const task = Promise.resolve().then(() => worker(item));
+      active.add(task);
+      void task.finally(() => active.delete(task));
+      if (active.size >= limit) {
+        await Promise.race(active);
+      }
+    }
+    await Promise.all(active);
   }
 
   private async markTaskRunning(task: CommunicationTask) {
@@ -266,6 +319,7 @@ export class CommunicationsDispatcherWorker
               stats,
             },
       });
+      this.markProgress();
     }
   }
 
@@ -311,6 +365,7 @@ export class CommunicationsDispatcherWorker
           stats,
         },
       });
+      this.markProgress();
     }
   }
 
@@ -451,11 +506,8 @@ export class CommunicationsDispatcherWorker
       throw new Error('Медиафайл принадлежит другому мерчанту');
     }
 
-    const pendingRecipients =
-      await this.prisma.communicationTaskRecipient.findMany({
-        where: { taskId: task.id, status: { in: ['PENDING', 'FAILED'] } },
-        orderBy: { createdAt: 'asc' },
-      });
+    const recipientBatchSize = this.getRecipientBatchSize();
+    const deliveryConcurrency = this.getDeliveryConcurrency();
     let firstError: unknown = null;
 
     const promotion =
@@ -483,82 +535,115 @@ export class CommunicationsDispatcherWorker
       ? Math.max(0, Math.trunc(Number(bonusRaw)))
       : 0;
 
-    for (const row of pendingRecipients) {
-      const meta = this.asRecord(row.metadata) ?? {};
-      const mapped = row.customerId
-        ? recipientMap.get(row.customerId)
-        : undefined;
-      const tgIdRaw = meta.tgId ?? mapped?.tgId ?? null;
-      const tgId =
-        typeof tgIdRaw === 'string' || typeof tgIdRaw === 'number'
-          ? String(tgIdRaw)
-          : '';
-      const nameRaw = meta.name ?? mapped?.name ?? null;
-      const name = typeof nameRaw === 'string' ? nameRaw : null;
-      if (!tgId) {
-        await this.prisma.communicationTaskRecipient.update({
-          where: { id: row.id },
-          data: {
-            status: 'FAILED',
-            error: 'missing tgId',
-            sentAt: null,
-            metadata: { ...meta, tgId: null } as Prisma.JsonObject,
+    let cursorId: string | null = null;
+    for (;;) {
+      const pendingRecipients: Array<{
+        id: string;
+        customerId: string | null;
+        metadata: Prisma.JsonValue | null;
+      }> = await this.prisma.communicationTaskRecipient.findMany({
+          where: {
+            taskId: task.id,
+            status: { in: ['PENDING', 'FAILED'] },
+            ...(cursorId ? { id: { gt: cursorId } } : {}),
           },
+          select: { id: true, customerId: true, metadata: true },
+          orderBy: { id: 'asc' },
+          take: recipientBatchSize,
         });
-        continue;
-      }
-      let status = 'SENT';
-      let error: string | null = null;
-      try {
-        const vars: Record<string, string | number> = {
-          client: name?.trim() || 'клиент',
-        };
-        if (promotionName) vars.name = promotionName;
-        if (hasBonusSource) vars.bonus = bonus;
-        const rendered = applyCurlyPlaceholders(text, vars).trim();
-        await this.telegramBots.sendCampaignMessage(task.merchantId, tgId, {
-          text: rendered || text,
-          asset:
-            asset && asset.data
-              ? {
-                  buffer: asset.data as Buffer,
-                  mimeType: asset.mimeType ?? undefined,
-                  fileName: asset.fileName ?? undefined,
-                }
-              : undefined,
-        });
-      } catch (err: unknown) {
-        status = 'FAILED';
-        error = readErrorMessage(err);
-        if (!firstError) {
-          firstError = err;
-          logIgnoredError(
-            err,
-            'CommunicationsDispatcherWorker telegram delivery',
-            this.logger,
-            'debug',
-            {
-              taskId: task.id,
-              merchantId: task.merchantId,
-              customerId: row.customerId,
-            },
-          );
-        }
-      }
+      if (!pendingRecipients.length) break;
+      await this.runWithConcurrency(
+        pendingRecipients,
+        deliveryConcurrency,
+        async (row) => {
+          const meta = this.asRecord(row.metadata) ?? {};
+          const mapped = row.customerId
+            ? recipientMap.get(row.customerId)
+            : undefined;
+          const tgIdRaw = meta.tgId ?? mapped?.tgId ?? null;
+          const tgId =
+            typeof tgIdRaw === 'string' || typeof tgIdRaw === 'number'
+              ? String(tgIdRaw)
+              : '';
+          const nameRaw = meta.name ?? mapped?.name ?? null;
+          const name = typeof nameRaw === 'string' ? nameRaw : null;
+          if (!tgId) {
+            await this.prisma.communicationTaskRecipient.update({
+              where: { id: row.id },
+              data: {
+                status: 'FAILED',
+                error: 'missing tgId',
+                sentAt: null,
+                metadata: { ...meta, tgId: null } as Prisma.JsonObject,
+              },
+            });
+            this.markProgress();
+            return;
+          }
+          let status = 'SENT';
+          let error: string | null = null;
+          try {
+            const vars: Record<string, string | number> = {
+              client: name?.trim() || 'клиент',
+            };
+            if (promotionName) vars.name = promotionName;
+            if (hasBonusSource) vars.bonus = bonus;
+            const rendered = applyCurlyPlaceholders(text, vars).trim();
+            await this.telegramBots.sendCampaignMessage(task.merchantId, tgId, {
+              text: rendered || text,
+              asset:
+                asset && asset.data
+                  ? {
+                      buffer: asset.data as Buffer,
+                      mimeType: asset.mimeType ?? undefined,
+                      fileName: asset.fileName ?? undefined,
+                    }
+                  : undefined,
+            });
+          } catch (err: unknown) {
+            status = 'FAILED';
+            error = readErrorMessage(err);
+            if (!firstError) {
+              firstError = err;
+              logIgnoredError(
+                err,
+                'CommunicationsDispatcherWorker telegram delivery',
+                this.logger,
+                'debug',
+                {
+                  taskId: task.id,
+                  merchantId: task.merchantId,
+                  customerId: row.customerId,
+                },
+              );
+            }
+          }
 
-      await this.prisma.communicationTaskRecipient.update({
-        where: { id: row.id },
-        data: {
-          status,
-          sentAt: status === 'SENT' ? new Date() : null,
-          error,
-          metadata: {
-            ...meta,
-            tgId,
-            name,
-          } as Prisma.JsonObject,
+          await this.prisma.communicationTaskRecipient.update({
+            where: { id: row.id },
+            data: {
+              status,
+              sentAt: status === 'SENT' ? new Date() : null,
+              error,
+              metadata: {
+                ...meta,
+                tgId,
+                name,
+              } as Prisma.JsonObject,
+            },
+          });
+          this.markProgress();
         },
-      });
+      );
+      const nextCursor = pendingRecipients[pendingRecipients.length - 1]?.id ?? null;
+      if (cursorId && nextCursor && nextCursor <= cursorId) {
+        this.logger.warn(
+          `Telegram recipients cursor did not advance for task ${task.id}, breaking loop`,
+        );
+        break;
+      }
+      cursorId = nextCursor;
+      this.markProgress();
     }
 
     const grouped = await this.prisma.communicationTaskRecipient.groupBy({
@@ -657,11 +742,8 @@ export class CommunicationsDispatcherWorker
       });
     }
 
-    const pendingRecipients =
-      await this.prisma.communicationTaskRecipient.findMany({
-        where: { taskId: task.id, status: { in: ['PENDING', 'FAILED'] } },
-        orderBy: { createdAt: 'asc' },
-      });
+    const recipientBatchSize = this.getRecipientBatchSize();
+    const deliveryConcurrency = this.getDeliveryConcurrency();
     let firstError: unknown = null;
     const title = (() => {
       const raw = readString(payload.title);
@@ -698,80 +780,113 @@ export class CommunicationsDispatcherWorker
       ? Math.max(0, Math.trunc(Number(bonusRaw)))
       : 0;
 
-    for (const row of pendingRecipients) {
-      const meta = this.asRecord(row.metadata) ?? {};
-      const mapped = row.customerId
-        ? recipientMap.get(row.customerId)
-        : undefined;
-      const tgIdRaw = meta.tgId ?? mapped?.tgId ?? null;
-      const tgId =
-        typeof tgIdRaw === 'string' || typeof tgIdRaw === 'number'
-          ? String(tgIdRaw)
-          : '';
-      const nameRaw = meta.name ?? mapped?.name ?? null;
-      const name = typeof nameRaw === 'string' ? nameRaw : null;
-      if (!tgId) {
-        await this.prisma.communicationTaskRecipient.update({
-          where: { id: row.id },
-          data: {
-            status: 'FAILED',
-            error: 'missing tgId',
-            sentAt: null,
-            metadata: { ...meta, tgId: null } as Prisma.JsonObject,
+    let cursorId: string | null = null;
+    for (;;) {
+      const pendingRecipients: Array<{
+        id: string;
+        customerId: string | null;
+        metadata: Prisma.JsonValue | null;
+      }> = await this.prisma.communicationTaskRecipient.findMany({
+          where: {
+            taskId: task.id,
+            status: { in: ['PENDING', 'FAILED'] },
+            ...(cursorId ? { id: { gt: cursorId } } : {}),
           },
+          select: { id: true, customerId: true, metadata: true },
+          orderBy: { id: 'asc' },
+          take: recipientBatchSize,
         });
-        continue;
-      }
-      let status = 'SENT';
-      let error: string | null = null;
-      try {
-        const vars: Record<string, string | number> = {
-          client: name?.trim() || 'клиент',
-        };
-        if (promotionName) vars.name = promotionName;
-        if (hasBonusSource) vars.bonus = bonus;
-        const renderedText = applyCurlyPlaceholders(text, vars).trim();
-        const renderedTitle = title
-          ? applyCurlyPlaceholders(title, vars).trim()
-          : undefined;
-        await this.telegramBots.sendPushNotification(task.merchantId, tgId, {
-          title: renderedTitle || title,
-          body: renderedText || text,
-          data: extra,
-          deepLink,
-        });
-      } catch (err: unknown) {
-        status = 'FAILED';
-        error = readErrorMessage(err);
-        if (!firstError) {
-          firstError = err;
-          logIgnoredError(
-            err,
-            'CommunicationsDispatcherWorker push delivery',
-            this.logger,
-            'debug',
-            {
-              taskId: task.id,
-              merchantId: task.merchantId,
-              customerId: row.customerId,
-            },
-          );
-        }
-      }
+      if (!pendingRecipients.length) break;
+      await this.runWithConcurrency(
+        pendingRecipients,
+        deliveryConcurrency,
+        async (row) => {
+          const meta = this.asRecord(row.metadata) ?? {};
+          const mapped = row.customerId
+            ? recipientMap.get(row.customerId)
+            : undefined;
+          const tgIdRaw = meta.tgId ?? mapped?.tgId ?? null;
+          const tgId =
+            typeof tgIdRaw === 'string' || typeof tgIdRaw === 'number'
+              ? String(tgIdRaw)
+              : '';
+          const nameRaw = meta.name ?? mapped?.name ?? null;
+          const name = typeof nameRaw === 'string' ? nameRaw : null;
+          if (!tgId) {
+            await this.prisma.communicationTaskRecipient.update({
+              where: { id: row.id },
+              data: {
+                status: 'FAILED',
+                error: 'missing tgId',
+                sentAt: null,
+                metadata: { ...meta, tgId: null } as Prisma.JsonObject,
+              },
+            });
+            this.markProgress();
+            return;
+          }
+          let status = 'SENT';
+          let error: string | null = null;
+          try {
+            const vars: Record<string, string | number> = {
+              client: name?.trim() || 'клиент',
+            };
+            if (promotionName) vars.name = promotionName;
+            if (hasBonusSource) vars.bonus = bonus;
+            const renderedText = applyCurlyPlaceholders(text, vars).trim();
+            const renderedTitle = title
+              ? applyCurlyPlaceholders(title, vars).trim()
+              : undefined;
+            await this.telegramBots.sendPushNotification(task.merchantId, tgId, {
+              title: renderedTitle || title,
+              body: renderedText || text,
+              data: extra,
+              deepLink,
+            });
+          } catch (err: unknown) {
+            status = 'FAILED';
+            error = readErrorMessage(err);
+            if (!firstError) {
+              firstError = err;
+              logIgnoredError(
+                err,
+                'CommunicationsDispatcherWorker push delivery',
+                this.logger,
+                'debug',
+                {
+                  taskId: task.id,
+                  merchantId: task.merchantId,
+                  customerId: row.customerId,
+                },
+              );
+            }
+          }
 
-      await this.prisma.communicationTaskRecipient.update({
-        where: { id: row.id },
-        data: {
-          status,
-          sentAt: status === 'SENT' ? new Date() : null,
-          error,
-          metadata: {
-            ...meta,
-            tgId,
-            name,
-          } as Prisma.JsonObject,
+          await this.prisma.communicationTaskRecipient.update({
+            where: { id: row.id },
+            data: {
+              status,
+              sentAt: status === 'SENT' ? new Date() : null,
+              error,
+              metadata: {
+                ...meta,
+                tgId,
+                name,
+              } as Prisma.JsonObject,
+            },
+          });
+          this.markProgress();
         },
-      });
+      );
+      const nextCursor = pendingRecipients[pendingRecipients.length - 1]?.id ?? null;
+      if (cursorId && nextCursor && nextCursor <= cursorId) {
+        this.logger.warn(
+          `Push recipients cursor did not advance for task ${task.id}, breaking loop`,
+        );
+        break;
+      }
+      cursorId = nextCursor;
+      this.markProgress();
     }
 
     const grouped = await this.prisma.communicationTaskRecipient.groupBy({

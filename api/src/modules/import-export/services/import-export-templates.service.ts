@@ -5,10 +5,10 @@ import { ImportExportFileService } from './import-export-file.service';
 export class ImportExportTemplatesService {
   constructor(private readonly files: ImportExportFileService) {}
 
-  getImportTemplate(
+  async getImportTemplate(
     type: 'customers' | 'transactions',
     format: 'csv' | 'excel',
-  ): Buffer {
+  ): Promise<Buffer> {
     const templates = {
       customers: [
         {
@@ -79,6 +79,6 @@ export class ImportExportTemplatesService {
     if (format === 'csv') {
       return this.files.generateCsv(data);
     }
-    return this.files.generateExcel(data);
+    return await this.files.generateExcel(data);
   }
 }

@@ -11,10 +11,10 @@
   },
   "dependencies": {
     "html5-qrcode": "^2.3.8",
-    "next": "15.5.2",
+    "lucide-react": "^0.474.0",
+    "next": "15.5.12",
     "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "lucide-react": "^0.474.0"
+    "react-dom": "19.1.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -24,7 +24,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.5.2",
+    "eslint-config-next": "15.5.12",
     "jsdom": "^24.1.1",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",

@@ -115,7 +115,12 @@ async function fetchAccessGroupsAndStaff(force = false) {
     return accessGroupsLoadPromise;
   }
   const task = (async () => {
-    const groupsRes = await fetch("/api/portal/access-groups");
+    const [groupsRes, staffFirstRes] = await Promise.all([
+      fetch("/api/portal/access-groups"),
+      fetch(`/api/portal/staff?page=1&pageSize=${STAFF_PAGE_SIZE}`).catch(
+        () => null,
+      ),
+    ]);
     if (!groupsRes.ok) {
       const errText = await groupsRes.text().catch(() => "");
       const error = new Error(errText || "Группы доступа недоступны");
@@ -125,11 +130,8 @@ async function fetchAccessGroupsAndStaff(force = false) {
     const groupsPayload = await groupsRes.json().catch(() => ({}));
     let staffRows: any[] = [];
     try {
-      const staffRes = await fetch(
-        `/api/portal/staff?page=1&pageSize=${STAFF_PAGE_SIZE}`,
-      );
-      if (staffRes.ok) {
-        const staffPayload = await staffRes.json().catch(() => ({}));
+      if (staffFirstRes?.ok) {
+        const staffPayload = await staffFirstRes.json().catch(() => ({}));
         staffRows = Array.isArray(staffPayload?.items)
           ? staffPayload.items
           : Array.isArray(staffPayload)
@@ -137,11 +139,15 @@ async function fetchAccessGroupsAndStaff(force = false) {
             : [];
         const totalPages = Number(staffPayload?.meta?.totalPages ?? 1) || 1;
         if (totalPages > 1) {
-          for (let page = 2; page <= totalPages; page += 1) {
-            const pageRes = await fetch(
-              `/api/portal/staff?page=${page}&pageSize=${STAFF_PAGE_SIZE}`,
-            );
-            if (!pageRes.ok) break;
+          const pageResponses = await Promise.all(
+            Array.from({ length: totalPages - 1 }, (_, index) =>
+              fetch(
+                `/api/portal/staff?page=${index + 2}&pageSize=${STAFF_PAGE_SIZE}`,
+              ).catch(() => null),
+            ),
+          );
+          for (const pageRes of pageResponses) {
+            if (!pageRes?.ok) continue;
             const pagePayload = await pageRes.json().catch(() => ({}));
             const pageRows: any[] = Array.isArray(pagePayload?.items)
               ? pagePayload.items

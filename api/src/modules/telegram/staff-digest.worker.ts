@@ -42,8 +42,12 @@ const getLocalParts = (value: Date, timeZone: string) => {
 @Injectable()
 export class TelegramStaffDigestWorker implements OnModuleInit {
   private readonly logger = new Logger(TelegramStaffDigestWorker.name);
+  private running = false;
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
+  public lastProgressAt: Date | null = null;
+  public lastLockMissAt: Date | null = null;
+  public lockMissCount = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -58,12 +62,20 @@ export class TelegramStaffDigestWorker implements OnModuleInit {
   @Cron('*/15 * * * *')
   async handleDailyDigest() {
     if (!this.config.getBoolean('WORKERS_ENABLED', false)) return;
+    if (this.running) return;
+    this.running = true;
     this.lastTickAt = new Date();
+    this.lastProgressAt = this.lastTickAt;
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:telegram_staff_digest',
     );
-    if (!lock.ok) return;
+    if (!lock.ok) {
+      this.lockMissCount += 1;
+      this.lastLockMissAt = new Date();
+      this.running = false;
+      return;
+    }
     try {
       const merchants = await this.prisma.telegramStaffSubscriber.findMany({
         where: { isActive: true },
@@ -84,6 +96,7 @@ export class TelegramStaffDigestWorker implements OnModuleInit {
       );
       const now = new Date();
       for (const row of merchants) {
+        this.lastProgressAt = new Date();
         const merchantId = row.merchantId;
         if (!merchantId) continue;
         try {
@@ -113,6 +126,7 @@ export class TelegramStaffDigestWorker implements OnModuleInit {
             kind: 'DIGEST',
             date: isoDate,
           });
+          this.lastProgressAt = new Date();
           digestMeta.lastSentLocalDate = localDate;
           digestMeta.lastSentAt = new Date().toISOString();
           rules.staffNotifyDigest = digestMeta;
@@ -132,6 +146,7 @@ export class TelegramStaffDigestWorker implements OnModuleInit {
       this.logger.error(`handleDailyDigest failed: ${error}`);
     } finally {
       await pgAdvisoryUnlock(this.prisma, lock.key);
+      this.running = false;
     }
   }
 }

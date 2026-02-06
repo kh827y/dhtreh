@@ -102,19 +102,26 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       () => {
         const { context, limit, ttl } = requestProps;
         const req = context.switchToHttp().getRequest<RequestLike>();
-        const path: string = (
+        const pathRaw: string = (
           req?.originalUrl ||
           (req?.baseUrl ? `${req.baseUrl}${req.path || ''}` : '') ||
           req?.path ||
           req?.route?.path ||
           ''
         )
-          .toLowerCase()
           .split('?')[0];
+        const path = normalizeApiPath(pathRaw).toLowerCase();
+        const method = String(req?.method || 'GET').toUpperCase();
         const body = toRecord(req?.body);
         const q = toRecord(req?.query);
+        const headerMerchantId = asString(
+          firstHeaderValue(req, ['x-merchant-id', 'X-Merchant-Id']),
+        );
         const merchantId =
-          asString(body?.merchantId) || asString(q?.merchantId);
+          asString(body?.merchantId) ||
+          asString(q?.merchantId) ||
+          asString(req?.portalMerchantId) ||
+          headerMerchantId;
 
         const envNum = (name: string, def: number) => {
           const n = this.config.getNumber(name);
@@ -142,6 +149,39 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
         });
 
         let base = { limit, ttl };
+        const isPortalPath = path.startsWith('/portal');
+        if (isPortalPath) {
+          const isReadMethod =
+            method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+          const portalReadLimit = envNum('RL_LIMIT_PORTAL_READ', 600);
+          const portalReadTtl = envNum('RL_TTL_PORTAL_READ', 60_000);
+          const portalWriteLimit = envNum('RL_LIMIT_PORTAL_WRITE', 180);
+          const portalWriteTtl = envNum('RL_TTL_PORTAL_WRITE', 60_000);
+          base = isReadMethod
+            ? { limit: portalReadLimit, ttl: portalReadTtl }
+            : { limit: portalWriteLimit, ttl: portalWriteTtl };
+
+          if (isReadMethod && path.startsWith('/portal/analytics/')) {
+            base = {
+              limit: envNum(
+                'RL_LIMIT_PORTAL_ANALYTICS_READ',
+                portalReadLimit,
+              ),
+              ttl: envNum('RL_TTL_PORTAL_ANALYTICS_READ', portalReadTtl),
+            };
+          } else if (
+            isReadMethod &&
+            path.startsWith('/portal/operations/log')
+          ) {
+            base = {
+              limit: envNum(
+                'RL_LIMIT_PORTAL_OPERATIONS_READ',
+                portalReadLimit,
+              ),
+              ttl: envNum('RL_TTL_PORTAL_OPERATIONS_READ', portalReadTtl),
+            };
+          }
+        }
         const integrationLimits = toRecord(req?.integrationRateLimits);
         if (integrationLimits && req?.integrationId) {
           const pickIntegration = (key: string) => {
@@ -207,6 +247,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
 type RequestLike = {
   get?: (name: string) => unknown;
   headers?: Record<string, string | string[] | undefined>;
+  method?: string;
   ip?: string;
   ips?: string[];
   socket?: { remoteAddress?: string };
@@ -242,4 +283,11 @@ function firstHeaderValue(req: RequestLike, names: string[]): string {
     if (Array.isArray(value) && value.length) return value[0] || '';
   }
   return '';
+}
+
+function normalizeApiPath(raw: string): string {
+  if (!raw) return '/';
+  if (raw === '/api/v1') return '/';
+  if (raw.startsWith('/api/v1/')) return raw.slice('/api/v1'.length) || '/';
+  return raw;
 }

@@ -38,6 +38,7 @@ describe("system settings page (new design)", () => {
     const namePayload = { name: "Моя Компания", initialName: "Моя Компания" };
     const supportPayload = { supportTelegram: "" };
     const qrPayload = { requireJwtForQuote: false };
+    const logoPayload = { miniappLogoUrl: null };
     const updatedNamePayload = { ok: true, name: "Новая Компания ✓", initialName: "Моя Компания" };
     const updatedTimezonePayload = {
       ok: true,
@@ -60,6 +61,9 @@ describe("system settings page (new design)", () => {
       }
       if (url.endsWith("/api/portal/settings/qr") && method === "GET") {
         return new Response(JSON.stringify(qrPayload), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.endsWith("/api/portal/settings/logo") && method === "GET") {
+        return new Response(JSON.stringify(logoPayload), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url.endsWith("/api/portal/settings/name") && method === "PUT") {
         calls.push({ url, method, body });

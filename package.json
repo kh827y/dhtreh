@@ -22,7 +22,13 @@
     "lint:fix": "pnpm --filter api lint --fix && pnpm --filter admin lint --fix && pnpm --filter cashier lint --fix && pnpm --filter miniapp lint --fix && pnpm --filter merchant-portal lint --fix",
     "format": "prettier -w .",
     "format:check": "prettier -c .",
+    "audit:pages": "node scripts/audit-page-fetches.mjs",
+    "check:error-budget": "bash scripts/check-error-budget.sh",
+    "canary:rollout": "bash scripts/canary-rollout.sh",
+    "load:portal": "node scripts/load-test-portal.mjs",
+    "db:explain:hotpaths": "pnpm --filter api explain:hotpaths",
     "test": "pnpm --filter api test && pnpm --filter api test:e2e",
+    "test:ci:all": "pnpm --filter api test && pnpm --filter api test:e2e && pnpm --filter admin test && pnpm --filter merchant-portal test && pnpm --filter cashier test && pnpm --filter miniapp test && pnpm --filter @loyalty/sdk-ts test",
     "dev:all": "pnpm -r --parallel --filter admin --filter merchant-portal --filter cashier --filter miniapp dev"
   },
   "devDependencies": {
@@ -30,5 +36,15 @@
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
     "prettier": "^3.4.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "node-forge": "1.3.2",
+      "qs": "6.14.1",
+      "gtoken>jws": "4.0.1",
+      "google-auth-library>jws": "4.0.1",
+      "jsonwebtoken>jws": "3.2.3",
+      "@google-cloud/storage>fast-xml-parser": "5.3.4"
+    }
   }
 }

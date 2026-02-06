@@ -218,7 +218,12 @@ export default function LevelsPage() {
     setError(null);
     setPeriodError(null);
     try {
-      const res = await fetch("/api/portal/loyalty/tiers", { cache: "no-store" });
+      const [res, settingsRes] = await Promise.all([
+        fetch("/api/portal/loyalty/tiers", { cache: "no-store" }),
+        fetch("/api/portal/loyalty/levels", {
+          cache: "no-store",
+        }),
+      ]);
       if (!res.ok)
         throw new Error(
           (await res.text().catch(() => "")) ||
@@ -237,9 +242,6 @@ export default function LevelsPage() {
       setLevels(mapped);
 
       try {
-        const settingsRes = await fetch("/api/portal/loyalty/levels", {
-          cache: "no-store",
-        });
         if (settingsRes.ok) {
           const settings = await settingsRes.json();
           const nextPeriod = Number(settings?.periodDays);

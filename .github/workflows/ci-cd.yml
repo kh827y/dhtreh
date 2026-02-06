@@ -63,6 +63,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Security audit (prod deps)
+        run: pnpm audit --prod --audit-level=high
+
       - name: Generate Prisma client
         working-directory: api
         run: pnpm prisma generate
@@ -87,6 +90,26 @@ jobs:
           DATABASE_URL: postgresql://postgres:test_password@localhost:5432/loyalty_test
           REDIS_URL: redis://localhost:6379
         run: pnpm test:e2e
+
+      - name: Run Admin tests
+        working-directory: admin
+        run: pnpm test
+
+      - name: Run Merchant Portal tests
+        working-directory: merchant-portal
+        run: pnpm test
+
+      - name: Run Cashier tests
+        working-directory: cashier
+        run: pnpm test
+
+      - name: Run Miniapp tests
+        working-directory: miniapp
+        run: pnpm test
+
+      - name: Run SDK tests
+        working-directory: clients/sdk-ts
+        run: pnpm test
         
       - name: Build API
         working-directory: api
@@ -112,6 +135,41 @@ jobs:
         working-directory: clients/sdk-ts
         run: pnpm build
 
+  deploy-staging:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' && secrets.STAGING_HOST != '' && secrets.STAGING_USER != '' && secrets.STAGING_SSH_KEY != '' && secrets.STAGING_DOMAIN != ''
+    environment: staging
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Deploy to staging (canary)
+        uses: appleboy/ssh-action@v0.1.5
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd /opt/loyalty
+            chmod +x scripts/*.sh
+            ENV_FILE=.env.staging \
+            DEPLOY_BRANCH=develop \
+            SKIP_TESTS=1 \
+            CANARY_API_URL=https://api.${{ secrets.STAGING_DOMAIN }} \
+            CANARY_APP_URL=https://app.${{ secrets.STAGING_DOMAIN }} \
+            CANARY_ADMIN_URL=https://admin.${{ secrets.STAGING_DOMAIN }} \
+            CANARY_PORTAL_URL=https://portal.${{ secrets.STAGING_DOMAIN }} \
+            ./scripts/deploy.sh staging deploy
+            
+      - name: Run staging smoke tests
+        run: |
+          sleep 30
+          curl -f https://api.${{ secrets.STAGING_DOMAIN }}/healthz || exit 1
+          curl -f https://app.${{ secrets.STAGING_DOMAIN }} || exit 1
+          curl -f https://admin.${{ secrets.STAGING_DOMAIN }} || exit 1
+          curl -f https://portal.${{ secrets.STAGING_DOMAIN }} || exit 1
+
   deploy-production:
     needs: test
     runs-on: ubuntu-latest
@@ -129,9 +187,14 @@ jobs:
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
             cd /opt/loyalty
-            git pull origin main
-            docker compose --env-file .env.production -f docker-compose.production.yml up -d --remove-orphans --build --scale api=2 --scale miniapp=2
-            docker compose --env-file .env.production -f docker-compose.production.yml exec -T api pnpm prisma migrate deploy
+            chmod +x scripts/*.sh
+            SKIP_TESTS=1 \
+            DEPLOY_BRANCH=main \
+            CANARY_API_URL=https://api.${{ secrets.PRODUCTION_DOMAIN }} \
+            CANARY_APP_URL=https://app.${{ secrets.PRODUCTION_DOMAIN }} \
+            CANARY_ADMIN_URL=https://admin.${{ secrets.PRODUCTION_DOMAIN }} \
+            CANARY_PORTAL_URL=https://portal.${{ secrets.PRODUCTION_DOMAIN }} \
+            ./scripts/deploy.sh production deploy
             
       - name: Run smoke tests
         run: |

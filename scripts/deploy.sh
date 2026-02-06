@@ -13,8 +13,9 @@ ACTION=${2:-deploy}
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 PROJECT_DIR="/opt/loyalty"
 BACKUP_DIR="/opt/backups/loyalty"
-COMPOSE_FILE="docker-compose.production.yml"
-ENV_FILE=".env.production"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.production.yml}"
+ENV_FILE="${ENV_FILE:-.env.production}"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-}"
 SMOKE_CHECK_RETRIES=${SMOKE_CHECK_RETRIES:-6}
 SMOKE_CHECK_INTERVAL_SEC=${SMOKE_CHECK_INTERVAL_SEC:-5}
 SMOKE_CHECK_TIMEOUT=${SMOKE_CHECK_TIMEOUT:-5}
@@ -50,9 +51,18 @@ check_environment() {
     case $ENVIRONMENT in
         production)
             log "Environment: $ENVIRONMENT"
+            if [ -z "$DEPLOY_BRANCH" ]; then
+                DEPLOY_BRANCH="main"
+            fi
+            ;;
+        staging)
+            log "Environment: $ENVIRONMENT"
+            if [ -z "$DEPLOY_BRANCH" ]; then
+                DEPLOY_BRANCH="develop"
+            fi
             ;;
         *)
-            error "Invalid environment: $ENVIRONMENT. Use 'production'"
+            error "Invalid environment: $ENVIRONMENT. Use 'production' or 'staging'"
             ;;
     esac
 }
@@ -91,12 +101,12 @@ backup() {
 # Deploy application
 deploy() {
     log "Starting deployment for $ENVIRONMENT..."
-    
+
     # Pull latest code
     log "Pulling latest code..."
     git fetch origin
-    git checkout main
-    git pull origin main
+    git checkout "$DEPLOY_BRANCH"
+    git pull origin "$DEPLOY_BRANCH"
     
     # Build and deploy with Docker Compose
     log "Building Docker images..."
@@ -106,26 +116,35 @@ deploy() {
     log "Running database migrations..."
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm api pnpm prisma migrate deploy
     
-    # Start services with zero-downtime deployment
+    # Start baseline services
     log "Starting services..."
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans
 
-    # Smoke-check services
-    log "Running smoke checks..."
-    local attempt=1
-    while [ "$attempt" -le "$SMOKE_CHECK_RETRIES" ]; do
-        if BASE_URL="${API_BASE_URL:-http://localhost:3000}" TIMEOUT="$SMOKE_CHECK_TIMEOUT" ./scripts/smoke-check.sh; then
-            log "Smoke checks passed"
-            break
+    # Progressive canary rollout with error-budget checks
+    if [ "${ENABLE_CANARY:-1}" = "1" ]; then
+        log "Running canary rollout..."
+        if ! ./scripts/canary-rollout.sh; then
+            warning "Canary rollout failed, rolling back..."
+            rollback
+            error "Deployment failed during canary rollout"
         fi
-        warning "Smoke checks failed (attempt $attempt/$SMOKE_CHECK_RETRIES)"
-        attempt=$((attempt + 1))
-        sleep "$SMOKE_CHECK_INTERVAL_SEC"
-    done
-    if [ "$attempt" -gt "$SMOKE_CHECK_RETRIES" ]; then
-        warning "Smoke checks failed after deployment, rolling back..."
-        rollback
-        error "Deployment failed after smoke checks"
+    else
+        log "Canary disabled by ENABLE_CANARY=0, running smoke checks only..."
+        local attempt=1
+        while [ "$attempt" -le "$SMOKE_CHECK_RETRIES" ]; do
+            if BASE_URL="${API_BASE_URL:-http://localhost:3000}" TIMEOUT="$SMOKE_CHECK_TIMEOUT" ./scripts/smoke-check.sh; then
+                log "Smoke checks passed"
+                break
+            fi
+            warning "Smoke checks failed (attempt $attempt/$SMOKE_CHECK_RETRIES)"
+            attempt=$((attempt + 1))
+            sleep "$SMOKE_CHECK_INTERVAL_SEC"
+        done
+        if [ "$attempt" -gt "$SMOKE_CHECK_RETRIES" ]; then
+            warning "Smoke checks failed after deployment, rolling back..."
+            rollback
+            error "Deployment failed after smoke checks"
+        fi
     fi
     
     # Clean up old images
@@ -215,8 +234,15 @@ status() {
 # Run tests before deployment
 run_tests() {
     log "Running tests..."
-
-    warning "Test compose file is not configured. Skipping tests."
+    if [ "${SKIP_TESTS:-0}" = "1" ]; then
+        warning "SKIP_TESTS=1 set, skipping tests."
+        return 0
+    fi
+    pnpm install --frozen-lockfile
+    pnpm typecheck
+    pnpm test:ci:all
+    pnpm audit --prod --audit-level=high
+    log "Pre-deploy test gate passed"
 }
 
 # Send deployment notification

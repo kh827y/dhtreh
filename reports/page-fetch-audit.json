@@ -1,0 +1,2707 @@
+{
+  "generatedAt": "2026-02-06T12:35:42.135Z",
+  "apps": {
+    "admin": {
+      "summary": {
+        "pageCount": 20,
+        "pageFetchCalls": 9,
+        "layoutFetchCalls": 0,
+        "highRiskPages": 0,
+        "mediumRiskPages": 1,
+        "lowRiskPages": 20,
+        "potentialWaterfalls": 1,
+        "duplicateEndpointPages": 0
+      },
+      "pages": [
+        {
+          "route": "/login",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/login/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/auth/login"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 16,
+              "literalEndpoints": [
+                "/api/auth/login"
+              ],
+              "hasLiteral": true,
+              "raw": "const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password, code: code || undefined }) });"
+            }
+          ]
+        },
+        {
+          "route": "/outbox/event/[id]",
+          "score": 2,
+          "risk": "medium",
+          "filePath": "admin/src/app/outbox/event/[id]/page.tsx",
+          "fetchCount": 3,
+          "awaitFetchCount": 3,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/event/${encodeURIComponent(id)}",
+            "/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}/retry",
+            "/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 39,
+              "literalEndpoints": [
+                "/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/event/${encodeURIComponent(id)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/event/${encodeURIComponent(id)}`);"
+            },
+            {
+              "line": 61,
+              "literalEndpoints": [
+                "/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}/retry"
+              ],
+              "hasLiteral": true,
+              "raw": "const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}/retry`, { method: 'POST', headers: { 'x-admin-action': 'ui' } });"
+            },
+            {
+              "line": 72,
+              "literalEndpoints": [
+                "/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'x-admin-action': 'ui' } });"
+            }
+          ]
+        },
+        {
+          "route": "/outbox/monitor",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/outbox/monitor/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/metrics"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 31,
+              "literalEndpoints": [
+                "/api/metrics"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch('/api/metrics').then(r=>r.json() as Promise<Summary>),"
+            }
+          ]
+        },
+        {
+          "route": "/outbox",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/outbox/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/docs/deployment",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/docs/deployment/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/docs/webhooks",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/docs/webhooks/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/docs/integration",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/docs/integration/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/docs/miniapp",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/docs/miniapp/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/docs/observability",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/docs/observability/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/merchants",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/merchants/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/ttl",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/ttl/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/settings",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/settings/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/antifraud",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/antifraud/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/admin/merchants/${merchantId}/transactions?${txParams.toString()}"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 261,
+              "literalEndpoints": [
+                "/api/admin/merchants/${merchantId}/transactions?${txParams.toString()}"
+              ],
+              "hasLiteral": true,
+              "raw": "const txResponse = await fetch(`/api/admin/merchants/${merchantId}/transactions?${txParams.toString()}`);"
+            }
+          ]
+        },
+        {
+          "route": "/status",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/status/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/health"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 19,
+              "literalEndpoints": [
+                "/api/health"
+              ],
+              "hasLiteral": true,
+              "raw": "const r = await fetch('/api/health');"
+            }
+          ]
+        },
+        {
+          "route": "/observability",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/observability/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/logout",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/logout/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/auth/logout"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 7,
+              "literalEndpoints": [
+                "/api/auth/logout"
+              ],
+              "hasLiteral": true,
+              "raw": "try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}"
+            }
+          ]
+        },
+        {
+          "route": "/audit",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/audit/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/audit/[id]",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/audit/[id]/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/admin/admin/audit/${encodeURIComponent(id)}"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 19,
+              "literalEndpoints": [
+                "/api/admin/admin/audit/${encodeURIComponent(id)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const r = await fetch(`/api/admin/admin/audit/${encodeURIComponent(id)}`);"
+            }
+          ]
+        },
+        {
+          "route": "/exports",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/exports/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        }
+      ],
+      "extras": [
+        {
+          "route": "(shared-layout)",
+          "score": 0,
+          "risk": "low",
+          "filePath": "admin/src/app/layout.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        }
+      ]
+    },
+    "merchant-portal": {
+      "summary": {
+        "pageCount": 54,
+        "pageFetchCalls": 151,
+        "layoutFetchCalls": 3,
+        "highRiskPages": 17,
+        "mediumRiskPages": 10,
+        "lowRiskPages": 28,
+        "potentialWaterfalls": 18,
+        "duplicateEndpointPages": 20
+      },
+      "pages": [
+        {
+          "route": "/",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/setup-status"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 46,
+              "literalEndpoints": [
+                "/api/portal/setup-status"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/setup-status\", { cache: \"no-store\" });"
+            }
+          ]
+        },
+        {
+          "route": "/login",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/login/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/session/login"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 76,
+              "literalEndpoints": [
+                "/api/session/login"
+              ],
+              "hasLiteral": true,
+              "raw": "const r = await fetch(\"/api/session/login\", {"
+            }
+          ]
+        },
+        {
+          "route": "/promocodes",
+          "score": 3,
+          "risk": "medium",
+          "filePath": "merchant-portal/src/app/promocodes/page.tsx",
+          "fetchCount": 5,
+          "awaitFetchCount": 5,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/loyalty/tiers",
+            "/api/portal/promocodes?${qs.toString()}",
+            "/api/portal/promocodes/deactivate",
+            "/api/portal/promocodes/activate"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 246,
+              "literalEndpoints": [
+                "/api/portal/loyalty/tiers"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/tiers\", { cache: \"no-store\" });"
+            },
+            {
+              "line": 269,
+              "literalEndpoints": [
+                "/api/portal/promocodes?${qs.toString()}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/promocodes?${qs.toString()}`, { cache: \"no-store\" });"
+            },
+            {
+              "line": 335,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch(editingId ? `/api/portal/promocodes/${editingId}` : \"/api/portal/promocodes/issue\", {"
+            },
+            {
+              "line": 411,
+              "literalEndpoints": [
+                "/api/portal/promocodes/deactivate"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/promocodes/deactivate\", {"
+            },
+            {
+              "line": 425,
+              "literalEndpoints": [
+                "/api/portal/promocodes/activate"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/promocodes/activate\", {"
+            }
+          ]
+        },
+        {
+          "route": "/analytics/rfm",
+          "score": 2,
+          "risk": "medium",
+          "filePath": "merchant-portal/src/app/analytics/rfm/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 2,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/analytics/rfm",
+            "/api/portal/analytics/rfm/settings"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 52,
+              "literalEndpoints": [
+                "/api/portal/analytics/rfm"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/analytics/rfm\", { cache: \"no-store\" });"
+            },
+            {
+              "line": 68,
+              "literalEndpoints": [
+                "/api/portal/analytics/rfm/settings"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/analytics/rfm/settings\", {"
+            }
+          ]
+        },
+        {
+          "route": "/referrals/program",
+          "score": 2,
+          "risk": "medium",
+          "filePath": "merchant-portal/src/app/referrals/program/page.tsx",
+          "fetchCount": 3,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/referrals/program",
+            "/api/portal/loyalty/registration-bonus"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/referrals/program",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 62,
+              "literalEndpoints": [
+                "/api/portal/referrals/program"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/referrals/program\", { cache: \"no-store\" }),"
+            },
+            {
+              "line": 63,
+              "literalEndpoints": [
+                "/api/portal/loyalty/registration-bonus"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/loyalty/registration-bonus\", { cache: \"no-store\" }),"
+            },
+            {
+              "line": 105,
+              "literalEndpoints": [
+                "/api/portal/referrals/program"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/referrals/program\", {"
+            }
+          ]
+        },
+        {
+          "route": "/analytics/time",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/analytics/time/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 168,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "fetch("
+            },
+            {
+              "line": 207,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "fetch("
+            }
+          ]
+        },
+        {
+          "route": "/reviews",
+          "score": 5,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/reviews/page.tsx",
+          "fetchCount": 4,
+          "awaitFetchCount": 4,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/settings",
+            "/api/portal/outlets",
+            "/api/portal/reviews?${params.toString()}"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/settings",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 155,
+              "literalEndpoints": [
+                "/api/portal/settings"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/settings\", {"
+            },
+            {
+              "line": 241,
+              "literalEndpoints": [
+                "/api/portal/settings"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/settings\", { cache: \"no-store\" });"
+            },
+            {
+              "line": 262,
+              "literalEndpoints": [
+                "/api/portal/outlets"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/outlets\", { cache: \"no-store\" });"
+            },
+            {
+              "line": 315,
+              "literalEndpoints": [
+                "/api/portal/reviews?${params.toString()}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/reviews?${params.toString()}`, { cache: \"no-store\" });"
+            }
+          ]
+        },
+        {
+          "route": "/customers",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/customers/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 119,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch(url, {"
+            }
+          ]
+        },
+        {
+          "route": "/analytics/birthdays",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/analytics/birthdays/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/customers/import",
+          "score": 2,
+          "risk": "medium",
+          "filePath": "merchant-portal/src/app/customers/import/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 2,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/customers/import/${jobId}",
+            "/api/portal/customers/import"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 237,
+              "literalEndpoints": [
+                "/api/portal/customers/import/${jobId}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/customers/import/${jobId}`);"
+            },
+            {
+              "line": 302,
+              "literalEndpoints": [
+                "/api/portal/customers/import"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/customers/import\", {"
+            }
+          ]
+        },
+        {
+          "route": "/analytics/dynamics",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/analytics/dynamics/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 2,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/analytics/revenue?${qs}",
+            "/api/portal/analytics/loyalty?${qs}"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 106,
+              "literalEndpoints": [
+                "/api/portal/analytics/revenue?${qs}"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(`/api/portal/analytics/revenue?${qs}`, { signal: controller.signal, cache: \"no-store\" }),"
+            },
+            {
+              "line": 107,
+              "literalEndpoints": [
+                "/api/portal/analytics/loyalty?${qs}"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(`/api/portal/analytics/loyalty?${qs}`, { signal: controller.signal, cache: \"no-store\" }),"
+            }
+          ]
+        },
+        {
+          "route": "/analytics/portrait",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/analytics/portrait/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/analytics/portrait?${params.toString()}"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 115,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch("
+            },
+            {
+              "line": 174,
+              "literalEndpoints": [
+                "/api/portal/analytics/portrait?${params.toString()}"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(`/api/portal/analytics/portrait?${params.toString()}`, {"
+            }
+          ]
+        },
+        {
+          "route": "/analytics/repeat",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/analytics/repeat/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/outlets?status=all",
+            "/api/portal/analytics/repeat?${query}"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 58,
+              "literalEndpoints": [
+                "/api/portal/outlets?status=all"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(`/api/portal/outlets?status=all`, { method: \"GET\", cache: \"no-store\", signal: controller.signal })"
+            },
+            {
+              "line": 122,
+              "literalEndpoints": [
+                "/api/portal/analytics/repeat?${query}"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(`/api/portal/analytics/repeat?${query}`, {"
+            }
+          ]
+        },
+        {
+          "route": "/customers/[customerId]",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/customers/[customerId]/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/settings/staff",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/settings/staff/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/integrations/telegram-mini-app",
+          "score": 5,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/integrations/telegram-mini-app/page.tsx",
+          "fetchCount": 4,
+          "awaitFetchCount": 4,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/integrations/telegram-mini-app",
+            "/api/portal/integrations/telegram-mini-app/check"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/integrations/telegram-mini-app",
+              "count": 3
+            }
+          ],
+          "calls": [
+            {
+              "line": 57,
+              "literalEndpoints": [
+                "/api/portal/integrations/telegram-mini-app"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/integrations/telegram-mini-app\");"
+            },
+            {
+              "line": 100,
+              "literalEndpoints": [
+                "/api/portal/integrations/telegram-mini-app"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/integrations/telegram-mini-app\", {"
+            },
+            {
+              "line": 133,
+              "literalEndpoints": [
+                "/api/portal/integrations/telegram-mini-app"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/integrations/telegram-mini-app\", {"
+            },
+            {
+              "line": 160,
+              "literalEndpoints": [
+                "/api/portal/integrations/telegram-mini-app/check"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/integrations/telegram-mini-app/check\", {"
+            }
+          ]
+        },
+        {
+          "route": "/settings/system",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/settings/system/page.tsx",
+          "fetchCount": 10,
+          "awaitFetchCount": 6,
+          "promiseAllCount": 3,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/settings/name",
+            "/api/portal/settings/support",
+            "/api/portal/settings/qr",
+            "/api/portal/settings/logo",
+            "/api/portal/settings/timezone"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/settings/logo",
+              "count": 3
+            },
+            {
+              "endpoint": "/api/portal/settings/name",
+              "count": 2
+            },
+            {
+              "endpoint": "/api/portal/settings/support",
+              "count": 2
+            },
+            {
+              "endpoint": "/api/portal/settings/qr",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 111,
+              "literalEndpoints": [
+                "/api/portal/settings/name"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/settings/name\", {"
+            },
+            {
+              "line": 114,
+              "literalEndpoints": [
+                "/api/portal/settings/support"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/settings/support\", {"
+            },
+            {
+              "line": 117,
+              "literalEndpoints": [
+                "/api/portal/settings/qr"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/settings/qr\", {"
+            },
+            {
+              "line": 120,
+              "literalEndpoints": [
+                "/api/portal/settings/logo"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/settings/logo\", {"
+            },
+            {
+              "line": 206,
+              "literalEndpoints": [
+                "/api/portal/settings/logo"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/settings/logo\", {"
+            },
+            {
+              "line": 233,
+              "literalEndpoints": [
+                "/api/portal/settings/logo"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/settings/logo\", {"
+            },
+            {
+              "line": 270,
+              "literalEndpoints": [
+                "/api/portal/settings/name"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/settings/name\", {"
+            },
+            {
+              "line": 290,
+              "literalEndpoints": [
+                "/api/portal/settings/timezone"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/settings/timezone\", {"
+            },
+            {
+              "line": 310,
+              "literalEndpoints": [
+                "/api/portal/settings/support"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/settings/support\", {"
+            },
+            {
+              "line": 330,
+              "literalEndpoints": [
+                "/api/portal/settings/qr"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/settings/qr\", {"
+            }
+          ]
+        },
+        {
+          "route": "/integrations/rest-api",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/integrations/rest-api/page.tsx",
+          "fetchCount": 3,
+          "awaitFetchCount": 3,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/integrations/rest-api",
+            "/api/portal/integrations/rest-api/issue"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/integrations/rest-api",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 113,
+              "literalEndpoints": [
+                "/api/portal/integrations/rest-api"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/integrations/rest-api\");"
+            },
+            {
+              "line": 169,
+              "literalEndpoints": [
+                "/api/portal/integrations/rest-api/issue"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/integrations/rest-api/issue\", {"
+            },
+            {
+              "line": 197,
+              "literalEndpoints": [
+                "/api/portal/integrations/rest-api"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/integrations/rest-api\", {"
+            }
+          ]
+        },
+        {
+          "route": "/analytics/referrals",
+          "score": 2,
+          "risk": "medium",
+          "filePath": "merchant-portal/src/app/analytics/referrals/page.tsx",
+          "fetchCount": 3,
+          "awaitFetchCount": 3,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/me",
+            "/api/portal/analytics/referral?period=${period}",
+            "/api/portal/analytics/referral/leaderboard?${params.toString()}"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 167,
+              "literalEndpoints": [
+                "/api/portal/me"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/me\");"
+            },
+            {
+              "line": 195,
+              "literalEndpoints": [
+                "/api/portal/analytics/referral?period=${period}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/analytics/referral?period=${period}`, {"
+            },
+            {
+              "line": 229,
+              "literalEndpoints": [
+                "/api/portal/analytics/referral/leaderboard?${params.toString()}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/analytics/referral/leaderboard?${params.toString()}`);"
+            }
+          ]
+        },
+        {
+          "route": "/integrations",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/integrations/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/integrations"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 41,
+              "literalEndpoints": [
+                "/api/portal/integrations"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/integrations\");"
+            }
+          ]
+        },
+        {
+          "route": "/analytics",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/analytics/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/analytics/dashboard${qs ? "
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 86,
+              "literalEndpoints": [
+                "/api/portal/analytics/dashboard${qs ? "
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/analytics/dashboard${qs ? `?${qs}` : \"\"}`, {"
+            }
+          ]
+        },
+        {
+          "route": "/loyalty/cashier",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/loyalty/cashier/page.tsx",
+          "fetchCount": 7,
+          "awaitFetchCount": 7,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/cashier",
+            "/api/portal/cashier/activation-codes",
+            "/api/portal/cashier/pins",
+            "/api/portal/cashier/device-sessions"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/cashier/activation-codes",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 150,
+              "literalEndpoints": [
+                "/api/portal/cashier"
+              ],
+              "hasLiteral": true,
+              "raw": "const response = await fetch(\"/api/portal/cashier\", {"
+            },
+            {
+              "line": 166,
+              "literalEndpoints": [
+                "/api/portal/cashier/activation-codes"
+              ],
+              "hasLiteral": true,
+              "raw": "const response = await fetch(\"/api/portal/cashier/activation-codes\", {"
+            },
+            {
+              "line": 192,
+              "literalEndpoints": [
+                "/api/portal/cashier/pins"
+              ],
+              "hasLiteral": true,
+              "raw": "const response = await fetch(\"/api/portal/cashier/pins\", {"
+            },
+            {
+              "line": 216,
+              "literalEndpoints": [
+                "/api/portal/cashier/device-sessions"
+              ],
+              "hasLiteral": true,
+              "raw": "const response = await fetch(\"/api/portal/cashier/device-sessions\", {"
+            },
+            {
+              "line": 288,
+              "literalEndpoints": [
+                "/api/portal/cashier/activation-codes"
+              ],
+              "hasLiteral": true,
+              "raw": "const response = await fetch(\"/api/portal/cashier/activation-codes\", {"
+            },
+            {
+              "line": 322,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const response = await fetch("
+            },
+            {
+              "line": 355,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const response = await fetch("
+            }
+          ]
+        },
+        {
+          "route": "/staff",
+          "score": 3,
+          "risk": "medium",
+          "filePath": "merchant-portal/src/app/staff/page.tsx",
+          "fetchCount": 5,
+          "awaitFetchCount": 5,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/access-groups",
+            "/api/portal/outlets?page=${page}&pageSize=${pageSize}",
+            "/api/portal/staff"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 261,
+              "literalEndpoints": [
+                "/api/portal/access-groups"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/access-groups\");"
+            },
+            {
+              "line": 306,
+              "literalEndpoints": [
+                "/api/portal/outlets?page=${page}&pageSize=${pageSize}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/outlets?page=${page}&pageSize=${pageSize}`);"
+            },
+            {
+              "line": 347,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const staffRes = await fetch(buildStaffUrl(1));"
+            },
+            {
+              "line": 364,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const pageRes = await fetch(buildStaffUrl(page));"
+            },
+            {
+              "line": 493,
+              "literalEndpoints": [
+                "/api/portal/staff"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/staff\", {"
+            }
+          ]
+        },
+        {
+          "route": "/settings/outlets",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/settings/outlets/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/loyalty/telegram",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/loyalty/telegram/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 80,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch(url, { cache: \"no-store\", ...init });"
+            }
+          ]
+        },
+        {
+          "route": "/analytics/staff",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/analytics/staff/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/outlets?status=active",
+            "/api/portal/analytics/operations?${params.toString()}"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 78,
+              "literalEndpoints": [
+                "/api/portal/outlets?status=active"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/outlets?status=active\")"
+            },
+            {
+              "line": 120,
+              "literalEndpoints": [
+                "/api/portal/analytics/operations?${params.toString()}"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(`/api/portal/analytics/operations?${params.toString()}`, { signal: controller.signal })"
+            }
+          ]
+        },
+        {
+          "route": "/settings/outlets/new",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/settings/outlets/new/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/loyalty/staff-motivation",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/loyalty/staff-motivation/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 2,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/staff-motivation"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/staff-motivation",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 92,
+              "literalEndpoints": [
+                "/api/portal/staff-motivation"
+              ],
+              "hasLiteral": true,
+              "raw": "const response = await fetch(\"/api/portal/staff-motivation\", {"
+            },
+            {
+              "line": 138,
+              "literalEndpoints": [
+                "/api/portal/staff-motivation"
+              ],
+              "hasLiteral": true,
+              "raw": "const response = await fetch(\"/api/portal/staff-motivation\", {"
+            }
+          ]
+        },
+        {
+          "route": "/products",
+          "score": 3,
+          "risk": "medium",
+          "filePath": "merchant-portal/src/app/products/page.tsx",
+          "fetchCount": 4,
+          "awaitFetchCount": 4,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/catalog/categories",
+            "/api/portal/catalog/products?${params.toString()}",
+            "/api/portal/catalog/products/${encodeURIComponent(id)}"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 112,
+              "literalEndpoints": [
+                "/api/portal/catalog/categories"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/catalog/categories\");"
+            },
+            {
+              "line": 147,
+              "literalEndpoints": [
+                "/api/portal/catalog/products?${params.toString()}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/catalog/products?${params.toString()}`);"
+            },
+            {
+              "line": 251,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch("
+            },
+            {
+              "line": 279,
+              "literalEndpoints": [
+                "/api/portal/catalog/products/${encodeURIComponent(id)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/catalog/products/${encodeURIComponent(id)}`, { method: \"DELETE\" });"
+            }
+          ]
+        },
+        {
+          "route": "/settings/access",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/settings/access/page.tsx",
+          "fetchCount": 8,
+          "awaitFetchCount": 5,
+          "promiseAllCount": 2,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/access-groups",
+            "/api/portal/staff?page=1&pageSize=${STAFF_PAGE_SIZE}",
+            "/api/portal/access-groups/${encodeURIComponent(id)}",
+            "/api/portal/access-groups/${encodeURIComponent(editingId)}"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/access-groups",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 119,
+              "literalEndpoints": [
+                "/api/portal/access-groups"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/access-groups\"),"
+            },
+            {
+              "line": 120,
+              "literalEndpoints": [
+                "/api/portal/staff?page=1&pageSize=${STAFF_PAGE_SIZE}"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(`/api/portal/staff?page=1&pageSize=${STAFF_PAGE_SIZE}`).catch("
+            },
+            {
+              "line": 144,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "fetch("
+            },
+            {
+              "line": 445,
+              "literalEndpoints": [
+                "/api/portal/access-groups/${encodeURIComponent(id)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/access-groups/${encodeURIComponent(id)}`, {"
+            },
+            {
+              "line": 475,
+              "literalEndpoints": [
+                "/api/portal/access-groups"
+              ],
+              "hasLiteral": true,
+              "raw": "const r = await fetch(`/api/portal/access-groups`, {"
+            },
+            {
+              "line": 483,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const membersRes = await fetch("
+            },
+            {
+              "line": 494,
+              "literalEndpoints": [
+                "/api/portal/access-groups/${encodeURIComponent(editingId)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const r = await fetch(`/api/portal/access-groups/${encodeURIComponent(editingId)}`, {"
+            },
+            {
+              "line": 500,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const membersRes = await fetch("
+            }
+          ]
+        },
+        {
+          "route": "/settings/telegram",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/settings/telegram/page.tsx",
+          "fetchCount": 7,
+          "awaitFetchCount": 4,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/settings/telegram-notify/state",
+            "/api/portal/settings/telegram-notify/invite",
+            "/api/portal/settings/telegram-notify/subscribers",
+            "/api/portal/settings/telegram-notify/preferences",
+            "/api/portal/settings/telegram-notify/subscribers/${encodeURIComponent(id)}/deactivate"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/settings/telegram-notify/invite",
+              "count": 2
+            },
+            {
+              "endpoint": "/api/portal/settings/telegram-notify/preferences",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 108,
+              "literalEndpoints": [
+                "/api/portal/settings/telegram-notify/state"
+              ],
+              "hasLiteral": true,
+              "raw": "const stateRes = await fetch(\"/api/portal/settings/telegram-notify/state\");"
+            },
+            {
+              "line": 119,
+              "literalEndpoints": [
+                "/api/portal/settings/telegram-notify/invite"
+              ],
+              "hasLiteral": true,
+              "raw": "? fetch(\"/api/portal/settings/telegram-notify/invite\", { method: \"POST\" })"
+            },
+            {
+              "line": 124,
+              "literalEndpoints": [
+                "/api/portal/settings/telegram-notify/subscribers"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/settings/telegram-notify/subscribers\"),"
+            },
+            {
+              "line": 125,
+              "literalEndpoints": [
+                "/api/portal/settings/telegram-notify/preferences"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/settings/telegram-notify/preferences\"),"
+            },
+            {
+              "line": 189,
+              "literalEndpoints": [
+                "/api/portal/settings/telegram-notify/invite"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/settings/telegram-notify/invite\", {"
+            },
+            {
+              "line": 215,
+              "literalEndpoints": [
+                "/api/portal/settings/telegram-notify/subscribers/${encodeURIComponent(id)}/deactivate"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/settings/telegram-notify/subscribers/${encodeURIComponent(id)}/deactivate`, {"
+            },
+            {
+              "line": 241,
+              "literalEndpoints": [
+                "/api/portal/settings/telegram-notify/preferences"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/settings/telegram-notify/preferences\", {"
+            }
+          ]
+        },
+        {
+          "route": "/settings",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/settings/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/settings/integrations",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/settings/integrations/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/loyalty/push",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/loyalty/push/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 67,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch(url, { cache: \"no-store\", ...init });"
+            }
+          ]
+        },
+        {
+          "route": "/loyalty/actions",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/loyalty/actions/page.tsx",
+          "fetchCount": 8,
+          "awaitFetchCount": 6,
+          "promiseAllCount": 2,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/audiences?includeSystem=1",
+            "/api/portal/catalog/categories",
+            "/api/portal/catalog/products",
+            "/api/portal/catalog/products/${encodeURIComponent(id)}",
+            "/api/portal/loyalty/promotions",
+            "/api/portal/loyalty/promotions/${encodeURIComponent(id)}"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/loyalty/promotions/${encodeURIComponent(id)}",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 206,
+              "literalEndpoints": [
+                "/api/portal/audiences?includeSystem=1"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/audiences?includeSystem=1\");"
+            },
+            {
+              "line": 227,
+              "literalEndpoints": [
+                "/api/portal/catalog/categories"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/catalog/categories\"),"
+            },
+            {
+              "line": 228,
+              "literalEndpoints": [
+                "/api/portal/catalog/products"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/catalog/products\"),"
+            },
+            {
+              "line": 293,
+              "literalEndpoints": [
+                "/api/portal/catalog/products/${encodeURIComponent(id)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/catalog/products/${encodeURIComponent(id)}`);"
+            },
+            {
+              "line": 323,
+              "literalEndpoints": [
+                "/api/portal/loyalty/promotions"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/promotions\");"
+            },
+            {
+              "line": 529,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch(endpoint, {"
+            },
+            {
+              "line": 656,
+              "literalEndpoints": [
+                "/api/portal/loyalty/promotions/${encodeURIComponent(id)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(id)}`, { method: \"DELETE\" });"
+            },
+            {
+              "line": 670,
+              "literalEndpoints": [
+                "/api/portal/loyalty/promotions/${encodeURIComponent(id)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(id)}`, {"
+            }
+          ]
+        },
+        {
+          "route": "/audiences",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/audiences/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 129,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch(url, {"
+            }
+          ]
+        },
+        {
+          "route": "/loyalty/antifraud",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/loyalty/antifraud/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 2,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/loyalty/antifraud"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/loyalty/antifraud",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 77,
+              "literalEndpoints": [
+                "/api/portal/loyalty/antifraud"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/antifraud\", {"
+            },
+            {
+              "line": 124,
+              "literalEndpoints": [
+                "/api/portal/loyalty/antifraud"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/antifraud\", {"
+            }
+          ]
+        },
+        {
+          "route": "/categories",
+          "score": 2,
+          "risk": "medium",
+          "filePath": "merchant-portal/src/app/categories/page.tsx",
+          "fetchCount": 5,
+          "awaitFetchCount": 3,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/catalog/categories",
+            "/api/portal/catalog/products",
+            "/api/portal/catalog/categories/${encodeURIComponent(id)}"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/catalog/products",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 102,
+              "literalEndpoints": [
+                "/api/portal/catalog/categories"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/catalog/categories\"),"
+            },
+            {
+              "line": 103,
+              "literalEndpoints": [
+                "/api/portal/catalog/products"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/catalog/products\"),"
+            },
+            {
+              "line": 235,
+              "literalEndpoints": [
+                "/api/portal/catalog/categories/${encodeURIComponent(id)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/catalog/categories/${encodeURIComponent(id)}`, { method: \"DELETE\" });"
+            },
+            {
+              "line": 277,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch("
+            },
+            {
+              "line": 326,
+              "literalEndpoints": [
+                "/api/portal/catalog/products"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/catalog/products\", {"
+            }
+          ]
+        },
+        {
+          "route": "/loyalty/actions-earn",
+          "score": 3,
+          "risk": "medium",
+          "filePath": "merchant-portal/src/app/loyalty/actions-earn/page.tsx",
+          "fetchCount": 5,
+          "awaitFetchCount": 5,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/audiences?includeSystem=1",
+            "/api/portal/loyalty/promotions",
+            "/api/portal/loyalty/promotions/${encodeURIComponent(id)}",
+            "/api/portal/loyalty/promotions/${encodeURIComponent(promo.id)}"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 132,
+              "literalEndpoints": [
+                "/api/portal/audiences?includeSystem=1"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/audiences?includeSystem=1\");"
+            },
+            {
+              "line": 150,
+              "literalEndpoints": [
+                "/api/portal/loyalty/promotions"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/promotions\");"
+            },
+            {
+              "line": 339,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch(endpoint, {"
+            },
+            {
+              "line": 432,
+              "literalEndpoints": [
+                "/api/portal/loyalty/promotions/${encodeURIComponent(id)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(id)}`, { method: \"DELETE\" });"
+            },
+            {
+              "line": 446,
+              "literalEndpoints": [
+                "/api/portal/loyalty/promotions/${encodeURIComponent(promo.id)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(promo.id)}`, {"
+            }
+          ]
+        },
+        {
+          "route": "/loyalty",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/loyalty/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/settings/outlets/[id]",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/settings/outlets/[id]/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        },
+        {
+          "route": "/analytics/outlets",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/analytics/outlets/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/analytics/operations?${params.toString()}"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 65,
+              "literalEndpoints": [
+                "/api/portal/analytics/operations?${params.toString()}"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(`/api/portal/analytics/operations?${params.toString()}`, { signal: controller.signal })"
+            }
+          ]
+        },
+        {
+          "route": "/outlets/new",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/outlets/new/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 1,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/outlets"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 104,
+              "literalEndpoints": [
+                "/api/portal/outlets"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/outlets\", {"
+            }
+          ]
+        },
+        {
+          "route": "/loyalty/mechanics/ttl",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/loyalty/mechanics/ttl/page.tsx",
+          "fetchCount": 3,
+          "awaitFetchCount": 3,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/loyalty/ttl",
+            "/api/portal/loyalty/ttl/forecast?daysBefore=${safeDays}"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/loyalty/ttl",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 64,
+              "literalEndpoints": [
+                "/api/portal/loyalty/ttl"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/ttl\", { cache: \"no-store\" });"
+            },
+            {
+              "line": 90,
+              "literalEndpoints": [
+                "/api/portal/loyalty/ttl/forecast?daysBefore=${safeDays}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/loyalty/ttl/forecast?daysBefore=${safeDays}`, { cache: \"no-store\" });"
+            },
+            {
+              "line": 145,
+              "literalEndpoints": [
+                "/api/portal/loyalty/ttl"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/ttl\", {"
+            }
+          ]
+        },
+        {
+          "route": "/outlets",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/outlets/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 2,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/outlets?status=${encodeURIComponent(status)}&page=${page}&pageSize=${pageSize}",
+            "/api/portal/outlets/${encodeURIComponent(id)}"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 47,
+              "literalEndpoints": [
+                "/api/portal/outlets?status=${encodeURIComponent(status)}&page=${page}&pageSize=${pageSize}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/outlets?status=${encodeURIComponent(status)}&page=${page}&pageSize=${pageSize}`);"
+            },
+            {
+              "line": 98,
+              "literalEndpoints": [
+                "/api/portal/outlets/${encodeURIComponent(id)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/outlets/${encodeURIComponent(id)}`, { method: \"DELETE\" });"
+            }
+          ]
+        },
+        {
+          "route": "/staff/[staffId]",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/staff/[staffId]/page.tsx",
+          "fetchCount": 14,
+          "awaitFetchCount": 12,
+          "promiseAllCount": 2,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/me",
+            "/api/portal/access-groups",
+            "/api/portal/staff/${encodeURIComponent(staffId)}/access",
+            "/api/portal/outlets?page=${page}&pageSize=${pageSize}",
+            "/api/portal/staff/${encodeURIComponent(staffId)}",
+            "/api/portal/staff/${encodeURIComponent(staffId)}/avatar",
+            "/api/portal/staff/${encodeURIComponent(staffId)}/access/${encodeURIComponent(outletId)}/regenerate-pin",
+            "/api/portal/staff/${encodeURIComponent(staffId)}/access/${encodeURIComponent(outletId)}"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/staff/${encodeURIComponent(staffId)}",
+              "count": 5
+            },
+            {
+              "endpoint": "/api/portal/staff/${encodeURIComponent(staffId)}/access",
+              "count": 3
+            }
+          ],
+          "calls": [
+            {
+              "line": 230,
+              "literalEndpoints": [
+                "/api/portal/me"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/me\");"
+            },
+            {
+              "line": 255,
+              "literalEndpoints": [
+                "/api/portal/access-groups"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/access-groups\");"
+            },
+            {
+              "line": 287,
+              "literalEndpoints": [
+                "/api/portal/staff/${encodeURIComponent(staffId)}/access"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access`);"
+            },
+            {
+              "line": 306,
+              "literalEndpoints": [
+                "/api/portal/outlets?page=${page}&pageSize=${pageSize}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/outlets?page=${page}&pageSize=${pageSize}`);"
+            },
+            {
+              "line": 337,
+              "literalEndpoints": [
+                "/api/portal/staff/${encodeURIComponent(staffId)}"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`),"
+            },
+            {
+              "line": 338,
+              "literalEndpoints": [
+                "/api/portal/staff/${encodeURIComponent(staffId)}/access"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access`),"
+            },
+            {
+              "line": 544,
+              "literalEndpoints": [
+                "/api/portal/staff/${encodeURIComponent(staffId)}/avatar"
+              ],
+              "hasLiteral": true,
+              "raw": "const uploadRes = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/avatar`, {"
+            },
+            {
+              "line": 636,
+              "literalEndpoints": [
+                "/api/portal/staff/${encodeURIComponent(staffId)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {"
+            },
+            {
+              "line": 704,
+              "literalEndpoints": [
+                "/api/portal/staff/${encodeURIComponent(staffId)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {"
+            },
+            {
+              "line": 732,
+              "literalEndpoints": [
+                "/api/portal/staff/${encodeURIComponent(staffId)}/access"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access`, {"
+            },
+            {
+              "line": 756,
+              "literalEndpoints": [
+                "/api/portal/staff/${encodeURIComponent(staffId)}/access/${encodeURIComponent(outletId)}/regenerate-pin"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access/${encodeURIComponent(outletId)}/regenerate-pin`, { method: \"POST\" });"
+            },
+            {
+              "line": 775,
+              "literalEndpoints": [
+                "/api/portal/staff/${encodeURIComponent(staffId)}/access/${encodeURIComponent(outletId)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access/${encodeURIComponent(outletId)}`, { method: \"DELETE\" });"
+            },
+            {
+              "line": 794,
+              "literalEndpoints": [
+                "/api/portal/staff/${encodeURIComponent(staffId)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {"
+            },
+            {
+              "line": 829,
+              "literalEndpoints": [
+                "/api/portal/staff/${encodeURIComponent(staffId)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {"
+            }
+          ]
+        },
+        {
+          "route": "/loyalty/mechanics/registration-bonus",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/loyalty/mechanics/registration-bonus/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 2,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/loyalty/registration-bonus"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/loyalty/registration-bonus",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 67,
+              "literalEndpoints": [
+                "/api/portal/loyalty/registration-bonus"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/registration-bonus\", {"
+            },
+            {
+              "line": 130,
+              "literalEndpoints": [
+                "/api/portal/loyalty/registration-bonus"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/registration-bonus\", {"
+            }
+          ]
+        },
+        {
+          "route": "/loyalty/mechanics",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/loyalty/mechanics/page.tsx",
+          "fetchCount": 3,
+          "awaitFetchCount": 3,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/loyalty/tiers"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 149,
+              "literalEndpoints": [
+                "/api/portal/loyalty/tiers"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/tiers\", { cache: \"no-store\" });"
+            },
+            {
+              "line": 175,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch(endpoint);"
+            },
+            {
+              "line": 315,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch(endpoint, {"
+            }
+          ]
+        },
+        {
+          "route": "/loyalty/mechanics/birthday",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/loyalty/mechanics/birthday/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 2,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/loyalty/birthday"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/loyalty/birthday",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 102,
+              "literalEndpoints": [
+                "/api/portal/loyalty/birthday"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/birthday\", { cache: \"no-store\" });"
+            },
+            {
+              "line": 159,
+              "literalEndpoints": [
+                "/api/portal/loyalty/birthday"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/birthday\", {"
+            }
+          ]
+        },
+        {
+          "route": "/operations",
+          "score": 1,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/operations/page.tsx",
+          "fetchCount": 4,
+          "awaitFetchCount": 4,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/outlets?status=all",
+            "/api/operations/log?${params.toString()}",
+            "/api/operations/log/${encodeURIComponent(op.id)}/cancel"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 139,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch("
+            },
+            {
+              "line": 177,
+              "literalEndpoints": [
+                "/api/portal/outlets?status=all"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/outlets?status=all\", {"
+            },
+            {
+              "line": 523,
+              "literalEndpoints": [
+                "/api/operations/log?${params.toString()}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/operations/log?${params.toString()}`, {"
+            },
+            {
+              "line": 610,
+              "literalEndpoints": [
+                "/api/operations/log/${encodeURIComponent(op.id)}/cancel"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/operations/log/${encodeURIComponent(op.id)}/cancel`, {"
+            }
+          ]
+        },
+        {
+          "route": "/outlets/[id]",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/outlets/[id]/page.tsx",
+          "fetchCount": 3,
+          "awaitFetchCount": 3,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/outlets/${encodeURIComponent(outletId)}"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/outlets/${encodeURIComponent(outletId)}",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 90,
+              "literalEndpoints": [
+                "/api/portal/outlets/${encodeURIComponent(outletId)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/outlets/${encodeURIComponent(outletId)}`, { cache: \"no-store\" });"
+            },
+            {
+              "line": 121,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch("
+            },
+            {
+              "line": 200,
+              "literalEndpoints": [
+                "/api/portal/outlets/${encodeURIComponent(outletId)}"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`/api/portal/outlets/${encodeURIComponent(outletId)}`, {"
+            }
+          ]
+        },
+        {
+          "route": "/loyalty/mechanics/auto-return",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/loyalty/mechanics/auto-return/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 2,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/loyalty/auto-return"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/loyalty/auto-return",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 106,
+              "literalEndpoints": [
+                "/api/portal/loyalty/auto-return"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/auto-return\", { cache: \"no-store\" });"
+            },
+            {
+              "line": 170,
+              "literalEndpoints": [
+                "/api/portal/loyalty/auto-return"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/auto-return\", {"
+            }
+          ]
+        },
+        {
+          "route": "/loyalty/mechanics/bonus-settings",
+          "score": 4,
+          "risk": "high",
+          "filePath": "merchant-portal/src/app/loyalty/mechanics/bonus-settings/page.tsx",
+          "fetchCount": 2,
+          "awaitFetchCount": 2,
+          "promiseAllCount": 0,
+          "potentialWaterfall": true,
+          "literalEndpoints": [
+            "/api/portal/loyalty/redeem-limits"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/loyalty/redeem-limits",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 47,
+              "literalEndpoints": [
+                "/api/portal/loyalty/redeem-limits"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/redeem-limits\", { cache: \"no-store\" });"
+            },
+            {
+              "line": 85,
+              "literalEndpoints": [
+                "/api/portal/loyalty/redeem-limits"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/redeem-limits\", {"
+            }
+          ]
+        },
+        {
+          "route": "/loyalty/mechanics/levels",
+          "score": 2,
+          "risk": "medium",
+          "filePath": "merchant-portal/src/app/loyalty/mechanics/levels/page.tsx",
+          "fetchCount": 5,
+          "awaitFetchCount": 3,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "/api/portal/loyalty/tiers",
+            "/api/portal/loyalty/levels"
+          ],
+          "duplicateEndpoints": [
+            {
+              "endpoint": "/api/portal/loyalty/levels",
+              "count": 2
+            }
+          ],
+          "calls": [
+            {
+              "line": 222,
+              "literalEndpoints": [
+                "/api/portal/loyalty/tiers"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/loyalty/tiers\", { cache: \"no-store\" }),"
+            },
+            {
+              "line": 223,
+              "literalEndpoints": [
+                "/api/portal/loyalty/levels"
+              ],
+              "hasLiteral": true,
+              "raw": "fetch(\"/api/portal/loyalty/levels\", {"
+            },
+            {
+              "line": 275,
+              "literalEndpoints": [
+                "/api/portal/loyalty/levels"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(\"/api/portal/loyalty/levels\", {"
+            },
+            {
+              "line": 365,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch(endpoint, {"
+            },
+            {
+              "line": 423,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "const res = await fetch("
+            }
+          ]
+        }
+      ],
+      "extras": [
+        {
+          "route": "(shared-layout)",
+          "score": 0,
+          "risk": "low",
+          "filePath": "merchant-portal/src/app/layout.tsx",
+          "fetchCount": 3,
+          "awaitFetchCount": 3,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [
+            "${base}/portal/me",
+            "${base}/portal/settings/timezone",
+            "${base}/portal/subscription"
+          ],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 223,
+              "literalEndpoints": [
+                "${base}/portal/me"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`${base}/portal/me`, {"
+            },
+            {
+              "line": 299,
+              "literalEndpoints": [
+                "${base}/portal/settings/timezone"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`${base}/portal/settings/timezone`, {"
+            },
+            {
+              "line": 320,
+              "literalEndpoints": [
+                "${base}/portal/subscription"
+              ],
+              "hasLiteral": true,
+              "raw": "const res = await fetch(`${base}/portal/subscription`, {"
+            }
+          ]
+        }
+      ]
+    },
+    "cashier": {
+      "summary": {
+        "pageCount": 1,
+        "pageFetchCalls": 1,
+        "layoutFetchCalls": 0,
+        "highRiskPages": 0,
+        "mediumRiskPages": 0,
+        "lowRiskPages": 2,
+        "potentialWaterfalls": 0,
+        "duplicateEndpointPages": 0
+      },
+      "pages": [
+        {
+          "route": "/",
+          "score": 0,
+          "risk": "low",
+          "filePath": "cashier/src/app/page.tsx",
+          "fetchCount": 1,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 1,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": [
+            {
+              "line": 271,
+              "literalEndpoints": [],
+              "hasLiteral": false,
+              "raw": "return await globalThis.fetch(input, {"
+            }
+          ]
+        }
+      ],
+      "extras": [
+        {
+          "route": "(shared-layout)",
+          "score": 0,
+          "risk": "low",
+          "filePath": "cashier/src/app/layout.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        }
+      ]
+    },
+    "miniapp": {
+      "summary": {
+        "pageCount": 1,
+        "pageFetchCalls": 0,
+        "layoutFetchCalls": 0,
+        "highRiskPages": 0,
+        "mediumRiskPages": 0,
+        "lowRiskPages": 2,
+        "potentialWaterfalls": 0,
+        "duplicateEndpointPages": 0
+      },
+      "pages": [
+        {
+          "route": "/",
+          "score": 0,
+          "risk": "low",
+          "filePath": "miniapp/src/app/page.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 2,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        }
+      ],
+      "extras": [
+        {
+          "route": "(shared-layout)",
+          "score": 0,
+          "risk": "low",
+          "filePath": "miniapp/src/app/layout.tsx",
+          "fetchCount": 0,
+          "awaitFetchCount": 0,
+          "promiseAllCount": 0,
+          "potentialWaterfall": false,
+          "literalEndpoints": [],
+          "duplicateEndpoints": [],
+          "calls": []
+        }
+      ]
+    }
+  },
+  "summary": {
+    "totalPages": 76,
+    "totalFetchCalls": 161,
+    "highRiskPages": 17,
+    "mediumRiskPages": 11,
+    "lowRiskPages": 52,
+    "pagesWithPotentialWaterfall": 19,
+    "pagesWithDuplicateEndpoints": 20
+  }
+}

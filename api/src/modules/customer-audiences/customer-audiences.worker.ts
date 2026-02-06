@@ -8,8 +8,12 @@ import { AppConfigService } from '../../core/config/app-config.service';
 @Injectable()
 export class CustomerAudiencesWorker implements OnModuleInit {
   private readonly logger = new Logger(CustomerAudiencesWorker.name);
+  private running = false;
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
+  public lastProgressAt: Date | null = null;
+  public lastLockMissAt: Date | null = null;
+  public lockMissCount = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -24,17 +28,26 @@ export class CustomerAudiencesWorker implements OnModuleInit {
   @Cron('0 3 * * *')
   async nightlyRecalculate() {
     if (!this.config.getBoolean('WORKERS_ENABLED', false)) return;
+    if (this.running) return;
+    this.running = true;
     this.lastTickAt = new Date();
+    this.lastProgressAt = this.lastTickAt;
     const lock = await pgTryAdvisoryLock(
       this.prisma,
       'cron:customer_audiences_nightly',
     );
-    if (!lock.ok) return;
+    if (!lock.ok) {
+      this.lockMissCount += 1;
+      this.lastLockMissAt = new Date();
+      this.running = false;
+      return;
+    }
     try {
       const merchants = await this.prisma.merchant.findMany({
         select: { id: true },
       });
       for (const merchant of merchants) {
+        this.lastProgressAt = new Date();
         const segments = await this.prisma.customerSegment.findMany({
           where: { merchantId: merchant.id },
         });
@@ -44,6 +57,7 @@ export class CustomerAudiencesWorker implements OnModuleInit {
               merchant.id,
               segment,
             );
+            this.lastProgressAt = new Date();
           } catch (err) {
             this.logger.warn(
               `Failed to recalculate audience ${segment.id} for merchant ${merchant.id}: ${err instanceof Error ? err.message : err}`,
@@ -57,6 +71,7 @@ export class CustomerAudiencesWorker implements OnModuleInit {
       );
     } finally {
       await pgAdvisoryUnlock(this.prisma, lock.key);
+      this.running = false;
     }
   }
 }
