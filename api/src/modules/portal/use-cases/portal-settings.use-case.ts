@@ -15,11 +15,11 @@ import {
   serializeTimezone,
 } from '../../../shared/timezone/russia-timezones';
 import {
-  ensureRulesRoot,
-  getRulesRoot,
-  getRulesSection,
-  setRulesSection,
-} from '../../../shared/rules-json.util';
+  normalizeSupportTelegramInput,
+  readSupportTelegramFromRules,
+  withSupportTelegramInRules,
+} from '../../../shared/miniapp-settings.util';
+import { updateMerchantSettingsRulesWithRetry } from '../../../shared/merchant-settings-rules-update.util';
 import type {
   PortalRequest,
   UploadedFile as UploadedFilePayload,
@@ -273,14 +273,7 @@ export class PortalSettingsUseCase {
       where: { merchantId },
       select: { rulesJson: true },
     });
-    const rules = getRulesRoot(settings?.rulesJson) ?? {};
-    const miniapp = getRulesSection(rules, 'miniapp');
-    const supportTelegramRaw = miniapp?.supportTelegram ?? null;
-    const supportTelegram =
-      typeof supportTelegramRaw === 'string' && supportTelegramRaw.trim()
-        ? supportTelegramRaw.trim()
-        : null;
-    return { supportTelegram };
+    return { supportTelegram: readSupportTelegramFromRules(settings?.rulesJson) };
   }
 
   async updateSupportSetting(
@@ -288,33 +281,20 @@ export class PortalSettingsUseCase {
     body: UpdateSupportSettingDto,
   ) {
     const merchantId = this.requestHelper.getMerchantId(req);
-    const rawValue =
-      typeof body?.supportTelegram === 'string' ? body.supportTelegram : '';
-    const supportTelegram = rawValue.trim() ? rawValue.trim() : null;
-    const settings = await this.prisma.merchantSettings.findUnique({
-      where: { merchantId },
-      select: { rulesJson: true },
-    });
-    const rules = ensureRulesRoot(settings?.rulesJson);
-    const miniapp = { ...(getRulesSection(rules, 'miniapp') ?? {}) };
-    miniapp.supportTelegram = supportTelegram;
-    const nextRules = setRulesSection(rules, 'miniapp', miniapp);
-    this.service.validateRules(nextRules);
-    const nextRulesJson = nextRules as Prisma.InputJsonValue;
-    await this.prisma.merchant.upsert({
-      where: { id: merchantId },
-      update: {},
-      create: {
-        id: merchantId,
-        name: merchantId,
-        initialName: merchantId,
+    const supportTelegram = normalizeSupportTelegramInput(body?.supportTelegram);
+    await updateMerchantSettingsRulesWithRetry(
+      this.prisma,
+      merchantId,
+      (currentRules) => {
+        const nextRules = withSupportTelegramInRules(
+          currentRules,
+          supportTelegram,
+        );
+        this.service.validateRules(nextRules);
+        return nextRules as Prisma.InputJsonValue;
       },
-    });
-    await this.prisma.merchantSettings.upsert({
-      where: { merchantId },
-      update: { rulesJson: nextRulesJson },
-      create: { merchantId, rulesJson: nextRulesJson },
-    });
+      { ensureMerchant: true },
+    );
     return { supportTelegram };
   }
 

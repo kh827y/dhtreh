@@ -12,6 +12,7 @@ import type {
   StaffPerformance,
 } from '../analytics.service';
 import type { RussiaTimezone } from '../../../shared/timezone/russia-timezones';
+import { VALID_RECEIPT_NO_REFUND_SQL } from '../../../shared/common/valid-receipt-sql.util';
 
 @Injectable()
 export class AnalyticsOperationsService {
@@ -100,17 +101,8 @@ export class AnalyticsOperationsService {
           WHERE r."merchantId" = ${merchantId}
             AND r."createdAt" >= ${period.from}
             AND r."createdAt" <= ${period.to}
-            AND r."canceledAt" IS NULL
-            AND r."total" >= 0
             AND r."outletId" IS NOT NULL
-            AND NOT EXISTS (
-              SELECT 1
-              FROM "Transaction" refund
-              WHERE refund."merchantId" = r."merchantId"
-                AND refund."orderId" = r."orderId"
-                AND refund."type" = 'REFUND'
-                AND refund."canceledAt" IS NULL
-            )
+            AND ${VALID_RECEIPT_NO_REFUND_SQL}
         )
         SELECT
           vr."outletId" AS "outletId",
@@ -133,18 +125,9 @@ export class AnalyticsOperationsService {
             r."createdAt"
           FROM "Receipt" r
           WHERE r."merchantId" = ${merchantId}
-            AND r."canceledAt" IS NULL
-            AND r."total" >= 0
             AND r."customerId" IS NOT NULL
             AND r."outletId" IS NOT NULL
-            AND NOT EXISTS (
-              SELECT 1
-              FROM "Transaction" refund
-              WHERE refund."merchantId" = r."merchantId"
-                AND refund."orderId" = r."orderId"
-                AND refund."type" = 'REFUND'
-                AND refund."canceledAt" IS NULL
-            )
+            AND ${VALID_RECEIPT_NO_REFUND_SQL}
         ),
         ranked_receipts AS (
           SELECT
@@ -266,17 +249,8 @@ export class AnalyticsOperationsService {
             AND r."staffId" IS NOT NULL
             AND r."createdAt" >= ${period.from}
             AND r."createdAt" <= ${period.to}
-            AND r."canceledAt" IS NULL
-            AND r."total" > 0
             AND r."customerId" IS NOT NULL
-            AND NOT EXISTS (
-              SELECT 1
-              FROM "Transaction" refund
-              WHERE refund."merchantId" = r."merchantId"
-                  AND refund."orderId" = r."orderId"
-                  AND refund."type" = 'REFUND'
-                  AND refund."canceledAt" IS NULL
-              )
+            AND ${VALID_RECEIPT_NO_REFUND_SQL}
           )
           SELECT
             sr."staffId",
@@ -305,17 +279,8 @@ export class AnalyticsOperationsService {
               r."createdAt"
           FROM "Receipt" r
           WHERE r."merchantId" = ${merchantId}
-            AND r."canceledAt" IS NULL
-            AND r."total" > 0
             AND r."customerId" IS NOT NULL
-            AND NOT EXISTS (
-              SELECT 1
-              FROM "Transaction" refund
-              WHERE refund."merchantId" = r."merchantId"
-                  AND refund."orderId" = r."orderId"
-                  AND refund."type" = 'REFUND'
-                  AND refund."canceledAt" IS NULL
-              )
+            AND ${VALID_RECEIPT_NO_REFUND_SQL}
           ),
           ranked_receipts AS (
             SELECT

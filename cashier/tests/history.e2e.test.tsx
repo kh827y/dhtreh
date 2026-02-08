@@ -76,10 +76,24 @@ describe("cashier history and rating", () => {
       }
 
       if (url.includes("/loyalty/cashier/outlet-transactions") && method === "GET") {
-        return new Response(JSON.stringify({ items, nextBefore: null }), {
+        return new Response(
+          JSON.stringify({
+            items,
+            nextBefore: null,
+            shiftStats: {
+              revenue: 1337,
+              checks: 2,
+              scope: "staff",
+              timezone: "MSK+4",
+              from: today.toISOString(),
+              to: new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+            },
+          }),
+          {
           status: 200,
           headers: { "Content-Type": "application/json" },
-        });
+          },
+        );
       }
 
       throw new Error(`Unexpected fetch ${url} ${method}`);
@@ -219,10 +233,24 @@ describe("cashier history and rating", () => {
       }
 
       if (url.includes("/loyalty/cashier/outlet-transactions") && method === "GET") {
-        return new Response(JSON.stringify({ items, nextBefore: null }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({
+            items,
+            nextBefore: null,
+            shiftStats: {
+              revenue: 1337,
+              checks: 2,
+              scope: "staff",
+              timezone: "MSK+3",
+              from: today.toISOString(),
+              to: new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       throw new Error(`Unexpected fetch ${url} ${method}`);
@@ -233,7 +261,7 @@ describe("cashier history and rating", () => {
 
     await screen.findByText("Терминал лояльности");
 
-    const expectedRevenue = new Intl.NumberFormat("ru-RU").format(1000);
+    const expectedRevenue = new Intl.NumberFormat("ru-RU").format(1337);
     const expectedCompact = expectedRevenue.replace(/\s/g, "");
     const shiftHeadings = await screen.findAllByText("Ваши операции за сегодня");
     const shiftHeading = shiftHeadings.find((node) => node.closest("aside")) ?? shiftHeadings[0];
@@ -248,7 +276,7 @@ describe("cashier history and rating", () => {
     assert.ok(revenueNode.textContent?.includes("₽"));
     const checksLabel = shiftScope.getByText("Чеков");
     const checksCard = checksLabel.closest("div")?.parentElement ?? shiftContainer;
-    within(checksCard).getByText("1");
+    within(checksCard).getByText("2");
   });
 
   it("показывает рейтинг сотрудников", async () => {

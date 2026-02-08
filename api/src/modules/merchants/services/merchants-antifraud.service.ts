@@ -12,6 +12,7 @@ import { ensureBaseTier } from '../../loyalty/utils/tier-defaults.util';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import { asRecord } from '../merchants.utils';
 import { getRulesRoot } from '../../../shared/rules-json.util';
+import { updateMerchantSettingsRulesWithRetry } from '../../../shared/merchant-settings-rules-update.util';
 
 @Injectable()
 export class MerchantsAntifraudService {
@@ -50,46 +51,40 @@ export class MerchantsAntifraudService {
     });
     if (!merchant) throw new NotFoundException('Merchant not found');
 
-    const settings = await this.prisma.merchantSettings.findUnique({
-      where: { merchantId },
-      select: { rulesJson: true },
-    });
-    const normalized = this.settings.normalizeRulesJson(
-      settings?.rulesJson ?? null,
+    await updateMerchantSettingsRulesWithRetry(
+      this.prisma,
+      merchantId,
+      (currentRules) => {
+        const normalized = this.settings.normalizeRulesJson(currentRules);
+        const normalizedRecord = asRecord(normalized);
+        const rules: Record<string, unknown> = normalizedRecord
+          ? { ...normalizedRecord }
+          : {};
+        const afRecord = asRecord(rules.af);
+        const af: Record<string, unknown> = afRecord ? { ...afRecord } : {};
+        const resetRecord = asRecord(af.reset);
+        const reset: Record<string, unknown> = resetRecord
+          ? { ...resetRecord }
+          : {};
+        const nowIso = new Date().toISOString();
+
+        if (scope === 'merchant') {
+          reset.merchant = nowIso;
+        } else {
+          const id = String(payload?.targetId || '').trim();
+          const bucketRecord = asRecord(reset[scope]);
+          const bucket: Record<string, unknown> = bucketRecord
+            ? { ...bucketRecord }
+            : {};
+          bucket[id] = nowIso;
+          reset[scope] = bucket;
+        }
+
+        af.reset = reset;
+        rules.af = af;
+        return rules as Prisma.InputJsonValue;
+      },
     );
-    const normalizedRecord = asRecord(normalized);
-    const rules: Record<string, unknown> = normalizedRecord
-      ? { ...normalizedRecord }
-      : {};
-    const afRecord = asRecord(rules.af);
-    const af: Record<string, unknown> = afRecord ? { ...afRecord } : {};
-    const resetRecord = asRecord(af.reset);
-    const reset: Record<string, unknown> = resetRecord
-      ? { ...resetRecord }
-      : {};
-    const nowIso = new Date().toISOString();
-
-    if (scope === 'merchant') {
-      reset.merchant = nowIso;
-    } else {
-      const id = String(payload?.targetId || '').trim();
-      const bucketRecord = asRecord(reset[scope]);
-      const bucket: Record<string, unknown> = bucketRecord
-        ? { ...bucketRecord }
-        : {};
-      bucket[id] = nowIso;
-      reset[scope] = bucket;
-    }
-
-    af.reset = reset;
-    rules.af = af;
-
-    const rulesJson = rules as Prisma.InputJsonValue;
-    await this.prisma.merchantSettings.upsert({
-      where: { merchantId },
-      update: { rulesJson, updatedAt: new Date() },
-      create: { merchantId, rulesJson },
-    });
     this.cache.invalidateSettings(merchantId);
 
     return { ok: true };

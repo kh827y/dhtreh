@@ -6,6 +6,7 @@ import { AnalyticsAggregatorWorker } from '../analytics-aggregator.worker';
 import { UpdateRfmSettingsDto } from '../dto/update-rfm-settings.dto';
 import { ensureRulesRoot, getRulesRoot } from '../../../shared/rules-json.util';
 import { withJsonSchemaVersion } from '../../../shared/json-version.util';
+import { updateMerchantSettingsRulesWithRetry } from '../../../shared/merchant-settings-rules-update.util';
 
 type RfmRange = { min: number | null; max: number | null; count: number };
 type RfmGroupSummary = {
@@ -517,32 +518,28 @@ export class AnalyticsRfmService {
   }
 
   async updateRfmSettings(merchantId: string, dto: UpdateRfmSettingsDto) {
-    const settingsRow = await this.prisma.merchantSettings.findUnique({
-      where: { merchantId },
-      select: { rulesJson: true },
-    });
-    const nextRules = this.mergeRfmRules(settingsRow?.rulesJson, {
-      recencyMode: dto.recencyMode,
-      recencyDays:
-        dto.recencyMode === 'manual' ? (dto.recencyDays ?? null) : null,
-      frequency: {
-        mode: dto.frequencyMode,
-        threshold:
-          dto.frequencyMode === 'manual'
-            ? (dto.frequencyThreshold ?? null)
-            : null,
-      },
-      monetary: {
-        mode: dto.moneyMode,
-        threshold:
-          dto.moneyMode === 'manual' ? (dto.moneyThreshold ?? null) : null,
-      },
-    });
-    await this.prisma.merchantSettings.upsert({
-      where: { merchantId },
-      update: { rulesJson: nextRules, updatedAt: new Date() },
-      create: { merchantId, rulesJson: nextRules },
-    });
+    await updateMerchantSettingsRulesWithRetry(
+      this.prisma,
+      merchantId,
+      (rules) =>
+        this.mergeRfmRules(rules, {
+          recencyMode: dto.recencyMode,
+          recencyDays:
+            dto.recencyMode === 'manual' ? (dto.recencyDays ?? null) : null,
+          frequency: {
+            mode: dto.frequencyMode,
+            threshold:
+              dto.frequencyMode === 'manual'
+                ? (dto.frequencyThreshold ?? null)
+                : null,
+          },
+          monetary: {
+            mode: dto.moneyMode,
+            threshold:
+              dto.moneyMode === 'manual' ? (dto.moneyThreshold ?? null) : null,
+          },
+        }),
+    );
     if (this.aggregatorWorker?.recalculateCustomerStatsForMerchant) {
       await this.aggregatorWorker.recalculateCustomerStatsForMerchant(
         merchantId,

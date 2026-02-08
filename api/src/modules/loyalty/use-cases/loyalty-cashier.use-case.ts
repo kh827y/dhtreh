@@ -357,6 +357,12 @@ export class LoyaltyCashierUseCase {
     if (!outletId) throw new BadRequestException('outletId required');
     const limit = parseBoundedInt(limitStr, 20, 1, 100);
     const before = parseOptionalDate(beforeStr, 'before is invalid');
-    return this.service.outletTransactions(merchantId, outletId, limit, before);
+    return this.service.outletTransactions(
+      merchantId,
+      outletId,
+      limit,
+      before,
+      session?.staffId ?? null,
+    );
   }
 }

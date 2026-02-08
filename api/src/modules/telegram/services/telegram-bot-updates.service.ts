@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { toLevelRule } from '../../loyalty/utils/tier-defaults.util';
-import { getRulesRoot, getRulesSection } from '../../../shared/rules-json.util';
+import { readSupportTelegramFromRules } from '../../../shared/miniapp-settings.util';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import {
   asNumber,
@@ -288,13 +288,7 @@ export class TelegramBotUpdatesService {
       : ['• Уровни не настроены'];
     levelLines.push('• 1 балл = 1 рубль при списании');
 
-    const rules = getRulesRoot(settings?.rulesJson) ?? {};
-    const miniappRules = getRulesSection(rules, 'miniapp');
-    const supportTelegramRaw = miniappRules?.supportTelegram;
-    const supportTelegram =
-      typeof supportTelegramRaw === 'string' && supportTelegramRaw.trim()
-        ? supportTelegramRaw.trim()
-        : null;
+    const supportTelegram = readSupportTelegramFromRules(settings?.rulesJson);
     const supportLine = supportTelegram
       ? `По всем вопросам пишите ${supportTelegram}.`
       : 'По всем вопросам обращайтесь к администратору.';

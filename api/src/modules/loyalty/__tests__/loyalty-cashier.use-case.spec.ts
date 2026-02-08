@@ -9,7 +9,7 @@ import type { CashierRequest } from '../controllers/loyalty-controller.types';
 type MockedService = {
   outletTransactions: jest.Mock<
     Promise<unknown>,
-    [string, string, number, Date | undefined]
+    [string, string, number, Date | undefined, string | null]
   >;
 };
 
@@ -17,7 +17,7 @@ function createUseCase() {
   const service: MockedService = {
     outletTransactions: jest.fn<
       Promise<unknown>,
-      [string, string, number, Date | undefined]
+      [string, string, number, Date | undefined, string | null]
     >(),
   };
   const prisma = {} as PrismaService;
@@ -60,7 +60,7 @@ describe('LoyaltyCashierUseCase', () => {
     service.outletTransactions.mockResolvedValue({ ok: true });
 
     const req = {
-      cashierSession: { merchantId: 'm-1', outletId: 'o-1' },
+      cashierSession: { merchantId: 'm-1', outletId: 'o-1', staffId: 's-9' },
     } as CashierRequest;
     const beforeStr = '2024-01-01T00:00:00.000Z';
 
@@ -72,16 +72,19 @@ describe('LoyaltyCashierUseCase', () => {
       beforeStr,
     );
 
-    const [, , limit, before] = service.outletTransactions.mock.calls[0] as [
+    const [, , limit, before, staffId] = service.outletTransactions.mock
+      .calls[0] as [
       string,
       string,
       number,
       Date | undefined,
+      string | null,
     ];
     expect(limit).toBe(100);
     expect((before as Date).toISOString()).toBe(
       new Date(beforeStr).toISOString(),
     );
+    expect(staffId).toBe('s-9');
     expect(result).toEqual({ ok: true });
   });
 });

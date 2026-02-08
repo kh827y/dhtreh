@@ -3,6 +3,7 @@ import type { PrismaService } from '../../core/prisma/prisma.service';
 import type { TelegramStaffNotificationsService } from './staff-notifications.service';
 import { AppConfigService } from '../../core/config/app-config.service';
 import * as lockUtil from '../../shared/pg-lock.util';
+import * as rulesUpdateUtil from '../../shared/merchant-settings-rules-update.util';
 
 type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
@@ -15,7 +16,6 @@ type PrismaStub = {
   };
   merchantSettings: {
     findMany: MockFn<Promise<unknown[]>, [unknown?]>;
-    upsert: MockFn<Promise<unknown>, [unknown?]>;
   };
 };
 
@@ -57,7 +57,6 @@ describe('TelegramStaffDigestWorker', () => {
         findMany: mockFn<Promise<unknown[]>, [unknown?]>().mockResolvedValue([
           { merchantId: 'm1', rulesJson: {}, timezone: 'MSK+0' },
         ]),
-        upsert: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
       },
     };
     const staffNotify: StaffNotifyStub = {
@@ -75,6 +74,9 @@ describe('TelegramStaffDigestWorker', () => {
       .spyOn(lockUtil, 'pgTryAdvisoryLock')
       .mockResolvedValue({ ok: true, key: [1, 2] } as const);
     jest.spyOn(lockUtil, 'pgAdvisoryUnlock').mockResolvedValue(undefined);
+    const rulesUpdateSpy = jest
+      .spyOn(rulesUpdateUtil, 'updateMerchantSettingsRulesWithRetry')
+      .mockResolvedValue({} as never);
 
     await worker.handleDailyDigest();
 
@@ -82,7 +84,7 @@ describe('TelegramStaffDigestWorker', () => {
       'm1',
       expect.objectContaining({ kind: 'DIGEST' }),
     );
-    expect(prisma.merchantSettings.upsert).toHaveBeenCalled();
+    expect(rulesUpdateSpy).toHaveBeenCalled();
   });
 
   it('skips digest run when advisory lock is not acquired', async () => {
@@ -94,7 +96,6 @@ describe('TelegramStaffDigestWorker', () => {
       },
       merchantSettings: {
         findMany: mockFn<Promise<unknown[]>, [unknown?]>().mockResolvedValue([]),
-        upsert: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
       },
     };
     const staffNotify: StaffNotifyStub = {

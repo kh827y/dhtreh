@@ -1,0 +1,496 @@
+{
+  "generatedAt": "2026-02-07T14:47:12.277Z",
+  "merchantId": "cmkgqtylm0000tawi21ts7099",
+  "environment": {
+    "apiBase": "http://localhost:3000",
+    "adminBase": "http://localhost:3001",
+    "portalBase": "http://localhost:3004",
+    "cashierBase": "http://localhost:3002",
+    "miniappBase": "http://localhost:3003"
+  },
+  "setup": {
+    "adminAuth": true,
+    "portalTokenIssued": true,
+    "portalSession": true,
+    "cashierSession": true
+  },
+  "warnings": [],
+  "durationMs": 220371.32,
+  "passed": false,
+  "requiredFailedPhases": [
+    "portal_proxy",
+    "admin_proxy",
+    "admin_pages",
+    "portal_pages",
+    "cashier_pages",
+    "miniapp_pages"
+  ],
+  "optionalFailedPhases": [
+    "cashier_api"
+  ],
+  "phases": [
+    {
+      "name": "api_portal_direct",
+      "label": "API direct (portal endpoints)",
+      "required": true,
+      "skipped": false,
+      "coverage": 0.9231,
+      "preflight": {
+        "availableEndpoints": [
+          "/portal/me",
+          "/portal/settings/timezone",
+          "/portal/settings/support",
+          "/portal/outlets?status=active&page=1&pageSize=50",
+          "/portal/staff?page=1&pageSize=50",
+          "/portal/access-groups",
+          "/portal/analytics/dashboard?period=month",
+          "/portal/analytics/operations?period=month",
+          "/portal/cashier/credentials",
+          "/portal/cashier/pins",
+          "/portal/cashier/activation-codes",
+          "/portal/cashier/device-sessions"
+        ],
+        "skippedEndpoints": [
+          {
+            "endpoint": "/portal/setup-status",
+            "status": "404",
+            "error": null
+          }
+        ]
+      },
+      "totalRequests": 1400,
+      "concurrency": 40,
+      "durationMs": 3130.33,
+      "throughputRps": 447.24,
+      "successCount": 1400,
+      "failureCount": 0,
+      "errorRate": 0,
+      "latenciesMs": {
+        "p50": 85.7,
+        "p95": 114.11,
+        "p99": 358.22
+      },
+      "statuses": {
+        "200": 1400
+      },
+      "endpointStatuses": {
+        "/portal/me::200": 117,
+        "/portal/settings/timezone::200": 117,
+        "/portal/settings/support::200": 117,
+        "/portal/analytics/dashboard?period=month::200": 117,
+        "/portal/outlets?status=active&page=1&pageSize=50::200": 117,
+        "/portal/analytics/operations?period=month::200": 117,
+        "/portal/access-groups::200": 117,
+        "/portal/staff?page=1&pageSize=50::200": 117,
+        "/portal/cashier/credentials::200": 116,
+        "/portal/cashier/pins::200": 116,
+        "/portal/cashier/activation-codes::200": 116,
+        "/portal/cashier/device-sessions::200": 116
+      },
+      "passed": true,
+      "thresholds": {
+        "maxP95Ms": 500,
+        "maxErrorRate": 0.02,
+        "minCoverage": 0.8
+      }
+    },
+    {
+      "name": "portal_proxy",
+      "label": "Merchant portal proxy routes",
+      "required": true,
+      "skipped": false,
+      "coverage": 0.9091,
+      "preflight": {
+        "availableEndpoints": [
+          "/api/portal/me",
+          "/api/portal/setup-status",
+          "/api/portal/settings/timezone",
+          "/api/portal/settings/support",
+          "/api/portal/outlets?status=active&page=1&pageSize=50",
+          "/api/portal/staff?page=1&pageSize=50",
+          "/api/portal/access-groups",
+          "/api/portal/analytics/dashboard?period=month",
+          "/api/portal/analytics/operations?period=month",
+          "/api/portal/cashier/pins"
+        ],
+        "skippedEndpoints": [
+          {
+            "endpoint": "/api/portal/cashier/credentials",
+            "status": "404",
+            "error": null
+          }
+        ]
+      },
+      "totalRequests": 800,
+      "concurrency": 20,
+      "durationMs": 40592.18,
+      "throughputRps": 19.71,
+      "successCount": 800,
+      "failureCount": 0,
+      "errorRate": 0,
+      "latenciesMs": {
+        "p50": 962.78,
+        "p95": 1201.15,
+        "p99": 2267.92
+      },
+      "statuses": {
+        "200": 800
+      },
+      "endpointStatuses": {
+        "/api/portal/me::200": 80,
+        "/api/portal/settings/timezone::200": 80,
+        "/api/portal/setup-status::200": 80,
+        "/api/portal/settings/support::200": 80,
+        "/api/portal/outlets?status=active&page=1&pageSize=50::200": 80,
+        "/api/portal/staff?page=1&pageSize=50::200": 80,
+        "/api/portal/analytics/operations?period=month::200": 80,
+        "/api/portal/cashier/pins::200": 80,
+        "/api/portal/analytics/dashboard?period=month::200": 80,
+        "/api/portal/access-groups::200": 80
+      },
+      "passed": false,
+      "thresholds": {
+        "maxP95Ms": 700,
+        "maxErrorRate": 0.02,
+        "minCoverage": 0.8
+      }
+    },
+    {
+      "name": "admin_proxy",
+      "label": "Admin proxy routes",
+      "required": true,
+      "skipped": false,
+      "coverage": 0.6,
+      "preflight": {
+        "availableEndpoints": [
+          "/api/admin/observability/summary",
+          "/api/admin/merchants",
+          "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/settings",
+          "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/outlets",
+          "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/staff?limit=50",
+          "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/transactions?limit=50",
+          "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/receipts?limit=50",
+          "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/outbox?limit=50&status=PENDING",
+          "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/outbox/stats"
+        ],
+        "skippedEndpoints": [
+          {
+            "endpoint": "/api/admin/analytics/revenue/cmkgqtylm0000tawi21ts7099?period=month",
+            "status": "401",
+            "error": null
+          },
+          {
+            "endpoint": "/api/admin/analytics/customers/cmkgqtylm0000tawi21ts7099?period=month",
+            "status": "401",
+            "error": null
+          },
+          {
+            "endpoint": "/api/admin/analytics/loyalty/cmkgqtylm0000tawi21ts7099?period=month",
+            "status": "401",
+            "error": null
+          },
+          {
+            "endpoint": "/api/admin/analytics/operations/cmkgqtylm0000tawi21ts7099?period=month",
+            "status": "401",
+            "error": null
+          },
+          {
+            "endpoint": "/api/admin/analytics/portrait/cmkgqtylm0000tawi21ts7099?period=month",
+            "status": "401",
+            "error": null
+          },
+          {
+            "endpoint": "/api/admin/analytics/repeat/cmkgqtylm0000tawi21ts7099?period=month",
+            "status": "401",
+            "error": null
+          }
+        ]
+      },
+      "totalRequests": 600,
+      "concurrency": 15,
+      "durationMs": 31371.96,
+      "throughputRps": 19.13,
+      "successCount": 585,
+      "failureCount": 15,
+      "errorRate": 0.025,
+      "latenciesMs": {
+        "p50": 566.47,
+        "p95": 1146.74,
+        "p99": 6086.33
+      },
+      "statuses": {
+        "200": 585,
+        "504": 15
+      },
+      "endpointStatuses": {
+        "/api/admin/merchants::200": 66,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/outlets::200": 66,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/settings::200": 66,
+        "/api/admin/observability/summary::200": 65,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/staff?limit=50::200": 65,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/transactions?limit=50::200": 65,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/receipts?limit=50::200": 64,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/outbox?limit=50&status=PENDING::200": 64,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/outbox/stats::200": 64,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/outbox?limit=50&status=PENDING::504": 2,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/transactions?limit=50::504": 2,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/outbox/stats::504": 2,
+        "/api/admin/observability/summary::504": 2,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/receipts?limit=50::504": 2,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/staff?limit=50::504": 2,
+        "/api/admin/merchants::504": 1,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/settings::504": 1,
+        "/api/admin/merchants/cmkgqtylm0000tawi21ts7099/outlets::504": 1
+      },
+      "passed": false,
+      "thresholds": {
+        "maxP95Ms": 900,
+        "maxErrorRate": 0.03,
+        "minCoverage": 0.65
+      }
+    },
+    {
+      "name": "cashier_api",
+      "label": "Cashier API session routes",
+      "required": false,
+      "skipped": false,
+      "coverage": 1,
+      "preflight": {
+        "availableEndpoints": [
+          "/loyalty/cashier/device",
+          "/loyalty/cashier/session",
+          "/loyalty/cashier/leaderboard?merchantId=cmkgqtylm0000tawi21ts7099&limit=20",
+          "/loyalty/cashier/outlet-transactions?merchantId=cmkgqtylm0000tawi21ts7099&outletId=cmkgqul1y003ytawiujfamh8j&limit=20"
+        ],
+        "skippedEndpoints": []
+      },
+      "totalRequests": 280,
+      "concurrency": 12,
+      "durationMs": 724.38,
+      "throughputRps": 386.54,
+      "successCount": 236,
+      "failureCount": 44,
+      "errorRate": 0.1571,
+      "latenciesMs": {
+        "p50": 20.63,
+        "p95": 81.52,
+        "p99": 120
+      },
+      "statuses": {
+        "200": 236,
+        "429": 44
+      },
+      "endpointStatuses": {
+        "/loyalty/cashier/device::200": 59,
+        "/loyalty/cashier/session::200": 59,
+        "/loyalty/cashier/leaderboard?merchantId=cmkgqtylm0000tawi21ts7099&limit=20::200": 59,
+        "/loyalty/cashier/outlet-transactions?merchantId=cmkgqtylm0000tawi21ts7099&outletId=cmkgqul1y003ytawiujfamh8j&limit=20::200": 59,
+        "/loyalty/cashier/device::429": 11,
+        "/loyalty/cashier/session::429": 11,
+        "/loyalty/cashier/leaderboard?merchantId=cmkgqtylm0000tawi21ts7099&limit=20::429": 11,
+        "/loyalty/cashier/outlet-transactions?merchantId=cmkgqtylm0000tawi21ts7099&outletId=cmkgqul1y003ytawiujfamh8j&limit=20::429": 11
+      },
+      "passed": false,
+      "thresholds": {
+        "maxP95Ms": 700,
+        "maxErrorRate": 0.04,
+        "minCoverage": 0.5
+      }
+    },
+    {
+      "name": "admin_pages",
+      "label": "Admin UI pages",
+      "required": true,
+      "skipped": false,
+      "coverage": 0.7143,
+      "preflight": {
+        "availableEndpoints": [
+          "/",
+          "/merchants",
+          "/outbox",
+          "/audit",
+          "/observability"
+        ],
+        "skippedEndpoints": [
+          {
+            "endpoint": "/dashboard",
+            "status": "404",
+            "error": null
+          },
+          {
+            "endpoint": "/operations",
+            "status": "404",
+            "error": null
+          }
+        ]
+      },
+      "totalRequests": 160,
+      "concurrency": 8,
+      "durationMs": 71967.09,
+      "throughputRps": 2.22,
+      "successCount": 107,
+      "failureCount": 53,
+      "errorRate": 0.3312,
+      "latenciesMs": {
+        "p50": 573.9,
+        "p95": 8600.28,
+        "p99": 12460.26
+      },
+      "statuses": {
+        "200": 107,
+        "timeout": 48,
+        "network_error": 5
+      },
+      "endpointStatuses": {
+        "/::200": 22,
+        "/merchants::200": 22,
+        "/outbox::200": 21,
+        "/audit::200": 21,
+        "/observability::200": 21,
+        "/outbox::timeout": 10,
+        "/audit::timeout": 10,
+        "/observability::timeout": 10,
+        "/::timeout": 9,
+        "/merchants::timeout": 9,
+        "/merchants::network_error": 1,
+        "/outbox::network_error": 1,
+        "/::network_error": 1,
+        "/observability::network_error": 1,
+        "/audit::network_error": 1
+      },
+      "passed": false,
+      "thresholds": {
+        "maxP95Ms": 1300,
+        "maxErrorRate": 0.03,
+        "minCoverage": 0.8
+      }
+    },
+    {
+      "name": "portal_pages",
+      "label": "Merchant portal UI pages",
+      "required": true,
+      "skipped": false,
+      "coverage": 0.8571,
+      "preflight": {
+        "availableEndpoints": [
+          "/",
+          "/operations",
+          "/customers",
+          "/loyalty/mechanics",
+          "/settings/system",
+          "/staff"
+        ],
+        "skippedEndpoints": [
+          {
+            "endpoint": "/dashboard",
+            "status": "404",
+            "error": null
+          }
+        ]
+      },
+      "totalRequests": 200,
+      "concurrency": 10,
+      "durationMs": 32023.84,
+      "throughputRps": 6.25,
+      "successCount": 200,
+      "failureCount": 0,
+      "errorRate": 0,
+      "latenciesMs": {
+        "p50": 1568.26,
+        "p95": 2011.32,
+        "p99": 2368.38
+      },
+      "statuses": {
+        "200": 200
+      },
+      "endpointStatuses": {
+        "/::200": 34,
+        "/operations::200": 34,
+        "/customers::200": 33,
+        "/loyalty/mechanics::200": 33,
+        "/settings/system::200": 33,
+        "/staff::200": 33
+      },
+      "passed": false,
+      "thresholds": {
+        "maxP95Ms": 1300,
+        "maxErrorRate": 0.03,
+        "minCoverage": 0.8
+      }
+    },
+    {
+      "name": "cashier_pages",
+      "label": "Cashier UI pages",
+      "required": true,
+      "skipped": false,
+      "coverage": 1,
+      "preflight": {
+        "availableEndpoints": [
+          "/"
+        ],
+        "skippedEndpoints": []
+      },
+      "totalRequests": 100,
+      "concurrency": 8,
+      "durationMs": 6952.45,
+      "throughputRps": 14.38,
+      "successCount": 100,
+      "failureCount": 0,
+      "errorRate": 0,
+      "latenciesMs": {
+        "p50": 435.06,
+        "p95": 1731.07,
+        "p99": 1763.74
+      },
+      "statuses": {
+        "200": 100
+      },
+      "endpointStatuses": {
+        "/::200": 100
+      },
+      "passed": false,
+      "thresholds": {
+        "maxP95Ms": 1300,
+        "maxErrorRate": 0.03,
+        "minCoverage": 1
+      }
+    },
+    {
+      "name": "miniapp_pages",
+      "label": "Miniapp UI pages",
+      "required": true,
+      "skipped": false,
+      "coverage": 1,
+      "preflight": {
+        "availableEndpoints": [
+          "/"
+        ],
+        "skippedEndpoints": []
+      },
+      "totalRequests": 100,
+      "concurrency": 8,
+      "durationMs": 7231.72,
+      "throughputRps": 13.83,
+      "successCount": 100,
+      "failureCount": 0,
+      "errorRate": 0,
+      "latenciesMs": {
+        "p50": 405.31,
+        "p95": 2180.79,
+        "p99": 2192.64
+      },
+      "statuses": {
+        "200": 100
+      },
+      "endpointStatuses": {
+        "/::200": 100
+      },
+      "passed": false,
+      "thresholds": {
+        "maxP95Ms": 1300,
+        "maxErrorRate": 0.03,
+        "minCoverage": 1
+      }
+    }
+  ]
+}

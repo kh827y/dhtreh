@@ -15,6 +15,7 @@ import {
   resolveGrouping,
   truncateForTimezone,
 } from '../analytics-time.util';
+import { VALID_RECEIPT_NO_REFUND_SQL } from '../../../shared/common/valid-receipt-sql.util';
 
 @Injectable()
 export class AnalyticsLoyaltyService {
@@ -118,11 +119,28 @@ export class AnalyticsLoyaltyService {
         ? (totalPointsRedeemed / totalPointsIssued) * 100
         : 0;
 
-    const roi = await this.calculateLoyaltyROI(merchantId, period);
-    const conversionRate = await this.calculateLoyaltyConversion(
-      merchantId,
-      period,
+    const [loyaltyReceiptStats, programCost] = await Promise.all([
+      this.getLoyaltyReceiptStats(merchantId, period),
+      this.prisma.transaction.aggregate({
+        where: {
+          merchantId,
+          type: { in: ['EARN', 'CAMPAIGN', 'REFERRAL'] },
+          createdAt: { gte: period.from, lte: period.to },
+          canceledAt: null,
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+    const roi = this.calculateLoyaltyROI(
+      loyaltyReceiptStats.loyaltyRevenue,
+      programCost._sum.amount || 0,
     );
+    const conversionRate =
+      loyaltyReceiptStats.totalReceipts > 0
+        ? (loyaltyReceiptStats.loyaltyReceipts /
+            loyaltyReceiptStats.totalReceipts) *
+          100
+        : 0;
 
     const result = {
       totalPointsIssued,
@@ -275,36 +293,13 @@ export class AnalyticsLoyaltyService {
     return result;
   }
 
-  private async calculateLoyaltyROI(
-    merchantId: string,
-    period: DashboardPeriod,
-  ): Promise<number> {
-    const [loyaltyStats, programCost] = await Promise.all([
-      this.getLoyaltyReceiptStats(merchantId, period),
-      this.prisma.transaction.aggregate({
-        where: {
-          merchantId,
-          type: { in: ['EARN', 'CAMPAIGN', 'REFERRAL'] },
-          createdAt: { gte: period.from, lte: period.to },
-          canceledAt: null,
-        },
-        _sum: { amount: true },
-      }),
-    ]);
-
-    const revenue = Math.max(0, loyaltyStats.loyaltyRevenue);
-    const cost = Math.abs(programCost._sum.amount || 0);
+  private calculateLoyaltyROI(
+    loyaltyRevenue: number,
+    programCostAmount: Prisma.Decimal | number | null,
+  ): number {
+    const revenue = Math.max(0, loyaltyRevenue);
+    const cost = Math.abs(Number(programCostAmount || 0));
     return cost > 0 ? ((revenue - cost) / cost) * 100 : 0;
-  }
-
-  private async calculateLoyaltyConversion(
-    merchantId: string,
-    period: DashboardPeriod,
-  ): Promise<number> {
-    const loyaltyStats = await this.getLoyaltyReceiptStats(merchantId, period);
-    return loyaltyStats.totalReceipts > 0
-      ? (loyaltyStats.loyaltyReceipts / loyaltyStats.totalReceipts) * 100
-      : 0;
   }
 
   private async getLoyaltyReceiptStats(
@@ -344,16 +339,7 @@ export class AnalyticsLoyaltyService {
       WHERE r."merchantId" = ${merchantId}
         AND r."createdAt" >= ${period.from}
         AND r."createdAt" <= ${period.to}
-        AND r."canceledAt" IS NULL
-        AND r."total" > 0
-        AND NOT EXISTS (
-          SELECT 1
-          FROM "Transaction" refund
-          WHERE refund."merchantId" = r."merchantId"
-            AND refund."orderId" = r."orderId"
-            AND refund."type" = 'REFUND'
-            AND refund."canceledAt" IS NULL
-        )
+        AND ${VALID_RECEIPT_NO_REFUND_SQL}
     `);
 
     return {

@@ -11,6 +11,7 @@ import { buildLevelLookups, getAvatarClass, getCustomerLevelRank } from "./level
 import CustomerCard from "./customer-card";
 import { readApiError } from "lib/portal-errors";
 import { useActionGuard, useLatestRequest } from "lib/async-guards";
+import { fetchJson } from "lib/http-client";
 
 type LevelOption = {
   id: string;
@@ -73,6 +74,7 @@ function CustomersPageInner() {
   const [modalState, setModalState] = React.useState<{ mode: "create" | "edit"; customer?: CustomerRecord } | null>(null);
   const [giftTarget, setGiftTarget] = React.useState<CustomerRecord | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const customersLoadAbortRef = React.useRef<AbortController | null>(null);
   const { start: startLoad, isLatest } = useLatestRequest();
   const runAction = useActionGuard();
 
@@ -115,28 +117,10 @@ function CustomersPageInner() {
     [customers],
   );
 
-  async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(url, {
-      ...init,
-      headers: { "content-type": "application/json", ...(init?.headers || {}) },
-      cache: "no-store",
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      throw new Error(readApiError(text) || text || res.statusText);
-    }
-    const ct = res.headers.get("content-type") || "";
-    if (ct.includes("application/json") || ct.includes("+json")) {
-      return text ? ((JSON.parse(text) as unknown) as T) : ((undefined as unknown) as T);
-    }
-    const trimmed = text.trim();
-    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      return (JSON.parse(trimmed) as unknown) as T;
-    }
-    return ((undefined as unknown) as T);
-  }
-
   const loadCustomers = React.useCallback(async (search: string) => {
+    const controller = new AbortController();
+    customersLoadAbortRef.current?.abort();
+    customersLoadAbortRef.current = controller;
     const requestId = startLoad();
     try {
       setLoading(true);
@@ -152,7 +136,12 @@ function CustomersPageInner() {
         if (!isLatest(requestId)) return;
         const params = new URLSearchParams(baseParams);
         params.set("offset", String(offset));
-        const batch = await api<any[]>(`/api/customers?${params.toString()}`);
+        const batch = await fetchJson<any[]>(
+          `/api/customers?${params.toString()}`,
+          {
+          signal: controller.signal,
+          },
+        );
         const normalized = Array.isArray(batch) ? batch.map(normalizeCustomer) : [];
         all.push(...normalized);
         if (normalized.length < CUSTOMERS_FETCH_LIMIT) break;
@@ -161,11 +150,15 @@ function CustomersPageInner() {
       if (!isLatest(requestId)) return;
       setCustomers(all);
     } catch (e: any) {
+      if (controller.signal.aborted || e?.name === "AbortError") return;
       console.error(e);
       if (!isLatest(requestId)) return;
       setToast(readApiError(e?.message || e) || "Не удалось загрузить клиентов");
       setCustomers([]);
     } finally {
+      if (customersLoadAbortRef.current === controller) {
+        customersLoadAbortRef.current = null;
+      }
       if (isLatest(requestId)) setLoading(false);
     }
   }, [isLatest, startLoad]);
@@ -173,6 +166,13 @@ function CustomersPageInner() {
   React.useEffect(() => {
     void loadCustomers(appliedSearch);
   }, [appliedSearch, loadCustomers]);
+
+  React.useEffect(() => {
+    return () => {
+      customersLoadAbortRef.current?.abort();
+      customersLoadAbortRef.current = null;
+    };
+  }, []);
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -185,7 +185,7 @@ function CustomersPageInner() {
     let aborted = false;
     (async () => {
       try {
-        const payload = await api<any>("/api/portal/loyalty/tiers");
+        const payload = await fetchJson<any>("/api/portal/loyalty/tiers");
         const source: any[] = Array.isArray(payload?.items)
           ? payload.items
           : Array.isArray(payload)
@@ -276,7 +276,7 @@ function CustomersPageInner() {
     await runAction(async () => {
       if (modalState.mode === "create") {
         try {
-          const created = await api<any>("/api/customers", {
+          const created = await fetchJson<any>("/api/customers", {
             method: "POST",
             body: JSON.stringify(baseBody),
           });
@@ -300,10 +300,13 @@ function CustomersPageInner() {
       } else if (modalState.mode === "edit" && modalState.customer) {
         const { customer } = modalState;
         try {
-          const saved = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`, {
+          const saved = await fetchJson<any>(
+            `/api/customers/${encodeURIComponent(customer.id)}`,
+            {
             method: "PUT",
             body: JSON.stringify(baseBody),
-          });
+            },
+          );
           const normalized = normalizeCustomer(saved ?? { ...customer, ...baseBody });
           setCustomers((prev) => prev.map((item) => (item.id === customer.id ? normalized : item)));
           setToast("Данные клиента обновлены");
@@ -326,6 +329,8 @@ function CustomersPageInner() {
         customerId={selectedCustomerId}
         initialCustomer={selectedCustomer}
         initialLevelRank={selectedCustomerRank}
+        levelsCatalog={levelsCatalog}
+        existingLoginsCatalog={existingLogins}
         onBack={closeCustomer}
         onNavigateToCustomer={openCustomer}
         onCustomerUpdated={handleCustomerUpdated}

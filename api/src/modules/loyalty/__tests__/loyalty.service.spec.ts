@@ -393,6 +393,108 @@ describe('LoyaltyService.commit idempotency', () => {
     expect(txUsed!.outlet.update).not.toHaveBeenCalled();
   });
 
+  it('schedules earn when earnDelayDays is enabled and skips immediate wallet increment', async () => {
+    const prisma = mkPrisma();
+    const operationDate = new Date('2026-02-01T10:00:00.000Z');
+    const hold = {
+      id: 'H-delay',
+      merchantId: 'M-1',
+      customerId: 'C-delay',
+      status: 'PENDING',
+      mode: 'EARN',
+      earnPoints: 12,
+      redeemAmount: 0,
+      outletId: null,
+      staffId: null,
+      total: 100,
+      eligibleTotal: 100,
+    };
+    prisma.hold.findUnique.mockResolvedValue(hold);
+    prisma.wallet.findFirst.mockResolvedValue({
+      id: 'W-delay',
+      balance: 0,
+      type: 'POINTS',
+    });
+    let txUsed: MockPrisma | null = null;
+    prisma.$transaction = mockFn<
+      unknown,
+      [(tx: MockPrisma) => unknown]
+    >().mockImplementation((fn) => {
+      txUsed = mkPrisma({
+        merchantSettings: {
+          findUnique: mockFn().mockResolvedValue({
+            earnDelayDays: 3,
+            pointsTtlDays: 0,
+            rulesJson: null,
+          }),
+        },
+        receipt: {
+          findUnique: mockFnWithImpl(() => null),
+          create: mockFnWithImpl(() => ({
+            id: 'R-delay',
+            redeemApplied: 0,
+            earnApplied: 12,
+            createdAt: operationDate,
+          })),
+        },
+        wallet: {
+          findUnique: mockFnWithImpl(() => ({ id: 'W-delay', balance: 0 })),
+          update: mockFn(),
+          updateMany: mockFn().mockResolvedValue({ count: 1 }),
+        },
+        transaction: { create: mockFnWithImpl(() => ({ id: 'TX-delay' })) },
+        eventOutbox: { create: mockFn() },
+        hold: {
+          update: mockFn(),
+          updateMany: mockFn().mockResolvedValue({ count: 1 }),
+        },
+      });
+      return fn(txUsed);
+    });
+
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      asPrismaService(prisma),
+      asMetricsService(metrics),
+      asPromoCodesService(promoCodesStub),
+      asNotificationsService(notificationsStub),
+      asStaffMotivationEngine(staffMotivation),
+      buildContext({ customerId: 'C-delay' }),
+      buildTiers(),
+    );
+    const result = await svc.commit(
+      'H-delay',
+      'ORDER-delay',
+      undefined,
+      undefined,
+      { operationDate },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.earnApplied).toBe(12);
+    expect(txUsed).not.toBeNull();
+    expect(txUsed!.wallet.update).not.toHaveBeenCalled();
+    expect(txUsed!.transaction.create).not.toHaveBeenCalled();
+    const scheduledCall = txUsed!.eventOutbox.create.mock.calls.find(
+      (call) =>
+        (call[0] as { data?: { eventType?: string } })?.data?.eventType ===
+        'loyalty.earn.scheduled',
+    );
+    expect(scheduledCall).toBeDefined();
+    const scheduledPayload = (
+      scheduledCall?.[0] as {
+        data?: {
+          payload?: {
+            points?: number;
+            maturesAt?: string;
+          };
+        };
+      }
+    )?.data?.payload;
+    expect(scheduledPayload?.points).toBe(12);
+    expect(scheduledPayload?.maturesAt).toBe('2026-02-04T10:00:00.000Z');
+  });
+
   it('commit touches outlet when present', async () => {
     const prisma = mkPrisma();
     const hold = {

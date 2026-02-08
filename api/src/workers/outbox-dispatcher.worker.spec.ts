@@ -3,6 +3,7 @@ import type { PrismaService } from '../core/prisma/prisma.service';
 import type { MetricsService } from '../core/metrics/metrics.service';
 import { AppConfigService } from '../core/config/app-config.service';
 import type { EventOutbox } from '@prisma/client';
+import { createHmac } from 'crypto';
 import {
   fetchWithTimeout,
   recordExternalRequest,
@@ -79,6 +80,7 @@ describe('OutboxDispatcherWorker', () => {
 
   beforeEach(() => {
     jest.useFakeTimers();
+    jest.clearAllMocks();
     process.env = { ...origEnv };
     process.env.WORKERS_ENABLED = '1';
   });
@@ -230,6 +232,111 @@ describe('OutboxDispatcherWorker', () => {
       objectContaining({
         where: { id: 'e3' },
         data: objectContaining({ status: 'SENT' }),
+      }),
+    );
+  });
+
+  it('uses next webhook secret and key id when rotation is enabled', async () => {
+    (fetchWithTimeout as jest.Mock).mockResolvedValue(makeResponse(200, 'ok'));
+    (recordExternalRequest as jest.Mock).mockImplementation(() => undefined);
+    (readResponseTextSafe as jest.Mock).mockResolvedValue('');
+    const { worker } = makeWorker({
+      merchantSettings: {
+        findUnique: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({
+          webhookUrl: 'https://example.com/hook',
+          webhookSecret: 'old-secret',
+          webhookKeyId: 'old-kid',
+          webhookSecretNext: 'next-secret',
+          webhookKeyIdNext: 'next-kid',
+          useWebhookNext: true,
+        }),
+        update: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
+      },
+    });
+
+    const row = {
+      id: 'e-next',
+      merchantId: 'm1',
+      eventType: 'receipt.created',
+      payload: { amount: 123 },
+      retries: 0,
+      status: 'PENDING',
+      nextRetryAt: null,
+      lastError: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as EventOutbox;
+
+    await asPrivateWorker(worker).send(row);
+
+    expect(fetchWithTimeout).toHaveBeenCalledTimes(1);
+    const [, initArg] = (fetchWithTimeout as jest.Mock).mock.calls[0] as [
+      string,
+      {
+        headers?: Record<string, string>;
+        body?: string;
+      },
+    ];
+    const headers = initArg.headers ?? {};
+    const body = initArg.body ?? '';
+    const signatureHeader = headers['X-Loyalty-Signature'];
+    expect(signatureHeader).toBeDefined();
+    expect(headers['X-Signature-Key-Id']).toBe('next-kid');
+    const signatureMatch = String(signatureHeader).match(
+      /^v1,ts=([^,]+),sig=(.+)$/,
+    );
+    expect(signatureMatch).toBeTruthy();
+    const ts = signatureMatch?.[1];
+    const sig = signatureMatch?.[2];
+    expect(ts).toBeTruthy();
+    expect(sig).toBeTruthy();
+    const expectedSig = createHmac('sha256', 'next-secret')
+      .update(`${ts}.${body}`)
+      .digest('base64');
+    expect(sig).toBe(expectedSig);
+    const oldSig = createHmac('sha256', 'old-secret')
+      .update(`${ts}.${body}`)
+      .digest('base64');
+    expect(sig).not.toBe(oldSig);
+  });
+
+  it('defers event while outbox is paused for merchant', async () => {
+    const pausedUntil = new Date('2030-01-01T00:00:00.000Z');
+    const { worker, prisma } = makeWorker({
+      merchantSettings: {
+        findUnique: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({
+          webhookUrl: 'https://example.com/hook',
+          webhookSecret: 'secret',
+          outboxPausedUntil: pausedUntil,
+        }),
+        update: mockFn<Promise<unknown>, [unknown?]>().mockResolvedValue({}),
+      },
+    });
+
+    const row = {
+      id: 'e-paused',
+      merchantId: 'm1',
+      eventType: 'receipt.created',
+      payload: { ok: true },
+      retries: 0,
+      status: 'PENDING',
+      nextRetryAt: null,
+      lastError: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as EventOutbox;
+
+    await asPrivateWorker(worker).send(row);
+
+    expect(fetchWithTimeout).not.toHaveBeenCalled();
+    expect(prisma.eventOutbox.update).toHaveBeenCalledWith(
+      objectContaining({
+        where: { id: 'e-paused' },
+        data: objectContaining({
+          status: 'PENDING',
+          nextRetryAt: pausedUntil,
+          lastError: `Paused by merchant until ${pausedUntil.toISOString()}`,
+        }),
       }),
     );
   });

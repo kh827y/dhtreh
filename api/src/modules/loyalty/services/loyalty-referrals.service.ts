@@ -2,6 +2,7 @@ import { LedgerAccount, Prisma, TxnType, WalletType } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { MetricsService } from '../../../core/metrics/metrics.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
+import { VALID_RECEIPT_NO_REFUND_SQL } from '../../../shared/common/valid-receipt-sql.util';
 import type { PrismaTx } from './loyalty-ops.types';
 
 export class LoyaltyReferralService {
@@ -227,17 +228,8 @@ export class LoyaltyReferralService {
         WHERE r."merchantId" = ${params.merchantId}
           AND r."customerId" = ${params.receipt.customerId}
           AND r."id" <> ${params.receipt.id}
-          AND r."canceledAt" IS NULL
-          AND r."total" > 0
+          AND ${VALID_RECEIPT_NO_REFUND_SQL}
           AND r."total" >= ${minPurchaseAmount}
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "Transaction" refund
-            WHERE refund."merchantId" = r."merchantId"
-              AND refund."orderId" = r."orderId"
-              AND refund."type" = 'REFUND'
-              AND refund."canceledAt" IS NULL
-          )
         LIMIT 1`,
       );
       if (

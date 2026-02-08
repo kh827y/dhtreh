@@ -26,6 +26,7 @@
     "check:error-budget": "bash scripts/check-error-budget.sh",
     "canary:rollout": "bash scripts/canary-rollout.sh",
     "load:portal": "node scripts/load-test-portal.mjs",
+    "load:full": "node scripts/stress-test-full.mjs",
     "db:explain:hotpaths": "pnpm --filter api explain:hotpaths",
     "test": "pnpm --filter api test && pnpm --filter api test:e2e",
     "test:ci:all": "pnpm --filter api test && pnpm --filter api test:e2e && pnpm --filter admin test && pnpm --filter merchant-portal test && pnpm --filter cashier test && pnpm --filter miniapp test && pnpm --filter @loyalty/sdk-ts test",

@@ -79,9 +79,25 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
         );
         const portalMerchantId = asString(req.portalMerchantId);
         const portalStaffId = asString(req.portalStaffId);
+        const cashierSession = toRecord(req.cashierSession);
+        const cashierSessionId =
+          asString(cashierSession?.deviceSessionId) ||
+          asString(cashierSession?.id);
         const resolvedMerchantId =
           merchantId || portalMerchantId || headerMerchantId;
         const resolvedStaffId = staffId || portalStaffId;
+        if (path.startsWith('/loyalty/cashier') && cashierSessionId) {
+          return [
+            ip,
+            path,
+            resolvedMerchantId,
+            outletId,
+            resolvedStaffId,
+            cashierSessionId,
+          ]
+            .filter(Boolean)
+            .join('|');
+        }
         return [ip, path, resolvedMerchantId, outletId, resolvedStaffId]
           .filter(Boolean)
           .join('|');
@@ -182,6 +198,21 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
             };
           }
         }
+
+        const isCashierPath = path.startsWith('/loyalty/cashier/');
+        if (isCashierPath) {
+          const isReadMethod =
+            method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+          base = isReadMethod
+            ? {
+                limit: envNum('RL_LIMIT_CASHIER_READ', 120),
+                ttl: envNum('RL_TTL_CASHIER_READ', 60_000),
+              }
+            : {
+                limit: envNum('RL_LIMIT_CASHIER_WRITE', 90),
+                ttl: envNum('RL_TTL_CASHIER_WRITE', 60_000),
+              };
+        }
         const integrationLimits = toRecord(req?.integrationRateLimits);
         if (integrationLimits && req?.integrationId) {
           const pickIntegration = (key: string) => {
@@ -260,6 +291,7 @@ type RequestLike = {
   integrationRateLimits?: Record<string, unknown>;
   portalMerchantId?: string;
   portalStaffId?: string;
+  cashierSession?: Record<string, unknown> | null;
   body?: unknown;
   query?: unknown;
 };

@@ -176,9 +176,9 @@ describe('CommunicationsDispatcherWorker', () => {
 
     await asPrivateWorker(worker).recoverStaleTasks();
 
-    expect(prisma.communicationTask.update).toHaveBeenCalledWith(
+    expect(prisma.communicationTask.updateMany).toHaveBeenCalledWith(
       objectContaining({
-        where: { id: 't1' },
+        where: objectContaining({ id: 't1', status: 'RUNNING' }),
         data: objectContaining({ status: 'SCHEDULED', startedAt: null }),
       }),
     );
@@ -206,9 +206,9 @@ describe('CommunicationsDispatcherWorker', () => {
 
     await asPrivateWorker(worker).recoverStaleTasks();
 
-    expect(prisma.communicationTask.update).toHaveBeenCalledWith(
+    expect(prisma.communicationTask.updateMany).toHaveBeenCalledWith(
       objectContaining({
-        where: { id: 't2' },
+        where: objectContaining({ id: 't2', status: 'RUNNING' }),
         data: objectContaining({ status: 'FAILED' }),
       }),
     );
@@ -236,9 +236,9 @@ describe('CommunicationsDispatcherWorker', () => {
 
     await asPrivateWorker(worker).requeueFailedTasks();
 
-    expect(prisma.communicationTask.update).toHaveBeenCalledWith(
+    expect(prisma.communicationTask.updateMany).toHaveBeenCalledWith(
       objectContaining({
-        where: { id: 't3' },
+        where: objectContaining({ id: 't3', status: 'FAILED' }),
         data: objectContaining({ status: 'SCHEDULED', startedAt: null }),
       }),
     );

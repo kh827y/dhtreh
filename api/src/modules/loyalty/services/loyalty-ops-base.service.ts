@@ -1701,8 +1701,15 @@ export class LoyaltyOpsBase {
     outletId: string,
     limit = 20,
     before?: Date,
+    staffId?: string | null,
   ) {
-    return this.queries.outletTransactions(merchantId, outletId, limit, before);
+    return this.queries.outletTransactions(
+      merchantId,
+      outletId,
+      limit,
+      before,
+      staffId,
+    );
   }
 
   async transactions(

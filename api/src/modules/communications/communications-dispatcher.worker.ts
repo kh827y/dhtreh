@@ -52,6 +52,7 @@ export class CommunicationsDispatcherWorker
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new Logger(CommunicationsDispatcherWorker.name);
+  private readonly workerLockName = 'worker:communications_dispatcher';
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   public startedAt: Date | null = null;
@@ -113,10 +114,7 @@ export class CommunicationsDispatcherWorker
   private async tick() {
     if (this.running) return;
     this.running = true;
-    const lock = await pgTryAdvisoryLock(
-      this.prisma,
-      'worker:communications_dispatcher',
-    );
+    const lock = await pgTryAdvisoryLock(this.prisma, this.workerLockName);
     if (!lock.ok) {
       this.markLockMiss();
       this.running = false;
@@ -302,8 +300,13 @@ export class CommunicationsDispatcherWorker
         lastError: 'stale task detected',
         lastErrorAt: now.toISOString(),
       });
-      await this.prisma.communicationTask.update({
-        where: { id: task.id },
+      const updated = await this.prisma.communicationTask.updateMany({
+        where: {
+          id: task.id,
+          status: 'RUNNING',
+          archivedAt: null,
+          startedAt: { lt: staleBefore },
+        },
         data: canRetry
           ? {
               status: 'SCHEDULED',
@@ -319,6 +322,7 @@ export class CommunicationsDispatcherWorker
               stats,
             },
       });
+      if (updated.count !== 1) continue;
       this.markProgress();
     }
   }
@@ -356,8 +360,13 @@ export class CommunicationsDispatcherWorker
       const stats = this.buildStats(task.stats, {
         lastRetryAt: new Date().toISOString(),
       });
-      await this.prisma.communicationTask.update({
-        where: { id: task.id },
+      const updated = await this.prisma.communicationTask.updateMany({
+        where: {
+          id: task.id,
+          status: 'FAILED',
+          archivedAt: null,
+          failedAt: { lt: retryBefore },
+        },
         data: {
           status: 'SCHEDULED',
           scheduledAt: new Date(),
@@ -365,6 +374,7 @@ export class CommunicationsDispatcherWorker
           stats,
         },
       });
+      if (updated.count !== 1) continue;
       this.markProgress();
     }
   }
@@ -380,17 +390,32 @@ export class CommunicationsDispatcherWorker
   }
 
   async runTaskById(taskId: string) {
-    const task = await this.prisma.communicationTask.findUnique({
-      where: { id: taskId },
-    });
-    if (!task) return;
-    if (task.status !== 'SCHEDULED') return;
-    if (task.archivedAt) return;
-    if (task.scheduledAt && task.scheduledAt.getTime() > Date.now()) return;
-    if (task.channel === CommunicationChannel.TELEGRAM) {
-      await this.processTelegramTask(task);
-    } else if (task.channel === CommunicationChannel.PUSH) {
-      await this.processPushTask(task);
+    if (this.running) return;
+    this.running = true;
+    const lock = await pgTryAdvisoryLock(this.prisma, this.workerLockName);
+    if (!lock.ok) {
+      this.markLockMiss();
+      this.running = false;
+      return;
+    }
+    try {
+      this.markTick();
+      const task = await this.prisma.communicationTask.findUnique({
+        where: { id: taskId },
+      });
+      if (!task) return;
+      if (task.status !== 'SCHEDULED') return;
+      if (task.archivedAt) return;
+      if (task.scheduledAt && task.scheduledAt.getTime() > Date.now()) return;
+      if (task.channel === CommunicationChannel.TELEGRAM) {
+        await this.processTelegramTask(task);
+      } else if (task.channel === CommunicationChannel.PUSH) {
+        await this.processPushTask(task);
+      }
+      this.markProgress();
+    } finally {
+      await pgAdvisoryUnlock(this.prisma, lock.key);
+      this.running = false;
     }
   }
 
@@ -542,15 +567,15 @@ export class CommunicationsDispatcherWorker
         customerId: string | null;
         metadata: Prisma.JsonValue | null;
       }> = await this.prisma.communicationTaskRecipient.findMany({
-          where: {
-            taskId: task.id,
-            status: { in: ['PENDING', 'FAILED'] },
-            ...(cursorId ? { id: { gt: cursorId } } : {}),
-          },
-          select: { id: true, customerId: true, metadata: true },
-          orderBy: { id: 'asc' },
-          take: recipientBatchSize,
-        });
+        where: {
+          taskId: task.id,
+          status: { in: ['PENDING', 'FAILED'] },
+          ...(cursorId ? { id: { gt: cursorId } } : {}),
+        },
+        select: { id: true, customerId: true, metadata: true },
+        orderBy: { id: 'asc' },
+        take: recipientBatchSize,
+      });
       if (!pendingRecipients.length) break;
       await this.runWithConcurrency(
         pendingRecipients,
@@ -635,7 +660,8 @@ export class CommunicationsDispatcherWorker
           this.markProgress();
         },
       );
-      const nextCursor = pendingRecipients[pendingRecipients.length - 1]?.id ?? null;
+      const nextCursor =
+        pendingRecipients[pendingRecipients.length - 1]?.id ?? null;
       if (cursorId && nextCursor && nextCursor <= cursorId) {
         this.logger.warn(
           `Telegram recipients cursor did not advance for task ${task.id}, breaking loop`,
@@ -787,15 +813,15 @@ export class CommunicationsDispatcherWorker
         customerId: string | null;
         metadata: Prisma.JsonValue | null;
       }> = await this.prisma.communicationTaskRecipient.findMany({
-          where: {
-            taskId: task.id,
-            status: { in: ['PENDING', 'FAILED'] },
-            ...(cursorId ? { id: { gt: cursorId } } : {}),
-          },
-          select: { id: true, customerId: true, metadata: true },
-          orderBy: { id: 'asc' },
-          take: recipientBatchSize,
-        });
+        where: {
+          taskId: task.id,
+          status: { in: ['PENDING', 'FAILED'] },
+          ...(cursorId ? { id: { gt: cursorId } } : {}),
+        },
+        select: { id: true, customerId: true, metadata: true },
+        orderBy: { id: 'asc' },
+        take: recipientBatchSize,
+      });
       if (!pendingRecipients.length) break;
       await this.runWithConcurrency(
         pendingRecipients,
@@ -837,12 +863,16 @@ export class CommunicationsDispatcherWorker
             const renderedTitle = title
               ? applyCurlyPlaceholders(title, vars).trim()
               : undefined;
-            await this.telegramBots.sendPushNotification(task.merchantId, tgId, {
-              title: renderedTitle || title,
-              body: renderedText || text,
-              data: extra,
-              deepLink,
-            });
+            await this.telegramBots.sendPushNotification(
+              task.merchantId,
+              tgId,
+              {
+                title: renderedTitle || title,
+                body: renderedText || text,
+                data: extra,
+                deepLink,
+              },
+            );
           } catch (err: unknown) {
             status = 'FAILED';
             error = readErrorMessage(err);
@@ -878,7 +908,8 @@ export class CommunicationsDispatcherWorker
           this.markProgress();
         },
       );
-      const nextCursor = pendingRecipients[pendingRecipients.length - 1]?.id ?? null;
+      const nextCursor =
+        pendingRecipients[pendingRecipients.length - 1]?.id ?? null;
       if (cursorId && nextCursor && nextCursor <= cursorId) {
         this.logger.warn(
           `Push recipients cursor did not advance for task ${task.id}, breaking loop`,

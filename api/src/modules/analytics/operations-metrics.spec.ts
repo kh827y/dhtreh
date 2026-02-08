@@ -132,6 +132,7 @@ describe('AnalyticsService — operational metrics', () => {
     const sqlStrings = sqlCalls.map((sql) => joinSql(sql));
     sqlStrings.forEach((text) => {
       expect(text).toContain('"canceledAt" IS NULL');
+      expect(text).toContain('"total" > 0');
       expect(text).toContain('refund."type" = \'REFUND\'');
     });
     expect(
@@ -242,9 +243,11 @@ describe('AnalyticsService — operational metrics', () => {
 
     const sqlStrings = sqlCalls.map((sql) => joinSql(sql));
     expect(sqlStrings[0]).toContain('"canceledAt" IS NULL');
+    expect(sqlStrings[0]).toContain('"total" > 0');
     expect(sqlStrings[0]).toContain('refund."type" = \'REFUND\'');
     expect(sqlStrings[0]).toContain('"customerId" IS NOT NULL');
     expect(sqlStrings[1]).toContain('"canceledAt" IS NULL');
+    expect(sqlStrings[1]).toContain('"total" > 0');
     expect(sqlStrings[1]).toContain('refund."type" = \'REFUND\'');
     expect(sqlStrings[1]).toContain('"customerId" IS NOT NULL');
   });

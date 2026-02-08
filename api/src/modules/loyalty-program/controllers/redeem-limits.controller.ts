@@ -17,6 +17,7 @@ import {
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
 import { ensureRulesRoot } from '../../../shared/rules-json.util';
+import { updateMerchantSettingsRulesWithRetry } from '../../../shared/merchant-settings-rules-update.util';
 import { RedeemLimitsUpdateDto } from '../dto';
 
 type PortalRequest = {
@@ -161,19 +162,23 @@ export class RedeemLimitsController {
       );
     }
 
-    // Обновляем rulesJson: используем allowEarnRedeemSameReceipt
-    delete rules['disallowEarnRedeemSameReceipt'];
-    rules['allowEarnRedeemSameReceipt'] = allowSame;
+    await updateMerchantSettingsRulesWithRetry(
+      this.prisma,
+      merchantId,
+      (currentRules) => {
+        const nextRules = ensureRulesRoot(currentRules);
+        delete nextRules['disallowEarnRedeemSameReceipt'];
+        nextRules['allowEarnRedeemSameReceipt'] = allowSame;
+        return nextRules as Prisma.InputJsonValue;
+      },
+      {
+        update: { pointsTtlDays, earnDelayDays },
+        create: { pointsTtlDays, earnDelayDays },
+      },
+    );
 
-    const rulesJson = rules as Prisma.InputJsonValue;
-    const updated = await this.prisma.merchantSettings.upsert({
-      where: { merchantId },
-      update: { pointsTtlDays, earnDelayDays, rulesJson },
-      create: { merchantId, pointsTtlDays, earnDelayDays, rulesJson },
-    });
-
-    const updTtlDays = Number(updated.pointsTtlDays ?? 0) || 0;
-    const updDelayDays = Number(updated.earnDelayDays ?? 0) || 0;
+    const updTtlDays = Number(pointsTtlDays ?? 0) || 0;
+    const updDelayDays = Number(earnDelayDays ?? 0) || 0;
     return {
       ok: true,
       ttlEnabled: updTtlDays > 0,

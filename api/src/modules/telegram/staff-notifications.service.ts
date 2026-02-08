@@ -13,6 +13,7 @@ import {
 import { ensureRulesRoot, getRulesSection } from '../../shared/rules-json.util';
 import { logIgnoredError } from '../../shared/logging/ignore-error.util';
 import { asRecord as asRecordShared } from '../../shared/common/input.util';
+import { updateMerchantSettingsRulesWithRetry } from '../../shared/merchant-settings-rules-update.util';
 
 export type StaffNotifySettings = {
   notifyOrders: boolean;
@@ -214,23 +215,20 @@ export class TelegramStaffNotificationsService {
     prefs: PreferencesMap,
     meta: NotifyMetaMap,
   ): Promise<void> {
-    const settings = await this.prisma.merchantSettings.findUnique({
-      where: { merchantId },
-      select: { rulesJson: true },
-    });
-    const rules = ensureRulesRoot(settings?.rulesJson);
-    const nextNotify: Record<string, StaffNotifySettings> = {};
-    for (const key of Object.keys(prefs)) {
-      nextNotify[key] = prefs[key];
-    }
-    rules.staffNotify = nextNotify;
-    rules.staffNotifyMeta = meta;
-    const rulesJson = rules as Prisma.InputJsonValue;
-    await this.prisma.merchantSettings.upsert({
-      where: { merchantId },
-      create: { merchantId, rulesJson },
-      update: { rulesJson },
-    });
+    await updateMerchantSettingsRulesWithRetry(
+      this.prisma,
+      merchantId,
+      (raw) => {
+        const rules = ensureRulesRoot(raw);
+        const nextNotify: Record<string, StaffNotifySettings> = {};
+        for (const key of Object.keys(prefs)) {
+          nextNotify[key] = prefs[key];
+        }
+        rules.staffNotify = nextNotify;
+        rules.staffNotifyMeta = meta;
+        return rules as Prisma.InputJsonValue;
+      },
+    );
   }
 
   async getPreferences(

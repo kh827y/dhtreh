@@ -2,11 +2,14 @@ import { BadRequestException, Logger } from '@nestjs/common';
 import { Prisma, TxnType, WalletType } from '@prisma/client';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { fetchReceiptAggregates } from '../../../shared/common/receipt-aggregates.util';
+import { buildCustomerKpiSnapshot } from '../../../shared/common/customer-kpi.util';
+import { VALID_ACTIVE_CUSTOMER_RECEIPT_SQL } from '../../../shared/common/valid-receipt-sql.util';
 import { ensureBaseTier } from '../utils/tier-defaults.util';
 import { LoyaltyTierService } from './loyalty-tier.service';
 import { StaffMotivationEngine } from '../../staff-motivation/staff-motivation.engine';
 import type { OptionalModelsClient } from './loyalty-ops.types';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
+import { findTimezone } from '../../../shared/timezone/russia-timezones';
 
 export class LoyaltyQueriesService {
   constructor(
@@ -107,29 +110,19 @@ export class LoyaltyQueriesService {
         };
       }
     }
-    const visitCount = row?.visits ?? 0;
-    const totalAmount = Math.max(0, Number(row?.totalSpent ?? 0));
-    const avgBillRaw =
-      visitCount > 0 ? Math.max(0, totalAmount) / visitCount : 0;
-    const avgBill = Math.round(avgBillRaw * 100) / 100;
-    const firstDate = row?.firstPurchaseAt ?? null;
-    const lastDate = row?.lastPurchaseAt ?? firstDate;
-    let visitFrequencyDays: number | null = null;
-    if (visitCount > 1 && firstDate && lastDate) {
-      const diffDays = Math.max(
-        0,
-        Math.round((lastDate.getTime() - firstDate.getTime()) / 86_400_000),
-      );
-      if (diffDays > 0) {
-        visitFrequencyDays =
-          Math.round((diffDays / (visitCount - 1)) * 100) / 100;
-      }
-    }
+    const snapshot = buildCustomerKpiSnapshot({
+      visits: row?.visits ?? 0,
+      totalSpent: row?.totalSpent ?? 0,
+      firstPurchaseAt: row?.firstPurchaseAt ?? null,
+      lastPurchaseAt: row?.lastPurchaseAt ?? row?.firstPurchaseAt ?? null,
+      averageCheckPrecision: 2,
+      visitFrequencyPrecision: 2,
+    });
     return {
-      visitCount,
-      totalAmount,
-      avgBill,
-      visitFrequencyDays,
+      visitCount: snapshot.visits,
+      totalAmount: snapshot.totalSpent,
+      avgBill: snapshot.averageCheck,
+      visitFrequencyDays: snapshot.visitFrequencyDays,
     };
   }
 
@@ -149,6 +142,7 @@ export class LoyaltyQueriesService {
     outletId: string,
     limit = 20,
     before?: Date,
+    staffId?: string | null,
   ) {
     const allowSameReceipt = await this.tiers.isAllowSameReceipt(merchantId);
     const formatStaff = (staff?: {
@@ -409,7 +403,62 @@ export class LoyaltyQueriesService {
     const sliced = merged.slice(0, hardLimit);
     const nextBefore =
       sliced.length > 0 ? sliced[sliced.length - 1].createdAt : null;
-    return { items: sliced, nextBefore, allowSameReceipt };
+    const shiftStats = before
+      ? null
+      : await this.getCashierShiftStats(merchantId, outletId, staffId);
+    return { items: sliced, nextBefore, allowSameReceipt, shiftStats };
+  }
+
+  private async getCashierShiftStats(
+    merchantId: string,
+    outletId: string,
+    staffId?: string | null,
+  ) {
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { timezone: true },
+    });
+    const timezone = findTimezone(settings?.timezone ?? null);
+    const offsetMs = timezone.utcOffsetMinutes * 60 * 1000;
+    const now = new Date();
+    const localNow = new Date(now.getTime() + offsetMs);
+    localNow.setUTCHours(0, 0, 0, 0);
+    const localTomorrow = new Date(localNow.getTime() + 24 * 60 * 60 * 1000);
+    const from = new Date(localNow.getTime() - offsetMs);
+    const to = new Date(localTomorrow.getTime() - offsetMs);
+
+    const staffClause = staffId
+      ? Prisma.sql`AND r."staffId" = ${staffId}`
+      : Prisma.sql``;
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        revenue: Prisma.Decimal | number | null;
+        checks: bigint | number | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        COALESCE(SUM(r."total"), 0)::numeric AS revenue,
+        COUNT(*)::bigint AS checks
+      FROM "Receipt" r
+      JOIN "Customer" c ON c."id" = r."customerId" AND c."merchantId" = r."merchantId"
+      WHERE r."merchantId" = ${merchantId}
+        AND r."outletId" = ${outletId}
+        ${staffClause}
+        AND r."createdAt" >= ${from}
+        AND r."createdAt" < ${to}
+        AND ${VALID_ACTIVE_CUSTOMER_RECEIPT_SQL}
+    `);
+
+    const row = rows[0];
+    return {
+      revenue: Math.max(0, Number(row?.revenue ?? 0)),
+      checks: Math.max(0, Number(row?.checks ?? 0)),
+      scope: staffId ? ('staff' as const) : ('outlet' as const),
+      timezone: timezone.code,
+      from: from.toISOString(),
+      to: to.toISOString(),
+    };
   }
 
   async transactions(

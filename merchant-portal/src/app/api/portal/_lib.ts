@@ -90,10 +90,11 @@ export async function portalFetch(req: NextRequest, path: string, init?: Request
     const { text, outHeaders } = await buildResponse(res);
     return new Response(text, { status: res.status, headers: outHeaders });
   } catch (error) {
+    const requestId = req.headers.get('x-request-id') || '';
+    const headers = applyNoStoreHeaders({ 'Content-Type': 'application/json' });
+    if (requestId) headers.set('X-Request-Id', requestId);
+
     if (error instanceof UpstreamTimeoutError) {
-      const requestId = req.headers.get('x-request-id') || '';
-      const headers = applyNoStoreHeaders({ 'Content-Type': 'application/json' });
-      if (requestId) headers.set('X-Request-Id', requestId);
       return new Response(
         JSON.stringify({
           error: 'UpstreamTimeout',
@@ -102,6 +103,12 @@ export async function portalFetch(req: NextRequest, path: string, init?: Request
         { status: 504, headers },
       );
     }
-    throw error;
+    return new Response(
+      JSON.stringify({
+        error: 'UpstreamUnavailable',
+        message: 'Сервис временно недоступен. Повторите попытку.',
+      }),
+      { status: 502, headers },
+    );
   }
 }

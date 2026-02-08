@@ -24,6 +24,7 @@ type RequestLike = {
     merchantId: string;
     staffId: string;
     outletId: string | null;
+    deviceSessionId: string | null;
   } | null;
 };
 
@@ -156,6 +157,7 @@ export class CashierGuard implements CanActivate {
     merchantId: string;
     staffId: string;
     outletId: string | null;
+    deviceSessionId: string | null;
   } | null> {
     const token = this.readCookie(req, 'cashier_session');
     if (!token) return null;
@@ -245,6 +247,7 @@ export class CashierGuard implements CanActivate {
       merchantId: session.merchantId,
       staffId: session.staffId,
       outletId: session.outletId ?? null,
+      deviceSessionId: session.deviceSessionId ?? null,
     };
   }
 
@@ -291,6 +294,7 @@ export class CashierGuard implements CanActivate {
       merchantId: string;
       staffId: string;
       outletId: string | null;
+      deviceSessionId: string | null;
     } | null = null;
     try {
       sessionContext = await this.resolveCashierSession(

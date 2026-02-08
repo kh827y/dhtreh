@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { VALID_ACTIVE_CUSTOMER_RECEIPT_SQL } from './valid-receipt-sql.util';
 
 export interface ReceiptAggregateRow {
   customerId: string;
@@ -67,20 +68,10 @@ export async function fetchReceiptAggregates(
     ${customerJoin}
     ${joinClause}
     WHERE r."merchantId" = ${params.merchantId}
-      AND c."erasedAt" IS NULL
-      AND r."total" > 0
-      AND r."canceledAt" IS NULL
+      AND ${VALID_ACTIVE_CUSTOMER_RECEIPT_SQL}
       ${periodClause}
       ${customerClause}
       ${importBoundaryClause}
-      AND NOT EXISTS (
-        SELECT 1
-        FROM "Transaction" refund
-        WHERE refund."merchantId" = r."merchantId"
-          AND refund."orderId" = r."orderId"
-          AND refund."type" = 'REFUND'
-          AND refund."canceledAt" IS NULL
-      )
     GROUP BY r."customerId"
   `);
 

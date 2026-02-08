@@ -18,6 +18,7 @@ import type {
   TimeHeatmapCell,
 } from '../analytics.service';
 import type { RussiaTimezone } from '../../../shared/timezone/russia-timezones';
+import { VALID_RECEIPT_NO_REFUND_SQL } from '../../../shared/common/valid-receipt-sql.util';
 
 @Injectable()
 export class AnalyticsCustomersService {
@@ -288,17 +289,8 @@ export class AnalyticsCustomersService {
       WHERE r."merchantId" = ${merchantId}
         AND r."createdAt" >= ${period.from}
         AND r."createdAt" <= ${period.to}
-        AND r."canceledAt" IS NULL
-        AND r."total" > 0
+        AND ${VALID_RECEIPT_NO_REFUND_SQL}
         ${outletFilter ? Prisma.sql`AND r."outletId" = ${outletFilter}` : Prisma.sql``}
-        AND NOT EXISTS (
-          SELECT 1
-          FROM "Transaction" refund
-          WHERE refund."merchantId" = r."merchantId"
-            AND refund."orderId" = r."orderId"
-            AND refund."type" = 'REFUND'
-            AND refund."canceledAt" IS NULL
-        )
       GROUP BY r."customerId"
     `);
     const buyers = purchases
@@ -332,18 +324,9 @@ export class AnalyticsCustomersService {
           MIN(r."createdAt") AS first_purchase
         FROM "Receipt" r
         WHERE r."merchantId" = ${merchantId}
-          AND r."total" > 0
-          AND r."canceledAt" IS NULL
+          AND ${VALID_RECEIPT_NO_REFUND_SQL}
           AND r."customerId" IS NOT NULL
           ${outletFilter ? Prisma.sql`AND r."outletId" = ${outletFilter}` : Prisma.sql``}
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "Transaction" refund
-            WHERE refund."merchantId" = r."merchantId"
-              AND refund."orderId" = r."orderId"
-              AND refund."type" = 'REFUND'
-              AND refund."canceledAt" IS NULL
-          )
         GROUP BY r."customerId"
         HAVING MIN(r."createdAt") BETWEEN ${period.from} AND ${period.to}
       ) AS first_orders
@@ -451,16 +434,7 @@ export class AnalyticsCustomersService {
       WHERE r."merchantId" = ${merchantId}
         AND r."createdAt" >= ${period.from}
         AND r."createdAt" <= ${period.to}
-        AND r."canceledAt" IS NULL
-        AND r."total" > 0
-        AND NOT EXISTS (
-          SELECT 1
-          FROM "Transaction" refund
-          WHERE refund."merchantId" = r."merchantId"
-            AND refund."orderId" = r."orderId"
-            AND refund."type" = 'REFUND'
-            AND refund."canceledAt" IS NULL
-        )
+        AND ${VALID_RECEIPT_NO_REFUND_SQL}
     `);
     const activeCustomers = Number(activeRow?.count || 0);
 
@@ -472,16 +446,7 @@ export class AnalyticsCustomersService {
       WHERE r."merchantId" = ${merchantId}
         AND r."createdAt" >= ${period.from}
         AND r."createdAt" <= ${period.to}
-        AND r."canceledAt" IS NULL
-        AND r."total" > 0
-        AND NOT EXISTS (
-          SELECT 1
-          FROM "Transaction" refund
-          WHERE refund."merchantId" = r."merchantId"
-            AND refund."orderId" = r."orderId"
-            AND refund."type" = 'REFUND'
-            AND refund."canceledAt" IS NULL
-        )
+        AND ${VALID_RECEIPT_NO_REFUND_SQL}
       GROUP BY r."customerId"
     `);
     const visitsTotal = visits.reduce(
@@ -646,16 +611,7 @@ export class AnalyticsCustomersService {
     const cached = this.cache.get<TimeActivityMetrics>(cacheKey);
     if (cached) return cached;
     const offsetInterval = Prisma.sql`${tz.utcOffsetMinutes} * interval '1 minute'`;
-    const refundExclusion = Prisma.sql`
-      AND NOT EXISTS (
-        SELECT 1
-        FROM "Transaction" refund
-        WHERE refund."merchantId" = r."merchantId"
-          AND refund."orderId" = r."orderId"
-          AND refund."type" = 'REFUND'
-          AND refund."canceledAt" IS NULL
-      )
-    `;
+    const validReceiptExclusion = Prisma.sql`AND ${VALID_RECEIPT_NO_REFUND_SQL}`;
     const [dayRows, hourRows, cellRows] = await Promise.all([
       this.prisma.$queryRaw<
         Array<{
@@ -673,9 +629,7 @@ export class AnalyticsCustomersService {
         FROM "Receipt" r
         WHERE r."merchantId" = ${merchantId}
           AND r."createdAt" BETWEEN ${period.from} AND ${period.to}
-          AND r."canceledAt" IS NULL
-          AND r."total" >= 0
-          ${refundExclusion}
+          ${validReceiptExclusion}
         GROUP BY 1
       `),
       this.prisma.$queryRaw<
@@ -694,9 +648,7 @@ export class AnalyticsCustomersService {
         FROM "Receipt" r
         WHERE r."merchantId" = ${merchantId}
           AND r."createdAt" BETWEEN ${period.from} AND ${period.to}
-          AND r."canceledAt" IS NULL
-          AND r."total" >= 0
-          ${refundExclusion}
+          ${validReceiptExclusion}
         GROUP BY 1
       `),
       this.prisma.$queryRaw<
@@ -717,9 +669,7 @@ export class AnalyticsCustomersService {
         FROM "Receipt" r
         WHERE r."merchantId" = ${merchantId}
           AND r."createdAt" BETWEEN ${period.from} AND ${period.to}
-          AND r."canceledAt" IS NULL
-          AND r."total" >= 0
-          ${refundExclusion}
+          ${validReceiptExclusion}
         GROUP BY 1, 2
       `),
     ]);
@@ -784,14 +734,27 @@ export class AnalyticsCustomersService {
   }
 
   private async calculateCustomerLTV(merchantId: string): Promise<number> {
-    const result = await this.prisma.transaction.aggregate({
-      where: { merchantId, type: 'EARN', customer: { erasedAt: null } },
-      _sum: { amount: true },
-      _count: { customerId: true },
-    });
+    const [row] = await this.prisma.$queryRaw<
+      Array<{
+        totalSpent: Prisma.Decimal | number | null;
+        customers: bigint | number | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        COALESCE(SUM(r."total"), 0)::numeric AS "totalSpent",
+        COUNT(DISTINCT r."customerId")::bigint AS customers
+      FROM "Receipt" r
+      JOIN "Customer" c
+        ON c."id" = r."customerId"
+       AND c."merchantId" = r."merchantId"
+      WHERE r."merchantId" = ${merchantId}
+        AND ${VALID_RECEIPT_NO_REFUND_SQL}
+        AND c."erasedAt" IS NULL
+    `);
 
-    if (!result._count.customerId) return 0;
-    return Math.abs(result._sum.amount || 0) / result._count.customerId;
+    const customers = Number(row?.customers ?? 0);
+    if (customers <= 0) return 0;
+    return Number(row?.totalSpent ?? 0) / customers;
   }
 
   private async getTopCustomers(
@@ -808,49 +771,58 @@ export class AnalyticsCustomersService {
       loyaltyPoints: number;
     }>
   > {
-    const grouped = await this.prisma.transaction.groupBy({
-      by: ['customerId'],
-      where: { merchantId, type: 'EARN', customer: { erasedAt: null } },
-      _sum: { amount: true },
-      _count: { _all: true },
-      _max: { createdAt: true },
-      orderBy: { _sum: { amount: 'desc' } },
-      take: limit,
-    });
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        customerId: string;
+        name: string | null;
+        phone: string | null;
+        totalSpent: Prisma.Decimal | number | null;
+        visits: bigint | number | null;
+        lastVisit: Date | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        r."customerId" AS "customerId",
+        c."name" AS "name",
+        c."phone" AS "phone",
+        COALESCE(SUM(r."total"), 0)::numeric AS "totalSpent",
+        COUNT(*)::bigint AS visits,
+        MAX(r."createdAt") AS "lastVisit"
+      FROM "Receipt" r
+      JOIN "Customer" c
+        ON c."id" = r."customerId"
+       AND c."merchantId" = r."merchantId"
+      WHERE r."merchantId" = ${merchantId}
+        AND ${VALID_RECEIPT_NO_REFUND_SQL}
+        AND c."erasedAt" IS NULL
+      GROUP BY r."customerId", c."name", c."phone"
+      ORDER BY "totalSpent" DESC, "lastVisit" DESC
+      LIMIT ${Math.max(1, limit)}
+    `);
 
-    const ids = grouped
-      .map((g) => g.customerId)
-      .filter((v): v is string => !!v);
+    const ids = rows.map((row) => row.customerId).filter(Boolean);
     if (ids.length === 0) return [];
 
-    const [customers, wallets] = await Promise.all([
-      this.prisma.customer.findMany({
-        where: { id: { in: ids }, erasedAt: null },
-        select: { id: true, name: true, phone: true },
-      }),
-      this.prisma.wallet.findMany({
-        where: {
-          merchantId,
-          customerId: { in: ids },
-          type: WalletType.POINTS,
-          customer: { erasedAt: null },
-        },
-        select: { customerId: true, balance: true },
-      }),
-    ]);
-    const cMap = new Map(customers.map((c) => [c.id, c]));
+    const wallets = await this.prisma.wallet.findMany({
+      where: {
+        merchantId,
+        customerId: { in: ids },
+        type: WalletType.POINTS,
+        customer: { erasedAt: null },
+      },
+      select: { customerId: true, balance: true },
+    });
     const wMap = new Map(wallets.map((w) => [w.customerId, w.balance || 0]));
 
-    return grouped.map((g) => {
-      const c = cMap.get(g.customerId);
-      const total = Math.abs(g._sum.amount || 0);
-      const visits = g._count._all || 0;
-      const lastVisit = g._max.createdAt as Date;
-      const loyaltyPoints = wMap.get(g.customerId) || 0;
+    return rows.map((row) => {
+      const total = Math.max(0, Number(row.totalSpent ?? 0));
+      const visits = Number(row.visits ?? 0);
+      const lastVisit = row.lastVisit ?? new Date(0);
+      const loyaltyPoints = wMap.get(row.customerId) || 0;
       return {
-        id: g.customerId,
-        name: c?.name || undefined,
-        phone: c?.phone || undefined,
+        id: row.customerId,
+        name: row.name || undefined,
+        phone: row.phone || undefined,
         totalSpent: total,
         visits,
         lastVisit,

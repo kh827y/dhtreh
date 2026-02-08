@@ -267,7 +267,7 @@ export function normalizeCustomer(input: any): CustomerRecord {
 
   let visitFrequencyDays =
     visitFrequencyDaysRaw != null ? Math.max(0, Math.round(visitFrequencyDaysRaw)) : null;
-  if (purchaseStats.frequencyDays != null) {
+  if (visitFrequencyDays == null && purchaseStats.frequencyDays != null) {
     visitFrequencyDays = purchaseStats.frequencyDays;
   }
 
@@ -279,7 +279,7 @@ export function normalizeCustomer(input: any): CustomerRecord {
   );
   let daysSinceLastVisit =
     daysSinceLastPurchaseRaw != null ? Math.max(0, Math.round(daysSinceLastPurchaseRaw)) : null;
-  if (purchaseStats.lastPurchaseDays != null) {
+  if (daysSinceLastVisit == null && purchaseStats.lastPurchaseDays != null) {
     daysSinceLastVisit = purchaseStats.lastPurchaseDays;
   }
 

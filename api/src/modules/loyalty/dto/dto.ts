@@ -700,11 +700,28 @@ export class CashierOutletTransactionDto {
   @ApiPropertyOptional({ nullable: true }) customerName?: string | null;
 }
 
+export class CashierShiftStatsDto {
+  @ApiProperty()
+  revenue!: number;
+  @ApiProperty()
+  checks!: number;
+  @ApiProperty({ enum: ['staff', 'outlet'] })
+  scope!: 'staff' | 'outlet';
+  @ApiProperty()
+  timezone!: string;
+  @ApiProperty({ type: String, format: 'date-time' })
+  from!: string;
+  @ApiProperty({ type: String, format: 'date-time' })
+  to!: string;
+}
+
 export class CashierOutletTransactionsRespDto {
   @ApiProperty({ type: [CashierOutletTransactionDto] })
   items!: CashierOutletTransactionDto[];
   @ApiPropertyOptional({ nullable: true }) nextBefore?: string | null;
   @ApiProperty() allowSameReceipt!: boolean;
+  @ApiPropertyOptional({ type: CashierShiftStatsDto, nullable: true })
+  shiftStats?: CashierShiftStatsDto | null;
 }
 
 export class PublicOutletDto {

@@ -13,7 +13,7 @@ import { ReviewService } from '../../reviews/review.service';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { LookupCacheService } from '../../../core/cache/lookup-cache.service';
 import { AppConfigService } from '../../../core/config/app-config.service';
-import { getRulesRoot, getRulesSection } from '../../../shared/rules-json.util';
+import { readReviewsEnabledFromRules } from '../../../shared/miniapp-settings.util';
 import {
   ALL_CUSTOMERS_SEGMENT_KEY,
   asRecord,
@@ -314,12 +314,7 @@ export class LoyaltyPromotionsUseCase {
 
     const customer = await this.support.ensureCustomer(merchantId, customerId);
     const settings = await this.cache.getMerchantSettings(merchantId);
-    const rules = getRulesRoot(settings?.rulesJson) ?? {};
-    const reviewsConfig = getRulesSection(rules, 'reviews');
-    const reviewsEnabled =
-      reviewsConfig && reviewsConfig.enabled !== undefined
-        ? Boolean(reviewsConfig.enabled)
-        : true;
+    const reviewsEnabled = readReviewsEnabledFromRules(settings?.rulesJson, true);
     if (!reviewsEnabled) {
       throw new BadRequestException('Сбор отзывов отключен');
     }

@@ -16,6 +16,7 @@ import {
   getPreviousPeriod,
   resolveGrouping,
 } from '../analytics-time.util';
+import { VALID_RECEIPT_NO_REFUND_SQL } from '../../../shared/common/valid-receipt-sql.util';
 
 type DashboardAggregates = {
   revenue: number;
@@ -268,16 +269,7 @@ export class AnalyticsDashboardService {
               AND r."customerId" IN (${Prisma.join(ids)})
               AND r."createdAt" >= ${periodStart}
               AND r."createdAt" < ${periodEnd}
-              AND r."canceledAt" IS NULL
-              AND r."total" > 0
-              AND NOT EXISTS (
-                SELECT 1
-                FROM "Transaction" refund
-                WHERE refund."merchantId" = r."merchantId"
-                  AND refund."orderId" = r."orderId"
-                  AND refund."type" = 'REFUND'
-                  AND refund."canceledAt" IS NULL
-              )
+              AND ${VALID_RECEIPT_NO_REFUND_SQL}
           `);
           returned = Number(row?.count || 0);
         }
@@ -345,15 +337,7 @@ export class AnalyticsDashboardService {
         WHERE r."merchantId" = ${merchantId}
           AND r."createdAt" >= ${period.from}
           AND r."createdAt" <= ${period.to}
-          AND r."canceledAt" IS NULL
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "Transaction" refund
-            WHERE refund."merchantId" = r."merchantId"
-              AND refund."orderId" = r."orderId"
-              AND refund."type" = 'REFUND'
-              AND refund."canceledAt" IS NULL
-          )
+          AND ${VALID_RECEIPT_NO_REFUND_SQL}
       ),
       ordered AS (
         SELECT
@@ -444,16 +428,7 @@ export class AnalyticsDashboardService {
       WHERE r."merchantId" = ${merchantId}
         AND r."createdAt" >= ${period.from}
         AND r."createdAt" <= ${period.to}
-        AND r."canceledAt" IS NULL
-        AND r."total" > 0
-        AND NOT EXISTS (
-          SELECT 1
-          FROM "Transaction" refund
-          WHERE refund."merchantId" = r."merchantId"
-            AND refund."orderId" = r."orderId"
-            AND refund."type" = 'REFUND'
-            AND refund."canceledAt" IS NULL
-        )
+        AND ${VALID_RECEIPT_NO_REFUND_SQL}
     `);
 
     return {
@@ -476,17 +451,8 @@ export class AnalyticsDashboardService {
         WHERE r."merchantId" = ${merchantId}
           AND r."createdAt" >= ${current.from}
           AND r."createdAt" <= ${current.to}
-          AND r."canceledAt" IS NULL
-          AND r."total" > 0
           AND r."customerId" IS NOT NULL
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "Transaction" refund
-            WHERE refund."merchantId" = r."merchantId"
-              AND refund."orderId" = r."orderId"
-              AND refund."type" = 'REFUND'
-              AND refund."canceledAt" IS NULL
-          )
+          AND ${VALID_RECEIPT_NO_REFUND_SQL}
       `),
       this.prisma.$queryRaw<Array<{ customerId: string | null }>>(Prisma.sql`
         SELECT DISTINCT r."customerId" AS "customerId"
@@ -494,17 +460,8 @@ export class AnalyticsDashboardService {
         WHERE r."merchantId" = ${merchantId}
           AND r."createdAt" >= ${previous.from}
           AND r."createdAt" <= ${previous.to}
-          AND r."canceledAt" IS NULL
-          AND r."total" > 0
           AND r."customerId" IS NOT NULL
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "Transaction" refund
-            WHERE refund."merchantId" = r."merchantId"
-              AND refund."orderId" = r."orderId"
-              AND refund."type" = 'REFUND'
-              AND refund."canceledAt" IS NULL
-          )
+          AND ${VALID_RECEIPT_NO_REFUND_SQL}
       `),
     ]);
 
@@ -565,17 +522,8 @@ export class AnalyticsDashboardService {
         WHERE r."merchantId" = ${merchantId}
           AND r."createdAt" >= ${period.from}
           AND r."createdAt" <= ${period.to}
-          AND r."canceledAt" IS NULL
-          AND r."total" > 0
           AND r."customerId" IS NOT NULL
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "Transaction" refund
-            WHERE refund."merchantId" = r."merchantId"
-              AND refund."orderId" = r."orderId"
-              AND refund."type" = 'REFUND'
-              AND refund."canceledAt" IS NULL
-          )
+          AND ${VALID_RECEIPT_NO_REFUND_SQL}
       ),
       first_purchases AS (
         SELECT
@@ -583,17 +531,8 @@ export class AnalyticsDashboardService {
           MIN(r."createdAt") AS first_at
         FROM "Receipt" r
         WHERE r."merchantId" = ${merchantId}
-          AND r."canceledAt" IS NULL
-          AND r."total" > 0
           AND r."customerId" IS NOT NULL
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "Transaction" refund
-            WHERE refund."merchantId" = r."merchantId"
-              AND refund."orderId" = r."orderId"
-              AND refund."type" = 'REFUND'
-              AND refund."canceledAt" IS NULL
-          )
+          AND ${VALID_RECEIPT_NO_REFUND_SQL}
         GROUP BY r."customerId"
       )
       SELECT

@@ -108,4 +108,78 @@ describe("system settings page (new design)", () => {
     await screen.findByText("Готово");
     await screen.findByText("Системные настройки сохранены!");
   });
+
+  it("сохраняет telegram поддержки и режим QR", async () => {
+    const timezone = {
+      code: "MSK+0",
+      label: "Москва (Центр России, МСК±0, UTC+3)",
+      city: "Москва",
+      description: "Центр России",
+      mskOffset: 0,
+      utcOffsetMinutes: 180,
+      iana: "Europe/Moscow",
+    };
+
+    const namePayload = { name: "Моя Компания", initialName: "Моя Компания" };
+    const supportPayload = { supportTelegram: "" };
+    const qrPayload = { requireJwtForQuote: false };
+    const logoPayload = { miniappLogoUrl: null };
+    const calls: Array<{ url: string; method: string; body: any }> = [];
+
+    fetchMock = mock.method(global, "fetch", async (input: any, init?: any) => {
+      const url = typeof input === "string" ? input : input.url;
+      const method = init?.method || "GET";
+      const body = init?.body ? JSON.parse(String(init.body)) : null;
+
+      if (url.endsWith("/api/portal/settings/name") && method === "GET") {
+        return new Response(JSON.stringify(namePayload), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.endsWith("/api/portal/settings/support") && method === "GET") {
+        return new Response(JSON.stringify(supportPayload), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.endsWith("/api/portal/settings/qr") && method === "GET") {
+        return new Response(JSON.stringify(qrPayload), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.endsWith("/api/portal/settings/logo") && method === "GET") {
+        return new Response(JSON.stringify(logoPayload), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.endsWith("/api/portal/settings/support") && method === "PUT") {
+        calls.push({ url, method, body });
+        return new Response(JSON.stringify({ supportTelegram: body?.supportTelegram ?? null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/portal/settings/qr") && method === "PUT") {
+        calls.push({ url, method, body });
+        return new Response(JSON.stringify({ requireJwtForQuote: Boolean(body?.requireJwtForQuote) }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch ${url} ${method}`);
+    });
+
+    const { default: SettingsSystemPage } = await import("../src/app/settings/system/page");
+    render(
+      React.createElement(
+        TimezoneProvider,
+        { timezone, options: [timezone] },
+        React.createElement(SettingsSystemPage),
+      ),
+    );
+
+    await screen.findByText("Системные настройки");
+    const supportInput = screen.getByPlaceholderText("@support");
+    fireEvent.change(supportInput, { target: { value: "@helpdesk_bot" } });
+    fireEvent.click(screen.getByRole("radio", { name: /Защищённый токен/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await screen.findByText("Готово");
+    assert.equal(calls.length, 2);
+    const byUrl = new Map(calls.map((call) => [call.url, call]));
+    assert.deepEqual(byUrl.get("/api/portal/settings/support")?.body, { supportTelegram: "@helpdesk_bot" });
+    assert.deepEqual(byUrl.get("/api/portal/settings/qr")?.body, { requireJwtForQuote: true });
+  });
 });

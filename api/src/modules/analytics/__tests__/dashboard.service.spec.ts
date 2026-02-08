@@ -9,6 +9,7 @@ type MockFn<Return = unknown, Args extends unknown[] = unknown[]> = jest.Mock<
   Return,
   Args
 >;
+type SqlTag = { strings: string[] };
 type PrismaStub = {
   $queryRaw: MockFn<Promise<unknown>, [unknown]>;
   merchantSettings: { findUnique: MockFn<Promise<unknown>, [unknown]> };
@@ -37,6 +38,17 @@ const mockFn = <Return = unknown, Args extends unknown[] = unknown[]>() =>
 const asPrismaService = (stub: PrismaStub) => stub as unknown as PrismaService;
 const asPrivateService = (service: AnalyticsDashboardService) =>
   service as unknown as AnalyticsServicePrivate;
+const isSqlTag = (value: unknown): value is SqlTag =>
+  typeof value === 'object' &&
+  value !== null &&
+  'strings' in value &&
+  Array.isArray((value as SqlTag).strings);
+const joinSql = (query: unknown) => {
+  if (isSqlTag(query)) return query.strings.join(' ');
+  if (typeof query === 'string') return query;
+  if (query == null) return '';
+  return JSON.stringify(query);
+};
 
 describe('AnalyticsService — dashboard summary', () => {
   it('собирает метрики текущего и прошлого периода и считает удержание', async () => {
@@ -155,5 +167,54 @@ describe('AnalyticsService — dashboard summary', () => {
     expect(result.retention.retentionRate).toBe(50);
     expect(result.composition.newChecks).toBe(3);
     expect(result.composition.repeatChecks).toBe(7);
+  });
+
+  it('расчёт частоты визитов учитывает только валидные чеки с total > 0', async () => {
+    const sqlCalls: unknown[] = [];
+    const prisma: PrismaStub = {
+      $queryRaw: mockFn<Promise<unknown>, [unknown]>().mockImplementation(
+        (sql) => {
+          sqlCalls.push(sql);
+          return Promise.resolve([{ avgDays: 3.2 }]);
+        },
+      ),
+      merchantSettings: { findUnique: mockFn() },
+    };
+    const cache = new AnalyticsCacheService(new AppConfigService());
+    const timezone = new AnalyticsTimezoneService(asPrismaService(prisma));
+    const revenue = new AnalyticsRevenueService(
+      asPrismaService(prisma),
+      cache,
+      timezone,
+    );
+    const service = new AnalyticsDashboardService(
+      asPrismaService(prisma),
+      cache,
+      revenue,
+      timezone,
+    );
+
+    const period = {
+      from: new Date('2024-01-01T00:00:00Z'),
+      to: new Date('2024-01-31T23:59:59Z'),
+      type: 'month' as const,
+    };
+
+    const value = await (
+      service as unknown as {
+        calculateVisitFrequencyDays: (
+          merchantId: string,
+          periodArg: typeof period,
+          timezoneArg: { iana: string },
+        ) => Promise<number | null>;
+      }
+    ).calculateVisitFrequencyDays('m-1', period, { iana: 'UTC' });
+
+    expect(value).toBe(3.2);
+    expect(sqlCalls).toHaveLength(1);
+    const sqlText = joinSql(sqlCalls[0]);
+    expect(sqlText).toContain('"canceledAt" IS NULL');
+    expect(sqlText).toContain('"total" > 0');
+    expect(sqlText).toContain('refund."type" = \'REFUND\'');
   });
 });

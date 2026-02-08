@@ -11,6 +11,7 @@ import { STAFF_DIGEST_LOCAL_HOUR } from './staff-digest.constants';
 import { pgAdvisoryUnlock, pgTryAdvisoryLock } from '../../shared/pg-lock.util';
 import { ensureRulesRoot, getRulesSection } from '../../shared/rules-json.util';
 import { AppConfigService } from '../../core/config/app-config.service';
+import { updateMerchantSettingsRulesWithRetry } from '../../shared/merchant-settings-rules-update.util';
 
 const toDateString = (value: Date) => {
   const y = value.getUTCFullYear();
@@ -127,15 +128,20 @@ export class TelegramStaffDigestWorker implements OnModuleInit {
             date: isoDate,
           });
           this.lastProgressAt = new Date();
-          digestMeta.lastSentLocalDate = localDate;
-          digestMeta.lastSentAt = new Date().toISOString();
-          rules.staffNotifyDigest = digestMeta;
-          const rulesJson = rules as Prisma.InputJsonValue;
-          await this.prisma.merchantSettings.upsert({
-            where: { merchantId },
-            create: { merchantId, rulesJson },
-            update: { rulesJson },
-          });
+          await updateMerchantSettingsRulesWithRetry(
+            this.prisma,
+            merchantId,
+            (currentRules) => {
+              const nextRules = ensureRulesRoot(currentRules);
+              const nextMeta = {
+                ...(getRulesSection(nextRules, 'staffNotifyDigest') ?? {}),
+                lastSentLocalDate: localDate,
+                lastSentAt: new Date().toISOString(),
+              };
+              nextRules.staffNotifyDigest = nextMeta;
+              return nextRules as Prisma.InputJsonValue;
+            },
+          );
         } catch (error) {
           this.logger.debug(
             `Failed to enqueue daily digest for merchant=${merchantId}: ${error}`,

@@ -17,6 +17,7 @@ import {
   resolveGrouping,
   truncateForTimezone,
 } from '../analytics-time.util';
+import { VALID_RECEIPT_NO_REFUND_SQL } from '../../../shared/common/valid-receipt-sql.util';
 
 @Injectable()
 export class AnalyticsRevenueService {
@@ -66,16 +67,7 @@ export class AnalyticsRevenueService {
       WHERE r."merchantId" = ${merchantId}
         AND r."createdAt" >= ${period.from}
         AND r."createdAt" <= ${period.to}
-        AND r."canceledAt" IS NULL
-        AND r."total" > 0
-        AND NOT EXISTS (
-          SELECT 1
-          FROM "Transaction" refund
-          WHERE refund."merchantId" = r."merchantId"
-            AND refund."orderId" = r."orderId"
-            AND refund."type" = 'REFUND'
-            AND refund."canceledAt" IS NULL
-        )
+        AND ${VALID_RECEIPT_NO_REFUND_SQL}
     `);
 
     const totalRevenue = Number(currentTotals?.revenue || 0);
@@ -93,16 +85,7 @@ export class AnalyticsRevenueService {
       WHERE r."merchantId" = ${merchantId}
         AND r."createdAt" >= ${previousPeriod.from}
         AND r."createdAt" <= ${previousPeriod.to}
-        AND r."canceledAt" IS NULL
-        AND r."total" > 0
-        AND NOT EXISTS (
-          SELECT 1
-          FROM "Transaction" refund
-          WHERE refund."merchantId" = r."merchantId"
-            AND refund."orderId" = r."orderId"
-            AND refund."type" = 'REFUND'
-            AND refund."canceledAt" IS NULL
-        )
+        AND ${VALID_RECEIPT_NO_REFUND_SQL}
     `);
 
     const previousRevenueTotal = Number(previousTotals?.revenue || 0);
@@ -158,16 +141,7 @@ export class AnalyticsRevenueService {
       WHERE r."merchantId" = ${merchantId}
         AND r."createdAt" >= ${period.from}
         AND r."createdAt" <= ${period.to}
-        AND r."canceledAt" IS NULL
-        AND r."total" > 0
-        AND NOT EXISTS (
-          SELECT 1
-          FROM "Transaction" refund
-          WHERE refund."merchantId" = r."merchantId"
-            AND refund."orderId" = r."orderId"
-            AND refund."type" = 'REFUND'
-            AND refund."canceledAt" IS NULL
-        )
+        AND ${VALID_RECEIPT_NO_REFUND_SQL}
       GROUP BY 1
     `);
 
@@ -222,16 +196,7 @@ export class AnalyticsRevenueService {
       WHERE r."merchantId" = ${merchantId}
         AND r."createdAt" >= ${period.from}
         AND r."createdAt" <= ${period.to}
-        AND r."canceledAt" IS NULL
-        AND r."total" > 0
-        AND NOT EXISTS (
-          SELECT 1
-          FROM "Transaction" refund
-            WHERE refund."merchantId" = r."merchantId"
-              AND refund."orderId" = r."orderId"
-              AND refund."type" = 'REFUND'
-              AND refund."canceledAt" IS NULL
-          )
+        AND ${VALID_RECEIPT_NO_REFUND_SQL}
         GROUP BY 1
         ORDER BY 1
       `);

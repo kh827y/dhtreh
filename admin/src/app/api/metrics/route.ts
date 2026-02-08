@@ -4,6 +4,11 @@ export const runtime = 'nodejs';
 
 const API_BASE = (process.env.API_BASE || '').replace(/\/$/, '');
 const METRICS_TOKEN = process.env.METRICS_TOKEN || '';
+const METRICS_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.ADMIN_METRICS_TIMEOUT_MS || '');
+  if (!Number.isFinite(raw)) return 15_000;
+  return Math.min(Math.max(Math.trunc(raw), 1_000), 120_000);
+})();
 
 export async function GET(req: NextRequest) {
   if (!API_BASE) return new Response('API_BASE not configured', { status: 500 });
@@ -11,15 +16,41 @@ export async function GET(req: NextRequest) {
     const auth = requireSession(req);
     if (auth) return auth;
   }
+  let timedOut = false;
   try {
     const headers: Record<string, string> = {};
     if (METRICS_TOKEN) headers['X-Metrics-Token'] = METRICS_TOKEN;
-    const res = await fetch(API_BASE + '/metrics', { headers });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, METRICS_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(API_BASE + '/metrics', {
+        headers,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (timedOut) {
+      return new Response(
+        `Metrics upstream timeout after ${METRICS_TIMEOUT_MS}ms`,
+        { status: 504 },
+      );
+    }
     const text = await res.text();
     if (!res.ok) return new Response(text || 'metrics error', { status: 502 });
     const summary = parseMetrics(text);
     return NextResponse.json(summary);
   } catch (e: unknown) {
+    if (timedOut) {
+      return new Response(
+        `Metrics upstream timeout after ${METRICS_TIMEOUT_MS}ms`,
+        { status: 504 },
+      );
+    }
     return new Response(String(e instanceof Error ? e.message : e), { status: 500 });
   }
 }

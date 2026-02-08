@@ -43,6 +43,7 @@ import {
   type LevelRank,
 } from "./level-utils";
 import { readApiError } from "lib/portal-errors";
+import { fetchJson } from "lib/http-client";
 
 type OutletOption = {
   id: string;
@@ -168,6 +169,8 @@ type CustomerCardProps = {
   customerId: string;
   initialCustomer?: CustomerRecord | null;
   initialLevelRank?: LevelRank | null;
+  levelsCatalog?: LevelOption[];
+  existingLoginsCatalog?: string[];
   onBack: () => void;
   onNavigateToCustomer: (id: string) => void;
   onCustomerUpdated?: (customer: CustomerRecord) => void;
@@ -177,18 +180,25 @@ export default function CustomerCard({
   customerId,
   initialCustomer = null,
   initialLevelRank = null,
+  levelsCatalog,
+  existingLoginsCatalog,
   onBack,
   onNavigateToCustomer,
   onCustomerUpdated,
 }: CustomerCardProps) {
+  const initialCustomerPresentRef = React.useRef(Boolean(initialCustomer));
+  const customerLoadPromiseRef = React.useRef<Promise<void> | null>(null);
+  const customerLoadTargetRef = React.useRef<string | null>(null);
+  const outletsLoadPromiseRef = React.useRef<Promise<void> | null>(null);
   const [customer, setCustomer] = React.useState<CustomerRecord | null>(initialCustomer);
   const [customerLoading, setCustomerLoading] = React.useState(!initialCustomer);
   const [toast, setToast] = React.useState<string | null>(null);
   const [editOpen, setEditOpen] = React.useState(false);
-  const [existingLogins, setExistingLogins] = React.useState<string[]>([]);
+  const [existingLogins, setExistingLogins] = React.useState<string[]>(existingLoginsCatalog ?? []);
   const [outlets, setOutlets] = React.useState<OutletOption[]>([]);
-  const [outletsLoading, setOutletsLoading] = React.useState(true);
-  const [levels, setLevels] = React.useState<LevelOption[]>([]);
+  const [outletsLoading, setOutletsLoading] = React.useState(false);
+  const [outletsLoaded, setOutletsLoaded] = React.useState(false);
+  const [levels, setLevels] = React.useState<LevelOption[]>(levelsCatalog ?? []);
   const [activeTab, setActiveTab] = React.useState<TabKey>("expiration");
   const [pages, setPages] = React.useState({ expiration: 1, history: 1, reviews: 1, referrals: 1 });
   const [modalType, setModalType] = React.useState<"block" | "accrue" | "redeem" | "gift" | null>(null);
@@ -203,44 +213,39 @@ export default function CustomerCard({
     [customer?.transactions],
   );
 
-  async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(url, {
-      ...init,
-      headers: { "content-type": "application/json", ...(init?.headers || {}) },
-      cache: "no-store",
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      throw new Error(readApiError(text) || text || res.statusText);
-    }
-    const ct = res.headers.get("content-type") || "";
-    if (ct.includes("application/json") || ct.includes("+json")) {
-      return text ? ((JSON.parse(text) as unknown) as T) : ((undefined as unknown) as T);
-    }
-    const trimmed = text.trim();
-    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      return (JSON.parse(trimmed) as unknown) as T;
-    }
-    return ((undefined as unknown) as T);
-  }
-
   const loadCustomer = React.useCallback(
     async (showLoading = true) => {
       if (!customerId) return;
-      if (showLoading) {
-        setCustomerLoading(true);
+      if (customerLoadPromiseRef.current && customerLoadTargetRef.current === customerId) {
+        await customerLoadPromiseRef.current;
+        return;
       }
-      try {
-        const data = await api<CustomerRecord>(`/api/customers/${encodeURIComponent(customerId)}`);
-        setCustomer(data ? normalizeCustomer(data) : null);
-      } catch (e) {
-        console.error(e);
-        setCustomer(null);
-      } finally {
+
+      const loadPromise = (async () => {
         if (showLoading) {
-          setCustomerLoading(false);
+          setCustomerLoading(true);
         }
-      }
+        try {
+          const data = await fetchJson<CustomerRecord>(`/api/customers/${encodeURIComponent(customerId)}`);
+          setCustomer(data ? normalizeCustomer(data) : null);
+        } catch (e) {
+          console.error(e);
+          setCustomer(null);
+        } finally {
+          if (showLoading) {
+            setCustomerLoading(false);
+          }
+        }
+      })();
+
+      customerLoadTargetRef.current = customerId;
+      customerLoadPromiseRef.current = loadPromise.finally(() => {
+        if (customerLoadTargetRef.current === customerId) {
+          customerLoadPromiseRef.current = null;
+          customerLoadTargetRef.current = null;
+        }
+      });
+      await customerLoadPromiseRef.current;
     },
     [customerId],
   );
@@ -248,7 +253,7 @@ export default function CustomerCard({
   const reloadCustomer = React.useCallback(async () => {
     if (!customerId) return;
     try {
-      const fresh = await api<CustomerRecord>(`/api/customers/${encodeURIComponent(customerId)}`);
+      const fresh = await fetchJson<CustomerRecord>(`/api/customers/${encodeURIComponent(customerId)}`);
       setCustomer(fresh ? normalizeCustomer(fresh) : null);
     } catch (error) {
       console.error(error);
@@ -256,15 +261,19 @@ export default function CustomerCard({
   }, [customerId]);
 
   React.useEffect(() => {
-    void loadCustomer(!initialCustomer);
-  }, [loadCustomer, initialCustomer]);
+    void loadCustomer(!initialCustomerPresentRef.current);
+  }, [loadCustomer]);
 
   React.useEffect(() => {
+    if (existingLoginsCatalog !== undefined) {
+      setExistingLogins(existingLoginsCatalog);
+      return;
+    }
     let aborted = false;
     (async () => {
       try {
         const qs = new URLSearchParams({ registeredOnly: "0", excludeMiniapp: "1" });
-        const list = await api<CustomerRecord[]>(`/api/customers?${qs.toString()}`);
+        const list = await fetchJson<CustomerRecord[]>(`/api/customers?${qs.toString()}`);
         if (!aborted) setExistingLogins(Array.isArray(list) ? list.map((c) => c.login) : []);
       } catch (e) {
         console.error(e);
@@ -273,13 +282,18 @@ export default function CustomerCard({
     return () => {
       aborted = true;
     };
-  }, []);
+  }, [existingLoginsCatalog]);
 
 
-  React.useEffect(() => {
-    let cancelled = false;
-    setOutletsLoading(true);
-    (async () => {
+  const ensureOutletsLoaded = React.useCallback(async () => {
+    if (outletsLoaded) return;
+    if (outletsLoadPromiseRef.current) {
+      await outletsLoadPromiseRef.current;
+      return;
+    }
+
+    const loadPromise = (async () => {
+      setOutletsLoading(true);
       try {
         const res = await fetch("/api/portal/outlets?status=active", { cache: "no-store" });
         if (!res.ok) {
@@ -310,30 +324,37 @@ export default function CustomerCard({
             return { id: rawId, name: label } as OutletOption;
           })
           .filter((item: OutletOption | undefined | null): item is OutletOption => Boolean(item));
-        if (!cancelled) {
-          setOutlets(normalized);
-        }
+        setOutlets(normalized);
+        setOutletsLoaded(true);
       } catch (error) {
         console.error(error);
-        if (!cancelled) {
-          setOutlets([]);
-        }
+        setOutlets([]);
+        setOutletsLoaded(false);
       } finally {
-        if (!cancelled) {
-          setOutletsLoading(false);
-        }
+        setOutletsLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+
+    outletsLoadPromiseRef.current = loadPromise.finally(() => {
+      outletsLoadPromiseRef.current = null;
+    });
+    await outletsLoadPromiseRef.current;
+  }, [outletsLoaded]);
 
   React.useEffect(() => {
+    if (!(editOpen || modalType === "accrue" || modalType === "redeem")) return;
+    void ensureOutletsLoaded();
+  }, [editOpen, modalType, ensureOutletsLoaded]);
+
+  React.useEffect(() => {
+    if (levelsCatalog !== undefined) {
+      setLevels(levelsCatalog);
+      return;
+    }
     let aborted = false;
     (async () => {
       try {
-        const payload = await api<any>("/api/portal/loyalty/tiers");
+        const payload = await fetchJson<any>("/api/portal/loyalty/tiers");
         const source: any[] = Array.isArray(payload?.items)
           ? payload.items
           : Array.isArray(payload)
@@ -370,7 +391,7 @@ export default function CustomerCard({
     return () => {
       aborted = true;
     };
-  }, []);
+  }, [levelsCatalog]);
 
   React.useEffect(() => {
     if (!toast) return;
@@ -435,7 +456,7 @@ export default function CustomerCard({
         accrualsBlocked: true,
         redemptionsBlocked: blockForm === "full",
       };
-      const saved = await api<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}`, {
+      const saved = await fetchJson<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}`, {
         method: "PUT",
         body: JSON.stringify(payload),
       });
@@ -453,7 +474,7 @@ export default function CustomerCard({
     try {
       setBlockSubmitting(true);
       const payload = { accrualsBlocked: false, redemptionsBlocked: false };
-      const saved = await api<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}`, {
+      const saved = await fetchJson<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}`, {
         method: "PUT",
         body: JSON.stringify(payload),
       });
@@ -509,7 +530,7 @@ export default function CustomerCard({
       levelExpireDays: payload.levelId && levelExpireDays !== undefined ? levelExpireDays : undefined,
     };
     try {
-      const saved = await api<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}`, {
+      const saved = await fetchJson<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}`, {
         method: "PUT",
         body: JSON.stringify(baseBody),
       });
@@ -531,7 +552,7 @@ export default function CustomerCard({
     if (!confirmMessage) return;
     try {
       setEraseSubmitting(true);
-      const saved = await api<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}/erase`, {
+      const saved = await fetchJson<any>(`/api/customers/${encodeURIComponent(customerSafe.id)}/erase`, {
         method: "POST",
       });
       const normalized = normalizeCustomer(saved ?? customerSafe);
@@ -582,7 +603,14 @@ export default function CustomerCard({
                 </div>
 
                 <div className="flex justify-end pt-3 mb-2">
-                  <button onClick={() => setEditOpen(true)} className="text-gray-400 hover:text-purple-600 transition-colors p-1" title="Редактировать">
+                  <button
+                    onClick={() => {
+                      void ensureOutletsLoaded();
+                      setEditOpen(true);
+                    }}
+                    className="text-gray-400 hover:text-purple-600 transition-colors p-1"
+                    title="Редактировать"
+                  >
                     <Edit size={18} />
                   </button>
                 </div>
@@ -630,14 +658,20 @@ export default function CustomerCard({
 
                 <div className="grid grid-cols-2 gap-3 mt-6">
                   <button
-                    onClick={() => setModalType("accrue")}
+                    onClick={() => {
+                      void ensureOutletsLoaded();
+                      setModalType("accrue");
+                    }}
                     disabled={customer.blocked}
                     className="flex items-center justify-center space-x-2 py-2.5 px-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <PlusCircle size={16} /> <span>Начислить</span>
                   </button>
                   <button
-                    onClick={() => setModalType("redeem")}
+                    onClick={() => {
+                      void ensureOutletsLoaded();
+                      setModalType("redeem");
+                    }}
                     disabled={customer.redeemBlocked}
                     className="flex items-center justify-center space-x-2 py-2.5 px-3 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >

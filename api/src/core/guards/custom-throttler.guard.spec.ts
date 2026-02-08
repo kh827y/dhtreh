@@ -20,6 +20,13 @@ type RequestLike = {
   originalUrl?: string;
   headers?: Record<string, string>;
   portalMerchantId?: string;
+  cashierSession?: {
+    id?: string;
+    deviceSessionId?: string;
+    merchantId?: string;
+    outletId?: string | null;
+    staffId?: string;
+  };
   route?: { path?: string };
   body?: Record<string, unknown>;
   query?: Record<string, unknown>;
@@ -81,6 +88,28 @@ describe('CustomThrottlerGuard.getTracker', () => {
     expect(parts).toContain('M-2');
     expect(parts).toContain('S-2');
     expect(parts).not.toContain('undefined');
+  });
+
+  it('для cashier маршрутов включает deviceSessionId в ключ', async () => {
+    const guard = buildGuard();
+    const req: RequestLike = {
+      ip: '10.10.10.10',
+      route: { path: '/loyalty/cashier/session' },
+      body: { merchantId: 'M-3', outletId: 'O-3', staffId: 'S-3' },
+      cashierSession: {
+        id: 'cashier-session-1',
+        deviceSessionId: 'device-session-1',
+        merchantId: 'M-3',
+        outletId: 'O-3',
+        staffId: 'S-3',
+      },
+      query: {},
+    };
+    const key = await asPrivateGuard(guard).getTracker(req);
+    const parts = key.split('|');
+    expect(parts).toContain('device-session-1');
+    expect(parts).toContain('M-3');
+    expect(parts).toContain('O-3');
   });
 });
 
@@ -174,5 +203,37 @@ describe('CustomThrottlerGuard.handleRequest (portal profile)', () => {
     expect(result).toBe(true);
     expect(forwarded.limit).toBe(600);
     expect(forwarded.ttl).toBe(60_000);
+  });
+
+  it('применяет cashier read профиль для GET', async () => {
+    const { result, forwarded } = await withGuardCall(
+      {
+        method: 'GET',
+        originalUrl: '/api/v1/loyalty/cashier/session',
+      },
+      {
+        RL_LIMIT_CASHIER_READ: '180',
+        RL_TTL_CASHIER_READ: '30000',
+      },
+    );
+    expect(result).toBe(true);
+    expect(forwarded.limit).toBe(180);
+    expect(forwarded.ttl).toBe(30_000);
+  });
+
+  it('применяет cashier write профиль для POST', async () => {
+    const { result, forwarded } = await withGuardCall(
+      {
+        method: 'POST',
+        originalUrl: '/api/v1/loyalty/cashier/session',
+      },
+      {
+        RL_LIMIT_CASHIER_WRITE: '120',
+        RL_TTL_CASHIER_WRITE: '45000',
+      },
+    );
+    expect(result).toBe(true);
+    expect(forwarded.limit).toBe(120);
+    expect(forwarded.ttl).toBe(45_000);
   });
 });

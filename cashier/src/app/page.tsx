@@ -82,6 +82,21 @@ type Txn = {
   customerName?: string | null;
 };
 
+type CashierShiftStats = {
+  revenue: number;
+  checks: number;
+  scope: 'staff' | 'outlet';
+  timezone?: string | null;
+  from?: string | null;
+  to?: string | null;
+};
+
+type OutletTransactionsResponse = {
+  items?: Txn[];
+  nextBefore?: string | null;
+  shiftStats?: CashierShiftStats | null;
+};
+
 const createIdempotencyKey = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -198,6 +213,23 @@ type UiTransaction = {
   orderId?: string | null;
   receiptNumber?: string | null;
 };
+
+function normalizeShiftStats(raw: unknown): CashierShiftStats | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Record<string, unknown>;
+  const revenue = Number(value.revenue ?? 0);
+  const checks = Number(value.checks ?? 0);
+  if (!Number.isFinite(revenue) || !Number.isFinite(checks)) return null;
+  const scope = value.scope === 'outlet' ? 'outlet' : 'staff';
+  return {
+    revenue: Math.max(0, revenue),
+    checks: Math.max(0, checks),
+    scope,
+    timezone: typeof value.timezone === 'string' ? value.timezone : null,
+    from: typeof value.from === 'string' ? value.from : null,
+    to: typeof value.to === 'string' ? value.to : null,
+  };
+}
 
 type Tab = 'checkout' | 'history' | 'rating' | 'returns';
 
@@ -632,6 +664,7 @@ export default function Page() {
   const [searchBusy, setSearchBusy] = useState(false);
 
   const [historyRaw, setHistoryRaw] = useState<Txn[]>([]);
+  const [shiftStatsServer, setShiftStatsServer] = useState<CashierShiftStats | null>(null);
   const histBusyRef = useRef(false);
   const histNextBeforeRef = useRef<string | null>(null);
   const { start: startHistoryLoad, isLatest: isLatestHistory } = useLatestRequest();
@@ -1417,10 +1450,16 @@ export default function Page() {
       }
       const r = await apiFetch(url.toString(), { credentials: 'include' });
       if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось загрузить историю'));
-      const data = await r.json();
+      const data = (await r.json()) as OutletTransactionsResponse;
       const items: Txn[] = Array.isArray(data.items) ? data.items : [];
+      const normalizedStats = normalizeShiftStats(data?.shiftStats);
       if (!isLatestHistory(requestId)) return;
       setHistoryRaw((old) => (reset ? items : [...old, ...items]));
+      if (reset) {
+        setShiftStatsServer(normalizedStats);
+      } else if (normalizedStats) {
+        setShiftStatsServer(normalizedStats);
+      }
       histNextBeforeRef.current =
         typeof data.nextBefore === 'string' ? data.nextBefore : null;
     } catch (e: unknown) {
@@ -1434,6 +1473,7 @@ export default function Page() {
 
   useEffect(() => {
     setHistoryRaw([]);
+    setShiftStatsServer(null);
     histNextBeforeRef.current = null;
     void loadHistory(true);
   }, [loadHistory]);
@@ -1647,6 +1687,12 @@ export default function Page() {
   const recentTx = useMemo(() => staffScopedHistory.slice(0, 5), [staffScopedHistory]);
 
   const shiftStats = useMemo(() => {
+    if (shiftStatsServer) {
+      return {
+        revenue: Math.max(0, Math.round(shiftStatsServer.revenue)),
+        checks: Math.max(0, Math.round(shiftStatsServer.checks)),
+      };
+    }
     const today = new Date();
     const isSameDay = (date: Date) =>
       date.getFullYear() === today.getFullYear() &&
@@ -1658,7 +1704,7 @@ export default function Page() {
       revenue: Math.max(0, Math.round(revenue)),
       checks: salesToday.length,
     };
-  }, [staffScopedHistory]);
+  }, [shiftStatsServer, staffScopedHistory]);
 
   const fmtMoney = (val: number) => val.toLocaleString('ru-RU');
 

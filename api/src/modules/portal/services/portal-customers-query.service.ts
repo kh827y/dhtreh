@@ -4,6 +4,7 @@ import { AppConfigService } from '../../../core/config/app-config.service';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 import { ensureBaseTier } from '../../loyalty/utils/tier-defaults.util';
 import { fetchReceiptAggregates } from '../../../shared/common/receipt-aggregates.util';
+import { buildCustomerKpiSnapshot } from '../../../shared/common/customer-kpi.util';
 import { asRecord as asRecordShared } from '../../../shared/common/input.util';
 import { normalizePhoneDigits } from '../../../shared/common/phone.util';
 import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
@@ -12,7 +13,6 @@ import {
   Aggregates,
   CustomerBase,
   ListCustomersQuery,
-  MS_PER_DAY,
   PortalCustomerDto,
   PortalCustomerExpiryDto,
   PortalCustomerReferrerDto,
@@ -52,34 +52,6 @@ export class PortalCustomersQueryService {
       age -= 1;
     }
     return age >= 0 ? age : null;
-  }
-
-  private differenceInDays(date: Date | null | undefined): number | null {
-    if (!date) return null;
-    const diff = Date.now() - date.getTime();
-    if (!Number.isFinite(diff) || diff < 0) return 0;
-    return Math.floor(diff / MS_PER_DAY);
-  }
-
-  private computeVisitFrequency(
-    stats: {
-      visits: number | null;
-      firstSeenAt: Date | null;
-      lastOrderAt: Date | null;
-    } | null,
-  ): number | null {
-    if (!stats) return null;
-    const visits = Number(stats.visits ?? 0);
-    if (visits <= 1) return null;
-    const from = stats.firstSeenAt ?? stats.lastOrderAt;
-    const to = stats.lastOrderAt ?? stats.firstSeenAt;
-    if (!from || !to) return null;
-    const diffDays = Math.max(
-      0,
-      Math.round((to.getTime() - from.getTime()) / MS_PER_DAY),
-    );
-    if (diffDays <= 0) return null;
-    return Math.round(diffDays / (visits - 1));
   }
 
   async computeAggregates(
@@ -249,17 +221,16 @@ export class PortalCustomersQueryService {
     const visits = aggregatedVisits ?? statsVisits;
     const statsTotalSpent = Math.max(0, Number(stats?.totalSpent ?? 0));
     const spendTotal = aggregatedTotalSpent ?? statsTotalSpent;
-    const averageCheck =
-      visits > 0
-        ? Math.round(spendTotal / visits)
-        : Math.round(Number(stats?.avgCheck ?? 0));
     const lastPurchaseDate =
       aggregatedLastPurchase ?? stats?.lastOrderAt ?? null;
-    const daysSinceLastVisit = this.differenceInDays(lastPurchaseDate);
-    const visitFrequencyDays = this.computeVisitFrequency({
+    const kpi = buildCustomerKpiSnapshot({
       visits,
-      firstSeenAt: aggregatedFirstPurchase ?? stats?.firstSeenAt ?? null,
-      lastOrderAt: lastPurchaseDate,
+      totalSpent: spendTotal,
+      firstPurchaseAt: aggregatedFirstPurchase ?? stats?.firstSeenAt ?? null,
+      lastPurchaseAt: lastPurchaseDate,
+      fallbackAverageCheck: Number(stats?.avgCheck ?? 0),
+      averageCheckPrecision: 0,
+      visitFrequencyPrecision: 0,
     });
     const registeredSource = entity.createdAt ?? null;
     const registeredAt = registeredSource
@@ -292,10 +263,10 @@ export class PortalCustomersQueryService {
       tags,
       balance: wallet ? Number(wallet.balance ?? 0) : 0,
       pendingBalance,
-      visits,
-      averageCheck,
-      daysSinceLastVisit,
-      visitFrequencyDays,
+      visits: kpi.visits,
+      averageCheck: kpi.averageCheck,
+      daysSinceLastVisit: kpi.daysSinceLastVisit,
+      visitFrequencyDays: kpi.visitFrequencyDays,
       age,
       spendPreviousMonth,
       spendCurrentMonth,

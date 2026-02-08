@@ -13,7 +13,7 @@ import { logIgnoredError } from '../../../shared/logging/ignore-error.util';
 import { CommitDto, QrMintDto, QuoteDto, RefundDto } from '../dto/dto';
 import { signQrToken } from '../utils/token.util';
 import { validateTelegramInitData } from '../utils/telegram.util';
-import { getRulesRoot, getRulesSection } from '../../../shared/rules-json.util';
+import { readPublicMiniappSettings } from '../../../shared/miniapp-settings.util';
 import {
   asRecord,
   readErrorMessage,
@@ -334,18 +334,9 @@ export class LoyaltyTransactionsUseCase {
       select: { id: true },
     });
     const referralEnabled = Boolean(referralActive);
-    const rulesRaw = getRulesRoot(settings?.rulesJson) ?? {};
-    const miniappRules = getRulesSection(rulesRaw, 'miniapp');
-    const supportTelegramRaw = miniappRules?.supportTelegram ?? null;
-    const supportTelegram =
-      typeof supportTelegramRaw === 'string' && supportTelegramRaw.trim()
-        ? supportTelegramRaw.trim()
-        : null;
-    const reviewsRules = getRulesSection(rulesRaw, 'reviews');
-    const reviewsEnabled =
-      reviewsRules && reviewsRules.enabled !== undefined
-        ? Boolean(reviewsRules.enabled)
-        : true;
+    const { supportTelegram, reviewsEnabled } = readPublicMiniappSettings(
+      settings?.rulesJson,
+    );
     return {
       merchantId,
       qrTtlSec: settings?.qrTtlSec ?? 300,
